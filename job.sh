@@ -514,6 +514,45 @@ def _is_autopilot(rec):
   return bool(block and block.get("enabled"))
 
 
+# Each blocker clears only when GitHub shows its own condition resolved;
+# feedback and unknown reasons stay until handled or dismissed.
+_RESOLVED_WHEN = {
+  "checks_failed": lambda checks, mergeable, review: checks == "SUCCESS",
+  "merge_conflict": lambda checks, mergeable, review: mergeable == "MERGEABLE",
+  "changes_requested": lambda checks, mergeable, review: review == "APPROVED",
+}
+
+
+def _attention_resolved(attention, check_state, mergeable, review_decision):
+  resolved = _RESOLVED_WHEN.get(attention.get("type"))
+  return bool(resolved and resolved(check_state, mergeable, review_decision))
+
+
+def _without_type(items: list, kind: str) -> list:
+  return [item for item in items if item.get("type") != kind]
+
+
+# One attention slot holds one reason. A blocker displaced by a newer reason
+# waits while GitHub still shows it, and returns, already announced, once the
+# slot frees: a blocker is never lost and never pushed twice.
+def _waiting_blockers(rec: dict, current: dict, attention: dict | None,
+                      slot_free: bool, state: tuple) -> tuple:
+  waiting = [
+    item for item in (rec.get("waiting_attention") or [])
+    if isinstance(item, dict) and not _attention_resolved(item, *state)
+  ]
+  if not attention:
+    return (waiting[0], waiting[1:]) if slot_free and waiting else (None, waiting)
+  waiting = _without_type(waiting, attention.get("type"))
+  displaced = (
+    not slot_free and current.get("type") in _RESOLVED_WHEN
+    and current.get("type") != attention.get("type")
+  )
+  if displaced:
+    waiting = _without_type(waiting, current.get("type")) + [current]
+  return None, waiting
+
+
 def _ignored_event_urls(rec):
   block = rec.get("autopilot") if _is_autopilot(rec) else {}
   return set(
@@ -608,10 +647,9 @@ def _attention_update(rec, node):
   current_attention = (
     rec.get("attention") if isinstance(rec.get("attention"), dict) else {}
   )
-  if (
-    current_attention.get("type") == "checks_failed"
-    and check_state == "SUCCESS"
-  ):
+  resolved = _attention_resolved(
+    current_attention, check_state, mergeable, review_decision)
+  if resolved:
     patch["needs_attention"] = False
     patch["attention"] = None
   # Actionable work still waiting for its round (or its owner) keeps the one
@@ -625,6 +663,17 @@ def _attention_update(rec, node):
   )
   if check_state == "SUCCESS" and rec.get("last_checks_attention_key"):
     patch["last_checks_attention_key"] = None
+  if mergeable == "MERGEABLE" and rec.get("last_conflict_attention_key"):
+    patch["last_conflict_attention_key"] = None
+  # One attention slot holds one reason. A conflict that arrived while another
+  # reason held the slot is raised once the slot frees, so it is never lost.
+  slot_free = resolved or not (rec.get("needs_attention") and current_attention)
+  conflict_key = "merge_conflict:%s" % _record_head(rec)
+  conflict_pending = (
+    mergeable == "CONFLICTING"
+    and conflict_key not in (
+      rec.get("last_conflict_attention_key"), current_attention.get("key"))
+  )
 
   attention = None
   checks_attention = None
@@ -691,10 +740,11 @@ def _attention_update(rec, node):
       patch["outside_activity"] = outside
     else:
       attention = outside
-  elif mergeable == "CONFLICTING" and previous_mergeable != "CONFLICTING":
+  elif conflict_pending and (previous_mergeable != "CONFLICTING" or slot_free):
+    patch["last_conflict_attention_key"] = conflict_key
     attention = {
       "type": "merge_conflict",
-      "key": "merge_conflict:%s" % _record_head(rec),
+      "key": conflict_key,
       "title": "Needs a refresh to merge",
       "message": "New upstream changes conflict with this contribution.",
       "url": rec.get("url") or "",
@@ -720,8 +770,15 @@ def _attention_update(rec, node):
     if refreshed != current_attention:
       patch["attention"] = refreshed
 
+  restored, waiting = _waiting_blockers(
+    rec, current_attention, attention, slot_free,
+    (check_state, mergeable, review_decision))
+  set_if_changed("waiting_attention", waiting)
+  attention = attention or restored
+
   if (
     not attention
+    and not resolved
     and rec.get("needs_attention")
     and current_attention.get("type") in AUTHOR_ATTENTION_TYPES
     and not pending_work

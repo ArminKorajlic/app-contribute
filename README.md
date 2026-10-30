@@ -15,15 +15,37 @@ contribution. This app is the dashboard for that loop:
 
 - **One project workspace** — local changes, prepared work, incoming review
   requests, public progress, questions and history belong to their project.
-  There is no separate Reviews destination. All projects, Local changes and
-  Updates filter the same searchable overview.
+  There is no separate Reviews destination. All, **With your edits** and
+  **Behind GitHub** filter the same searchable overview, where each project
+  carries a Platform or App tag and apps with nothing to do fold away.
+- **To look at first** — a project opens on what needs you on its tracked
+  contributions, blockers before news. Each row names the reason (Merge
+  blocked, Checks failing, Changes requested, New feedback), the affected PR
+  and its related group, and when it was detected; its button says what it
+  opens. A blocker leaves the list once GitHub shows it resolved. A blocker
+  pushed aside by a newer reason comes back, without a second push
+  notification, while GitHub still shows it.
+- **One tab per job** — under To look at and the project's status, **All PRs**
+  (the default), **Review requests** and **My work** (agent jobs, agent
+  reviews, agent activity and finished work) split the project by what the
+  owner came to do. Saved public work the live list cannot show stays on All
+  PRs, so an unreachable GitHub never hides it behind another tab.
 - **Task-first controls** — open a project to see its work list beside one
-  contextual task, with a compact project switcher rather than another sidebar. **Prepare changes** is the main action; **Pull updates**
-  stays visible in the project header. A permitted maintainer can choose
-  **Continue through merge** without granting unknown future public actions.
-  Preparation stays private, and updates use the reviewed adapter rather than
-  blindly rebasing the live checkout. On phones, a task takes the screen and
-  **Back to project** restores the same inventory.
+  contextual task, with a compact project switcher rather than another sidebar.
+  The project's status says in plain words what is local ("2 files changed on
+  this Möbius") and how it compares with GitHub; **Make
+  PRs from my edits** is the main action and appears only when there are edits.
+  A permitted maintainer can choose **Follow through to merge** without granting
+  unknown future public actions. Contribute does not update projects itself:
+  when GitHub has updates it links to the place that applies them, Settings →
+  Updates for Möbius and the App Store for apps. On phones, a task takes the
+  screen and **Back to project** restores the same inventory.
+- **Check GitHub** — reloads this Möbius and asks GitHub, read-only, whether
+  each project's repository has commits newer than the one this Möbius last
+  compared with (`upstream-check.js`, one GraphQL query through the platform
+  proxy). It reports commits, never files: what an update changes is still the
+  reconciliation answer, and a quiet project reads "Up to date at the last
+  check" until a fresh check says more.
 - **Choose scope** — prepare all local work in a project, or find a source
   conversation, open it and ask it to prepare its changes. This metadata
   picker requires the companion platform source-chats route; older runtimes
@@ -78,7 +100,7 @@ contribution. This app is the dashboard for that loop:
   Projects row reserves its space and reports its own refresh instead of
   making counts pop into the layout.
 - **Work list**, grouped:
-  - **Needs you** — actual blockers and questions, linked to their owning work.
+  - **To look at** — actual blockers and feedback, linked to their owning work.
   - **Prepared proposals · not shared** — private drafts waiting on your go-ahead. Each card
     shows high-level review context first: repo, branch, diff stat, and
     summary. Open the card to review exactly what would go public: the action
@@ -192,6 +214,9 @@ shape:
     "message": "The latest GitHub checks are failing.",
     "url": "https://github.com/…"
   },
+  // Blockers displaced from the one attention slot while GitHub still shows
+  // them; the job puts the first one back when the slot frees.
+  "waiting_attention": [{ "type": "merge_conflict", "key": "…" }],
   // Display-only MIRROR of the autopilot state (see below). The real grant +
   // claim live in a platform DB row; this block is written by the platform for
   // the app/cron to render and must never be treated as authorization.
@@ -266,22 +291,38 @@ before writing, while the cron refresh falls back to a plain best-effort write.
 
 ## Continuous Project Desk: private PR review runs
 
-The existing project workspace keeps local/upstream position, **Prepare
-changes** and **Pull updates**. PR state, private proposal, exact-head review,
+The existing project workspace keeps the local and GitHub position and **Make
+PRs from my edits**. PR state, private proposal, exact-head review,
 agent execution and settled history remain separate. Named paused work stays
 visible as unfinished; this iteration does not resume old cycles automatically.
 
 Review/Fix/Merge guidance shares one flat Settings editor. At launch choose
-Review, Review & merge or Review, fix & merge, plus model and effort. There is
+**Agent ▾ → Review only** (optionally **Allow posting the review on GitHub**,
+**Allow approve or request changes**, and **Merge when safe**, in any
+combination) or **Review, fix and merge**, plus model and effort, in the
+review window. There is
 no automatic-continuation option: the platform does not support it. Each launch
 sends only the options its mode accepts: review and merge prompts always, the
 fix prompt only for Review, fix & merge (new takeovers have no repair-round
-limit), and the post-review grant only for Review. The mode-aware
+limit), and the post-review grant (with its verdict form) only for Review only,
+with or without merge. The mode-aware
 `review-preview` freezes the exact instructions and agent choice for that mode;
 start passes its `preview_sha256` and rejects drift. Mandatory safety
 instructions are platform-owned. With the post-review grant, the agent may post
 one comment review per PR, and only for a verdict it explicitly marks public;
-questions to the owner stay private.
+questions to the owner stay private. With merge as well, the review is posted
+first and the PR merges only after GitHub confirms that review and the
+required checks pass. **Allow approve or request changes** turns that public
+verdict into a proposal: the run shows the exact approve or request-changes
+text with **Approve on GitHub** / **Request changes on GitHub** and **Discard**,
+and nothing is posted until you choose. Only your own tap can submit it; the
+review agent cannot. A pending, discarded or changes-requested verdict never
+merges; a submitted approval resumes the review conversation to run the usual
+merge checks. GitHub does not allow verdicts on your own PRs, so those get a
+comment instead. Re-reviewing after the author responds is a new review you
+start yourself. These options need a Möbius that advertises
+`post_review_merge` and `propose_verdict`; an older one keeps posting and
+merging apart and hides the verdict switch.
 
 A run publishes necessary takeover repairs only through a dedicated
 server-owned checkout and guarded receipts, then requires new independent
@@ -407,4 +448,4 @@ Chromium (`CHROMIUM_PATH` can name it), blocks external network traffic, and
 cleans up its temporary profile. Live permission, activation and source-chat
 navigation checks are separate; passing this fixture is not a public merge.
 
-Project Refresh renews source, contribution, PR and run status without pulling code. Prepare and Pull open launch panels independently of old dormant work. Prepare's **Follow through to merge** (offered with merge rights) starts a full merge cycle. Once a project has work, its Project work row shows the current conversation, cancellation and retained history, also without merge rights; a fresh cycle start needs them. All of a project's agent work (Prepare, Pull and full merge cycles) runs in **one** app-owned conversation, scoped `contribute-cycle:<project digest>`; the platform keeps at most one active conversation per scope, so a project cannot have two owners. Cycle k is one message in it with the deterministic id `<scope>:k`: the first cycle uses the platform's scoped start, later ones send to that conversation. The platform de-duplicates that id per conversation, so every delivery (Start, **Send again**, after a reload) first re-reads the project record (online CAS) and acts only while k is its current, unconfirmed cycle; a stale or delivered cycle sends and changes nothing. The first attempt is recorded before it is made and is the only one that may create the conversation. A retry is bound to the conversation that cycle went to; if none holds it any more (deleted, or never created), it is not sent again and the owner starts new work instead. Model and effort are applied until one attempt has applied them. New starts wait while the platform reports work in progress: a running turn, an owner question, or an outstanding Wait, queued message, continuation, non-terminal run or background helper. If the owner deletes the conversation, a delivered cycle counts as finished and the next start creates a new conversation. The conversation's provider is fixed after its first turn, so later cycles may change the model only within that provider. Every launch (project work, review workflows and other agent handoffs) carries its own model choice; leaving it unset uses the chat default. The older single app-wide agent model setting is retired: Contribute removes its saved keys (`agent_provider`, `agent_model`, `agent_effort`) the next time it loads its settings.
+**Check GitHub** renews source, contribution, PR and run status without pulling code, and asks GitHub whether anything is new. **Make PRs from my edits** opens its launch panel independently of old dormant work; older Pull cycles stay visible as agent jobs, but Contribute no longer starts them. Prepare's **Follow through to merge** (offered with merge rights) starts a full merge cycle. Once a project has work, its Project work row shows the current conversation, cancellation and retained history, also without merge rights; a fresh cycle start needs them. All of a project's agent work (Prepare, Pull and full merge cycles) runs in **one** app-owned conversation, scoped `contribute-cycle:<project digest>`; the platform keeps at most one active conversation per scope, so a project cannot have two owners. Cycle k is one message in it with the deterministic id `<scope>:k`: the first cycle uses the platform's scoped start, later ones send to that conversation. The platform de-duplicates that id per conversation, so every delivery (Start, **Send again**, after a reload) first re-reads the project record (online CAS) and acts only while k is its current, unconfirmed cycle; a stale or delivered cycle sends and changes nothing. The first attempt is recorded before it is made and is the only one that may create the conversation. A retry is bound to the conversation that cycle went to; if none holds it any more (deleted, or never created), it is not sent again and the owner starts new work instead. Model and effort are applied until one attempt has applied them. New starts wait while the platform reports work in progress: a running turn, an owner question, or an outstanding Wait, queued message, continuation, non-terminal run or background helper. If the owner deletes the conversation, a delivered cycle counts as finished and the next start creates a new conversation. The conversation's provider is fixed after its first turn, so later cycles may change the model only within that provider. Every launch (project work, review workflows and other agent handoffs) carries its own model choice; leaving it unset uses the chat default. The older single app-wide agent model setting is retired: Contribute removes its saved keys (`agent_provider`, `agent_model`, `agent_effort`) the next time it loads its settings.

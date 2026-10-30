@@ -69,6 +69,15 @@ update.
 A 404 from either call means this Möbius predates them: tell the owner a
 platform update is needed rather than writing the record by hand.
 
+Tracking **another author's existing open PR** (for example to review or carry
+it) is the one case where a record is created by hand: create it as `type: pr`,
+`status: open`, then seed `plan.repo_path` (and `plan.repo`; for a fork also
+`plan.head_repository`) **before** staging — staging an empty plan returns a
+409 `checkout_changed`, and a fork's `head_repository` is not inferred. Then
+stage with `{}` as usual. When the goal is reviewing selected PRs rather than
+carrying them, prefer `review_prs.py` (see [maintainer.md](maintainer.md)),
+which handles this for you.
+
 Record the private verdict for the exact staged head the same way:
 
 ```bash

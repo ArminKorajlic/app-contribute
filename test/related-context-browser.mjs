@@ -159,7 +159,7 @@ root.render(null);await pause();
  await wait(()=>scenario.descriptions.length===1,'stale version read');
  scenario.descriptions[0].resolve(description('Wrong version','c'.repeat(40)));
  await wait(()=>!!button('Refresh PR list'),'stale version guard');
- check(button('Take on with agent').disabled&&!document.body.innerText.includes('Wrong version'),'stale context enabled review or rendered mismatched body');
+ check(document.querySelector('.co-pr-detail .co-agent-menu-button').disabled&&!document.body.innerText.includes('Wrong version'),'stale context enabled review or rendered mismatched body');
  reports.push({case:'active-version-mismatch-blocks-review'});
 }
 check(unexpectedReads.length===0,'Successful cached siblings were refetched: '+unexpectedReads.join(', '));

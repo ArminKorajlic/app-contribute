@@ -22,6 +22,7 @@ const runRenderer = () => renderModule(`
       presentation: options.presentation || 'project',
       selectedId: options.selectedId || '',
       projectName: options.projectName || 'Project',
+      defaultTab: options.tab || 'all',
       reviewStatus: { byId: {} },
       cycle: options.cycle || { phase: 'idle' },
       publicationPreference: options.publicationPreference || 'github',
@@ -351,11 +352,11 @@ test('durable Ready errors stay visible with only deliberate safe recovery', asy
   })
 
   assert.match(html, /Auto-merge is enabled/)
-  assert.match(html, /I disabled auto-merge — request review/)
+  assert.match(html, /I turned off auto-merge\. Mark ready again/)
   assert.match(html, /Open pull request/)
 })
 
-test('dismissed work is discoverable in History and retains exact restore links', async (t) => {
+test('dismissed work is discoverable in My work and retains exact restore links', async (t) => {
   if (!frontendModules) return t.skip('MOBIUS_FRONTEND_NODE_MODULES is required')
   const { renderRun, renderFocus } = await runRenderer()
   const archived = { ...record('Restore me'), status: 'abandoned' }
@@ -367,11 +368,11 @@ test('dismissed work is discoverable in History and retains exact restore links'
   const runHtml = renderRun({
     decisions: [], working: [], recent: [], archive: [item], projects: [],
     privateAction: null,
-  })
+  }, { tab: 'mine' })
   const focusHtml = renderFocus(item)
 
   assert.doesNotMatch(runHtml, /Archived proposals/)
-  assert.match(runHtml, /History<\/span><b>1<\/b>/)
+  assert.match(runHtml, /Finished and closed work<\/span><b>1<\/b>/)
   assert.match(runHtml, /Restore me/)
   assert.match(focusHtml, />Restore</)
 })
@@ -433,8 +434,10 @@ test('history names outcomes honestly without an archive or success-only implica
   if (!frontendModules) return t.skip('MOBIUS_FRONTEND_NODE_MODULES is required')
   const { renderRun } = await runRenderer()
   const outcome = status => ({ id: status, kind: 'recent', record: record(status, { status }), label: status, detail: status })
-  const html = renderRun({ recent: ['merged', 'closed', 'local', 'superseded'].map(outcome), archive: [outcome('abandoned')] })
-  assert.match(html, /History<\/span><b>5<\/b>/)
+  const html = renderRun({ recent: ['merged', 'closed', 'local', 'superseded'].map(outcome), archive: [outcome('abandoned')] }, { tab: 'mine' })
+  assert.match(html, /Finished and closed work<\/span><b>5<\/b>/)
+  // Finished work lives in My work, not under the PR list.
+  assert.doesNotMatch(renderRun({ recent: [outcome('merged')] }), /Finished and closed work/)
   assert.doesNotMatch(html, /Archived proposals/)
   assert.match(html, /abandoned/)
   assert.match(html, /Not all were merged/)
@@ -446,9 +449,9 @@ test('only recorded work activity moves; queued agent follow-up stays still', as
   const { renderRun } = await runRenderer()
   const rec = record('Queued public repair', { status: 'open', autopilot: { enabled: true, state: 'idle' } })
   const item = { id: rec.id, kind: 'autopilot', record: rec, label: rec.title, detail: 'Agent handling public follow-up' }
-  const queued = renderRun({ working: [item] })
+  const queued = renderRun({ working: [item] }, { tab: 'mine' })
   assert.match(queued, /Agent follow-up queued/)
   assert.doesNotMatch(queued, /co-working-icon|Agent handling public follow-up/)
-  const responding = renderRun({ working: [{ ...item, record: { ...rec, autopilot: { enabled: true, state: 'responding' } } }] })
+  const responding = renderRun({ working: [{ ...item, record: { ...rec, autopilot: { enabled: true, state: 'responding' } } }] }, { tab: 'mine' })
   assert.match(responding, /co-working-icon/)
 })

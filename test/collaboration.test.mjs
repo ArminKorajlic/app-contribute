@@ -86,23 +86,22 @@ test('a failed observation keeps the listed runs rather than hiding them', async
 })
 test('review-and-merge confirmation names exact PRs and excludes extra public actions', async t => {
   if (!frontendModules) return t.skip('MOBIUS_FRONTEND_NODE_MODULES required')
-  const { render } = await renderModule(`import React from 'react'; import {renderToStaticMarkup} from 'react-dom/server'; import {ReviewConfirmation} from './ui/PullRequests.jsx'; export const render = choice => renderToStaticMarkup(React.createElement(ReviewConfirmation, {choice}));`)
+  const { render } = await renderModule(`import React from 'react'; import {renderToStaticMarkup} from 'react-dom/server'; import {ReviewConfirmation} from './ui/ReviewConfirmation.jsx'; export const render = choice => renderToStaticMarkup(React.createElement(ReviewConfirmation, {choice}));`)
   const html = render({mode:'review_merge', pulls:[pull(1), pull(2)]})
-  assert.match(html, /Allow review &amp; merge/)
-  assert.match(html, /merge or queue these exact versions after a thorough review and required checks/); assert.match(html, /No branch edits or public review comments/)
-  assert.match(html, /<strong>#1 A clear change<\/strong><span>team\/repo<\/span>/)
-  assert.match(html, /<strong>#2 A clear change<\/strong><span>team\/repo<\/span>/)
-  assert.match(html, /Exact versions covered by this approval/, 'a saved pinned merge keeps its exact-version disclosure')
+  assert.match(html, /Start review, merge when safe/)
+  assert.match(html, /all required checks pass, it merges each PR or adds it to the merge queue/); assert.match(html, /the merge of each PR\. No comments and no code changes\./, 'a batch merge discloses one merge per PR')
+  assert.match(html, /<strong>#1<\/strong> A clear change<span>team\/repo<\/span>/)
+  assert.match(html, /<strong>#2<\/strong> A clear change<span>team\/repo<\/span>/)
+  assert.match(html, /Exact versions/, 'a saved pinned merge keeps its exact-version disclosure')
+  assert.match(html, /It uses these exact versions\. Changed code needs a fresh approval\./)
   const privately = render({mode:'review', pulls:[pull(1)]})
-  assert.match(privately, /Private findings, no public changes/); assert.match(privately, /Start private review/)
-  assert.doesNotMatch(privately, /Public effect/)
+  assert.match(privately, /Seen on GitHub:<\/strong> nothing\. Only you see the review\./); assert.match(privately, /Start private review/)
   const posting = render({mode:'review', pulls:[pull(1)], options:{post_review:true}})
-  assert.doesNotMatch(posting, /Private findings|Start private review/, 'a review posted on GitHub is never called private')
-  assert.match(posting, /May post its verdict on GitHub\. No code changes\./)
+  assert.doesNotMatch(posting, /Only you see the review|Start private review/, 'a review posted on GitHub is never called private')
   // Only a verdict the agent explicitly marks public is posted (G2 `publish: true`).
-  assert.match(posting, /Possible public effect: one comment review per PR, only for a verdict the agent marks as public, posted on this PR from your connected GitHub account\. Questions to you and unverified results stay private\./)
+  assert.match(posting, /at most one review comment from your account, only for a verdict the agent marks as public\. Questions to you and unverified results stay private\./)
   assert.doesNotMatch(posting, /verdict and findings is posted|Findings posted on GitHub/, 'posting is a grant, not a promise that every outcome is public')
-  assert.match(posting, /Start review, allow posting/)
+  assert.match(posting, /Start review, allow comment/)
 })
 
 
@@ -130,22 +129,27 @@ test('batch assignment pins each head and reports partial failures without repla
 
 test('merge option is enabled only for an entirely eligible exact selection', async t => {
   if (!frontendModules) return t.skip('MOBIUS_FRONTEND_NODE_MODULES required')
-  const { render } = await renderModule(`import React from 'react'; import {renderToStaticMarkup} from 'react-dom/server'; import {ReviewConfirmation} from './ui/PullRequests.jsx'; export const render = (pulls, capabilities = {review_fix_merge:true}) => renderToStaticMarkup(React.createElement(ReviewConfirmation, {choice:{mode:'review',pulls},onModeChange:()=>{},capabilities}));`)
+  const { render } = await renderModule(`import React from 'react'; import {renderToStaticMarkup} from 'react-dom/server'; import {ReviewConfirmation} from './ui/ReviewConfirmation.jsx'; export const render = (pulls, capabilities = {review_fix_merge:true}, mode = 'review') => renderToStaticMarkup(React.createElement(ReviewConfirmation, {choice:{mode,pulls},onModeChange:()=>{},capabilities}));`)
   const eligible = render([pull(1)])
-  assert.match(eligible, /Review, fix &amp; merge/)
-  assert.doesNotMatch(eligible, /class="co-pr-mode"[^>]*disabled/)
+  assert.match(eligible, /Merge when safe/)
+  assert.doesNotMatch(eligible, /Not available for drafts|Needs merge rights/)
+  // Merge when safe explains why an exact selection is not eligible.
+  assert.match(render([pull(1), pull(2, {repository:{nameWithOwner:'team/repo',viewerPermission:'READ'}})]), /Needs merge rights on this repository\./)
+  assert.match(render([pull(1, {isDraft:true})]), /Not available for drafts\./)
+  // Review, fix and merge starts only for an entirely eligible selection, and says why not.
+  assert.doesNotMatch(render([pull(1)], undefined, 'review_fix_merge'), /disabled="">Allow fix and merge/)
   for (const selection of [[pull(1), pull(2, {repository:{nameWithOwner:'team/repo',viewerPermission:'READ'}})], [pull(1, {isDraft:true})]]) {
-    const html = render(selection)
-    assert.match(html, /class="co-pr-mode"[^>]*disabled=""><strong>Review, fix &amp; merge/)
+    const html = render(selection, undefined, 'review_fix_merge')
+    assert.match(html, /disabled="">Allow fix and merge/)
     // Without served draft support a draft is unavailable; rights explain first.
     assert.match(html, /needs the Möbius update|Requires merge access to every selected PR/)
   }
   // A workflow this Möbius does not advertise is never offered (or claimed loading forever).
-  assert.match(render([pull(1)], {}), /disabled=""><strong>Review, fix &amp; merge<\/strong><small>Needs a newer Möbius/)
-  assert.match(render([pull(1)], null), /Checking what this Möbius supports/)
+  assert.match(render([pull(1)], {}, 'review_fix_merge'), /Needs a newer Möbius/)
+  assert.match(render([pull(1)], null, 'review_fix_merge'), /Checking what this Möbius supports/)
   // A permanent rights blocker is not hidden behind the pending draft check.
   {
-    const html = render([pull(1, {isDraft:true, repository:{nameWithOwner:'team/repo',viewerPermission:'READ'}})])
+    const html = render([pull(1, {isDraft:true, repository:{nameWithOwner:'team/repo',viewerPermission:'READ'}})], undefined, 'review_fix_merge')
     assert.match(html, /Requires merge access to every selected PR/)
   }
 })

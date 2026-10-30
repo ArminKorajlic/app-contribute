@@ -198,15 +198,21 @@ export async function fetchLiveStates(token, query) {
   }
 }
 
+// Open pull requests that involve the viewer (the source of "On GitHub" projects),
+// each flagged when it actually asks for the viewer's review. GitHub's
+// "involves" search does not cover review requests, so both are read at once.
 export async function fetchIncomingReviews(token) {
+  const fields = 'id number title url headRefOid baseRefName baseRefOid isDraft author { login } assignees(first:100) { nodes { login } } repository { nameWithOwner viewerPermission } reviewDecision mergeable'
   const query = `query ContributeIncomingReviews {
-    search(query: "is:pr is:open involves:@me", type: ISSUE, first: 50) {
-      nodes { ... on PullRequest { id number title url headRefOid baseRefName baseRefOid isDraft author { login } assignees(first:100) { nodes { login } } repository { nameWithOwner viewerPermission } reviewDecision mergeable } }
-    }
+    involved: search(query: "is:pr is:open involves:@me", type: ISSUE, first: 50) { nodes { ... on PullRequest { ${fields} } } }
+    requested: search(query: "is:pr is:open review-requested:@me", type: ISSUE, first: 50) { nodes { ... on PullRequest { ${fields} } } }
   }`
   const data = await fetchLiveStates(token, query)
-  const nodes = Array.isArray(data?.search?.nodes) ? data.search.nodes : []
-  return nodes.filter((item) => item?.repository?.nameWithOwner && item?.number && item?.url)
+  const valid = nodes => (Array.isArray(nodes) ? nodes : []).filter((item) => item?.repository?.nameWithOwner && item?.number && item?.url)
+  const requested = valid(data?.requested?.nodes)
+  const requestedUrls = new Set(requested.map(item => item.url))
+  const involved = valid(data?.involved?.nodes).filter(item => !requestedUrls.has(item.url))
+  return [...requested.map(item => ({ ...item, reviewRequested: true })), ...involved]
 }
 
 export async function assignIncomingReview({ appId, token, repo, number }) {

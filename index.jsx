@@ -35,11 +35,12 @@ import {
   upsertRecord,
 } from './domain.js'
 import { contributionActionScope, contributionApprovalIsCurrent, contributionPhaseApprovalIsCurrent, contributionReviewTargetFromIntent, focusedContributionNavigationReady, focusedContributionReady, indexReviewStatus, qualityReviewFor } from './review.js'
-import { buildContributionRun, findRunItemByRecord } from './run.js'
+import { buildContributionRun, findRunItemByRecord, ownerAttentionCount } from './run.js'
 import { stackPublicationRecords } from './stack.js'
 import { deliverCycleMessage } from './cycle-delivery.js'
 import { abandonPrepared, cacheFeed, cacheSourceSnapshot, loadAppSettings, loadCachedFeed, loadCachedSourceSnapshot, loadContributionRecord, loadFreshContributionRecord, loadFreshContributionRecords, loadCycleState, loadFullDiff, loadLedger, restoreAbandoned, saveAppSettings } from './storage.js'
 import { createRefreshCoordinator, isVisibleFrameMessage } from './refresh.js'
+import { checkUpstream } from './upstream-check.js'
 import {
   contributionPathDecision,
   contributionStackDecision,
@@ -204,6 +205,8 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
   const [ledgerReady, setLedgerReady] = useState(false)
   const [omittedCount, setOmittedCount] = useState(0)
   const [sourceSnapshot, setSourceSnapshot] = useState(null)
+  // The last Check GitHub answer per project key; empty until the owner asks.
+  const [upstreamChecks, setUpstreamChecks] = useState({})
   const [projectFocus, setProjectFocus] = useState(null)
   // A chat PR link leases one exact PR in its project; the PR view hands the
   // lease back when the owner leaves that PR's detail or the project.
@@ -1520,15 +1523,22 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
     setProjectFocus({ key: focusedProjectKey, nonce: reviewFocus.nonce })
   }, [reviewFocus, focusedReviewReady, sourceLoading, focusedProjectKey])
 
+  // What waits on the owner in each project, for the projects list.
+  const projectAttention = useMemo(() => Object.fromEntries(sourceProjects
+    .filter(project => recordsForProject(records, project).length)
+    .map(project => [project.key, ownerAttentionCount(projectRun(project).decisions)])), [sourceProjects, records, reviewStatus])
   function projectRun(project) {
     return project ? buildContributionRun({
       records: recordsForProject(records, project), reviewStatus, projects: [project],
       incomingReviews: [],
     }) : contributionRun
   }
-  function renderPullRequests(project, navigation) {
+  // `view` comes from the project tabs: which PRs to show, how to switch tabs,
+  // and where to report the open PR count. Without it the list shows all PRs.
+  function renderPullRequests(project, navigation, view = null) {
     return <PullRequests key={`pulls:${project?.key || 'all'}`} appId={appId} token={token}
       project={project} conn={conn} refreshKey={refreshKey} onChanged={refreshIncomingReviews}
+      scope={view?.scope || 'all'} onScope={view?.onScope} onTotal={view?.onTotal}
       focusPull={pullFocus?.number ? pullFocus : null} focusRun={pullFocus?.runId ? pullFocus : null} onFocusRelease={releasePullFocus}
       records={recordsForProject(records, project)} onRecord={record => {
         const found = findRunItemByRecord(projectRun(project), record.id)
@@ -1628,10 +1638,15 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
               refreshSources(),
               refreshCoordinatorRef.current(),
             ])
-            if (conn.state === 'connected') await Promise.all([loadRepositories(), refreshIncomingReviews()])
+            let upstream = null
+            if (conn.state === 'connected') {
+              const [, , checked] = await Promise.all([loadRepositories(), refreshIncomingReviews(), checkUpstream(token, sourceProjects)])
+              upstream = checked
+              if (checked.ok) setUpstreamChecks(checked.results)
+            }
             setRefreshKey(value => value + 1)
-            return sourceOk && ledgerCurrentRef.current
-          }} loadProjectDiff={loadProjectDiff}
+            return { ok: sourceOk && ledgerCurrentRef.current, upstream }
+          }} checks={upstreamChecks} attention={projectAttention} loadProjectDiff={loadProjectDiff}
           repositoryPicker={<RepositoryPicker token={token} connected={conn.state === 'connected'} onAdded={(repo, followed) => {
             setFollowedRepos(followed)
             setRepositoryAccess(old => ({ ...old, repositories: [...old.repositories.filter(item => item.nameWithOwner.toLowerCase() !== repo.nameWithOwner.toLowerCase()), repo] }))
@@ -1642,9 +1657,10 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
 
 
             {project ? <GithubPullsUnavailable conn={conn} onRetry={refreshConnection} /> : null}
-            {project ? <ProjectControls key={`controls:${project.key}`} appId={appId} token={token} project={project} run={projectRun(project)} loading={loading || !ledgerReady || sourceLoading || !!sourceError} onStart={startAgentTask}>
+            {project ? <ProjectControls key={`controls:${project.key}`} appId={appId} token={token} project={project} run={projectRun(project)} loading={loading || !ledgerReady || sourceLoading || !!sourceError} check={upstreamChecks[project.key] || null} onStart={startAgentTask}>
             {({ controls, progress }) => <ContributionRun
-              renderPublicWork={project ? () => renderPullRequests(project, navigation) : null}
+              renderPublicWork={project ? view => renderPullRequests(project, navigation, view) : null}
+              reviewRequestCount={project?.reviewRequests?.length || 0}
               controls={controls}
               projectProgress={progress}
               run={projectRun(project)} presentation={project ? 'project' : 'overview'}

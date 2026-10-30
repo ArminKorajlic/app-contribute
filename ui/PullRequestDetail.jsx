@@ -3,6 +3,7 @@ import { loadPullActivity, loadPullChecks, loadPullDescription, loadPullFiles, l
 import { MarkdownView } from './MarkdownView.jsx'
 import DiffView from './diff/DiffView.jsx'
 import { Icon } from './Icons.jsx'
+import { AgentMenu } from './AgentMenu.jsx'
 import { ChecksBadge, GithubLabel, PullStateBadge, REVIEW_DECISION } from './GithubParts.jsx'
 import { openAgentConversation } from './BatchAction.jsx'
 
@@ -203,7 +204,7 @@ function PullRequestDetailView({ cacheStore, pr, token, onReview, onAssign, onRe
       {labels.length ? <div className="co-gh-labels">{labels.map(label => <GithubLabel key={label.name} name={label.name} color={label.color} />)}</div> : null}
     </header>
     <div className="co-pr-detail-actions">
-      {!readOnly ? <button className="co-btn co-btn-primary" disabled={stale} onClick={() => onReview?.('review')}><Icon name="prepare" /> Take on with agent</button> : null}
+      {!readOnly ? <AgentMenu variant="button" align="start" disabled={stale} onChoose={mode => onReview?.(mode)} ariaLabel={`Choose what an agent does with PR ${pr.number}`} /> : null}
       {!readOnly && canAssign ? <button className="co-btn" disabled={stale} onClick={onAssign}><Icon name="person" /> Assign</button> : null}
       {status ? <button className="co-btn" onClick={onProgress}>Agent progress</button> : null}
       <DetailLink href={pr.url}>Open on GitHub</DetailLink>

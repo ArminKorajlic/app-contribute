@@ -45,7 +45,8 @@ async function rendered(t) {
     import { TaskContext, TaskPane } from './ui/TaskPane.jsx'
     import { SourceMap } from './ui/SourceMap.jsx'
     import { ProjectControls } from './ui/ProjectControls.jsx'
-    import { PullRequests, ReviewConfirmation } from './ui/PullRequests.jsx'
+    import { PullRequests } from './ui/PullRequests.jsx'
+    import { ReviewConfirmation } from './ui/ReviewConfirmation.jsx'
     import { ContributionRun } from './ui/Feed.jsx'
 
     const components = { SourceMap, ProjectControls, PullRequests, ReviewConfirmation, ContributionRun, TaskPane }
@@ -116,30 +117,32 @@ test('own and assigned PR selection constructs a review without assigning anyone
   assert.doesNotMatch(calls[0].url, /assign|merge/)
 })
 
-test('SSR review confirmation enables takeover only when the entire selection is eligible', async t => {
+test('SSR review window starts takeover only when the entire selection is eligible', async t => {
   const ui = await rendered(t)
   if (!ui) return
   const renderChoice = (pulls, mode = 'review', busy = false) => ui.render('ReviewConfirmation', {
     choice: { request_id: 'fixture-choice', mode, pulls }, busy, onModeChange: () => {}, capabilities: { review_fix_merge: true },
   })
   for (const permission of ['WRITE', 'MAINTAIN', 'ADMIN']) {
-    const html = renderChoice([pull(7, { repository: { nameWithOwner: project.canonical_repo, viewerPermission: permission } })])
-    assert.match(html, /Review, fix &amp; merge/, permission)
-    assert.doesNotMatch(html, /class="co-pr-mode"[^>]*disabled/, permission)
+    const pulls = [pull(7, { repository: { nameWithOwner: project.canonical_repo, viewerPermission: permission } })]
+    const takeover = renderChoice(pulls, 'review_fix_merge')
+    assert.doesNotMatch(takeover, /disabled="">Allow fix and merge/, permission)
+    const html = renderChoice(pulls)
     assert.match(html, /Start private review/)
-    assert.doesNotMatch(html, /type="checkbox"[^>]*checked/)
+    // No option starts switched on (aria-checked="false" is not a checked box).
+    assert.doesNotMatch(html, /type="checkbox"[^>]*\schecked=""/)
   }
   for (const permission of ['READ', 'TRIAGE', null]) {
-    const html = renderChoice([pull(), pull(8, { repository: { nameWithOwner: project.canonical_repo, viewerPermission: permission } })])
-    assert.match(html, /class="co-pr-mode"[^>]*disabled=""><strong>Review, fix &amp; merge/, String(permission))
-    assert.match(html, /Start private review/)
+    const pulls = [pull(), pull(8, { repository: { nameWithOwner: project.canonical_repo, viewerPermission: permission } })]
+    assert.match(renderChoice(pulls, 'review_fix_merge'), /disabled="">Allow fix and merge/, String(permission))
+    assert.match(renderChoice(pulls), /Start private review/)
   }
-  assert.match(renderChoice([pull(7, { isDraft: true })]), /class="co-pr-mode"[^>]*disabled=""><strong>Review, fix &amp; merge/)
+  assert.match(renderChoice([pull(7, { isDraft: true })], 'review_fix_merge'), /disabled="">Allow fix and merge/)
   const merge = renderChoice([pull()], 'review_merge', true)
-  assert.match(renderChoice([pull()], 'review_merge'), /Allow review &amp; merge/)
-  assert.match(merge, /Exact versions covered by this approval/)
-  assert.match(merge, /merge or queue these exact versions after a thorough review and required checks/)
-  assert.match(merge, /No branch edits or public review comments/)
+  assert.match(renderChoice([pull()], 'review_merge'), /Start review, merge when safe/)
+  assert.match(merge, /Exact versions/)
+  assert.match(merge, /all required checks pass, it merges the PR or adds it to the merge queue/)
+  assert.match(merge, /the merge\. No comments and no code changes\./)
   assert.match(merge, /disabled=""/)
 })
 
@@ -148,9 +151,9 @@ test('SSR local preparation remains inventory when another task owns the outlet'
   if (!ui) return
   const props = { project, run: { privateAction: { title: 'Prepare', draft: 'Private preparation' } }, cycle: { phase: 'idle' } }
   const html = ui.render('ProjectControls', props, { activeId: 'task:review', host: null })
-  assert.match(html, /1 changed file/)
-  assert.match(html, /Local and upstream changes/)
-  assert.match(html, /co-position-inspect/)
+  assert.match(html, /1 file<\/strong> changed on this Möbius\./)
+  assert.match(html, /Your edits and GitHub/)
+  assert.match(html, /See the files/)
   assert.doesNotMatch(html, /Check &amp; update safely/)
   assert.equal(ui.render('TaskPane', { id: 'task:prepare', children: 'Task body' }, { activeId: 'task:review', host: null }), '')
   assert.equal(ui.render('TaskPane', { id: 'task:prepare', children: 'Task body' }), 'Task body')
@@ -162,7 +165,7 @@ test('SSR preparation checks its own durable conversation before offering anothe
   const privateAction = { title: 'Prepare', draft: 'Private preparation' }
   const html = ui.render('ProjectControls', { project, run: { privateAction }, mergeRun: { privateAction } })
   assert.match(html, /role="status"/)
-  assert.match(html, /Prepare changes/)
+  assert.match(html, /Make PRs from my edits/)
   assert.match(html, /Checking existing work/ )
   assert.match(html, /disabled=""/) // no agent action until the saved project conversation is checked
 })
@@ -344,11 +347,13 @@ test('SSR selecting a focused contribution retains the project inventory and his
     recent: [work('Accepted work', 'done', 'merged')], archive: [work('Historical work', 'archived', 'abandoned')],
   })
   for (const selectedId of ['', privateWork.id, 'task:pulls', 'task:review']) {
-    const html = ui.render('ContributionRun', { run: current, selectedId }, { activeId: selectedId, host: null })
-    for (const label of ['Private work', 'Published work', 'Accepted work', 'Historical work']) {
-      assert.match(html, new RegExp(label), `${label} remains listed for ${selectedId}`)
+    // Selecting never hides inventory: All PRs keeps saved public work, My work keeps history.
+    const tabs = { all: ['Private work', 'Published work'], mine: ['Private work', 'Accepted work', 'Historical work'] }
+    for (const [defaultTab, labels] of Object.entries(tabs)) {
+      const html = ui.render('ContributionRun', { run: current, selectedId, defaultTab }, { activeId: selectedId, host: null })
+      for (const label of labels) assert.match(html, new RegExp(label), `${label} remains listed on ${defaultTab} for ${selectedId}`)
+      assert.doesNotMatch(html, /This contribution moved|Archived proposals/)
     }
-    assert.doesNotMatch(html, /This contribution moved|Archived proposals/)
   }
 })
 
@@ -366,10 +371,15 @@ test('SSR public review inventory replaces duplicate public rows but retains pri
     appId: 'fixture-app', token: 'fixture-only', project, conn: { state: 'connected', login: 'owner' },
   }, { activeId: 'task:review', host: null, publicKeys: new Set(['owner/project#7', 'owner/project#8']) })
   assert.match(html, /aria-label="Pull requests"/)
-  assert.match(html, />Mine<\/button>/)
-  assert.match(html, />Assigned<\/button>/)
-  for (const label of ['Private work', 'Still preparing', 'Accepted work', 'Unfetched PR', 'Different repository']) assert.match(html, new RegExp(label))
+  assert.match(html, /aria-label="Filter pull requests"/)
+  assert.match(html, /Show: opened by me/)
+  assert.match(html, /Show: assigned/)
+  for (const label of ['Private work', 'Still preparing', 'Unfetched PR', 'Different repository']) assert.match(html, new RegExp(label))
   assert.doesNotMatch(html, /Duplicate open row|Duplicate draft row|This contribution moved/)
+  const mine = ui.renderPublicRun({ run: current, githubState: 'connected', defaultTab: 'mine' }, {
+    appId: 'fixture-app', token: 'fixture-only', project, conn: { state: 'connected', login: 'owner' },
+  }, { host: null, publicKeys: new Set(['owner/project#7', 'owner/project#8']) })
+  assert.match(mine, /Accepted work/)
 })
 
 test('SSR unavailable GitHub cannot hide saved public contributions behind an empty review inventory', async t => {

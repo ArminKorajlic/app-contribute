@@ -247,7 +247,7 @@ test('a confirmed batch stays on screen with per-item results until the owner cl
 
 test('paused work exposes its existing conversation without starting another', () => {
   const controls = readFileSync(new URL('../ui/ProjectControls.jsx', import.meta.url), 'utf8')
-  assert.match(controls, /paused: 'Work paused', failed: 'Work failed'/)
+  assert.match(controls, /paused: 'Paused', failed: 'Failed'/)
   assert.match(controls, /onClick=\{\(\) => workflow.open\(\)\}/)
   assert.match(controls, /Open current conversation/)
 })
@@ -258,12 +258,12 @@ test('projects contain their contribution flow without a separate Reviews destin
   assert.doesNotMatch(appSource, /showProjects|<ProjectControl[ >]|contribute-reviews/)
   assert.doesNotMatch(appSource, /co-tab-prs|co-tab-issues/)
   assert.match(sourceMapSource, /renderActivity\?\.\(project, navigation\)/)
-  assert.match(feedSource, /<span>Needs you<\/span>/)
+  assert.match(feedSource, /<AttentionList items=\{ownerDecisions\}/)
   assert.match(feedSource, /agentActivity, 'Agent activity'/)
-  assert.match(feedSource, />History</)
+  assert.match(feedSource, />Finished and closed work</)
   assert.match(feedSource, /DECISION_ACTION_LABELS/)
   assert.match(sourceMapSource, /placeholder="Find a project"/)
-  assert.match(sourceMapSource, /\['local', 'Changes'\]/)
+  assert.match(sourceMapSource, /\['local', 'With your edits'\]/)
   assert.equal((sourceMapSource.match(/\['all', 'All'\]/g) || []).length, 1)
 })
 

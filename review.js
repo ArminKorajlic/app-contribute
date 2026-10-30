@@ -184,29 +184,6 @@ export function contributionCycleAction(run, projects) {
   }, 'merge')
 }
 
-// Get up to date is an owner-requested update journey, not publication or a
-// blind live rebase. The project adapter owns candidate construction and apply.
-export function projectUpdateAction(projects, requestId) {
-  const targets = (projects || []).filter(project => project.available && project.canonical_repo && project.kind !== 'external')
-  if (!targets.length) return null
-  const title = targets.length === 1 ? `Get ${targets[0].name} up to date` : 'Get projects up to date'
-  return {
-    title, event: 'update_source_projects', count: targets.length,
-    scopeLabel: title,
-    revision: `${targets.map(projectWorkRevision).sort().join('\u0001')}\u0001${requestId}`,
-    draft: [
-      title + '.',
-      'The owner requested this update from Contribute. Work only on these projects:',
-      ...targets.map(project => `- ${project.name}: ${project.key}; shared repository ${project.canonical_repo}`),
-      '',
-      'Read Contribute’s project-adapter workflow and the matching update procedure. Use the existing deterministic status, fetch, update, and landed-change recognition tools; use agent judgment for actual overlaps and unclear intent, not routine bookkeeping.',
-      'Fetch the latest accepted source read-only. Keep local changes on top of one exact accepted base, never interleaved. Build and test the candidate in isolation, preserving private work, uncommitted edits, and concurrent newer edits. Never reset, rebase, switch, or rewrite the shared live checkout by hand.',
-      'Use the project’s reviewed update path. Present any required update/apply approval and ask separately immediately before a server restart. Report unavailable adapters truthfully rather than improvising an updater.',
-      'This request does not authorize preparing or publishing contributions, pushing, commenting, or merging on GitHub. Return any real questions in the work chat and notify the owner with a direct link. Finish by verifying the accepted base, local overlay, and remaining differences.',
-    ].join('\n'),
-  }
-}
-
 // A quality verdict belongs to one immutable prepared head. Source freshness
 // and agent review are separate claims: the platform proves the former, while
 // the agent records the latter after its correctness/maintenance review.

@@ -575,6 +575,117 @@ class ContributionPushTest(unittest.TestCase):
     job.run()
     self.assertEqual(len(job.sent), 2)
 
+  def test_resolved_conflict_leaves_needs_you_when_the_pr_can_merge_again(self):
+    job = JobEndpoints()
+    job.node["comments"] = {"nodes": []}
+    job.node["mergeable"] = "CONFLICTING"
+    job.run()
+    self.assertEqual(job.record["attention"]["type"], "merge_conflict")
+    job.node["mergeable"] = "MERGEABLE"
+    job.run()
+    self.assertFalse(job.record["needs_attention"])
+    self.assertIsNone(job.record["attention"])
+
+  def test_approval_clears_an_earlier_changes_request(self):
+    job = JobEndpoints()
+    job.node["comments"] = {"nodes": []}
+    job.node["reviewDecision"] = "CHANGES_REQUESTED"
+    job.node["reviews"] = {"nodes": [{
+      "url": "https://github.com/example/project/pull/1#pullrequestreview-1",
+      "submittedAt": "2026-01-02T00:00:00Z", "state": "CHANGES_REQUESTED",
+      "author": {"login": "reviewer"}, "authorAssociation": "MEMBER",
+    }]}
+    job.run()
+    self.assertEqual(job.record["attention"]["type"], "changes_requested")
+    job.node["reviewDecision"] = "APPROVED"
+    job.run()
+    self.assertFalse(job.record["needs_attention"])
+
+  def test_conflict_masked_by_failing_checks_is_raised_once_checks_pass(self):
+    job = JobEndpoints()
+    job.node["comments"] = {"nodes": []}
+    rollup = {"state": "FAILURE"}
+    job.node["commits"] = {"nodes": [{"commit": {"statusCheckRollup": rollup}}]}
+    job.node["mergeable"] = "CONFLICTING"
+    job.run()
+    self.assertEqual(job.record["attention"]["type"], "checks_failed")
+    job.run()
+    self.assertEqual(job.record["attention"]["type"], "checks_failed")
+    rollup["state"] = "SUCCESS"
+    job.run()
+    self.assertTrue(job.record["needs_attention"])
+    self.assertEqual(job.record["attention"]["type"], "merge_conflict")
+    job.run()
+    self.assertEqual(job.record["attention"]["type"], "merge_conflict")
+
+  def test_raised_conflict_returns_unannounced_again_after_failing_checks_pass(self):
+    job = JobEndpoints()
+    job.node["comments"] = {"nodes": []}
+    job.node["mergeable"] = "CONFLICTING"
+    job.run()
+    conflict = copy.deepcopy(job.record["attention"])
+    self.assertEqual(conflict["type"], "merge_conflict")
+    rollup = {"state": "FAILURE"}
+    job.node["commits"] = {"nodes": [{"commit": {"statusCheckRollup": rollup}}]}
+    job.run()
+    self.assertEqual(job.record["attention"]["type"], "checks_failed")
+    sent = len(job.sent)
+    rollup["state"] = "SUCCESS"
+    job.run()
+    job.run()
+    self.assertTrue(job.record["needs_attention"])
+    self.assertEqual(job.record["attention"]["key"], conflict["key"])
+    self.assertEqual(job.record["attention"]["detected_at"], conflict["detected_at"])
+    self.assertEqual(len(job.sent), sent, "a returning blocker was already announced")
+    self.assertFalse(job.record.get("waiting_attention"))
+    job.node["mergeable"] = "MERGEABLE"
+    job.run()
+    self.assertFalse(job.record["needs_attention"])
+
+  def test_changes_request_returns_after_failing_checks_pass(self):
+    job = JobEndpoints()
+    job.node["comments"] = {"nodes": []}
+    job.node["reviewDecision"] = "CHANGES_REQUESTED"
+    job.node["reviews"] = {"nodes": [{
+      "url": "https://github.com/example/project/pull/1#pullrequestreview-1",
+      "submittedAt": "2026-01-02T00:00:00Z", "state": "CHANGES_REQUESTED",
+      "author": {"login": "reviewer"}, "authorAssociation": "MEMBER",
+    }]}
+    job.run()
+    rollup = {"state": "FAILURE"}
+    job.node["commits"] = {"nodes": [{"commit": {"statusCheckRollup": rollup}}]}
+    job.run()
+    self.assertEqual(job.record["attention"]["type"], "checks_failed")
+    rollup["state"] = "SUCCESS"
+    job.run()
+    self.assertEqual(job.record["attention"]["type"], "changes_requested")
+
+  def test_a_waiting_blocker_resolved_on_github_does_not_return(self):
+    job = JobEndpoints()
+    job.node["comments"] = {"nodes": []}
+    job.node["mergeable"] = "CONFLICTING"
+    job.run()
+    rollup = {"state": "FAILURE"}
+    job.node["commits"] = {"nodes": [{"commit": {"statusCheckRollup": rollup}}]}
+    job.run()
+    job.node["mergeable"] = "MERGEABLE"
+    rollup["state"] = "SUCCESS"
+    job.run()
+    self.assertFalse(job.record["needs_attention"])
+    self.assertFalse(job.record.get("waiting_attention"))
+
+  def test_dismissed_conflict_is_not_raised_again_for_the_same_head(self):
+    job = JobEndpoints()
+    job.node["comments"] = {"nodes": []}
+    job.node["mergeable"] = "CONFLICTING"
+    job.run()
+    sent = len(job.sent)
+    job.change(needs_attention=False)
+    job.run()
+    job.run()
+    self.assertFalse(job.record["needs_attention"])
+    self.assertEqual(len(job.sent), sent)
+
   def test_terminal_notifications_target_the_record_without_stale_attention(self):
     for state in ("MERGED", "CLOSED"):
       for record_id in ("fixture-record", "a" * 121, "a" * 122, "bad\n"):

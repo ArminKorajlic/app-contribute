@@ -33,7 +33,7 @@ export function RepositoryPicker({ token, connected, onAdded }) {
     finally { setBusy(false) }
   }
   return <div className={'co-repository-picker' + (open ? ' is-open' : '')} ref={rootRef}>
-    <button type="button" className="co-icon-action co-repository-trigger" aria-label="Add repository" title="Add repository" aria-expanded={open} onClick={() => setOpen(value => !value)}><Icon name="plus" size={18} /></button>
+    <button type="button" className="co-btn co-repository-trigger" aria-expanded={open} onClick={() => setOpen(value => !value)}><Icon name="plus" size={16} /><span>Add project</span></button>
     {open ? connected ? <form onSubmit={add}>
       <header><strong>Add a GitHub repository</strong><button type="button" className="co-quiet-action" onClick={() => setOpen(false)}><Icon name="close" size={17} /> Close</button></header>
       <label htmlFor="co-repository-name">Repository name or link</label>

@@ -8,7 +8,10 @@ export const CSS = `
 /* mobius-ui:Root v1 — app-owned copy; library candidate. */
 .co-root {
   box-sizing: border-box; position: relative; min-height: 0; height: 100%;
-  display: flex; flex-direction: column; overflow: hidden;
+  /* clip, not hidden: a hidden box is still a scroll container, so opening a
+     panel with scrollIntoView could scroll the whole app up and leave a blank
+     band below. Only .co-page scrolls. */
+  display: flex; flex-direction: column; overflow: hidden; overflow: clip;
   background: var(--bg); color: var(--text); font-family: var(--font); font-size: 16px; line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   -webkit-tap-highlight-color: transparent;
@@ -232,9 +235,9 @@ export const CSS = `
 .co-source-group-label {
   min-height: 36px; display: flex; align-items: center; padding: 8px 14px;
   background: var(--surface-2, var(--surface)); color: var(--muted);
-  font-size: 14px; font-weight: 720; letter-spacing: .045em;
-  text-transform: uppercase;
+  font-size: 14px; font-weight: 600;
 }
+.co-source-row-wrap.is-quiet .co-source-row-facts { color: var(--muted); }
 .co-source-row-wrap + .co-source-row-wrap { border-top: 1px solid var(--border); }
 .co-source-row {
   display: grid; grid-template-columns: 36px minmax(0, 1fr) auto;
@@ -1699,19 +1702,9 @@ export const CSS = `
 .co-workflow-option input { width:20px; height:20px; accent-color:var(--accent); }
 .co-pr-detail > summary { cursor:pointer; list-style:none; min-height:44px; }
 .co-pr-detail > summary::-webkit-details-marker { display:none; }
-.co-pr-assignment > p { width:100%; margin:0; font-size:15px; }
 .co-pr-workspace { margin: 16px 0 24px; border-block: 1px solid var(--border); }
 .co-pr-workspace > summary { display:flex; align-items:center; flex-wrap:wrap; gap:8px 16px; min-height:52px; cursor:pointer; font-size:18px; font-weight:650; }
 .co-pr-note { color:var(--muted); font-size:14px; font-weight:400; }
-.co-pr-confirm { border:1px solid var(--border); border-radius:14px; padding:18px; margin:12px 0 20px; background:var(--surface); }
-.co-pr-confirm h3 { margin:0 0 8px; font-size:18px; }
-.co-pr-confirm p { font-size:15px; max-width:68ch; margin:0 0 12px; }
-.co-pr-confirm ul { padding-left:20px; }
-.co-pr-confirm li { margin-bottom:12px; }
-.co-pr-confirm li span { display:block; color:var(--muted); font-size:14px; overflow-wrap:anywhere; }
-.co-pr-assignment { display:flex; flex-wrap:wrap; gap:12px; align-items:end; padding:12px 0; }
-.co-pr-assignment label { display:grid; gap:6px; font-size:14px; max-width:100%; }
-.co-pr-assignment select { min-height:44px; max-width:100%; border:1px solid var(--border); border-radius:8px; background:var(--surface); color:var(--text); font:inherit; padding:8px; }
 .co-pr-link { color:var(--accent); font-size:14px; min-height:44px; display:inline-flex; align-items:center; }
 @media (max-width:560px) { .co-pr-context { margin-left:0; width:100%; } .co-pr-workspace > summary { padding:10px 0; } }
 /* Precision workbench pass: contribution work stays easy to scan and decide on

@@ -155,10 +155,9 @@ test('working motion is opt-in and reduced-motion collapses it', () => {
   assert.match(controls, /mayMerge\(project\.viewerPermission\) && cycleAction \? \{ \.\.\.cycleAction, merge: true \}/)
   assert.match(controls, /workflow\.sendAgain\(\)/)
   assert.match(controls, /start\(run\.privateAction, prepareAgent\)/)
-  assert.match(controls, /start\(projectUpdateAction\(\[project\], Date\.now\(\)\), pullAgent\)/)
-  assert.match(controls, /Local work/)
-  assert.match(controls, /GitHub proposal/)
-  assert.doesNotMatch(controls, /disabled=\{!canStart\} onClick=\{\(\) => task\?\.open\('task:update'\)/)
+  // Updates belong to Settings and the App Store; Contribute starts no pull of its own.
+  assert.doesNotMatch(controls, /projectUpdateAction|task:update|pullAgent/)
+  assert.match(controls, /Nothing goes to GitHub until you press Send/)
 })
 
 test('pending continuations keep a cycle active; a terminal latest run (recovery_run_id) does not', () => {
@@ -389,9 +388,8 @@ test('a deleted conversation is recreated by the next start, still one active co
 })
 
 test('a start is bounded to the platform limits before it is saved or sent', async () => {
-  const { projectUpdateAction } = await import('../review.js')
-  const project = { key: 'app:long', kind: 'app', name: 'A'.repeat(110) + ' tracker', canonical_repo: 'owner/long', available: true }
-  const action = projectUpdateAction([project], 1)
+  const longTitle = `Prepare ${'A'.repeat(110)} tracker`
+  const action = { ...ACTION, agent: undefined, title: longTitle, scopeLabel: longTitle }
   assert.ok(String(action.scopeLabel).length > 120, 'fixture: a valid long app name exceeds the platform label limit')
   let saved = null
   const sent = []
