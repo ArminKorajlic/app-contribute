@@ -151,6 +151,20 @@ export async function fetchReviewStatus(token, appId, recordIds = []) {
 // POSTs one read-only GraphQL document; returns response.data or null.
 // Callers leave records stale on null — the refresh is best-effort polish,
 // and GitHub returns null nodes (not errors) for anything inaccessible.
+// The one PR shape every live list shares: lists, incoming reviews and the
+// Desk home all read these fields. collaboration.js re-exports it.
+export const PR_FIELDS = `id number title url headRefOid headRefName baseRefName baseRefOid baseRef { target { oid } } isDraft
+  additions deletions changedFiles createdAt updatedAt
+  author { login } assignees(first:100) { nodes { login } }
+  repository { nameWithOwner viewerPermission }
+  headRepository { nameWithOwner viewerPermission isArchived }
+  labels(first:20) { nodes { name color } totalCount }
+  comments { totalCount }
+  commits(last:1) { nodes { commit { statusCheckRollup { state contexts {
+    totalCount checkRunCountsByState { state count } statusContextCountsByState { state count }
+  } } } } }
+  reviewDecision mergeable`
+
 export async function fetchLiveStates(token, query) {
   try {
     const r = await fetchRead('/api/github/graphql', {
@@ -170,10 +184,9 @@ export async function fetchLiveStates(token, query) {
 // each flagged when it actually asks for the viewer's review. GitHub's
 // "involves" search does not cover review requests, so both are read at once.
 export async function fetchIncomingReviews(token) {
-  const fields = 'id number title url headRefOid baseRefName baseRefOid isDraft author { login } assignees(first:100) { nodes { login } } repository { nameWithOwner viewerPermission } reviewDecision mergeable'
   const query = `query ContributeIncomingReviews {
-    involved: search(query: "is:pr is:open involves:@me", type: ISSUE, first: 50) { nodes { ... on PullRequest { ${fields} } } }
-    requested: search(query: "is:pr is:open review-requested:@me", type: ISSUE, first: 50) { nodes { ... on PullRequest { ${fields} } } }
+    involved: search(query: "is:pr is:open involves:@me", type: ISSUE, first: 50) { nodes { ... on PullRequest { ${PR_FIELDS} } } }
+    requested: search(query: "is:pr is:open review-requested:@me", type: ISSUE, first: 50) { nodes { ... on PullRequest { ${PR_FIELDS} } } }
   }`
   const data = await fetchLiveStates(token, query)
   const valid = nodes => (Array.isArray(nodes) ? nodes : []).filter((item) => item?.repository?.nameWithOwner && item?.number && item?.url)
