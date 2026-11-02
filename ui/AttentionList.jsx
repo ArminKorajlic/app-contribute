@@ -9,8 +9,8 @@ import { TimeAgo } from './GithubParts.jsx'
 const ATTENTION_REASONS = {
   merge_conflict: { label: 'Merge blocked', tone: 'blocker', icon: 'fix', action: 'Review conflict' },
   checks_failed: { label: 'Checks failing', tone: 'blocker', icon: 'fix', action: 'Review checks' },
-  changes_requested: { label: 'Changes requested', tone: 'blocker', icon: 'feedback', action: 'Open PR' },
-  github_activity: { label: 'New feedback', tone: 'news', icon: 'feedback', action: 'Open PR' },
+  changes_requested: { label: 'Changes requested', tone: 'blocker', icon: 'feedback', action: 'View PR' },
+  github_activity: { label: 'New feedback', tone: 'news', icon: 'feedback', action: 'View PR' },
 }
 // Decisions about publishing itself, whatever the record's GitHub attention.
 const KIND_REASONS = {
@@ -72,7 +72,7 @@ export function AttentionList({ items = [], heading, onSelect }) {
   const ordered = byUrgency(items)
   const shown = showAll ? ordered : ordered.slice(0, VISIBLE_ROWS)
   return (
-    <details className="co-run-fold co-look-at" aria-label="To look at" open>
+    <details className="co-run-fold co-look-at" aria-label="To look at">
       <summary><span>To look at</span><b>{items.length}</b><Icon name="chevron" size={14} /></summary>
       <p className="co-attention-scope">On your tracked contributions. Review requests have their own tab below.</p>
       <div className="co-run-list">{shown.map(item => <AttentionRow key={item.id} item={item} heading={heading} onSelect={onSelect} />)}</div>

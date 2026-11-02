@@ -739,7 +739,7 @@ window.runWorkspaceChecks = async () => {
       ensure(!query('.co-pr-row'),'Empty result kept stale rows')
       window.emptyPulls=false; window.holdPulls=true
       await click(checkButton())
-      await until(()=>window.releasePulls && text(query('.co-pr-empty')).includes('Loading pull requests'),'Loading confused with empty')
+      await until(()=>window.releasePulls && query('.co-pr-skel'),'Loading confused with empty')
       ensure(!text(query('.co-pr-empty')).includes('No pull requests'),'Loading claimed an empty result')
       window.holdPulls=false; window.releasePulls(); window.releasePulls=null
       await until(()=>document.querySelectorAll('.co-pr-row').length===3,'Released inventory did not load')

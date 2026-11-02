@@ -414,6 +414,15 @@ export const WORKSPACE_CSS = `
 .co-gh-comment > header b { color:var(--text); }
 .co-gh-comment > header a { margin-left:auto; }
 .co-gh-comment > .co-markdown,.co-gh-comment > div { padding:12px 14px; font-size:15px; }
+.co-gh-comment.is-changes { border-color:color-mix(in srgb,var(--danger) 55%,var(--border)); }
+.co-gh-comment.is-changes > header { border-bottom-color:color-mix(in srgb,var(--danger) 35%,var(--border)); }
+.co-gh-comment.is-approved { border-color:color-mix(in srgb,var(--green) 55%,var(--border)); }
+.co-gh-comment.is-approved > header { border-bottom-color:color-mix(in srgb,var(--green) 35%,var(--border)); }
+.co-gh-comment.is-reviewed { border-color:color-mix(in srgb,var(--accent) 45%,var(--border)); }
+.co-gh-comment.is-dismissed { opacity:.75; }
+.co-comment-body { --co-clamp-fade:var(--bg); }
+.co-comment-body .co-desc-body { max-height:13em; }
+.co-comment-body .co-quiet-action { display:block; width:fit-content; margin:4px 0 0 auto; }
 .co-gh-merge-state { margin:6px 0 10px; color:var(--muted); font-size:14px; }
 .co-gh-merge-state:empty { display:none; }
 @media (max-width:680px) {
@@ -682,7 +691,18 @@ input[type=checkbox].co-switch:focus-visible { outline:2px solid var(--accent); 
 .co-desc-content { padding:12px 14px 12px; border-top:1px solid var(--border); }
 .co-desc-body { position:relative; overflow:hidden; max-height:16em; }
 .co-desc-body.is-open { max-height:none; }
-.co-desc-body:not(.is-open)::after { content:''; position:absolute; left:0; right:0; bottom:0; height:30px; background:linear-gradient(transparent,var(--surface)); pointer-events:none; }
+.co-desc-body:not(.is-open)::after { content:''; position:absolute; left:0; right:0; bottom:0; height:30px; background:linear-gradient(transparent,var(--co-clamp-fade,var(--surface))); pointer-events:none; }
+.co-skel { display:flex; flex-direction:column; gap:9px; padding:10px 2px; }
+.co-skel span { display:block; height:12px; border-radius:6px; background:color-mix(in srgb,var(--muted) 14%,transparent); animation:co-skel-pulse 1.4s ease-in-out infinite; }
+.co-skel span:nth-child(2) { animation-delay:.15s; }
+.co-skel span:nth-child(3) { animation-delay:.3s; }
+.co-skel span:nth-child(4) { animation-delay:.45s; }
+@keyframes co-skel-pulse { 0%,100% { opacity:.55; } 50% { opacity:1; } }
+.co-pr-skel { padding:14px 16px; display:flex; flex-direction:column; gap:18px; border-top:1px solid var(--border); }
+.co-pr-skel .co-skel { padding:0; }
+@keyframes co-pane-in { from { opacity:0; transform:translateY(5px); } to { opacity:1; transform:none; } }
+.co-workspace,.co-pull-page,.co-desk-envelopes,.co-directory,.co-stage-empty { animation:co-pane-in .16s ease-out; }
+@media(prefers-reduced-motion:reduce) { .co-skel span { animation:none; } .co-workspace,.co-pull-page,.co-desk-envelopes,.co-directory,.co-stage-empty { animation:none; } }
 @media(prefers-reduced-motion:reduce) { .co-desc-title .co-icon { transition:none; } }
 .co-pull-page .co-gh-pr-title { font-size:24px; letter-spacing:-.015em; }
 .co-gh-labels { margin-top:8px; }

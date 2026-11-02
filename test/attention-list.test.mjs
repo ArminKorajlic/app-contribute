@@ -28,7 +28,7 @@ test('each To look at reason names what it is and what its button opens', async 
   const checks = lookAtReason(item('b', 'private_review', pr(2, { type: 'checks_failed' })))
   assert.deepEqual([checks.label, checks.action], ['Checks failing', 'Review checks'])
   const news = lookAtReason(item('c', 'private_review', pr(3, { type: 'github_activity' })))
-  assert.deepEqual([news.label, news.tone, news.action], ['New feedback', 'news', 'Open PR'])
+  assert.deepEqual([news.label, news.tone, news.action], ['New feedback', 'news', 'View PR'])
   assert.equal(lookAtReason(item('d', 'route_attention', pr(4, { type: 'merge_conflict' }))).label, 'Choose where to send')
   assert.equal(lookAtReason(item('e', 'public_attention', pr(5, { type: 'something_new' }))).label, 'Needs your decision')
 })
@@ -42,6 +42,8 @@ test('an older merge blocker stays visible ahead of three newer comments', async
   assert.deepEqual(byUrgency(items).map(entry => entry.id), ['old', 'c10', 'c11', 'c12'])
   const html = render({ items, heading })
   assert.match(html, /aria-label="To look at"/)
+  // Folded on open: the count is enough until the owner expands it.
+  assert.doesNotMatch(html, /aria-label="To look at" open/)
   assert.match(html, /<b>4<\/b>/)
   assert.match(html, /Merge blocked[\s\S]*#9[\s\S]*Review conflict/)
   assert.doesNotMatch(html, /#12/)
