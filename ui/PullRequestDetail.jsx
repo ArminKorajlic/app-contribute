@@ -69,21 +69,54 @@ function threadLocation(thread) {
   if (Number.isInteger(thread.originalLine)) return `original line ${thread.originalStartLine && thread.originalStartLine !== thread.originalLine ? `${thread.originalStartLine}–` : ''}${thread.originalLine}`
   return 'line unavailable'
 }
-// Unanswered feedback on the owner's own tracked PR, kept visible under the
-// folded description. The record's attention is server-maintained: it appears
-// when a review or comment lands and clears once the author addresses it, so
-// no flag means nothing waits. Other people's PRs carry no record and no flag.
-const FEEDBACK_FLAGS = {
-  changes_requested: { label: 'Changes requested', tone: 'blocker' },
-  github_activity: { label: 'New feedback', tone: 'news' },
+// What a GitHub event url points at: the numeric id of the review or comment.
+// The owner copies it to name the exact event in a reply or an agent task.
+export function commentReference(url) {
+  const match = /#(?:pullrequestreview-|issuecomment-|discussion_r)(\d+)/.exec(url || '')
+  return match ? match[1] : ''
 }
-export function PullFeedbackFlag({ record }) {
-  const flag = FEEDBACK_FLAGS[record?.attention?.type]
+
+export function CopyId({ id, label = 'id' }) {
+  const [copied, setCopied] = useState(false)
+  if (!id) return null
+  return <button type="button" className="co-copy-id" title={`Copy ${label} ${id}`}
+    onClick={() => {
+      try { navigator.clipboard?.writeText(String(id)) } catch { /* title still shows the id */ }
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1500)
+    }}>{copied ? 'Copied' : `#${id}`}</button>
+}
+
+// New feedback on a tracked PR, kept visible under the folded description.
+// The record's attention is server-maintained: it appears when a review or
+// comment lands and clears once addressed, so no flag means nothing waits.
+// An approving review or a recorded all-clear agent review is good news, not
+// a task: it gets the green box, naming the posted review's copyable id.
+const FEEDBACK_FLAGS = {
+  changes_requested: { label: 'Changes requested', tone: 'blocker', note: '— not addressed yet. The review text is under Comments.' },
+  github_activity: { label: 'New feedback', tone: 'news', note: '— the text is under Comments.' },
+}
+export function PullFeedbackFlag({ record, status = null, activity = null }) {
+  const attention = record?.attention
+  const flag = FEEDBACK_FLAGS[attention?.type]
+  const reference = commentReference(attention?.url)
+  const flagged = reference ? (activity?.items || []).find(item => String(item.id) === reference) : null
+  const clear = attention?.type === 'github_activity'
+    && (flagged?.state === 'APPROVED' || status?.item?.state === 'all_clear')
+  if (clear) {
+    return <p className="co-pr-feedback-flag is-clear" role="status">
+      <Icon name="check" size={15} />
+      <b>Review clear</b>
+      <span>— this review found no blocking problems. Review</span>
+      <CopyId id={reference || commentReference(status?.item?.public_review?.url)} label="review id" />
+    </p>
+  }
   if (!flag) return null
   return <p className={'co-pr-feedback-flag is-' + flag.tone} role="status">
     <Icon name="feedback" size={15} />
     <b>{flag.label}</b>
-    <span>on your PR — not addressed yet. The review text is under Comments.</span>
+    <span>{flag.note}</span>
+    <CopyId id={reference} label={attention?.type === 'changes_requested' ? 'review id' : 'comment id'} />
   </p>
 }
 
@@ -160,7 +193,7 @@ export function PullRequestDetail(props) {
   const identity = `${pr.repository?.nameWithOwner}#${pr.number}:${pr.headRefOid}:${pr.baseRefOid}:${pr.baseRefName}`
   return <PullRequestDetailView key={identity} {...props} />
 }
-function PullRequestDetailView({ cacheStore, pr, token, onReview, onAssign, onRefresh, canAssign, status, onProgress, onRecord, record, readOnly = false, provenance = [] }) {
+function PullRequestDetailView({ cacheStore, pr, token, onReview, onAssign, onRefresh, canAssign, status, onProgress, onRecord, record, readOnly = false, provenance = [], holdUntilLoaded = false }) {
   const [tab, setTab] = useState('conversation')
   const [cache, setCache] = useState(() => cacheStore?.entries || {})
   const cacheRef = useRef(cache)
@@ -262,6 +295,16 @@ function PullRequestDetailView({ cacheStore, pr, token, onReview, onAssign, onRe
   const labels = pr.labels?.nodes || []
   const tabs = [['conversation', 'Comments'], ['files', 'Files changed'], ['checks', 'Checks']]
   const githubUrl = safeDetailLink(pr.url)
+  // The conversation loads as one unit: a single skeleton stands in for the
+  // description, the flag and the comments, and everything appears together.
+  // A PR page holds the whole detail back instead of revealing it in parts.
+  const conversationLoading = tab === 'conversation'
+    && [description, activity, threads, related].some(value => value.loading)
+  if (holdUntilLoaded && conversationLoading) {
+    return <div className="co-pr-detail" aria-label={`Details for PR ${pr.number}`}>
+      <Skeleton lines={8} label="Loading the pull request" />
+    </div>
+  }
   return <div className="co-pr-detail" aria-label={`Details for PR ${pr.number}`}>
     <header className="co-gh-pr-head">
       <h3 className="co-gh-pr-title">{pr.title} <span>#{pr.number}</span></h3>
@@ -270,11 +313,12 @@ function PullRequestDetailView({ cacheStore, pr, token, onReview, onAssign, onRe
     <div className="co-pr-detail-actions">
       {!readOnly ? <AgentMenu variant="button" align="start" disabled={stale} onChoose={mode => onReview?.(mode)} ariaLabel={`Choose what an agent does with PR ${pr.number}`} /> : null}
       {!readOnly && canAssign ? <button className="co-btn" disabled={stale} onClick={onAssign}><Icon name="person" /> Assign</button> : null}
-      {status ? <button className="co-btn" onClick={onProgress}>Agent progress</button> : null}
+      {status && onProgress ? <button className="co-btn" onClick={onProgress}>Agent progress</button> : null}
       {githubUrl ? <a className="co-btn" href={githubUrl} target="_blank" rel="noopener noreferrer" aria-label={`Open on GitHub: PR ${pr.number}`}><Icon name="github" /> Open</a> : null}
     </div>
     <div className="co-gh-pr-sub"><PullStateBadge pr={pr} /><span><b>{pr.author?.login || 'Someone'}</b> wants to merge into <code>{pr.baseRefName}</code>{pr.headRefName ? <> from <code>{pr.headRefName}</code></> : null}</span></div>
     <PullProvenance record={record} onRecord={onRecord} conversations={provenance} />
+    {conversationLoading ? null : <>
     <details className="co-gh-description">
       <summary>
         <span className="co-desc-title"><Icon name="chevron" size={14} />Description</span>
@@ -285,15 +329,17 @@ function PullRequestDetailView({ cacheStore, pr, token, onReview, onAssign, onRe
         {ready(description) ? <ClampedMarkdown markdown={description.data?.body || '_No description provided._'} /> : null}
       </div>
     </details>
-    <PullFeedbackFlag record={record} />
+    <PullFeedbackFlag record={record} status={status} activity={ready(activity) ? activity.data : null} />
+    </>}
     <nav className="co-detail-tabs" aria-label="Pull request details">{tabs.map(([key, label]) => <button key={key} aria-pressed={tab === key} onClick={() => setTab(key)}>{label}
       {key === 'files' && Number.isInteger(pr.changedFiles) ? <><span className="co-tab-count">{pr.changedFiles}</span><span className="co-change-total"><b>+{pr.additions}</b><em>−{pr.deletions}</em></span></> : null}
       {key === 'checks' ? <ChecksBadge pr={pr} /> : null}</button>)}</nav>
     <div className="co-pr-detail-body" role="region" aria-label="Pull request context">
     {stale ? <p role="alert">This PR changed since the list was loaded. <button className="co-btn" onClick={onRefresh}>Refresh PR list</button></p> : null}
-    {tab === 'conversation' ? <>
+    {tab === 'conversation' && conversationLoading ? <Skeleton lines={7} label="Loading the conversation" /> : null}
+    {tab === 'conversation' && !conversationLoading ? <>
       {ready(activity) && !activity.data?.items?.length && number === 1 ? <p className="co-pr-note">No comments yet.</p> : null}
-      {ready(activity) ? activity.data?.items?.map(item => <article className={'co-gh-comment' + reviewTone(item)} key={`${item.kind}:${item.id}`}><header><b>{item.user?.login || 'Contributor'}</b> {item.kind === 'review' ? (item.state || 'reviewed').toLowerCase().replaceAll('_', ' ') : 'commented'} <DateLabel value={item.date} time /></header>{item.body ? <div className="co-comment-body"><ClampedMarkdown markdown={item.body} /></div> : null}</article>) : null}
+      {ready(activity) ? activity.data?.items?.map(item => <article className={'co-gh-comment' + reviewTone(item)} key={`${item.kind}:${item.id}`}><header><b>{item.user?.login || 'Contributor'}</b> {item.kind === 'review' ? (item.state || 'reviewed').toLowerCase().replaceAll('_', ' ') : 'commented'} <DateLabel value={item.date} time /><CopyId id={item.id} label={item.kind === 'review' ? 'review id' : 'comment id'} /></header>{item.body ? <div className="co-comment-body"><ClampedMarkdown markdown={item.body} /></div> : null}</article>) : null}
       {readState(activity, 'comments')}
       {ready(activity) ? pager(number, activity.data?.hasMore, false, value => setPage(old => ({ ...old, conversation: value }))) : null}
       {readState(threads, 'inline discussions')}

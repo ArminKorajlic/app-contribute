@@ -473,10 +473,11 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
       {runError ? <p className="co-pr-note" role="status">Agent progress unavailable: {runError}</p> : null}
       {loadError}
       {assignPane}
-      {detailPr ? <>
-        {relevantRuns.filter(run => runAnchor(run) === opened).map(runPane)}
-        <TaskPane id="task:detail" dock={false}><PullRequestDetail key={`${prKey(detailPr)}:${detailPr.headRefOid}:${detailPr.baseRefOid}:${detailRevision}`} cacheStore={detailSnapshot(detailPr)} pr={detailPr} token={token} onReview={mode => choose([detailPr], mode, opened)} onAssign={() => assignSelection([detailPr], opened)} onRefresh={() => load()} readOnly={!isOpenPull(detailPr)} canAssign={mayAssign(detailPr.repository.viewerPermission)} status={statusFor(detailPr)} onProgress={() => task?.open(`task:run:${statusFor(detailPr)?.run.id}`)} record={recordsForPull(records, detailPr)[0]} onRecord={onRecord} provenance={pullConversations(records, relevantRuns, detailPr)} /></TaskPane>
-      </> : data.loading || data.error ? <Skeleton lines={4} label="Loading the pull request" /> : <p className="co-pr-note" role="status">This pull request is not in the open list. It may be closed; refresh to check.</p>}
+      {/* The saved agent-review record never leads the page: its outcome shows
+          as the flag under the description, and My work keeps the full run. */}
+      {detailPr ? (
+        <TaskPane id="task:detail" dock={false}><PullRequestDetail key={`${prKey(detailPr)}:${detailPr.headRefOid}:${detailPr.baseRefOid}:${detailRevision}`} cacheStore={detailSnapshot(detailPr)} pr={detailPr} token={token} onReview={mode => choose([detailPr], mode, opened)} onAssign={() => assignSelection([detailPr], opened)} onRefresh={() => load()} readOnly={!isOpenPull(detailPr)} canAssign={mayAssign(detailPr.repository.viewerPermission)} status={statusFor(detailPr)} onProgress={null} record={recordsForPull(records, detailPr)[0]} onRecord={onRecord} provenance={pullConversations(records, relevantRuns, detailPr)} holdUntilLoaded /></TaskPane>
+      ) : data.loading || data.error ? <Skeleton lines={8} label="Loading the pull request" /> : <p className="co-pr-note" role="status">This pull request is not in the open list. It may be closed; refresh to check.</p>}
       {reviewDialog}
     </section>
   }
