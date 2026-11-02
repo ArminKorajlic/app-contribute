@@ -7,9 +7,20 @@ import { AgentMenu } from './AgentMenu.jsx'
 import { ChecksBadge, GithubLabel, PullStateBadge, REVIEW_DECISION } from './GithubParts.jsx'
 import { openAgentConversation } from './BatchAction.jsx'
 
-export function DateLabel({ value, prefix = '' }) {
+export function DateLabel({ value, prefix = '', time = false }) {
   if (!value || !Number.isFinite(Date.parse(value))) return null
-  return <time dateTime={value} title={new Date(value).toLocaleString(undefined, { hourCycle: 'h23' })}>{prefix}{new Date(value).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}</time>
+  const at = new Date(value)
+  const day = at.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
+  const text = time ? `${day} · ${at.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })}` : day
+  return <time dateTime={value} title={at.toLocaleString(undefined, { hourCycle: 'h23' })}>{prefix}{text}</time>
+}
+
+// A quiet placeholder with the rough shape of the incoming text instead of a
+// "Loading…" sentence; the label keeps the state readable to assistive tech.
+export function Skeleton({ lines = 3, label = 'Loading' }) {
+  return <div className="co-skel" role="status" aria-label={label}>
+    {Array.from({ length: lines }, (_, index) => <span key={index} style={{ width: `${96 - (index % 3) * 22}%` }} />)}
+  </div>
 }
 // Roughly ten text lines stay visible; anything longer waits behind Show
 // more. Measured while clamped, so the control appears only when needed.
@@ -24,6 +35,15 @@ function ClampedMarkdown({ markdown }) {
     <div ref={body} className={'co-desc-body' + (expanded ? ' is-open' : '')}><MarkdownView markdown={markdown} /></div>
     {overflows || expanded ? <button type="button" className="co-quiet-action" onClick={() => setExpanded(value => !value)}>{expanded ? 'Show less' : 'Show more'}</button> : null}
   </>
+}
+
+// Each comment box carries its review verdict on its border: red for a
+// requested change, green for an approval, the accent for a plain review
+// note, grey for a dismissed verdict. Ordinary comments keep the quiet border.
+const REVIEW_TONES = { APPROVED: ' is-approved', CHANGES_REQUESTED: ' is-changes', DISMISSED: ' is-dismissed' }
+function reviewTone(item) {
+  if (item?.kind !== 'review') return ''
+  return REVIEW_TONES[item.state] ?? ' is-reviewed'
 }
 
 function openedLine(login, value) {
@@ -127,7 +147,7 @@ export function PullThreads({ data }) {
   return <section aria-label="Inline review discussions"><h4>Inline discussions</h4>
     {data?.threads?.map(thread => <article className="co-activity-item" key={thread.id}>
       <header style={{ overflowWrap: 'anywhere' }}><strong>{thread.path || 'File not provided'}</strong> · {threadLocation(thread)} · {thread.isResolved === true ? 'Resolved' : thread.isResolved === false ? 'Unresolved' : 'Resolution unknown'}{thread.isOutdated ? ' · Outdated location' : ''}</header>
-      {thread.comments?.nodes?.filter(Boolean).map(comment => <div key={comment.id} style={{ padding: '12px 0' }}><div className="co-detail-stats"><span>{comment.author?.login || 'Contributor'}</span><DateLabel value={comment.createdAt} /><DetailLink href={comment.url}>View comment</DetailLink></div><MarkdownView markdown={comment.body || 'No written comment.'} /></div>)}
+      {thread.comments?.nodes?.filter(Boolean).map(comment => <div key={comment.id} style={{ padding: '12px 0' }}><div className="co-detail-stats"><span>{comment.author?.login || 'Contributor'}</span><DateLabel value={comment.createdAt} time /></div><MarkdownView markdown={comment.body || 'No written comment.'} /></div>)}
       {thread.comments?.pageInfo?.hasNextPage ? <p className="co-pr-note">First 50 of {thread.comments.totalCount} comments shown in this thread. More replies remain on GitHub.</p> : null}
       {!thread.comments ? <p role="alert">Thread comments are unavailable.</p> : null}
     </article>)}
@@ -227,7 +247,7 @@ function PullRequestDetailView({ cacheStore, pr, token, onReview, onAssign, onRe
     writeCache(old => { const next = { ...old }; delete next[keys.related]; return next })
   }
   function readState(value, label, onRetry = tryAgain) {
-    return <>{value.loading ? <p className="co-pr-note" role="status">Loading {label}…</p> : null}{value.error ? <div role="alert"><p>{value.error}</p><button className="co-btn" onClick={value.stale ? onRefresh : onRetry}>{value.stale ? 'Refresh PR list' : 'Try again'}</button></div> : null}<ReadErrors errors={value.data?.errors} onRetry={onRetry} /></>
+    return <>{value.loading ? <Skeleton label={`Loading ${label}`} /> : null}{value.error ? <div role="alert"><p>{value.error}</p><button className="co-btn" onClick={value.stale ? onRefresh : onRetry}>{value.stale ? 'Refresh PR list' : 'Try again'}</button></div> : null}<ReadErrors errors={value.data?.errors} onRetry={onRetry} /></>
   }
   const ready = value => !value.loading && !value.error && !stale
   const description = entry(keys.description || '')
@@ -273,7 +293,7 @@ function PullRequestDetailView({ cacheStore, pr, token, onReview, onAssign, onRe
     {stale ? <p role="alert">This PR changed since the list was loaded. <button className="co-btn" onClick={onRefresh}>Refresh PR list</button></p> : null}
     {tab === 'conversation' ? <>
       {ready(activity) && !activity.data?.items?.length && number === 1 ? <p className="co-pr-note">No comments yet.</p> : null}
-      {ready(activity) ? activity.data?.items?.map(item => <article className="co-gh-comment" key={`${item.kind}:${item.id}`}><header><b>{item.user?.login || 'Contributor'}</b> {item.kind === 'review' ? (item.state || 'reviewed').toLowerCase().replaceAll('_', ' ') : 'commented'} <DateLabel value={item.date} />{item.html_url ? <DetailLink href={item.html_url}>View</DetailLink> : null}</header>{item.body ? <MarkdownView markdown={item.body} /> : null}</article>) : null}
+      {ready(activity) ? activity.data?.items?.map(item => <article className={'co-gh-comment' + reviewTone(item)} key={`${item.kind}:${item.id}`}><header><b>{item.user?.login || 'Contributor'}</b> {item.kind === 'review' ? (item.state || 'reviewed').toLowerCase().replaceAll('_', ' ') : 'commented'} <DateLabel value={item.date} time /></header>{item.body ? <div className="co-comment-body"><ClampedMarkdown markdown={item.body} /></div> : null}</article>) : null}
       {readState(activity, 'comments')}
       {ready(activity) ? pager(number, activity.data?.hasMore, false, value => setPage(old => ({ ...old, conversation: value }))) : null}
       {readState(threads, 'inline discussions')}

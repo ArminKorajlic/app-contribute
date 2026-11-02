@@ -3,7 +3,7 @@ import { awaitsGithub, OWNER_ITEM_STATES, collaborationRequest, discoverPull, di
 import { acknowledgeAssignment, emptyPullView, invalidatedSelection, isOpenPull, observePulls, pullsInView } from '../pull-view.js'
 import { pullConversations, recordsForPull } from '../provenance.js'
 import { RunDetail, savedVersion } from './RunDetail.jsx'
-import { PullRequestDetail } from './PullRequestDetail.jsx'
+import { PullRequestDetail, Skeleton } from './PullRequestDetail.jsx'
 import { Avatar, ChecksBadge, GithubLabel, PullStateIcon, REVIEW_DECISION, TimeAgo } from './GithubParts.jsx'
 import { TaskPane, useProjectTask, focusActionRegion } from './TaskPane.jsx'
 import { useFocusLease } from './useFocusLease.js'
@@ -476,7 +476,7 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
       {detailPr ? <>
         {relevantRuns.filter(run => runAnchor(run) === opened).map(runPane)}
         <TaskPane id="task:detail" dock={false}><PullRequestDetail key={`${prKey(detailPr)}:${detailPr.headRefOid}:${detailPr.baseRefOid}:${detailRevision}`} cacheStore={detailSnapshot(detailPr)} pr={detailPr} token={token} onReview={mode => choose([detailPr], mode, opened)} onAssign={() => assignSelection([detailPr], opened)} onRefresh={() => load()} readOnly={!isOpenPull(detailPr)} canAssign={mayAssign(detailPr.repository.viewerPermission)} status={statusFor(detailPr)} onProgress={() => task?.open(`task:run:${statusFor(detailPr)?.run.id}`)} record={recordsForPull(records, detailPr)[0]} onRecord={onRecord} provenance={pullConversations(records, relevantRuns, detailPr)} /></TaskPane>
-      </> : <p className="co-pr-note" role="status">{data.loading || data.error ? 'Loading the pull request…' : 'This pull request is not in the open list. It may be closed; refresh to check.'}</p>}
+      </> : data.loading || data.error ? <Skeleton lines={4} label="Loading the pull request" /> : <p className="co-pr-note" role="status">This pull request is not in the open list. It may be closed; refresh to check.</p>}
       {reviewDialog}
     </section>
   }
@@ -496,7 +496,7 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
     <SelectionTray selection={selection} visible={selectableVisible} shown={data.hasNextPage ? data.total || visible.length : visible.length} loading={data.loading} busy={busy} onClear={() => setSelected(new Set())} onSelectVisible={() => setSelected(old => { const next = new Set(old); const all = selectableVisible.every(pr => next.has(prKey(pr))); selectableVisible.forEach(pr => all ? next.delete(prKey(pr)) : next.add(prKey(pr))); return next })} onReview={choose} onAssign={() => assignSelection()} />
     {!assignAnchor ? assignPane : null}
     {relevantRuns.filter(run => !visibleKeys.has(runAnchor(run))).map(runPane)}
-    {data.loading && !pulls.length ? <p className="co-pr-empty" role="status">Loading pull requests…</p> : null}
+    {data.loading && !pulls.length ? <div className="co-pr-skel" role="status" aria-label="Loading pull requests">{[3, 2, 3].map((lines, index) => <Skeleton key={index} lines={lines} label="" />)}</div> : null}
     {!data.loading && !data.error && !visible.length ? <EmptyPulls scope={scope} filter={filter} query={query} hasNextPage={data.hasNextPage} waiting={requestedKeys.size} /> : null}
     <div className="co-pr-list">{visible.map(pr => {
       const key = prKey(pr)

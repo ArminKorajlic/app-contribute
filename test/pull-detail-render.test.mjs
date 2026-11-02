@@ -130,3 +130,33 @@ test('a PR without your tracked record, or with answered feedback, carries no fe
   const answered = await render(t, 'PullRequestDetail', { pr, record: { attention: null } })
   assert.doesNotMatch(answered, /co-pr-feedback-flag/)
 })
+
+test('comments carry their verdict color, a clock time, a Show more clamp, and no View link', async t => {
+  const pr = { number: 9, repository: { nameWithOwner: 'team/repo' }, headRefOid: 'a'.repeat(40), baseRefOid: 'b'.repeat(40), baseRefName: 'main', url: 'https://github.com/team/repo/pull/9' }
+  const html = await render(t, 'PullRequestDetail', { pr, cacheStore: { entries: {
+    'description:1': { data: { body: 'Body' }, loading: false },
+    'activity:1': { data: { items: [
+      { kind: 'review', id: 1, state: 'CHANGES_REQUESTED', user: { login: 'miljanm' }, date: '2026-10-30T21:40:00Z', body: 'Please fix', html_url: 'https://github.com/x' },
+      { kind: 'review', id: 2, state: 'APPROVED', user: { login: 'irfan' }, date: '2026-10-30T22:05:00Z', body: 'LGTM', html_url: 'https://github.com/y' },
+      { kind: 'comment', id: 3, user: { login: 'armin' }, date: '2026-10-31T08:15:00Z', body: 'Note', html_url: 'https://github.com/z' },
+    ] }, loading: false },
+    'threads:': { data: { threads: [] }, loading: false },
+    related: { data: { items: [] }, loading: false },
+  } } })
+  if (!html) return
+  assert.match(html, /co-gh-comment is-changes/)
+  assert.match(html, /co-gh-comment is-approved/)
+  assert.match(html, /class="co-gh-comment"[\s\S]*?armin/) // plain comment keeps the quiet border
+  assert.match(html, / · \d{2}:\d{2}</) // time beside the date
+  assert.doesNotMatch(html, />View<\/a>/)
+  assert.match(html, /co-comment-body/)
+  assert.match(html, /class="co-desc-body/)
+})
+
+test('a fresh read shows a skeleton, never a Loading sentence', async t => {
+  const pr = { number: 9, repository: { nameWithOwner: 'team/repo' }, headRefOid: 'a'.repeat(40), baseRefOid: 'b'.repeat(40), baseRefName: 'main', url: 'https://github.com/team/repo/pull/9' }
+  const html = await render(t, 'PullRequestDetail', { pr })
+  if (!html) return
+  assert.match(html, /class="co-skel" role="status" aria-label="Loading description"/)
+  assert.doesNotMatch(html, /Loading comments…|Loading description…/)
+})
