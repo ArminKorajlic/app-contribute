@@ -11,6 +11,29 @@ export function DateLabel({ value, prefix = '' }) {
   if (!value || !Number.isFinite(Date.parse(value))) return null
   return <time dateTime={value} title={new Date(value).toLocaleString(undefined, { hourCycle: 'h23' })}>{prefix}{new Date(value).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}</time>
 }
+// Roughly ten text lines stay visible; anything longer waits behind Show
+// more. Measured while clamped, so the control appears only when needed.
+function ClampedMarkdown({ markdown }) {
+  const [expanded, setExpanded] = useState(false)
+  const [overflows, setOverflows] = useState(false)
+  const body = useRef(null)
+  useEffect(() => {
+    if (!expanded && body.current) setOverflows(body.current.scrollHeight > body.current.clientHeight + 1)
+  }, [markdown, expanded])
+  return <>
+    <div ref={body} className={'co-desc-body' + (expanded ? ' is-open' : '')}><MarkdownView markdown={markdown} /></div>
+    {overflows || expanded ? <button type="button" className="co-quiet-action" onClick={() => setExpanded(value => !value)}>{expanded ? 'Show less' : 'Show more'}</button> : null}
+  </>
+}
+
+function openedLine(login, value) {
+  if (!value || !Number.isFinite(Date.parse(value))) return login ? `${login} opened this` : ''
+  const at = new Date(value)
+  const day = at.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
+  const time = at.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+  return `${login || 'Someone'} opened ${day} · ${time}`
+}
+
 function DetailLink({ href, children }) {
   const safe = safeDetailLink(href)
   return safe ? <a className="co-quiet-action" href={safe} target="_blank" rel="noopener noreferrer">{children}</a> : <span>{children}</span>
@@ -214,10 +237,16 @@ function PullRequestDetailView({ cacheStore, pr, token, onReview, onAssign, onRe
     </div>
     <div className="co-gh-pr-sub"><PullStateBadge pr={pr} /><span><b>{pr.author?.login || 'Someone'}</b> wants to merge into <code>{pr.baseRefName}</code>{pr.headRefName ? <> from <code>{pr.headRefName}</code></> : null}</span></div>
     <PullProvenance record={record} onRecord={onRecord} conversations={provenance} />
-    <div className="co-gh-description">
-      {readState(description, 'description')}
-      {ready(description) ? <article className="co-gh-comment"><header><b>{description.data?.user?.login || pr.author?.login}</b> <DateLabel prefix="opened " value={pr.createdAt} /></header><MarkdownView markdown={description.data?.body || '_No description provided._'} /></article> : null}
-    </div>
+    <details className="co-gh-description" open>
+      <summary>
+        <span className="co-desc-title"><Icon name="chevron" size={14} />Description</span>
+        <small>{openedLine(description.data?.user?.login || pr.author?.login, pr.createdAt)}</small>
+      </summary>
+      <div className="co-desc-content">
+        {readState(description, 'description')}
+        {ready(description) ? <ClampedMarkdown markdown={description.data?.body || '_No description provided._'} /> : null}
+      </div>
+    </details>
     <nav className="co-detail-tabs" aria-label="Pull request details">{tabs.map(([key, label]) => <button key={key} aria-pressed={tab === key} onClick={() => setTab(key)}>{label}
       {key === 'files' && Number.isInteger(pr.changedFiles) ? <><span className="co-tab-count">{pr.changedFiles}</span><span className="co-change-total"><b>+{pr.additions}</b><em>−{pr.deletions}</em></span></> : null}
       {key === 'checks' ? <ChecksBadge pr={pr} /> : null}</button>)}</nav>
