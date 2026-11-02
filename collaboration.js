@@ -260,3 +260,16 @@ export function reviewForPull(runs, pr) {
   // Prefer the run on the current branch tip; otherwise the newest for this code.
   return matches.find(match => match.exactBase) || matches[0] || null
 }
+
+// The Agent menu's jobs as the platform sees them. Private review and Review
+// on GitHub are both the 'review' mode, preset to opposite publishing options;
+// a raw mode (a retry, a saved link) passes through with its own defaults.
+const REVIEW_INTENTS = {
+  private: { mode: 'review', options: { post_review: false, propose_verdict: false } },
+  github: { mode: 'review', options: { post_review: true, propose_verdict: true } },
+  review_fix_merge: { mode: 'review_fix_merge' },
+}
+export function reviewIntent(choice) {
+  const known = REVIEW_INTENTS[choice]
+  return known ? { intent: choice, ...known } : { mode: choice }
+}

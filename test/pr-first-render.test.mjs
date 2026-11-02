@@ -184,3 +184,17 @@ test('a settled or foreign verdict offers no decision', async t => {
   const noHandler = await render(t, 'RunDetail', { run: verdictRun('proposed'), pulls:[pr], listState:{} })
   assert.doesNotMatch(noHandler, />Approve on GitHub</)
 })
+
+test('Private review shows no switches; Review on GitHub shows only the verdict form and merging', async t => {
+  const caps = { post_review:true, post_review_merge:true, propose_verdict:true }
+  const privateHtml = await render(t, 'ReviewConfirmation', { choice:{ pulls:[pr], mode:'review', intent:'private', options:{ post_review:false, propose_verdict:false } }, capabilities:caps, onModeChange:()=>{}, onOptionsChange:()=>{} })
+  if (!privateHtml) return
+  assert.match(privateHtml, /<h3[^>]*>Private review<\/h3>/)
+  assert.doesNotMatch(privateHtml, /co-rw-options/)
+  assert.match(privateHtml, /Seen on GitHub:<\/strong> nothing/)
+  const github = await render(t, 'ReviewConfirmation', { choice:{ pulls:[pr], mode:'review', intent:'github', options:{ post_review:true, propose_verdict:true } }, capabilities:caps, onModeChange:()=>{}, onOptionsChange:()=>{} })
+  assert.match(github, /<h3[^>]*>Review on GitHub<\/h3>/)
+  assert.doesNotMatch(github, /Allow posting the review on GitHub/)
+  assert.match(github, />Approve or request changes</)
+  assert.match(github, />Merge when safe</)
+})

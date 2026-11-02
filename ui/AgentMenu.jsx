@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { Icon } from './Icons.jsx'
 
+// Each choice names one job; the window it opens shows only that job's
+// settings. `intent` maps to the platform mode and options in reviewIntent().
 const CHOICES = [
-  { mode: 'review', icon: 'review', title: 'Review only', detail: 'Reads the PR and gives you private notes. Changes no code.' },
-  { mode: 'review_fix_merge', icon: 'fix', title: 'Review, fix and merge', detail: 'Pushes fixes, gets a second review, then merges when checks pass. You confirm first.' },
+  { intent: 'private', icon: 'lock', title: 'Private review', detail: 'Reads the PR and writes notes only you see. Nothing appears on GitHub.' },
+  { intent: 'github', icon: 'globe', title: 'Review on GitHub', detail: 'Posts its review from your account. You submit any approve or request changes. Can merge when safe.' },
+  { intent: 'review_fix_merge', icon: 'fix', title: 'Fix and merge', detail: 'Pushes fixes itself, gets a second review, then merges when checks pass. You confirm first.' },
 ]
 
 // "Agent ▾": choose what an agent should do with the PRs. Choosing only opens
@@ -32,17 +35,17 @@ export function AgentMenu({ onChoose, disabled = false, active = false, variant 
   }, [open])
   useEffect(() => { if (open) root.current?.querySelector('[role=menuitem]')?.focus() }, [open])
   // The trigger takes focus back first, so whatever opens next returns there.
-  function choose(mode) {
+  function choose(intent) {
     setOpen(false)
     root.current?.querySelector('button')?.focus({ preventScroll: true })
-    onChoose(mode)
+    onChoose(intent)
   }
   return <div className={`co-agent-menu is-align-${align}`} ref={root}>
     <button type="button" className={`co-agent-menu-button is-${variant}` + (active ? ' is-active' : '')} aria-haspopup="menu" aria-expanded={open} aria-label={ariaLabel} disabled={disabled} onClick={() => setOpen(value => !value)}>
       <Icon name="prepare" size={15} /><span>{label}</span><Icon name="chevron" size={14} />
     </button>
     {open ? <div className="co-agent-menu-list" role="menu" aria-label="What should the agent do?">
-      {CHOICES.map(choice => <button type="button" role="menuitem" key={choice.mode} onClick={() => choose(choice.mode)}>
+      {CHOICES.map(choice => <button type="button" role="menuitem" key={choice.intent} onClick={() => choose(choice.intent)}>
         <Icon name={choice.icon} size={18} /><span><strong>{choice.title}</strong><small>{choice.detail}</small></span>
       </button>)}
     </div> : null}

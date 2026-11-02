@@ -346,7 +346,7 @@ async function fill(node, value) {
 }
 // A launch resolves its frozen prompts/model before its approval is enabled.
 // Agent ▾ → one job. Choosing only opens the review window.
-async function chooseAgent(root, choice = 'Review only') {
+async function chooseAgent(root, choice = 'Private review') {
   await click(root.querySelector('.co-agent-menu-button'))
   await until(() => root.querySelector('[role=menuitem]'), 'Agent menu did not open')
   await click([...root.querySelectorAll('[role=menuitem]')].find(node => text(node).startsWith(choice)))
@@ -510,7 +510,7 @@ window.runWorkspaceChecks = async () => {
       ensure(text(query('.co-pr-box-head')).includes('2 selected'),'Filtering discarded hidden selection')
       // A Möbius without the core review routes: optional workflows say so, never "Checking…" forever.
       window.presetsMissing=true
-      await chooseAgent(query('.co-pr-box-head'), 'Review, fix and merge')
+      await chooseAgent(query('.co-pr-box-head'), 'Fix and merge')
       ensure(text(review()).includes('Contribution 7') && text(review()).includes('Contribution 8'),'Hidden selected identity omitted from confirmation')
       await until(()=>text(review()).includes('Needs a newer Möbius'),'A missing review-presets route kept checking')
       ensure(!text(review()).includes('Checking what this Möbius supports'),'Unsupported workflows still read as a pending check')

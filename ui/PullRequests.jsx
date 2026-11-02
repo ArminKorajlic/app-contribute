@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { awaitsGithub, OWNER_ITEM_STATES, collaborationRequest, discoverPull, discoverPulls, liveSelection, loadReviewRuns, matchingPulls, mayAssign, mergeSelection, prKey, reviewForPull, reviewItemProgress, reviewRunRequest, reviewRunTitle, runDetailsElsewhere, notOursToObserve, assignPulls, takeoverScope } from '../collaboration.js'
+import { awaitsGithub, reviewIntent, OWNER_ITEM_STATES, collaborationRequest, discoverPull, discoverPulls, liveSelection, loadReviewRuns, matchingPulls, mayAssign, mergeSelection, prKey, reviewForPull, reviewItemProgress, reviewRunRequest, reviewRunTitle, runDetailsElsewhere, notOursToObserve, assignPulls, takeoverScope } from '../collaboration.js'
 import { acknowledgeAssignment, emptyPullView, invalidatedSelection, isOpenPull, observePulls, pullsInView } from '../pull-view.js'
 import { pullConversations, recordsForPull } from '../provenance.js'
 import { RunDetail, savedVersion } from './RunDetail.jsx'
@@ -381,11 +381,12 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
   }
   // A launch or assignment opened from one PR stays beside that PR; a batch
   // opens under the list header. `anchor` is only placement, never scope.
-  function choose(pulls, mode, anchor = '') {
+  function choose(pulls, job, anchor = '') {
+    const { mode, intent, options } = reviewIntent(job)
     setResolved(null)
     task?.open('task:review')
     setAssigning(null)
-    setChoice({ pulls: pulls.map(pr => ({ ...pr, repository: { ...pr.repository } })), mode, anchor, ...scopeFor(mode, pulls), request_id: crypto.randomUUID() })
+    setChoice({ pulls: pulls.map(pr => ({ ...pr, repository: { ...pr.repository } })), mode, intent, ...(options ? { options } : {}), anchor, ...scopeFor(mode, pulls), request_id: crypto.randomUUID() })
     setError('')
   }
   async function start() {

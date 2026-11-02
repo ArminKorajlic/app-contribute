@@ -95,3 +95,15 @@ test('the switch hints say per PR for a batch and stay singular for one PR', () 
   assert.match(reviewSwitchHints(1).verdict, /You submit or discard it here\. On your own PR it comments instead\./)
   assert.match(reviewSwitchHints(2).verdict, /for each PR/)
 })
+
+test('each Agent menu job titles its own window', async () => {
+  const { reviewWindowCopy } = await import('../review-copy.js')
+  assert.equal(reviewWindowCopy({ mode: 'review', intent: 'private' }).title, 'Private review')
+  assert.equal(reviewWindowCopy({ mode: 'review', intent: 'private' }).publicEffect.tone, 'private')
+  const github = reviewWindowCopy({ mode: 'review', intent: 'github', posting: true, verdict: true })
+  assert.equal(github.title, 'Review on GitHub')
+  assert.equal(github.startLabel, 'Start review, propose a verdict')
+  assert.equal(reviewWindowCopy({ mode: 'review_fix_merge', intent: 'review_fix_merge' }).title, 'Fix and merge')
+  // A saved link or retry without a job keeps the old title.
+  assert.equal(reviewWindowCopy({ mode: 'review' }).title, 'Review only')
+})
