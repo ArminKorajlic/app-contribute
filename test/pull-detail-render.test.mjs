@@ -202,16 +202,16 @@ test('a fresh read shows a skeleton, never a Loading sentence', async t => {
   assert.equal((html.match(/class="co-skel"/g) || []).length, 1)
 })
 
-test('more than three comments fold to the newest three with Show all at the end', async t => {
+test('more than four comments fold to the first four, Show all reveals the rest in order', async t => {
   const pr = { number: 9, repository: { nameWithOwner: 'team/repo' }, headRefOid: 'a'.repeat(40), baseRefOid: 'b'.repeat(40), baseRefName: 'main', url: 'https://github.com/team/repo/pull/9' }
-  const items = [1, 2, 3, 4, 5].map(n => ({ kind: 'comment', id: n, user: { login: `user${n}` }, date: `2026-10-0${n}T10:00:00Z`, body: `Comment ${n}` }))
+  const items = [1, 2, 3, 4, 5, 6].map(n => ({ kind: 'comment', id: n, user: { login: `user${n}` }, date: `2026-10-0${n}T10:00:00Z`, body: `Comment ${n}` }))
   const html = await render(t, 'PullRequestDetail', { pr, cacheStore: loadedConversation(items) })
   if (!html) return
-  assert.match(html, /Show all 5 comments/)
-  assert.doesNotMatch(html, /user1\b|user2\b/) // the two oldest wait behind Show all
-  assert.match(html, /user3/)
-  assert.match(html, /user5/)
-  const few = await render(t, 'PullRequestDetail', { pr, cacheStore: loadedConversation(items.slice(0, 3)) })
+  assert.match(html, /Show all 6 comments/)
+  assert.match(html, /user1\b/)
+  assert.match(html, /user4\b/)
+  assert.doesNotMatch(html, /user5\b|user6\b/) // the later ones wait behind Show all
+  const few = await render(t, 'PullRequestDetail', { pr, cacheStore: loadedConversation(items.slice(0, 4)) })
   assert.doesNotMatch(few, /Show all|co-comments-toggle/)
 })
 
