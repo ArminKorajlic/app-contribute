@@ -55,7 +55,7 @@ export const CSS = `
 /* /mobius-ui:ReducedMotion */
 
 .co-page {
-  flex: 1; min-height: 0; width: min(100%, 1040px); margin: 0 auto;
+  flex: 1; min-height: 0; width: min(100%, 1240px); margin: 0 auto;
   padding: 0 20px max(56px, calc(28px + env(safe-area-inset-bottom)));
   overflow-y: auto; overflow-x: hidden;
   overscroll-behavior: contain;
