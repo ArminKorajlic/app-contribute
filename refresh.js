@@ -16,9 +16,3 @@ export function createRefreshCoordinator(refresh) {
     return active
   }
 }
-
-export function isVisibleFrameMessage(event, parentWindow) {
-  return event?.source === parentWindow
-    && event?.data?.type === 'moebius:frame-visibility'
-    && event.data.visible === true
-}

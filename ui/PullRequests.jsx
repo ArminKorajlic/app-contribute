@@ -122,6 +122,20 @@ function AssigneePicker({ pulls, token, appId, ownLogin, onAssigned, onClose }) 
   </div>
 }
 
+// One session cache per repository: the loaded PR list (view and paging
+// state), the agent-run list, the per-PR detail snapshots and the observation
+// generation survive leaving and reopening a project or a PR page, so GitHub
+// is asked once per repository per app open. The header's Refresh (refreshKey)
+// or a change in the local contribution records invalidates the entry.
+const sessionCache = new Map()
+function sessionEntry(repo, key) {
+  const id = repo.toLowerCase()
+  if (sessionCache.get(id)?.key !== key) {
+    sessionCache.set(id, { key, view: null, data: null, runs: null, details: new Map(), generation: 0 })
+  }
+  return sessionCache.get(id)
+}
+
 // `focusPull` is a navigation lease from a chat link: while it is held, that
 // exact PR stays in view (even when closed or on a later page) and its detail
 // is open. Leaving the detail or the project hands the lease back.
@@ -132,17 +146,21 @@ const runAnchor = run => run.items?.length === 1 ? `${run.items[0].repo.toLowerC
 // ask for the owner's review) or 'mine' (the saved agent reviews only).
 export function PullRequests({ appId, token, project, conn, onChanged, records = [], onRecord, refreshKey, focusPull, focusRun, onFocusRelease, scope = 'all', onScope, onTotal, presentation = 'list', onOpenPage = null }) {
   const repo = project?.canonical_repo || ''
+  const publicRevision = records.filter(record => record.url).map(record => `${record.id}:${record.status}:${record.number}:${record.last_updated_pr_at || ''}`).sort().join('|')
+  const session = sessionEntry(repo, `${refreshKey}|${publicRevision}`)
+  const sessionRef = useRef(session)
+  sessionRef.current = session
   const task = useProjectTask()
-  const [data, setData] = useState({ loading: true, error: '' })
-  const [view, setView] = useState(emptyPullView)
+  const [data, setData] = useState(session.data || { loading: true, error: '' })
+  const [view, setView] = useState(() => session.view || emptyPullView())
   const viewRef = useRef(view)
-  const generation = useRef(0)
+  const generation = useRef(session.generation)
   const focusKey = focusPull && conn.state === 'connected' && focusPull.repo?.toLowerCase() === repo.toLowerCase()
     ? `${focusPull.repo.toLowerCase()}#${focusPull.number}` : ''
   const focusRef = useRef(null)
   focusRef.current = focusKey ? { key: focusKey, nonce: focusPull.nonce, repo: focusPull.repo, number: focusPull.number } : null
   const [focusError, setFocusError] = useState(null)
-  const [runs, setRuns] = useState([])
+  const [runs, setRuns] = useState(session.runs || [])
   const [runError, setRunError] = useState('')
   const [filter, setFilter] = useState('all')
   const [query, setQuery] = useState('')
@@ -163,12 +181,12 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const request = useRef(0)
-  const detailSnapshots = useRef(new Map())
   const [detailRevision, setDetailRevision] = useState(0)
   function detailSnapshot(pr) {
     const key = `${prKey(pr)}:${pr.headRefOid}:${pr.baseRefOid}:${pr.baseRefName}`
-    if (!detailSnapshots.current.has(key)) detailSnapshots.current.set(key, { entries:{}, stale:false })
-    return detailSnapshots.current.get(key)
+    const details = sessionRef.current.details
+    if (!details.has(key)) details.set(key, { entries:{}, stale:false })
+    return details.get(key)
   }
   const alive = useRef(true)
   useEffect(() => { alive.current = true; return () => { alive.current = false; request.current += 1 } }, [])
@@ -178,6 +196,8 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
     const next = observePulls(before, pulls, issued, { inventory, pinned })
     viewRef.current = next
     setView(next)
+    sessionRef.current.view = next
+    sessionRef.current.generation = generation.current
     const removed = invalidatedSelection(selectedRef.current, pullsInView(before, pinned), pullsInView(next, pinned))
     if (removed.length) {
       selectedRef.current = new Set([...selectedRef.current].filter(key => !removed.includes(key)))
@@ -207,10 +227,12 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
         next = { ...page, pulls: mergeSelection(next.pulls, page.pulls) }
       }
       if (id !== request.current || !alive.current) return
-      if (!cursor) { detailSnapshots.current.clear(); setDetailRevision(value => value + 1) }
+      if (!cursor) { sessionRef.current.details.clear(); setDetailRevision(value => value + 1) }
       const inventory = cursor ? [...new Set([...viewRef.current.inventory, ...next.pulls.map(prKey)])] : next.pulls.map(prKey)
       publish(next.pulls, issued, inventory, !cursor)
-      setData({ total: next.total, hasNextPage: next.hasNextPage, endCursor: next.endCursor, loading: false, error: '' })
+      const settled = { total: next.total, hasNextPage: next.hasNextPage, endCursor: next.endCursor, loading: false, error: '' }
+      sessionRef.current.data = settled
+      setData(settled)
       // Absence from the open list is not closure: re-read a pinned destination.
       const focus = focusRef.current
       if (!cursor && focus && !inventory.includes(focus.key)) void readFocus(focus)
@@ -252,10 +274,20 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
       if (current() && runFocusRef.current?.nonce === focus.nonce && exact) setLinked(exact)
     } catch (error) { if (current()) setRunError(`This run's latest status is unavailable: ${error.message}`) }
   }, [token, appId])
-  const publicRevision = records.filter(record => record.url).map(record => `${record.id}:${record.status}:${record.number}:${record.last_updated_pr_at || ''}`).sort().join('|')
+  useEffect(() => { sessionRef.current.runs = runs }, [runs])
   useEffect(() => {
     if (conn.state !== 'connected') return
-    void load(); void loadRuns()
+    // A repository already read this session reopens from its cache with no
+    // new GitHub round-trip; Refresh or changed local records reload it. Agent
+    // runs stay live either way: they track review progress, not the list.
+    const cached = sessionRef.current
+    if (cached.view && cached.data && !cached.data.loading && !cached.data.error) {
+      if (viewRef.current !== cached.view) { viewRef.current = cached.view; setView(cached.view) }
+      setData(cached.data)
+    } else {
+      void load()
+    }
+    void loadRuns()
     const refresh = () => { if (!document.hidden) void loadRuns() }
     const timer = setInterval(refresh, 20000)
     window.addEventListener('focus', refresh)
@@ -420,6 +452,8 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
   const assignPane = <TaskPane id="task:assign" dock={false}>{assigning ? <AssigneePicker key={assigning.map(prKey).join(',')} pulls={assigning} appId={appId} token={token} ownLogin={conn.login} onClose={() => { setAssigning(null); task?.close() }} onAssigned={(login, keys) => {
       viewRef.current = acknowledgeAssignment(viewRef.current, keys, login, ++generation.current)
       setView(viewRef.current)
+      sessionRef.current.view = viewRef.current
+      sessionRef.current.generation = generation.current
       void onChanged?.()
     }} /> : null}</TaskPane>
   const visibleKeys = new Set(visible.map(prKey))

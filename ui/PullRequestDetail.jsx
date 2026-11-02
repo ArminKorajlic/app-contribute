@@ -49,6 +49,24 @@ function threadLocation(thread) {
   if (Number.isInteger(thread.originalLine)) return `original line ${thread.originalStartLine && thread.originalStartLine !== thread.originalLine ? `${thread.originalStartLine}–` : ''}${thread.originalLine}`
   return 'line unavailable'
 }
+// Unanswered feedback on the owner's own tracked PR, kept visible under the
+// folded description. The record's attention is server-maintained: it appears
+// when a review or comment lands and clears once the author addresses it, so
+// no flag means nothing waits. Other people's PRs carry no record and no flag.
+const FEEDBACK_FLAGS = {
+  changes_requested: { label: 'Changes requested', tone: 'blocker' },
+  github_activity: { label: 'New feedback', tone: 'news' },
+}
+export function PullFeedbackFlag({ record }) {
+  const flag = FEEDBACK_FLAGS[record?.attention?.type]
+  if (!flag) return null
+  return <p className={'co-pr-feedback-flag is-' + flag.tone} role="status">
+    <Icon name="feedback" size={15} />
+    <b>{flag.label}</b>
+    <span>on your PR — not addressed yet. The review text is under Comments.</span>
+  </p>
+}
+
 const PROVENANCE_HINTS = { source: 'Created or updated this PR', review: 'Reviewed this PR', fix: 'Fixed this PR' }
 // One place for where this PR came from: its local preparation in Contribute
 // and the conversations that created, reviewed or fixed it.
@@ -237,7 +255,7 @@ function PullRequestDetailView({ cacheStore, pr, token, onReview, onAssign, onRe
     </div>
     <div className="co-gh-pr-sub"><PullStateBadge pr={pr} /><span><b>{pr.author?.login || 'Someone'}</b> wants to merge into <code>{pr.baseRefName}</code>{pr.headRefName ? <> from <code>{pr.headRefName}</code></> : null}</span></div>
     <PullProvenance record={record} onRecord={onRecord} conversations={provenance} />
-    <details className="co-gh-description" open>
+    <details className="co-gh-description">
       <summary>
         <span className="co-desc-title"><Icon name="chevron" size={14} />Description</span>
         <small>{openedLine(description.data?.user?.login || pr.author?.login, pr.createdAt)}</small>
@@ -247,6 +265,7 @@ function PullRequestDetailView({ cacheStore, pr, token, onReview, onAssign, onRe
         {ready(description) ? <ClampedMarkdown markdown={description.data?.body || '_No description provided._'} /> : null}
       </div>
     </details>
+    <PullFeedbackFlag record={record} />
     <nav className="co-detail-tabs" aria-label="Pull request details">{tabs.map(([key, label]) => <button key={key} aria-pressed={tab === key} onClick={() => setTab(key)}>{label}
       {key === 'files' && Number.isInteger(pr.changedFiles) ? <><span className="co-tab-count">{pr.changedFiles}</span><span className="co-change-total"><b>+{pr.additions}</b><em>−{pr.deletions}</em></span></> : null}
       {key === 'checks' ? <ChecksBadge pr={pr} /> : null}</button>)}</nav>

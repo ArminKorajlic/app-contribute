@@ -28,7 +28,7 @@ test('each To look at reason names what it is and what its button opens', async 
   const checks = lookAtReason(item('b', 'private_review', pr(2, { type: 'checks_failed' })))
   assert.deepEqual([checks.label, checks.action], ['Checks failing', 'Review checks'])
   const news = lookAtReason(item('c', 'private_review', pr(3, { type: 'github_activity' })))
-  assert.deepEqual([news.label, news.tone, news.action], ['New feedback', 'news', 'Read feedback'])
+  assert.deepEqual([news.label, news.tone, news.action], ['New feedback', 'news', 'Open PR'])
   assert.equal(lookAtReason(item('d', 'route_attention', pr(4, { type: 'merge_conflict' }))).label, 'Choose where to send')
   assert.equal(lookAtReason(item('e', 'public_attention', pr(5, { type: 'something_new' }))).label, 'Needs your decision')
 })

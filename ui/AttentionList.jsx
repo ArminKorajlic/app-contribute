@@ -9,8 +9,8 @@ import { TimeAgo } from './GithubParts.jsx'
 const ATTENTION_REASONS = {
   merge_conflict: { label: 'Merge blocked', tone: 'blocker', icon: 'fix', action: 'Review conflict' },
   checks_failed: { label: 'Checks failing', tone: 'blocker', icon: 'fix', action: 'Review checks' },
-  changes_requested: { label: 'Changes requested', tone: 'blocker', icon: 'feedback', action: 'Read feedback' },
-  github_activity: { label: 'New feedback', tone: 'news', icon: 'feedback', action: 'Read feedback' },
+  changes_requested: { label: 'Changes requested', tone: 'blocker', icon: 'feedback', action: 'Open PR' },
+  github_activity: { label: 'New feedback', tone: 'news', icon: 'feedback', action: 'Open PR' },
 }
 // Decisions about publishing itself, whatever the record's GitHub attention.
 const KIND_REASONS = {
