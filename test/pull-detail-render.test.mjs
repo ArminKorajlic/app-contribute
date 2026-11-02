@@ -39,7 +39,13 @@ for (const items of [[], [{ __typename: 'Issue', number: 2, title: 'Usable issue
     assert.match(html, /role="alert"/)
     assert.match(html, />Retry<\/button>/)
     assert.match(html, /Open on GitHub/)
-    if (items.length) assert.match(html, /Issue team\/repo#2 · Usable issue/)
+    if (items.length) {
+      // A boxed row with the issue icon, the title leading, and the reference line under it.
+      assert.match(html, /class="co-related-row"/)
+      assert.match(html, /co-related-icon is-issue/)
+      assert.match(html, /<strong>Usable issue<\/strong>/)
+      assert.match(html, /Issue team\/repo#2 · May close/)
+    }
     else assert.doesNotMatch(html, /Related issues &amp; PRs/)
   })
 }

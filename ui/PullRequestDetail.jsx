@@ -168,10 +168,26 @@ export function PullChecks({ data }) {
     {data?.capped ? <p>Only the first 100 result pages are available here. More results remain on GitHub.</p> : null}
   </>
 }
+// One boxed row per related item, a pull-request or issue icon telling them
+// apart at a glance; the whole box opens the item on GitHub.
+function RelatedRow({ item }) {
+  const pull = item.__typename === 'PullRequest'
+  const safe = safeDetailLink(item.url)
+  const body = <>
+    <Icon name={pull ? 'pull' : 'issue'} size={16} className={'co-related-icon ' + (pull ? 'is-pull' : 'is-issue')} />
+    <span className="co-related-main">
+      <strong>{item.title}</strong>
+      <small>{pull ? 'PR' : 'Issue'} {item.repository?.nameWithOwner}#{item.number}{item.relationships?.length ? ` · ${item.relationships.join(' · ')}` : ''}</small>
+    </span>
+  </>
+  if (!safe) return <span className="co-related-row">{body}</span>
+  return <a className="co-related-row" href={safe} target="_blank" rel="noopener noreferrer">{body}</a>
+}
+
 export function PullRelated({ data }) {
   if (!data?.items?.length) return null
   return <section aria-label="Related issues and pull requests"><h4>Related issues & PRs</h4>
-    {data?.items?.map(item => <p key={item.url} style={{ overflowWrap: 'anywhere' }}><span className="co-pr-note">{item.relationships.join(' · ')} · </span><DetailLink href={item.url}>{item.__typename === 'PullRequest' ? 'PR' : 'Issue'} {item.repository?.nameWithOwner}#{item.number} · {item.title}</DetailLink></p>)}
+    <div className="co-related-list">{data.items.map(item => <RelatedRow key={item.url} item={item} />)}</div>
     {data?.truncated ? <p>Showing the first 50 closing issues and first 50 cross-reference events. More references remain on GitHub.</p> : null}
   </section>
 }
