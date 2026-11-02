@@ -692,6 +692,9 @@ input[type=checkbox].co-switch:focus-visible { outline:2px solid var(--accent); 
 .co-pr-feedback-flag.is-clear b, .co-pr-feedback-flag.is-clear .co-icon { color:var(--green); }
 .co-copy-id { border:1px solid var(--border); border-radius:6px; padding:1px 7px; background:var(--surface-2,var(--surface)); color:var(--muted); font:500 13px var(--mono,monospace); cursor:pointer; }
 .co-copy-id:hover { color:var(--text); border-color:color-mix(in srgb,var(--accent) 34%,var(--border)); }
+.co-markdown .co-md-image { display:inline-flex; align-items:center; gap:6px; margin:4px 0; padding:4px 10px; border:1px solid var(--border); border-radius:8px; background:var(--surface); color:var(--accent); font-size:14px; text-decoration:none; }
+.co-markdown .co-md-image::before { content:'🖼'; font-size:14px; }
+.co-markdown .co-md-image:hover { border-color:color-mix(in srgb,var(--accent) 40%,var(--border)); }
 .co-desc-content { padding:12px 14px 12px; border-top:1px solid var(--border); }
 .co-desc-body { position:relative; overflow:hidden; max-height:16em; }
 .co-desc-body.is-open { max-height:none; }

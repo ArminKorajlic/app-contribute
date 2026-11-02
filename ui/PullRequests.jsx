@@ -108,7 +108,7 @@ function AssigneePicker({ pulls, token, appId, ownLogin, onAssigned, onClose }) 
     <h3>Assign {pulls.length === 1 ? `#${pr.number}` : `${pulls.length} PRs`}</h3>
     <p className="co-pr-assignment-note">The assignee is the person responsible for {pulls.length === 1 ? 'this PR' : 'these PRs'} on GitHub. This does not change the author, and it does not ask anyone for a review.</p>
     <input type="search" className="co-person-search" aria-label="Find a person" placeholder="Find a person…" value={query} onChange={event => setQuery(event.target.value)} disabled={busy} />
-    {people.loading ? <p role="status">Loading people…</p> : null}
+    {people.loading ? <Skeleton lines={3} label="Loading people" /> : null}
     <div className="co-person-list">
       {own && !query ? <PersonOption label="Assign to me" login={own.login} ariaLabel="Assign to me" disabled={busy || !people.can_assign} onPick={assign} /> : null}
       {matching.filter(person => query || person.login !== own?.login).map(person => <PersonOption key={person.login} label={person.name || person.login} login={person.login} hint={person.name ? person.login : ''} ariaLabel={`Assign to ${person.login}`} disabled={busy || !people.can_assign} onPick={assign} />)}
@@ -476,8 +476,10 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
       {/* The saved agent-review record never leads the page: its outcome shows
           as the flag under the description, and My work keeps the full run. */}
       {detailPr ? (
-        <TaskPane id="task:detail" dock={false}><PullRequestDetail key={`${prKey(detailPr)}:${detailPr.headRefOid}:${detailPr.baseRefOid}:${detailRevision}`} cacheStore={detailSnapshot(detailPr)} pr={detailPr} token={token} onReview={mode => choose([detailPr], mode, opened)} onAssign={() => assignSelection([detailPr], opened)} onRefresh={() => load()} readOnly={!isOpenPull(detailPr)} canAssign={mayAssign(detailPr.repository.viewerPermission)} status={statusFor(detailPr)} onProgress={null} record={recordsForPull(records, detailPr)[0]} onRecord={onRecord} provenance={pullConversations(records, relevantRuns, detailPr)} holdUntilLoaded /></TaskPane>
-      ) : data.loading || data.error ? <Skeleton lines={8} label="Loading the pull request" /> : <p className="co-pr-note" role="status">This pull request is not in the open list. It may be closed; refresh to check.</p>}
+        // The detail is the page itself, not a swappable pane: the review
+        // window overlays it and the assignment pane opens above it.
+        <PullRequestDetail key={`${prKey(detailPr)}:${detailPr.headRefOid}:${detailPr.baseRefOid}:${detailRevision}`} cacheStore={detailSnapshot(detailPr)} pr={detailPr} token={token} onReview={mode => choose([detailPr], mode, opened || prKey(detailPr))} onAssign={() => assignSelection([detailPr], opened || prKey(detailPr))} onRefresh={() => load()} readOnly={!isOpenPull(detailPr)} canAssign={mayAssign(detailPr.repository.viewerPermission)} status={statusFor(detailPr)} onProgress={null} record={recordsForPull(records, detailPr)[0]} onRecord={onRecord} provenance={pullConversations(records, relevantRuns, detailPr)} holdUntilLoaded />
+      ) : data.loading || data.error || focusKey ? <Skeleton lines={8} label="Loading the pull request" /> : <p className="co-pr-note" role="status">This pull request is not in the open list. It may be closed; refresh to check.</p>}
       {reviewDialog}
     </section>
   }
