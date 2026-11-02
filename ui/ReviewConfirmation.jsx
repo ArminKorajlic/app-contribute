@@ -76,6 +76,19 @@ function ReviewSwitches({ choice, promptOptions, capabilities, onModeChange, onO
   const setOption = (key, checked) => onOptionsChange({ ...promptOptions, ...choice.options, [key]: checked,
     ...(key === 'post_review' && !checked ? { propose_verdict: false } : {}) })
   if (!canPost && !onModeChange) return null
+  // Private review has nothing to switch; Review on GitHub always posts, so
+  // only the verdict form and merging remain as real choices.
+  if (choice.intent === 'private') return null
+  if (choice.intent === 'github') return <div className="co-rw-options">
+    {canPropose ? <Switch checked={verdict} disabled={busy || !promptOptions}
+      label="Approve or request changes"
+      detail={verdict ? 'It proposes approve or request changes with its wording. You submit or discard each one here before anything is posted.' : 'Off: it posts a plain review comment and never approves or asks for changes.'}
+      onChange={checked => setOption('propose_verdict', checked)} /> : null}
+    {onModeChange ? <Switch checked={merge} disabled={busy || (!merge && !!mergeBlocker)}
+      label="Merge when safe"
+      detail={!merge && mergeBlocker ? mergeBlocker : hints.merge}
+      onChange={checked => onModeChange(checked ? 'review_merge' : 'review')} /> : null}
+  </div>
   return <div className="co-rw-options">
     {canPost ? <Switch checked={posting} disabled={busy || !promptOptions || (merge && !combines)}
       label="Allow posting the review on GitHub"
@@ -139,7 +152,8 @@ export function ReviewConfirmation({ choice, busy, disabled, error, onConfirm, o
   const saved = !!choice.preview_sha256
   const { draftScope, blocker } = takeoverState(choice, capabilities, saved)
   const { posting, verdict } = takeover ? {} : publicChoice(choice, promptOptions, capabilities)
-  const copy = reviewWindowCopy({ mode: choice.mode, posting, verdict, draftScope, count: choice.pulls.length, bindCurrentTarget })
+  const copy = reviewWindowCopy({ mode: choice.mode, intent: choice.intent, posting, verdict, draftScope, count: choice.pulls.length, bindCurrentTarget })
+  const postingUnavailable = choice.intent === 'github' && !!capabilities && capabilities.post_review !== true
   const startBlocked = takeover && !!blocker
   return <section ref={confirmation} tabIndex={-1} className="co-review-window" aria-labelledby={titleId}>
     <PullHeading pulls={choice.pulls} title={copy.title} titleId={titleId} onCancel={onCancel} takeover={takeover} />
@@ -148,6 +162,7 @@ export function ReviewConfirmation({ choice, busy, disabled, error, onConfirm, o
         ? <p className="co-rw-note">No options here. The agent keeps going until {choice.pulls.length === 1 ? 'the PR is' : 'the PRs are'} merged, or until it needs you.</p>
         : <ReviewSwitches choice={choice} promptOptions={promptOptions} capabilities={capabilities} onModeChange={onModeChange} onOptionsChange={onOptionsChange} busy={busy} />}
       {startBlocked ? <p className="co-rw-blocker" role="status">{blocker}</p> : null}
+      {postingUnavailable ? <p className="co-rw-blocker" role="status">Posting reviews on GitHub needs a newer Möbius. This would run as a private review.</p> : null}
       <WhatHappens copy={copy} />
       {onAgentChange ? <AgentModelSettings token={token} choice={choice.agent} defaultChoice={defaultChoice} defaultHint="Your background agent setting" onChange={next => { onAgentChange(next); return true }} /> : null}
       {appId && token ? <ReviewPromptPreview token={token} appId={appId} choice={choice} onResolved={resolve} onUnsupported={() => setUnsupported(true)} /> : null}

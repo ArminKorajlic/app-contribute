@@ -278,3 +278,12 @@ test('a minimized run detail points to the owning conversation and offers no Sto
   assert.doesNotMatch(html, /Stop workflow|prompt snapshot|Older PR version|Instructions used by this run|findings will appear here|not a new approval/)
   assert.match(render({ id: 'own', app_id: 80, mode: 'review', state: 'reviewing', items: [] }, []), /This older run did not save a prompt snapshot/)
 })
+
+test('the Agent menu jobs map to exact platform modes and publishing presets', async () => {
+  const { reviewIntent } = await import('../collaboration.js')
+  assert.deepEqual(reviewIntent('private'), { intent: 'private', mode: 'review', options: { post_review: false, propose_verdict: false } })
+  assert.deepEqual(reviewIntent('github'), { intent: 'github', mode: 'review', options: { post_review: true, propose_verdict: true } })
+  assert.deepEqual(reviewIntent('review_fix_merge'), { intent: 'review_fix_merge', mode: 'review_fix_merge' })
+  // A raw mode (a retry) passes through with its own defaults.
+  assert.deepEqual(reviewIntent('review_merge'), { mode: 'review_merge' })
+})
