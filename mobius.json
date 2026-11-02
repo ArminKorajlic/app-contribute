@@ -51,6 +51,9 @@
   ],
   "source_files": [
     "theme.js",
+    "desk.js",
+    "ui/Desk.jsx",
+    "ui/DeskViews.jsx",
     "domain.js",
     "labels.js",
     "review.js",

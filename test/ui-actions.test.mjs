@@ -459,7 +459,8 @@ test('feedback on a published pull request is news for the owner, not a private 
   const runSource = readFileSync(new URL('../run.js', import.meta.url), 'utf8')
   assert.match(runSource, /export const isPublicFeedback = item => item\.kind === 'private_review'/)
   assert.match(feedSource, /privateItems = decisions\.filter\(item => item\.kind === 'private_review' && !isPublicFeedback\(item\)\)/)
-  assert.match(feedSource, /ownerDecisions = decisions\.filter\(item => isPublicFeedback\(item\) \|\|/)
+  assert.match(runSource, /attentionListItems = \(decisions = \[\]\) => decisions\.filter\(item => isPublicFeedback\(item\) \|\| !\[/)
+  assert.match(feedSource, /ownerDecisions = attentionListItems\(decisions\)/)
   assert.match(feedSource, /<AttentionList items=\{ownerDecisions\}/)
 })
 

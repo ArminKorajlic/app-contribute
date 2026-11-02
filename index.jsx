@@ -41,6 +41,7 @@ import { deliverCycleMessage } from './cycle-delivery.js'
 import { abandonPrepared, cacheFeed, cacheSourceSnapshot, loadAppSettings, loadCachedFeed, loadCachedSourceSnapshot, loadContributionRecord, loadFreshContributionRecord, loadFreshContributionRecords, loadCycleState, loadFullDiff, loadLedger, restoreAbandoned, saveAppSettings } from './storage.js'
 import { createRefreshCoordinator, isVisibleFrameMessage } from './refresh.js'
 import { checkUpstream } from './upstream-check.js'
+import { DESK_LAST_LOOKED_KEY, deskCounts } from './desk.js'
 import {
   contributionPathDecision,
   contributionStackDecision,
@@ -301,6 +302,8 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
   // Whether a new Send grants autopilot. Default on; consulted only at Send
   // time (job.sh keys off each record's stamped grant, never this preference).
   const [autopilotDefault, setAutopilotDefault] = useState(true)
+  const [deskView, setDeskView] = useState('needs')
+  const [lastLooked, setLastLooked] = useState('')
   const submissionMethod = 'github'
   const [refreshKey, setRefreshKey] = useState(0)
   const [earlierCycle, setEarlierCycle] = useState(null)
@@ -580,6 +583,12 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
       if (typeof appSettings.autopilot_default === 'boolean') {
         setAutopilotDefault(appSettings.autopilot_default)
       }
+      // The previous visit's time marks what changed "since you last looked";
+      // this visit becomes the next one's mark. One write per app open.
+      if (typeof appSettings[DESK_LAST_LOOKED_KEY] === 'string') {
+        setLastLooked(appSettings[DESK_LAST_LOOKED_KEY])
+      }
+      void saveAppSettings({ ...appSettings, [DESK_LAST_LOOKED_KEY]: new Date().toISOString() })
       connRef.current = status
       setConn(status)
 
@@ -1520,6 +1529,27 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
   const projectAttention = useMemo(() => Object.fromEntries(sourceProjects
     .filter(project => recordsForProject(records, project).length)
     .map(project => [project.key, ownerAttentionCount(projectRun(project).decisions)])), [sourceProjects, records, reviewStatus])
+  // The home's clickable counts: every number names a next step and its view.
+  const deskCountsValue = useMemo(() => deskCounts({
+    projects: sourceProjects,
+    decisions: contributionRun.decisions,
+    incoming: incomingReviews,
+    records,
+    login: conn.login || '',
+  }), [sourceProjects, contributionRun, incomingReviews, records, conn.login])
+  const desk = {
+    view: deskView,
+    onView: setDeskView,
+    counts: deskCountsValue,
+    login: conn.login || '',
+    records,
+    lastLooked,
+    decisionsFor: project => projectRun(project).decisions,
+    onOpenPull: (project, pr) => openPullFocus({
+      repo: pr.repository?.nameWithOwner || project?.canonical_repo,
+      number: pr.number,
+    }, crypto.randomUUID()),
+  }
   function projectRun(project) {
     return project ? buildContributionRun({
       records: recordsForProject(records, project), reviewStatus, projects: [project],
@@ -1616,7 +1646,7 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
       <main ref={pageRef} className="co-page is-sources">
         {selectionError ? <p className="co-run-error" role="alert">{selectionError}</p> : null}
         {selectionFocus ? <ReviewSelection selectionId={selectionFocus} appId={appId} token={token} onClose={closeSelection} /> : <SourceMap
-          snapshot={sourceSnapshot} projects={sourceProjects} focusKey={projectFocus}
+          snapshot={sourceSnapshot} projects={sourceProjects} focusKey={projectFocus} desk={desk}
           onProjectOpenChange={setProjectOpen}
           conn={conn} loading={sourceLoading} error={sourceError}
           onRetry={async () => {

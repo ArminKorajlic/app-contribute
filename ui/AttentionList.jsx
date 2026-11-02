@@ -42,7 +42,7 @@ export function groupNote(item) {
   return `${affected}${records.length} related PRs${numbers.length ? `: ${numbers.join(', ')}` : ''}`
 }
 
-function AttentionRow({ item, heading, onSelect }) {
+export function AttentionRow({ item, heading, onSelect }) {
   const reason = lookAtReason(item)
   const detectedAt = item.record?.attention?.detected_at
   const group = groupNote(item)

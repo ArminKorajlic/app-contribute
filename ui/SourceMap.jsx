@@ -13,6 +13,9 @@ import { TimeAgo } from './GithubParts.jsx'
 import UnifiedDiff from './diff/UnifiedDiff.jsx'
 import { parseUnifiedDiff } from './diff/parseUnifiedDiff.js'
 import { TaskContext, TaskPane } from './TaskPane.jsx'
+import { DESK_VIEWS, splitProjects } from '../desk.js'
+import { DeskChips, DeskCounts, DeskRail } from './Desk.jsx'
+import { DeskView } from './DeskViews.jsx'
 import { openGithubSettings } from '../github-connection.js'
 
 const FILTERS = [
@@ -281,11 +284,13 @@ export function SourceMap({
   onProjectOpenChange,
   checks = {},
   attention = {},
+  desk = { view: 'projects', onView: () => {}, counts: {}, login: '', records: [], lastLooked: '', decisionsFor: () => [], onOpenPull: () => {} },
 }) {
   const [manualRefresh, setManualRefresh] = useState('idle')
   const [checkNote, setCheckNote] = useState(null)
   const [filter, setFilter] = useState('all')
   const [query, setQuery] = useState('')
+  const [deskQuery, setDeskQuery] = useState('')
   const filtered = useMemo(
     () => projects.filter((project) => (
       projectMatchesJourney(project, filter)
@@ -424,20 +429,38 @@ export function SourceMap({
   const trackedActive = tracked.filter((project) => !isQuiet(project))
   const trackedQuiet = tracked.filter(isQuiet)
   const external = filtered.filter((project) => project.kind === 'external')
+  // The rail and the side views keep the directory's own order: active work
+  // first, then local-only apps, quiet apps, and repositories on GitHub.
+  const deskGroups = splitProjects(projects, attention)
+  const orderedProjects = [...deskGroups.active, ...deskGroups.builtHere, ...deskGroups.quiet, ...deskGroups.external]
+  const openView = key => { if (selected) closeProject(); desk.onView(key) }
+  function openRecordFromDesk(project, item) {
+    void openProject(project.key)
+    if (item?.id) openWork(item.id)
+  }
   const externalQuestions = external.reduce((count, project) => count + (project.reviewRequests?.length || 0), 0)
   if (loading && !snapshot && !projects.length) return <LoadingState />
+  const viewLabel = DESK_VIEWS.find(item => item.key === desk.view)?.label || 'Your projects'
   return (
     <section className={'co-projects-view' + (selectedProject ? ' is-focus' : '')} aria-label="Project details">
+      <div className="co-desk">
+      <DeskRail view={desk.view} counts={desk.counts} projects={projects} attention={attention} selectedKey={selected} onView={openView} onOpenProject={openProject} />
+      <div className="co-desk-pane">
       {selectedProject ? <h2 className="co-visually-hidden">Project detail</h2> : (
+        <>
+        <DeskChips view={desk.view} counts={desk.counts} onView={openView} />
         <header className="co-view-heading">
           <div>
-            <h2>Your projects</h2>
+            <h2>{viewLabel}</h2>
           </div>
           <div className="co-project-view-actions">
             <CheckGithub state={loading ? 'running' : manualRefresh} note={checkNote} onCheck={refreshProjects} scope={projects} />
             {repositoryPicker}
           </div>
         </header>
+        {desk.view === 'needs' ? <DeskCounts counts={desk.counts} onView={openView} /> : null}
+        {desk.view !== 'projects' && desk.lastLooked ? <p className="co-desk-legend"><span className="co-newdot" /><TimeAgo prefix="marks what changed since you last looked, " value={desk.lastLooked} /></p> : null}
+        </>
       )}
 
       {navigationError ? <p className="co-run-error" role="alert">{navigationError}</p> : null}
@@ -458,8 +481,16 @@ export function SourceMap({
       ) : null}
 
       {!selectedProject ? (
+        desk.view !== 'projects' ? (
+          <>
+            <label className="co-desk-search">
+              <Icon name="search" size={16} />
+              <input type="search" placeholder="Find a PR, person or project" aria-label="Find a PR, person or project" value={deskQuery} onChange={event => setDeskQuery(event.target.value)} />
+            </label>
+            <DeskView view={desk.view} projects={orderedProjects} records={desk.records} login={desk.login} decisionsFor={desk.decisionsFor} lastLooked={desk.lastLooked} query={deskQuery} onOpenProject={openProject} onOpenPull={desk.onOpenPull} onOpenRecord={openRecordFromDesk} />
+          </>
+        ) : (
         <>
-          {renderActivity?.(null, activityNavigation)}
           <div className="co-directory">
           <label className="co-project-search">
             <span className="co-visually-hidden">Find a project</span>
@@ -509,6 +540,7 @@ export function SourceMap({
           </details> : null}
           </div>
         </>
+        )
       ) : (
         <div className="co-project-layout">
           <ProjectDetail
@@ -524,6 +556,8 @@ export function SourceMap({
           />
         </div>
       )}
+      </div>
+      </div>
     </section>
   )
 }

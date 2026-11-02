@@ -1,18 +1,8 @@
 // GitHub owns people, permissions and assignments. Contribute owns the private
 // review journey; a repository role never becomes an automatic merge grant.
-import { fetchLiveStates } from './api.js'
+import { PR_FIELDS, fetchLiveStates } from './api.js'
 
-export const PR_FIELDS = `id number title url headRefOid headRefName baseRefName baseRefOid baseRef { target { oid } } isDraft
-  additions deletions changedFiles createdAt updatedAt
-  author { login } assignees(first:100) { nodes { login } }
-  repository { nameWithOwner viewerPermission }
-  headRepository { nameWithOwner viewerPermission isArchived }
-  labels(first:20) { nodes { name color } totalCount }
-  comments { totalCount }
-  commits(last:1) { nodes { commit { statusCheckRollup { state contexts {
-    totalCount checkRunCountsByState { state count } statusContextCountsByState { state count }
-  } } } } }
-  reviewDecision mergeable`
+export { PR_FIELDS } from './api.js'
 export const mayAssign = permission => ['TRIAGE', 'WRITE', 'MAINTAIN', 'ADMIN'].includes(permission)
 export const mayMerge = permission => ['WRITE', 'MAINTAIN', 'ADMIN'].includes(permission)
 // This is discovery, not authority: the server rechecks exact repositories at

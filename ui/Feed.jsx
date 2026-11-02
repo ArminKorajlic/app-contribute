@@ -16,6 +16,7 @@ import { sortStackRecords, stackMeta, stackPublicationRecords } from '../stack.j
 import {
   contributionTitle,
   findRunItemByRecord,
+  attentionListItems,
   isPublicFeedback,
   runPrimaryRecord,
   runUnitKey,
@@ -922,9 +923,7 @@ export function ContributionRun({
   const history = [...(run?.recent || []), ...(run?.archive || [])]
   const publishItems = decisions.filter(item => item.kind === 'publish')
   const readyItems = decisions.filter(item => item.kind === 'mark_ready')
-  const ownerDecisions = decisions.filter(item => isPublicFeedback(item) || ![
-    'publish', 'mark_ready', 'private_review', 'request',
-  ].includes(item.kind))
+  const ownerDecisions = attentionListItems(decisions)
   const preparedItems = [...privateItems, ...decisions.filter(item => item.kind === 'request')]
 
   // What needs the owner opens by itself; it can still be folded away.
