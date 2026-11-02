@@ -124,7 +124,7 @@ export function PullFeedbackFlag({ record, status = null, activity = null }) {
 // Where this PR came from, as buttons beside Agent, Assign and Open: the saved
 // contribution behind it and the chats that wrote, reviewed or fixed it. Short
 // role labels keep the row tidy; the chat's own title is the tooltip.
-const COMMENT_PREVIEW = 3
+const COMMENT_PREVIEW = 4
 
 const PROVENANCE_LABELS = { source: ['Source chat', 'Source chats'], review: ['Review chat', 'Review chats'], fix: ['Fix chat', 'Fix chats'] }
 
@@ -260,12 +260,12 @@ function PullRequestDetailView({ cacheStore, pr, token, onReview, onAssign, onRe
     for (const request of abandoned) request.controller.abort()
   }, [token])
   const [page, setPage] = useState({ files: 1, checks: 1, conversation: 1 })
-  // More than three comments fold to the newest three — the feedback the owner
-  // came for — with Show all / Show less at the end. The page pager joins the
-  // full list, so a folded view never mixes "all" with "page 2".
+  // The conversation reads top-down: the first four comments show, and Show
+  // all reveals the rest in the same chronological order. The page pager joins
+  // the full list, so a folded view never mixes "all" with "page 2".
   const [allComments, setAllComments] = useState(false)
   const commentsOpen = items => allComments || (items?.length || 0) <= COMMENT_PREVIEW
-  const shownComments = items => commentsOpen(items) ? (items || []) : items.slice(-COMMENT_PREVIEW)
+  const shownComments = items => commentsOpen(items) ? (items || []) : items.slice(0, COMMENT_PREVIEW)
   const [threadCursors, setThreadCursors] = useState([null])
   const [versionStale, setVersionStale] = useState(cacheStore?.stale === true)
   useEffect(() => {
