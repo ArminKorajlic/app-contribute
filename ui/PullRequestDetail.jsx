@@ -132,9 +132,12 @@ function PullRequestDetailView({ cacheStore, pr, token, onReview, onAssign, onRe
   // Conversation is GitHub's first tab: the description plus its comments,
   // reviews, inline discussions and links. Each is an independent read so one
   // failure never blanks the others.
-  const keys = tab === 'conversation'
-    ? { description: 'description:1', activity: `activity:${number}`, threads: `threads:${threadCursor || ''}`, related: 'related' }
-    : { view: `${tab}:${number}` }
+  const keys = {
+    description: 'description:1',
+    ...(tab === 'conversation'
+      ? { activity: `activity:${number}`, threads: `threads:${threadCursor || ''}`, related: 'related' }
+      : { view: `${tab}:${number}` }),
+  }
   const keySignature = Object.values(keys).join('|')
   useEffect(() => {
     const active = new Set(Object.values(keys))
@@ -164,8 +167,8 @@ function PullRequestDetailView({ cacheStore, pr, token, onReview, onAssign, onRe
         writeCache(old => ({ ...old, [key]: { loading: false, error: error.message, stale: error.code === 'stale' } }))
       })
     }
+    read(keys.description, signal => loadPullDescription(token, pr, signal))
     if (tab === 'conversation') {
-      read(keys.description, signal => loadPullDescription(token, pr, signal))
       read(keys.activity, signal => loadPullActivity(token, pr, number, signal))
       read(keys.threads, signal => loadPullThreads(token, pr, threadCursor, signal))
       read(keys.related, signal => loadPullRelated(token, pr, signal))
@@ -196,7 +199,7 @@ function PullRequestDetailView({ cacheStore, pr, token, onReview, onAssign, onRe
     {hasMore ? <button className="co-btn" onClick={() => set(current + 1)}>{unknown ? 'Check next page' : 'Next page'}</button> : null}
   </div> : null
   const labels = pr.labels?.nodes || []
-  const tabs = [['conversation', 'Conversation'], ['files', 'Files changed'], ['checks', 'Checks']]
+  const tabs = [['conversation', 'Comments'], ['files', 'Files changed'], ['checks', 'Checks']]
   const githubUrl = safeDetailLink(pr.url)
   return <div className="co-pr-detail" aria-label={`Details for PR ${pr.number}`}>
     <header className="co-gh-pr-head">
@@ -211,14 +214,17 @@ function PullRequestDetailView({ cacheStore, pr, token, onReview, onAssign, onRe
     </div>
     <div className="co-gh-pr-sub"><PullStateBadge pr={pr} /><span><b>{pr.author?.login || 'Someone'}</b> wants to merge into <code>{pr.baseRefName}</code>{pr.headRefName ? <> from <code>{pr.headRefName}</code></> : null}</span></div>
     <PullProvenance record={record} onRecord={onRecord} conversations={provenance} />
+    <div className="co-gh-description">
+      {readState(description, 'description')}
+      {ready(description) ? <article className="co-gh-comment"><header><b>{description.data?.user?.login || pr.author?.login}</b> <DateLabel prefix="opened " value={pr.createdAt} /></header><MarkdownView markdown={description.data?.body || '_No description provided._'} /></article> : null}
+    </div>
     <nav className="co-detail-tabs" aria-label="Pull request details">{tabs.map(([key, label]) => <button key={key} aria-pressed={tab === key} onClick={() => setTab(key)}>{label}
       {key === 'files' && Number.isInteger(pr.changedFiles) ? <><span className="co-tab-count">{pr.changedFiles}</span><span className="co-change-total"><b>+{pr.additions}</b><em>−{pr.deletions}</em></span></> : null}
       {key === 'checks' ? <ChecksBadge pr={pr} /> : null}</button>)}</nav>
     <div className="co-pr-detail-body" role="region" aria-label="Pull request context">
     {stale ? <p role="alert">This PR changed since the list was loaded. <button className="co-btn" onClick={onRefresh}>Refresh PR list</button></p> : null}
     {tab === 'conversation' ? <>
-      {readState(description, 'description')}
-      {ready(description) ? <article className="co-gh-comment"><header><b>{description.data?.user?.login || pr.author?.login}</b> <DateLabel prefix="opened " value={pr.createdAt} /></header><MarkdownView markdown={description.data?.body || '_No description provided._'} /></article> : null}
+      {ready(activity) && !activity.data?.items?.length && number === 1 ? <p className="co-pr-note">No comments yet.</p> : null}
       {ready(activity) ? activity.data?.items?.map(item => <article className="co-gh-comment" key={`${item.kind}:${item.id}`}><header><b>{item.user?.login || 'Contributor'}</b> {item.kind === 'review' ? (item.state || 'reviewed').toLowerCase().replaceAll('_', ' ') : 'commented'} <DateLabel value={item.date} />{item.html_url ? <DetailLink href={item.html_url}>View</DetailLink> : null}</header>{item.body ? <MarkdownView markdown={item.body} /> : null}</article>) : null}
       {readState(activity, 'comments')}
       {ready(activity) ? pager(number, activity.data?.hasMore, false, value => setPage(old => ({ ...old, conversation: value }))) : null}

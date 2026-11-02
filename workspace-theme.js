@@ -663,6 +663,8 @@ input[type=checkbox].co-switch:focus-visible { outline:2px solid var(--accent); 
 .co-desk-back { display:inline-flex; align-items:center; gap:7px; min-height:40px; padding:6px 10px 6px 4px; margin:0 0 6px -4px; border:0; border-radius:8px; background:none; color:var(--muted); font:600 15px var(--font); cursor:pointer; }
 .co-desk-back:hover { color:var(--text); background:var(--surface-2); }
 .co-public-work.is-page .co-pr-detail { border:0; padding:0; }
+.co-public-work.is-page .co-pr-detail-body { height:auto; min-height:0; max-height:min(120dvh,1120px); }
+.co-gh-description { margin:4px 0 2px; }
 .co-pull-page .co-gh-pr-title { font-size:24px; letter-spacing:-.015em; }
 .co-gh-labels { margin-top:8px; }
 .co-envelope .co-attention-row { padding:12px 14px; border:0; border-radius:0; }

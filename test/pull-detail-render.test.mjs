@@ -13,10 +13,10 @@ async function render(t, name, props) {
   `)
   return (await renderer).render(name, props)
 }
-test('detail opens on the GitHub-style Conversation tab with Files changed and Checks beside it', async t => {
+test('detail opens on the GitHub-style Comments tab with Files changed and Checks beside it', async t => {
   const html = await render(t, 'PullRequestDetail', { pr: { number: 7, repository: { nameWithOwner: 'team/repo' }, headRefOid: 'a'.repeat(40), baseRefOid: 'b'.repeat(40), baseRefName: 'main', url: 'https://github.com/team/repo/pull/7' } })
   if (!html) return
-  assert.match(html, /aria-pressed="true">Conversation/)
+  assert.match(html, /aria-pressed="true">Comments/)
   assert.match(html, />Files changed</)
   assert.match(html, />Checks<\/button>/)
   assert.match(html, /wants to merge into <code>main<\/code>/)
