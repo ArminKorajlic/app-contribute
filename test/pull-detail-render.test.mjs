@@ -228,3 +228,20 @@ test('tabs carry GitHub-style count pills: comments, files and a checks dot, no 
   assert.match(html, /Checks<span[^>]*class="co-tab-dot is-failure"[^>]*><\/span><span class="co-tab-count">38\/42<\/span>/)
   assert.doesNotMatch(html, /co-change-total/) // the +adds −dels stay inside the Files tab
 })
+
+test('several conversations of one kind fold into a Source chats dropdown, one stays a plain button', async t => {
+  const pr = { number: 9, repository: { nameWithOwner: 'team/repo' }, headRefOid: 'a'.repeat(40), baseRefOid: 'b'.repeat(40), baseRefName: 'main', url: 'https://github.com/team/repo/pull/9' }
+  const two = await render(t, 'PullRequestDetail', { pr, cacheStore: loadedConversation(), provenance: [
+    { chat_id: 'c1', role: 'source', title: 'Build the thing' },
+    { chat_id: 'c2', role: 'source', title: 'Fix the thing' },
+    { chat_id: 'c3', role: 'review', title: 'Review it' },
+  ] })
+  if (!two) return
+  assert.match(two, /Source chats/)
+  assert.match(two, /co-chat-group/)
+  assert.doesNotMatch(two, /Source chat 2|Source chat #1/) // the list opens on demand, closed by default
+  assert.match(two, /Review chat</) // a single review chat stays a plain button
+  const one = await render(t, 'PullRequestDetail', { pr, cacheStore: loadedConversation(), provenance: [{ chat_id: 'c1', role: 'source', title: 'Build the thing' }] })
+  assert.match(one, /Source chat</)
+  assert.doesNotMatch(one, /Source chats|co-chat-group/)
+})
