@@ -126,18 +126,44 @@ export function PullFeedbackFlag({ record, status = null, activity = null }) {
 // role labels keep the row tidy; the chat's own title is the tooltip.
 const COMMENT_PREVIEW = 3
 
-const PROVENANCE_LABELS = { source: 'Source chat', review: 'Review chat', fix: 'Fix chat' }
+const PROVENANCE_LABELS = { source: ['Source chat', 'Source chats'], review: ['Review chat', 'Review chats'], fix: ['Fix chat', 'Fix chats'] }
+
+// One button per kind of conversation. Several chats of the same kind fold
+// into one dropdown — Source chats ⌄ — listing Source chat #1, #2, … with
+// each chat's own title underneath.
+function ProvenanceGroup({ role, links }) {
+  const [open, setOpen] = useState(false)
+  const root = useRef(null)
+  useEffect(() => {
+    if (!open) return undefined
+    const closeOutside = event => { if (!root.current?.contains(event.target)) setOpen(false) }
+    document.addEventListener('pointerdown', closeOutside)
+    return () => document.removeEventListener('pointerdown', closeOutside)
+  }, [open])
+  const [one, many] = PROVENANCE_LABELS[role] || ['Chat', 'Chats']
+  if (links.length === 1) {
+    return <button type="button" className="co-btn co-gh-chat-link" title={links[0].title} onClick={() => openAgentConversation(links[0].chat_id)}><Icon name="feedback" size={15} />{one}</button>
+  }
+  return <span className="co-chat-group" ref={root} onKeyDown={event => { if (event.key === 'Escape') setOpen(false) }}>
+    <button type="button" className="co-btn co-gh-chat-link" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(value => !value)}><Icon name="feedback" size={15} />{many}<Icon name="chevron" size={14} /></button>
+    {open ? <div className="co-chat-group-list" role="menu" aria-label={many}>
+      {links.map((link, index) => <button type="button" role="menuitem" key={link.chat_id} onClick={() => { setOpen(false); openAgentConversation(link.chat_id) }}>
+        <strong>{one} #{index + 1}</strong>{link.title ? <small>{link.title}</small> : null}
+      </button>)}
+    </div> : null}
+  </span>
+}
+
 function PullProvenance({ record, onRecord, conversations }) {
   const local = record && onRecord
   if (!local && !conversations.length) return null
+  const roles = [...new Set(conversations.map(link => link.role))]
   return <span className="co-gh-provenance" role="group" aria-label="Where this PR came from">
     {local ? <button type="button" className="co-btn co-gh-chat-link" title="The saved contribution this PR was sent from" onClick={() => onRecord(record)}><Icon name="prepare" size={15} />Saved work</button> : null}
-    {conversations.map((link, index) => {
-      const repeat = conversations.slice(0, index).filter(other => other.role === link.role).length
-      return <button type="button" className="co-btn co-gh-chat-link" key={link.chat_id} title={link.title} onClick={() => openAgentConversation(link.chat_id)}><Icon name="feedback" size={15} />{(PROVENANCE_LABELS[link.role] || 'Chat') + (repeat ? ` ${repeat + 1}` : '')}</button>
-    })}
+    {roles.map(role => <ProvenanceGroup key={role} role={role} links={conversations.filter(link => link.role === role)} />)}
   </span>
 }
+
 function ReadErrors({ errors, onRetry }) {
   return errors?.map(message => <p key={message} role="alert">{message} <button className="co-btn" onClick={onRetry}>Retry</button></p>)
 }

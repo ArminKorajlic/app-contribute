@@ -411,6 +411,11 @@ export const WORKSPACE_CSS = `
 .co-pr-detail-actions { display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin:16px 0 4px; }
 .co-pr-detail-actions .co-btn { min-height:40px; display:inline-flex; align-items:center; gap:6px; }
 .co-gh-provenance { display:contents; }
+.co-chat-group { position:relative; display:inline-flex; }
+.co-chat-group-list { position:absolute; z-index:30; top:calc(100% + 6px); left:0; width:min(320px,calc(100vw - 32px)); padding:6px; border:1px solid var(--border); border-radius:12px; background:var(--surface); box-shadow:0 12px 32px rgba(0,0,0,.28); }
+.co-chat-group-list button { display:flex; flex-direction:column; gap:2px; width:100%; padding:9px 10px; border:0; border-radius:8px; background:none; color:var(--text); text-align:left; font:inherit; cursor:pointer; }
+.co-chat-group-list button:hover { background:var(--surface-2,var(--surface)); }
+.co-chat-group-list small { color:var(--muted); font-size:14px; overflow-wrap:anywhere; }
 .co-gh-chat-link { gap:6px; }
 .co-gh-chat-link .co-icon { color:var(--muted); }
 .co-pr-detail .co-detail-tabs { display:flex; width:100%; gap:20px; margin:14px 0 0; border-bottom:1px solid var(--border); overflow-x:auto; }
