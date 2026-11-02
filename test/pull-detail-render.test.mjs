@@ -19,7 +19,10 @@ test('detail opens on the GitHub-style Comments tab with Files changed and Check
   assert.match(html, /aria-pressed="true">Comments/)
   assert.match(html, />Files changed</)
   assert.match(html, />Checks<\/button>/)
-  assert.match(html, /wants to merge into <code>main<\/code>/)
+  // Bitbucket-style flow: head branch → target, then the author.
+  assert.match(html, /co-branch-flow/)
+  assert.match(html, /<code>main<\/code>/)
+  assert.match(html, /by <b>/)
   assert.match(html, /Loading the conversation/)
   assert.match(html, /aria-label="Choose what an agent does with PR \d+"/)
 })
@@ -210,4 +213,17 @@ test('more than three comments fold to the newest three with Show all at the end
   assert.match(html, /user5/)
   const few = await render(t, 'PullRequestDetail', { pr, cacheStore: loadedConversation(items.slice(0, 3)) })
   assert.doesNotMatch(few, /Show all|co-comments-toggle/)
+})
+
+test('tabs carry GitHub-style count pills: comments, files and a checks dot, no inline diff stats', async t => {
+  const pr = { number: 9, repository: { nameWithOwner: 'team/repo' }, headRefOid: 'a'.repeat(40), baseRefOid: 'b'.repeat(40), baseRefName: 'main', headRefName: 'fix/thing', url: 'https://github.com/team/repo/pull/9', changedFiles: 11, additions: 637, deletions: 45, comments: { totalCount: 2 },
+    commits: { nodes: [{ commit: { statusCheckRollup: { state: 'FAILURE', contexts: { totalCount: 42, checkRunCountsByState: [{ state: 'SUCCESS', count: 38 }, { state: 'FAILURE', count: 4 }], statusContextCountsByState: [] } } } }] } }
+  const items = [1, 2, 3, 4].map(n => ({ kind: 'comment', id: n, user: { login: `u${n}` }, date: `2026-10-0${n}T10:00:00Z`, body: `C${n}` }))
+  const html = await render(t, 'PullRequestDetail', { pr, cacheStore: loadedConversation(items) })
+  if (!html) return
+  assert.match(html, /Comments<span class="co-tab-count">4<\/span>/)
+  assert.match(html, /Files changed<span class="co-tab-count">11<\/span>/)
+  assert.match(html, /co-tab-dot is-failure/)
+  assert.match(html, /Checks<span[^>]*class="co-tab-dot is-failure"[^>]*><\/span><span class="co-tab-count">42<\/span>/)
+  assert.doesNotMatch(html, /co-change-total|38\/42/)
 })
