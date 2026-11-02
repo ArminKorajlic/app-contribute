@@ -266,6 +266,19 @@ function QuietProjects({ projects, onSelect, checks, searching }) {
   </details>
 }
 
+// The PR page is its own task surface: the review window, assignment pane and
+// agent panes need the same open/close plumbing a project page gives them.
+// Without it, every pane renders bare, always, and with no way to close.
+function PullPageTask({ children }) {
+  const [publicKeys, setPublicKeys] = useState(new Set())
+  const [activeId, setActiveId] = useState('')
+  const task = {
+    publicKeys, setPublicKeys, activeId, explicit: true,
+    open: setActiveId, close: () => setActiveId(''),
+  }
+  return <TaskContext.Provider value={task}>{children}</TaskContext.Provider>
+}
+
 function LoadingState() {
   return <div className="co-source-loading" role="status"><span className="ma-spinner" aria-hidden="true" /><div><strong>Checking projects…</strong><span>Comparing local, shared, and prepared work.</span></div></div>
 }
@@ -450,7 +463,7 @@ export function SourceMap({
       {desk.pull ? (
         <div className="co-pull-page">
           <button type="button" className="co-desk-back" onClick={desk.onClosePull}><Icon name="left" size={16} />Back</button>
-          {desk.renderPull()}
+          <PullPageTask>{desk.renderPull()}</PullPageTask>
         </div>
       ) : (
       <>

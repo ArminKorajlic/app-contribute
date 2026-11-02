@@ -452,6 +452,25 @@ test('the workspace opens only after its first sync and never falls back to the 
   assert.match(appSource, /className="co-boot" role="status"/)
 })
 
+test('the PR page is a task surface: the review window opens, panes close, the detail stays put', () => {
+  const pullsSource = readFileSync(new URL('../ui/PullRequests.jsx', import.meta.url), 'utf8')
+  // Without a TaskContext every TaskPane renders bare, always, and cannot
+  // close; the desk PR page provides one of its own.
+  assert.match(sourceMapSource, /function PullPageTask/)
+  assert.match(sourceMapSource, /<PullPageTask>\{desk\.renderPull\(\)\}<\/PullPageTask>/)
+  // The detail is the page itself, never hidden behind a swappable pane.
+  assert.doesNotMatch(pullsSource, /<TaskPane id="task:detail"[^>]*><PullRequestDetail[^]*?holdUntilLoaded/)
+  // People load as a skeleton, not a sentence.
+  assert.doesNotMatch(pullsSource, /Loading people…/)
+})
+
+test('an external image in GitHub markdown becomes a labelled link, never a broken icon', () => {
+  const markdownSource = readFileSync(new URL('../ui/MarkdownView.jsx', import.meta.url), 'utf8')
+  assert.match(markdownSource, /function linkExternalImages/)
+  assert.match(markdownSource, /img\.replaceWith\(link\)/)
+  assert.match(markdownSource, /linkExternalImages\(DOMPurify\.sanitize/)
+})
+
 test('To look at feedback on a published PR opens the PR page, not the saved card', () => {
   assert.match(feedSource, /function openAttentionItem\(item\) \{\s*\n\s*const target = feedbackPull\(item\)/)
   assert.match(feedSource, /onSelect=\{openAttentionItem\}/)
