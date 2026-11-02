@@ -401,6 +401,13 @@ export const WORKSPACE_CSS = `
 .co-gh-pr-sub { display:flex; align-items:center; flex-wrap:wrap; gap:6px 10px; margin-top:10px; color:var(--muted); font-size:14px; }
 .co-gh-pr-sub b { color:var(--text); font-weight:600; }
 .co-gh-pr-sub code { padding:1px 6px; border-radius:6px; background:color-mix(in srgb,var(--accent) 12%,var(--surface)); color:var(--text); font:14px var(--mono,monospace); }
+.co-branch-flow { display:inline-flex; align-items:center; gap:7px; min-width:0; }
+.co-branch-flow code { overflow-wrap:anywhere; }
+.co-branch-flow .co-icon { flex:0 0 auto; color:var(--muted); }
+.co-tab-dot { width:9px; height:9px; border-radius:50%; flex:0 0 auto; }
+.co-tab-dot.is-success { background:var(--green); }
+.co-tab-dot.is-failure { background:var(--danger); }
+.co-tab-dot.is-pending { background:var(--co-warn,#b38235); }
 .co-pr-detail-actions { display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin:16px 0 4px; }
 .co-pr-detail-actions .co-btn { min-height:40px; display:inline-flex; align-items:center; gap:6px; }
 .co-gh-provenance { display:contents; }

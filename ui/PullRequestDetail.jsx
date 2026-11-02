@@ -4,7 +4,8 @@ import { MarkdownView } from './MarkdownView.jsx'
 import DiffView from './diff/DiffView.jsx'
 import { Icon } from './Icons.jsx'
 import { AgentMenu } from './AgentMenu.jsx'
-import { ChecksBadge, GithubLabel, PullStateBadge, REVIEW_DECISION } from './GithubParts.jsx'
+import { GithubLabel, PullStateBadge, REVIEW_DECISION } from './GithubParts.jsx'
+import { checkSummary } from '../collaboration.js'
 import { openAgentConversation } from './BatchAction.jsx'
 
 export function DateLabel({ value, prefix = '', time = false }) {
@@ -318,6 +319,16 @@ function PullRequestDetailView({ cacheStore, pr, token, onReview, onAssign, onRe
   </div> : null
   const labels = pr.labels?.nodes || []
   const tabs = [['conversation', 'Comments'], ['files', 'Files changed'], ['checks', 'Checks']]
+  // GitHub-style tab badges: one neutral count pill per tab. Comments counts
+  // the loaded conversation (comments and reviews); until it loads, GitHub's
+  // issue-comment total stands in. Checks add a pass/fail dot before the pill;
+  // the +added −removed totals live inside the Files tab, not on it.
+  const checks = checkSummary(pr)
+  const tabCounts = {
+    conversation: ready(activity) ? (activity.data?.items?.length ?? null) : (pr.comments?.totalCount ?? null),
+    files: Number.isInteger(pr.changedFiles) ? pr.changedFiles : null,
+    checks: checks?.total || null,
+  }
   const githubUrl = safeDetailLink(pr.url)
   // The conversation loads as one unit: a single skeleton stands in for the
   // description, the flag and the comments, and everything appears together.
@@ -341,7 +352,9 @@ function PullRequestDetailView({ cacheStore, pr, token, onReview, onAssign, onRe
       {githubUrl ? <a className="co-btn" href={githubUrl} target="_blank" rel="noopener noreferrer" aria-label={`Open on GitHub: PR ${pr.number}`}><Icon name="github" /> Open</a> : null}
       <PullProvenance record={record} onRecord={onRecord} conversations={provenance} />
     </div>
-    <div className="co-gh-pr-sub"><PullStateBadge pr={pr} /><span><b>{pr.author?.login || 'Someone'}</b> wants to merge into <code>{pr.baseRefName}</code>{pr.headRefName ? <> from <code>{pr.headRefName}</code></> : null}</span></div>
+    <div className="co-gh-pr-sub"><PullStateBadge pr={pr} />
+      <span className="co-branch-flow">{pr.headRefName ? <><code>{pr.headRefName}</code><Icon name="right" size={14} /></> : null}<code>{pr.baseRefName}</code></span>
+      <span>by <b>{pr.author?.login || 'Someone'}</b></span></div>
     {conversationLoading ? null : <>
     <details className="co-gh-description">
       <summary>
@@ -356,8 +369,8 @@ function PullRequestDetailView({ cacheStore, pr, token, onReview, onAssign, onRe
     <PullFeedbackFlag record={record} status={status} activity={ready(activity) ? activity.data : null} />
     </>}
     <nav className="co-detail-tabs" aria-label="Pull request details">{tabs.map(([key, label]) => <button key={key} aria-pressed={tab === key} onClick={() => setTab(key)}>{label}
-      {key === 'files' && Number.isInteger(pr.changedFiles) ? <><span className="co-tab-count">{pr.changedFiles}</span><span className="co-change-total"><b>+{pr.additions}</b><em>−{pr.deletions}</em></span></> : null}
-      {key === 'checks' ? <ChecksBadge pr={pr} /> : null}</button>)}</nav>
+      {key === 'checks' && checks?.total ? <span className={'co-tab-dot is-' + checks.state} title={`${checks.passed} of ${checks.total} checks passed or skipped`} aria-label={{ success: 'checks passed', failure: 'checks failing', pending: 'checks running' }[checks.state]} /> : null}
+      {Number.isInteger(tabCounts[key]) ? <span className="co-tab-count">{tabCounts[key]}</span> : null}</button>)}</nav>
     <div className="co-pr-detail-body" role="region" aria-label="Pull request context">
     {stale ? <p role="alert">This PR changed since the list was loaded. <button className="co-btn" onClick={onRefresh}>Refresh PR list</button></p> : null}
     {tab === 'conversation' && conversationLoading ? <Skeleton lines={7} label="Loading the conversation" /> : null}
