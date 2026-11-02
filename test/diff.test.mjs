@@ -142,3 +142,14 @@ test('parseDiffStat splits on the last pipe for paths containing " | "', () => {
   assert.equal(stat.files[0].path, 'docs/a | b.md')
   assert.equal(stat.files[0].additions, 2)
 })
+
+test('the line-number gutter grows with the file so 4-digit numbers never run together', async () => {
+  const { lineNumberDigits } = await import('../ui/diff/parseUnifiedDiff.js')
+  const source = (await import('node:fs')).readFileSync(new URL('../ui/diff/styles.js', import.meta.url), 'utf8')
+  assert.match(source, /--diff-num: calc\(var\(--diff-digits, 3\) \* 1ch \+ 8px\)/)
+  assert.match(source, /grid-template-columns: repeat\(2, var\(--diff-num\)\)/)
+  assert.doesNotMatch(source, /repeat\(2, 3\.5ch\)/)
+  assert.equal(lineNumberDigits([{ lines: [{ oldNo: 9, newNo: 12 }] }]), 3)
+  assert.equal(lineNumberDigits([{ lines: [{ oldNo: 1084, newNo: 1504 }] }]), 4)
+  assert.equal(lineNumberDigits([{ lines: [{ oldNo: 99999, newNo: null }] }]), 5)
+})

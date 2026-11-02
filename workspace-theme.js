@@ -200,6 +200,7 @@ export const WORKSPACE_CSS = `
 /* Agent picker: the chat composer's model rows and effort track (sizes kept in
    step with the shell's ChatSettingsPanel/EffortStepper), behind a compact trigger. */
 .co-agent-picker { max-width:440px; margin:4px 0 18px; }
+.co-review-window .co-agent-picker { max-width:none; }
 .co-agent-trigger { display:flex; align-items:center; gap:10px; width:100%; min-height:48px; padding:6px 10px; border:1px solid var(--border); border-radius:10px; background:var(--surface); color:var(--text); font:inherit; text-align:left; cursor:pointer; }
 .co-agent-trigger:hover { background:var(--surface-2,var(--surface)); }
 .co-agent-trigger:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
@@ -402,9 +403,9 @@ export const WORKSPACE_CSS = `
 .co-gh-pr-sub code { padding:1px 6px; border-radius:6px; background:color-mix(in srgb,var(--accent) 12%,var(--surface)); color:var(--text); font:14px var(--mono,monospace); }
 .co-pr-detail-actions { display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin:16px 0 4px; }
 .co-pr-detail-actions .co-btn { min-height:40px; display:inline-flex; align-items:center; gap:6px; }
-.co-gh-provenance { display:flex; align-items:center; flex-wrap:wrap; gap:0 4px; margin:4px 0 0; color:var(--muted); font-size:14px; }
-.co-gh-chat-link { min-height:44px; min-width:44px; padding:0 8px; border:0; border-radius:8px; background:none; color:var(--accent); font:inherit; cursor:pointer; text-decoration:underline; text-underline-offset:3px; }
-.co-gh-chat-link:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
+.co-gh-provenance { display:contents; }
+.co-gh-chat-link { gap:6px; }
+.co-gh-chat-link .co-icon { color:var(--muted); }
 .co-pr-detail .co-detail-tabs { display:flex; width:100%; gap:20px; margin:14px 0 0; border-bottom:1px solid var(--border); overflow-x:auto; }
 .co-pr-detail .co-detail-tabs button { display:inline-flex; align-items:center; gap:6px; flex:none; min-height:44px; font-size:14px; }
 .co-tab-count { min-width:22px; padding:0 7px; border-radius:2em; background:var(--surface-2,var(--surface)); color:var(--text); font-size:14px; line-height:20px; text-align:center; }

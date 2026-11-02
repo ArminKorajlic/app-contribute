@@ -120,17 +120,17 @@ export function PullFeedbackFlag({ record, status = null, activity = null }) {
   </p>
 }
 
-const PROVENANCE_HINTS = { source: 'Created or updated this PR', review: 'Reviewed this PR', fix: 'Fixed this PR' }
-// One place for where this PR came from: its local preparation in Contribute
-// and the conversations that created, reviewed or fixed it.
+// Where this PR came from, as buttons beside Agent, Assign and Open: the saved
+// contribution behind it and the chats that wrote, reviewed or fixed it. Short
+// role labels keep the row tidy; the chat's own title is the tooltip.
+const PROVENANCE_LABELS = { source: 'Source chat', review: 'Review chat', fix: 'Fix chat' }
 function PullProvenance({ record, onRecord, conversations }) {
   const local = record && onRecord
   if (!local && !conversations.length) return null
-  return <section className="co-gh-provenance" aria-label="Where this PR came from">
-    <Icon name="feedback" size={16} /><span>From</span>
-    {local ? <button type="button" className="co-gh-chat-link" onClick={() => onRecord(record)}>Local preparation</button> : null}
-    {conversations.map(link => <button type="button" className="co-gh-chat-link" key={link.chat_id} title={PROVENANCE_HINTS[link.role]} onClick={() => openAgentConversation(link.chat_id)}>{link.title}</button>)}
-  </section>
+  return <span className="co-gh-provenance" role="group" aria-label="Where this PR came from">
+    {local ? <button type="button" className="co-btn co-gh-chat-link" title="The saved contribution this PR was sent from" onClick={() => onRecord(record)}><Icon name="prepare" size={15} />Saved work</button> : null}
+    {conversations.map(link => <button type="button" className="co-btn co-gh-chat-link" key={link.chat_id} title={link.title} onClick={() => openAgentConversation(link.chat_id)}><Icon name="feedback" size={15} />{PROVENANCE_LABELS[link.role] || 'Chat'}</button>)}
+  </span>
 }
 function ReadErrors({ errors, onRetry }) {
   return errors?.map(message => <p key={message} role="alert">{message} <button className="co-btn" onClick={onRetry}>Retry</button></p>)
@@ -331,9 +331,9 @@ function PullRequestDetailView({ cacheStore, pr, token, onReview, onAssign, onRe
       {!readOnly && canAssign ? <button className="co-btn" disabled={stale} onClick={onAssign}><Icon name="person" /> Assign</button> : null}
       {status && onProgress ? <button className="co-btn" onClick={onProgress}>Agent progress</button> : null}
       {githubUrl ? <a className="co-btn" href={githubUrl} target="_blank" rel="noopener noreferrer" aria-label={`Open on GitHub: PR ${pr.number}`}><Icon name="github" /> Open</a> : null}
+      <PullProvenance record={record} onRecord={onRecord} conversations={provenance} />
     </div>
     <div className="co-gh-pr-sub"><PullStateBadge pr={pr} /><span><b>{pr.author?.login || 'Someone'}</b> wants to merge into <code>{pr.baseRefName}</code>{pr.headRefName ? <> from <code>{pr.headRefName}</code></> : null}</span></div>
-    <PullProvenance record={record} onRecord={onRecord} conversations={provenance} />
     {conversationLoading ? null : <>
     <details className="co-gh-description">
       <summary>

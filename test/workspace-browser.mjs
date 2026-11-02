@@ -1016,7 +1016,7 @@ window.runWorkspaceChecks = async () => {
       ensure(exactReads() - exactBefore === 2 && listReads() === listBefore, 'Links scanned open pages instead of exact identities')
       const provenance = query('.co-gh-provenance')
       const links = [...provenance.querySelectorAll('.co-gh-chat-link')]
-      ensure(links.map(text).join('|') === 'Local preparation|Source conversation|Review conversation', 'Provenance is not one combined section: ' + links.map(text))
+      ensure(links.map(text).join('|') === 'Saved work|Source chat|Review chat', 'Provenance is not one combined section: ' + links.map(text))
       ensure(document.querySelectorAll('.co-gh-provenance').length === 1, 'Provenance repeated')
       for (const link of links) {
         const box = link.getBoundingClientRect()
