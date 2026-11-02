@@ -130,7 +130,7 @@ const runAnchor = run => run.items?.length === 1 ? `${run.items[0].repo.toLowerC
 
 // `scope` follows the project tabs: 'all' (every open PR), 'requests' (PRs that
 // ask for the owner's review) or 'mine' (the saved agent reviews only).
-export function PullRequests({ appId, token, project, conn, onChanged, records = [], onRecord, refreshKey, focusPull, focusRun, onFocusRelease, scope = 'all', onScope, onTotal }) {
+export function PullRequests({ appId, token, project, conn, onChanged, records = [], onRecord, refreshKey, focusPull, focusRun, onFocusRelease, scope = 'all', onScope, onTotal, presentation = 'list', onOpenPage = null }) {
   const repo = project?.canonical_repo || ''
   const task = useProjectTask()
   const [data, setData] = useState({ loading: true, error: '' })
@@ -342,7 +342,11 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
   const relevantRuns = [...linkedRun, ...runs].filter(run => !repo || run.items?.some(item => item.repo.toLowerCase() === repo.toLowerCase()))
   const statusFor = pr => reviewForPull(relevantRuns, pr)
   const detailPr = pulls.find(pr => prKey(pr) === opened)
-  function inspect(pr) { setOpened(prKey(pr)); task?.open('task:detail') }
+  function inspect(pr) {
+    if (onOpenPage) { onOpenPage(pr); return }
+    setOpened(prKey(pr))
+    task?.open('task:detail')
+  }
   // A launch or assignment opened from one PR stays beside that PR; a batch
   // opens under the list header. `anchor` is only placement, never scope.
   function choose(pulls, mode, anchor = '') {
@@ -429,6 +433,19 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
     {reviewDialog}
     <AgentReviewHistory runs={relevantRuns} pulls={pulls} listState={data} onOpen={openRun} />
   </section>
+  if (presentation === 'page') {
+    return <section className="co-public-work is-page" aria-label="Pull request">
+      {focusRead ? <p className="co-pr-note" role="alert">Could not read that pull request: {focusRead.message}</p> : null}
+      {runError ? <p className="co-pr-note" role="status">Agent progress unavailable: {runError}</p> : null}
+      {loadError}
+      {assignPane}
+      {detailPr ? <>
+        {relevantRuns.filter(run => runAnchor(run) === opened).map(runPane)}
+        <TaskPane id="task:detail" dock={false}><PullRequestDetail key={`${prKey(detailPr)}:${detailPr.headRefOid}:${detailPr.baseRefOid}:${detailRevision}`} cacheStore={detailSnapshot(detailPr)} pr={detailPr} token={token} onReview={mode => choose([detailPr], mode, opened)} onAssign={() => assignSelection([detailPr], opened)} onRefresh={() => load()} readOnly={!isOpenPull(detailPr)} canAssign={mayAssign(detailPr.repository.viewerPermission)} status={statusFor(detailPr)} onProgress={() => task?.open(`task:run:${statusFor(detailPr)?.run.id}`)} record={recordsForPull(records, detailPr)[0]} onRecord={onRecord} provenance={pullConversations(records, relevantRuns, detailPr)} /></TaskPane>
+      </> : <p className="co-pr-note" role="status">{data.loading || data.error ? 'Loading the pull request…' : 'This pull request is not in the open list. It may be closed; refresh to check.'}</p>}
+      {reviewDialog}
+    </section>
+  }
   const assignAnchor = assigning?.anchor && visibleKeys.has(assigning.anchor) ? assigning.anchor : ''
   return <section className="co-public-work" aria-label="Pull requests">
     <div className={'co-pr-list-controls' + (searchOpen ? ' is-searching' : '')}>

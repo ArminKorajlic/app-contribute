@@ -284,7 +284,7 @@ export function SourceMap({
   onProjectOpenChange,
   checks = {},
   attention = {},
-  desk = { view: 'projects', onView: () => {}, counts: {}, login: '', records: [], lastLooked: '', decisionsFor: () => [], onOpenPull: () => {} },
+  desk = { view: 'projects', onView: () => {}, counts: {}, login: '', records: [], lastLooked: '', decisionsFor: () => [], onOpenPull: () => {}, pull: null, onClosePull: () => {}, renderPull: () => null },
 }) {
   const [manualRefresh, setManualRefresh] = useState('idle')
   const [checkNote, setCheckNote] = useState(null)
@@ -433,7 +433,8 @@ export function SourceMap({
   // first, then local-only apps, quiet apps, and repositories on GitHub.
   const deskGroups = splitProjects(projects, attention)
   const orderedProjects = [...deskGroups.active, ...deskGroups.builtHere, ...deskGroups.quiet, ...deskGroups.external]
-  const openView = key => { if (selected) closeProject(); desk.onView(key) }
+  const openView = key => { desk.onClosePull(); if (selected) closeProject(); desk.onView(key) }
+  const openProjectFromRail = key => { desk.onClosePull(); void openProject(key) }
   function openRecordFromDesk(project, item) {
     void openProject(project.key)
     if (item?.id) openWork(item.id)
@@ -444,8 +445,15 @@ export function SourceMap({
   return (
     <section className={'co-projects-view' + (selectedProject ? ' is-focus' : '')} aria-label="Project details">
       <div className="co-desk">
-      <DeskRail view={desk.view} counts={desk.counts} projects={projects} attention={attention} selectedKey={selected} onView={openView} onOpenProject={openProject} />
+      <DeskRail view={desk.view} counts={desk.counts} projects={projects} attention={attention} selectedKey={selected} onView={openView} onOpenProject={openProjectFromRail} />
       <div className="co-desk-pane">
+      {desk.pull ? (
+        <div className="co-pull-page">
+          <button type="button" className="co-desk-back" onClick={desk.onClosePull}><Icon name="left" size={16} />Back</button>
+          {desk.renderPull()}
+        </div>
+      ) : (
+      <>
       {selectedProject ? <h2 className="co-visually-hidden">Project detail</h2> : (
         <>
         <DeskChips view={desk.view} counts={desk.counts} onView={openView} />
@@ -555,6 +563,8 @@ export function SourceMap({
             sourceRevision={snapshot?.generated_at}
           />
         </div>
+      )}
+      </>
       )}
       </div>
       </div>
