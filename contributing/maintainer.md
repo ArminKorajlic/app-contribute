@@ -137,9 +137,12 @@ merge/queue, readiness, Stop and read-only `/observe` recovery. Follow it for
 execution; this file adds only Contribute's entry points.
 
 Select named PRs independently of authorship or assignment; assignment is a
-separate public action and never starts review. Modes are `review` (private),
-`review_merge` (pinned conditional merge) and `review_fix_merge` (scoped
-takeover). Contribute offers a mode only when this Möbius advertises it
+separate public action and never starts review. When a review is published,
+default to **one review body with numbered points — no inline file threads
+unless the owner asks for them**; that is the accepted house format, and
+guessed inline threads have cost public cleanup under the owner's name. Modes
+are `review` (private), `review_merge` (pinned conditional merge) and
+`review_fix_merge` (scoped takeover). Contribute offers a mode only when this Möbius advertises it
 (`review-presets` capabilities); `--allow-mark-ready` additionally needs draft
 takeover support and is proposal input, never consent.
 

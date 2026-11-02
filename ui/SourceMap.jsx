@@ -481,9 +481,7 @@ export function SourceMap({
       ) : null}
 
       {!selectedProject ? (
-        desk.view === 'work' ? (
-          <>{renderActivity?.(null, activityNavigation)}</>
-        ) : desk.view !== 'projects' ? (
+        desk.view !== 'projects' ? (
           <>
             <label className="co-desk-search">
               <Icon name="search" size={16} />

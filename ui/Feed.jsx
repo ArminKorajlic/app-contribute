@@ -482,6 +482,7 @@ function ExactBatchAction({
         publicationPreference={publicationPreference}
         githubState={githubState}
         progress={progress}
+        onSelect={busy ? undefined : onSelect}
       />
       {note ? <p className="co-run-error" role="status">{note}</p> : null}
       {checking ? <p className="co-run-error" role="status">Checking the recorded result. Refresh Contribute to check it; nothing will be sent again from this confirmation.</p> : null}

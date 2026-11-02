@@ -1,8 +1,13 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { batchHandle, cardRecordIds, sendTarget } from '../chat-blocks.js'
+import { spawnSync } from 'node:child_process'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { batchHandle, cardRecordIds, itemRecordIds, sendTarget } from '../chat-blocks.js'
+import { readBlockSession } from '../block-protocol.js'
 import { reviewAddressFor } from '../send-readiness.js'
-import { attemptOutcome, confirmationItem, descriptionExcerpt, LEDGER_NOTE, REFRESH_FAILED_NOTE, SIZE_NOTE, TIMEOUT_NOTE, createInlineSession, decodeCheckpoint, encodeCheckpoint, observeAttempt, RECOVERY_NOTE } from '../inline-session.js'
+import { attemptOutcome, confirmationItem, descriptionExcerpt, LEDGER_NOTE, NEWER_NOTE, UNLISTED_LAYER_NOTE, REFRESH_FAILED_NOTE, SIZE_NOTE, TIMEOUT_NOTE, createInlineSession, decodeCheckpoint, encodeCheckpoint, observeAttempt, RECOVERY_NOTE } from '../inline-session.js'
 
 const HEAD = 'a'.repeat(40), NEXT = 'c'.repeat(40)
 function prepared(id, extra = {}) {
@@ -27,13 +32,17 @@ function serverReviewStatus(addressed, store) {
   const ids = addressed.filter(id => store.get(id)?.status === 'prepared')
   return { state: 'ready', addressed, byId: Object.fromEntries(ids.map(id => [id, { state: 'ready' }])) }
 }
-function harness({ actions, records, checkpoint = null, retain = false, send, sendStack, address = null, loadExact = null, runtime: extra = {} }) {
+// The item intents the host sends with the session (#1914 `init.items`). By
+// default a one-record card's item; a batch card passes its items.
+const reviewItems = ids => ids.map(id => ({ intent: `review:${id}` }))
+const defaultItems = actions => reviewItems(actions.flatMap(item => /^chat-send:(.+)$/.exec(item.key)?.[1] || []))
+function harness({ actions, items = defaultItems(actions), records, checkpoint = null, retain = false, send, sendStack, address = null, loadExact = null, runtime: extra = {} }) {
   const store = new Map(records.map(record => [record.id, record]))
   const states = [], sends = [], needs = []
-  const session = createInlineSession({ sessionId: 'session-1', actions, checkpoint, retain, publish: state => states.push(structuredClone(state)),
+  const session = createInlineSession({ sessionId: 'session-1', actions, items, checkpoint, retain, publish: state => states.push(structuredClone(state)),
     loadExact: loadExact ? id => loadExact(id, store) : async id => store.has(id) ? structuredClone(store.get(id)) : null, onNeedRuntime: () => needs.push(true) })
   const runtime = () => ({ records: [...store.values()], ledgerReady: true, connection: 'connected', frozenBinding: true,
-    reviewStatus: serverReviewStatus(address || reviewAddressFor(cardRecordIds(actions.map(item => item.key)), [...store.values()]), store),
+    reviewStatus: serverReviewStatus(address || reviewAddressFor(cardRecordIds(actions.map(item => item.key), items), [...store.values()]), store),
     send: async rec => { sends.push({ kind: 'single', ids: [rec.id], records: [structuredClone(rec)] }); return send ? send(rec) : { ok: true } },
     sendStack: async recs => { sends.push({ kind: 'stack', ids: recs.map(rec => rec.id), records: structuredClone(recs) }); return sendStack ? sendStack(recs) : { ok: true } },
     refresh() {}, ...extra })
@@ -64,7 +73,9 @@ test('Contribute becomes Confirm with the complete app-sourced identity of each 
   assert.equal(item.title, 'Change one')
   assert.ok(item.facts.length <= 8)
   for (const fact of item.facts) assert.ok(fact.label && fact.value && fact.value.length <= 512, JSON.stringify(fact))
-  assert.deepEqual(item.facts.map(fact => fact.label), ['Repository', 'Action', 'Branch', 'Version', 'Reviewed diff', 'Change', 'Review'])
+  // The card's per-contribution facts (Project, Change) lead, with the card's values.
+  assert.deepEqual(item.facts.map(fact => fact.label), ['Project', 'Change', 'Action', 'Branch', 'Version', 'Reviewed diff', 'Review'])
+  assert.deepEqual(item.facts.slice(0, 2), [{ label: 'Project', value: 'owner/repo' }, { label: 'Change', value: '1 file · +2 −0' }])
   const sized = confirmationItem(prepared('sized', { plan: { diff_stat: ' 3 files changed, 40 insertions(+), 2 deletions(-)' } }))
   assert.deepEqual(sized.facts.find(fact => fact.label === 'Change'), { label: 'Change', value: '3 files · +40 −2' }, 'Confirm shows how big the change is')
   const stacked = confirmationItem({ ...layer('base', 1, ''), plan: { ...layer('base', 1, '').plan, diff_stat: '1 file changed, 1 insertion(+)' } })
@@ -156,47 +167,65 @@ test('a recorded server failure after the attempt releases a recovered lock', ()
 })
 
 test('Contribute all sends independent units in parallel and a stack as one ordered request', async () => {
-  const gates = { one: deferred(), two: deferred() }
+  const gates = { one: deferred(), two: deferred(), stack: deferred() }
   const records = [prepared('one'), prepared('two'), layer('base', 1, ''), layer('top', 2, 'base')]
   records[3].plan.base_sha = records[2].plan.head_sha
   const ids = ['one', 'two', 'base', 'top']
-  const actions = [...ids.map(id => ({ key: `chat-send:${id}`, label: 'Contribute' })), { key: `chat-send-batch:${batchHandle(ids)}`, label: 'Contribute all' }]
-  const h = harness({ actions, records, send: rec => gates[rec.id].promise })
-  const batch = actions.at(-1).key
+  // The card's one action; its items name the records it covers.
+  const actions = [{ key: `chat-send-batch:${batchHandle(ids)}`, label: 'Contribute all' }]
+  const h = harness({ actions, items: reviewItems(ids), records, send: rec => gates[rec.id].promise, sendStack: () => gates.stack.promise })
+  const batch = actions[0].key
   await openConfirm(h, batch)
   const confirming = h.action(batch)
   assert.equal(confirming.confirming, true)
   assert.deepEqual(confirming.confirmation.map(item => item.title), ['Change one', 'Change two', 'Change base', 'Change top'])
-  assert.equal(confirming.confirmation[2].facts[1].value, 'Layer 1 of 2 · Stack')
+  assert.equal(confirming.confirmation[2].facts[2].value, 'Layer 1 of 2 · Stack')
   h.fire(batch, 'confirm'); await tick()
   assert.deepEqual(h.sends.map(call => call.ids.join('+')).sort(), ['base+top', 'one', 'two'], 'both singles are in flight together')
   assert.equal(h.sends.find(call => call.kind === 'stack').ids.join(','), 'base,top')
   h.store.set('two', published(prepared('two'), 8))
   gates.two.resolve({ ok: true }); await tick()
-  assert.equal(h.action('chat-send:two').hidden, true, 'a finished unit settles before slower siblings')
-  assert.equal(h.action('chat-send:one').busy, true)
+  assert.deepEqual(h.last().summary, '1 sent · 3 prepared', 'a finished unit settles before slower siblings')
+  assert.equal(h.action(batch).busy, true)
+  h.store.set('base', published(h.store.get('base'), 9)); h.store.set('top', published(h.store.get('top'), 10))
+  gates.stack.resolve({ ok: true }); await tick()
   gates.one.resolve({ error: 'Push rejected', failure: { owner: 'agent' } }); await tick()
-  assert.equal(h.action('chat-send:one').status, 'Needs attention')
-  assert.equal(h.action('chat-send:two').hidden, true, 'a sibling failure never makes a sent unit pending')
+  assert.equal(h.action(batch).status, 'Needs attention')
+  assert.equal(h.last().summary, '3 sent · 1 prepared', 'a sibling failure never makes a sent unit pending')
 })
 
-test('a card naming one layer of a new stack reaches Confirm once every prepared layer is addressed', async () => {
+test('a card listing one layer never confirms or sends the stack layers it does not list', async () => {
+  // The reviewer's probe: items=[review:base], action=chat-send:base.
   const records = [layer('base', 1, ''), layer('top', 2, 'base')]
   records[1].plan.base_sha = records[0].plan.head_sha
-  const actions = [{ key: 'chat-send:base', label: 'Contribute' }]
-  assert.deepEqual(reviewAddressFor(['base'], records), ['base', 'top'], 'the status request covers the whole stack phase')
-  // As the server answers a request addressed only to the card's own id: the other layer has no check.
-  const narrow = harness({ actions, records, address: ['base'] })
-  await openConfirm(narrow, 'chat-send:base')
-  assert.equal(narrow.action('chat-send:base').confirming, false)
-  assert.match(narrow.action('chat-send:base').note, /current source check/)
-  // The app's request covers every prepared layer, so the stack's phase can be confirmed and sent as one.
-  const h = harness({ actions, records })
+  const h = harness({ actions: [{ key: 'chat-send:base', label: 'Contribute' }], items: reviewItems(['base']), records })
   await openConfirm(h, 'chat-send:base')
   const state = h.action('chat-send:base')
+  assert.equal(state.confirming, false, 'no partial or expanded Confirm')
+  assert.equal(state.note, UNLISTED_LAYER_NOTE)
+  h.fire('chat-send:base', 'confirm'); await tick()
+  assert.deepEqual(h.sends, [])
+})
+
+test('a card listing every prepared layer reaches Confirm once each is addressed, and sends the stack as one', async () => {
+  const records = [layer('base', 1, ''), layer('top', 2, 'base')]
+  records[1].plan.base_sha = records[0].plan.head_sha
+  const ids = ['base', 'top']
+  const actions = [{ key: `chat-send-batch:${batchHandle(ids)}`, label: 'Contribute all' }]
+  const key = actions[0].key
+  assert.deepEqual(reviewAddressFor(['base'], records), ['base', 'top'], 'the status request covers the whole stack phase')
+  // The server answered for both layers but has no current check of one: the whole phase waits.
+  const narrow = harness({ actions, items: reviewItems(ids), records,
+    runtime: { reviewStatus: { state: 'ready', addressed: ids, byId: { base: { state: 'ready' } } } } })
+  await openConfirm(narrow, key)
+  assert.equal(narrow.action(key).confirming, false)
+  assert.match(narrow.action(key).note, /current source check/)
+  const h = harness({ actions, items: reviewItems(ids), records })
+  await openConfirm(h, key)
+  const state = h.action(key)
   assert.equal(state.confirming, true)
   assert.deepEqual(state.confirmation.map(item => item.title), ['Change base', 'Change top'])
-  h.fire('chat-send:base', 'confirm'); await tick()
+  h.fire(key, 'confirm'); await tick()
   assert.deepEqual(h.sends.map(call => [call.kind, call.ids.join(',')]), [['stack', 'base,top']])
 })
 
@@ -236,23 +265,68 @@ test('a review check that was not addressed to the card records never enables Co
   }
 })
 
-test('a batch handle resolves only to the exact records listed on its card', () => {
-  const keys = ['chat-send:a', 'chat-send:b']
+test('the card action resolves only to the exact records its items name', () => {
+  const items = reviewItems(['a', 'b'])
   const handle = `chat-send-batch:${batchHandle(['b', 'a'])}`
-  assert.deepEqual(sendTarget(handle, [...keys, handle]), { kind: 'batch', ids: ['a', 'b'] })
-  assert.equal(sendTarget(handle, ['chat-send:a', 'chat-send:c', handle]).invalid, true)
-  assert.equal(sendTarget('chat-send-batch:not-a-handle', keys), null)
-  assert.equal(sendTarget('chat-send:../x', keys), null)
+  assert.deepEqual(sendTarget(handle, items), { kind: 'batch', ids: ['a', 'b'] }, 'in card order')
+  assert.equal(sendTarget(handle, reviewItems(['a', 'c'])).invalid, true, 'a handle naming another set is refused')
+  assert.equal(sendTarget(handle, reviewItems(['a'])).invalid, true, 'a dropped item is not silently narrowed')
+  assert.equal(sendTarget(handle, [...items, { intent: 'reviews:queue' }]).invalid, true, 'every item must be a ledger entry')
+  assert.deepEqual(sendTarget('chat-send:a', reviewItems(['a'])), { kind: 'record', ids: ['a'] })
+  assert.equal(sendTarget('chat-send:a', items).invalid, true, 'a one-record action on a two-item card is refused')
+  assert.equal(sendTarget('chat-send:a', []).invalid, true)
+  assert.equal(sendTarget('chat-send-batch:not-a-handle', items), null)
+  assert.equal(sendTarget('chat-send:../x', items), null)
+  // An older host sends no items: the action names nothing.
+  assert.deepEqual(sendTarget(handle, null), { kind: 'batch', ids: [], needsItems: true })
+  assert.deepEqual(sendTarget('chat-send:a', undefined), { kind: 'record', ids: [], needsItems: true })
+  assert.deepEqual(itemRecordIds([{ intent: 'review:a' }, { intent: 'review:a' }, { intent: 'review:b' }]), ['a', 'b'])
   const long = Array.from({ length: 12 }, (_, i) => `record-${'x'.repeat(110)}-${i}`)
   assert.ok(`chat-send-batch:${batchHandle(long)}`.length <= 32, 'the batch intent stays short however long the ids are')
-  assert.deepEqual(cardRecordIds([...keys, handle]), ['a', 'b'])
+  assert.deepEqual(sendTarget(`chat-send-batch:${batchHandle(long)}`, reviewItems(long)).ids, long)
+  const many = Array.from({ length: 13 }, (_, i) => `r${i}`)
+  assert.equal(sendTarget(`chat-send-batch:${batchHandle(many)}`, reviewItems(many)).invalid, true, 'never more than the host item limit')
+  assert.deepEqual(cardRecordIds([handle], items), ['a', 'b'])
+  assert.deepEqual(cardRecordIds([handle], null), [], 'no status is addressed without items')
+})
+
+test('without the card items (an older Möbius) the action is never confirmable and reads nothing', async () => {
+  const ids = ['one', 'two']
+  for (const actions of [[{ key: 'chat-send:one' }], [{ key: `chat-send-batch:${batchHandle(ids)}`, label: 'Contribute all' }]]) {
+    const h = harness({ actions, items: null, records: ids.map(id => prepared(id)) })
+    h.session.start(); await tick()
+    let state = h.last().actions[0]
+    assert.equal(state.disabled, true)
+    assert.equal(state.note, NEWER_NOTE)
+    h.fire(actions[0].key, 'activate'); h.provide(); await tick()
+    state = h.last().actions[0]
+    assert.equal(state.confirming, false)
+    assert.equal(state.note, NEWER_NOTE)
+    h.fire(actions[0].key, 'confirm'); await tick()
+    assert.equal(h.sends.length, 0)
+  }
+})
+
+test('the action covers every item, and an unknown item record is refused', async () => {
+  const ids = ['one', 'two']
+  const actions = [{ key: `chat-send-batch:${batchHandle(ids)}`, label: 'Contribute all' }]
+  const h = harness({ actions, items: reviewItems(ids), records: ids.map(id => prepared(id)) })
+  await openConfirm(h, actions[0].key)
+  assert.deepEqual(h.action(actions[0].key).confirmation.map(item => item.title), ['Change one', 'Change two'])
+  const missing = harness({ actions, items: reviewItems(ids), records: [prepared('one')] })
+  await openConfirm(missing, actions[0].key)
+  assert.equal(missing.action(actions[0].key).confirming, false)
+  assert.match(missing.action(actions[0].key).note, /Could not read this contribution/)
+  const published1 = harness({ actions, items: reviewItems(ids), records: [prepared('one'), published(prepared('two'))] })
+  await openConfirm(published1, actions[0].key)
+  assert.deepEqual(published1.action(actions[0].key).confirmation.map(item => item.title), ['Change one'], 'a record that is no longer prepared is never confirmed')
 })
 
 test('a stale or forged batch card offers nothing to send', async () => {
-  const actions = [{ key: 'chat-send:a' }, { key: 'chat-send:b' }, { key: `chat-send-batch:${batchHandle(['a', 'c'])}` }]
-  const h = harness({ actions, records: [prepared('a'), prepared('b')] })
+  const actions = [{ key: `chat-send-batch:${batchHandle(['a', 'c'])}` }]
+  const h = harness({ actions, items: reviewItems(['a', 'b']), records: [prepared('a'), prepared('b')] })
   h.session.start(); await tick()
-  const batch = h.action(actions[2].key)
+  const batch = h.action(actions[0].key)
   assert.equal(batch.disabled, true)
   assert.match(batch.note, /no longer matches/)
 })
@@ -284,18 +358,19 @@ test('checkpoint and outcome rules are bounded and conservative', () => {
 // One card with a Contribute all action, opened to Confirm on that action.
 async function confirmingCard() {
   const ids = ['one', 'two']
-  const actions = [...ids.map(id => ({ key: `chat-send:${id}`, label: 'Contribute' })), { key: `chat-send-batch:${batchHandle(ids)}`, label: 'Contribute all' }]
-  const h = harness({ actions, records: ids.map(id => prepared(id)) })
-  const batch = actions.at(-1).key
+  const actions = [{ key: `chat-send-batch:${batchHandle(ids)}`, label: 'Contribute all' }]
+  const h = harness({ actions, items: reviewItems(ids), records: ids.map(id => prepared(id)) })
+  const batch = actions[0].key
   const confirmingKeys = () => h.last().actions.filter(action => action.confirming).map(action => action.key)
   await openConfirm(h, batch)
   assert.deepEqual(confirmingKeys(), [batch])
-  // Another action's tap while one is confirming never adds a second Confirm.
-  h.fire('chat-send:one', 'activate'); await tick()
+  // A repeated tap while confirming never adds a second Confirm.
+  h.fire(batch, 'activate'); await tick()
   assert.deepEqual(confirmingKeys(), [batch])
   h.fire(batch, 'cancel'); await tick()
-  h.fire('chat-send:one', 'activate'); await tick()
-  assert.deepEqual(confirmingKeys(), ['chat-send:one'])
+  assert.deepEqual(confirmingKeys(), [])
+  h.fire(batch, 'activate'); await tick()
+  assert.deepEqual(confirmingKeys(), [batch])
   for (const state of h.states) assert.ok(state.actions.filter(action => action.confirming).length <= 1, 'never two confirming actions')
   return { h, actions }
 }
@@ -314,7 +389,7 @@ test('the B2 host keeps Confirm available for that one confirming action', async
   const parsed = b2.sessionState({ type: 'moebius:app-block-state', ...h.last() }, 'session-1', new Set(actions.map(action => action.key)))
   const confirming = parsed.actions.filter(action => action.confirming)
   assert.equal(confirming.length, 1)
-  assert.ok(confirming[0].confirmation?.length === 1 && !confirming[0].disabled, 'the host shows the app-sourced list and an enabled Confirm')
+  assert.ok(confirming[0].confirmation?.length === 2 && !confirming[0].disabled, 'the host shows the app-sourced list and an enabled Confirm')
   assert.notEqual(confirming[0].note, b2.AMBIGUOUS_CONFIRMATION)
 })
 
@@ -491,9 +566,10 @@ test('a change without a readable size is never offered for Confirm, single or i
     const base = layer('base', 1, ''), top = layer('top', 2, 'base')
     top.plan.base_sha = base.plan.head_sha
     top.plan.diff_stat = diffStat
-    const stack = harness({ actions: [{ key: 'chat-send:base' }], records: [base, top] })
-    await openConfirm(stack, 'chat-send:base')
-    state = stack.action('chat-send:base')
+    const stackKey = `chat-send-batch:${batchHandle(['base', 'top'])}`
+    const stack = harness({ actions: [{ key: stackKey }], items: reviewItems(['base', 'top']), records: [base, top] })
+    await openConfirm(stack, stackKey)
+    state = stack.action(stackKey)
     assert.equal(state.confirming, false, `${name}: stack`)
     assert.equal(state.note, SIZE_NOTE)
     assert.equal(stack.sends.length, 0)
@@ -702,4 +778,114 @@ test('a refresh that fails ends the check on Try again with a note', async () =>
   assert.equal(state.confirming, false, 'a failed refresh never confirms, even if the data now looks complete')
   assert.equal(state.label, 'Try again')
   assert.equal(state.note, REFRESH_FAILED_NOTE)
+})
+
+// The card prepared_block.py prints, read as the host reads it: the root
+// action is the only action, and the session carries the item intents.
+function printedCard(records) {
+  const ledger = mkdtempSync(join(tmpdir(), 'contribute-card-'))
+  try {
+    for (const record of records) writeFileSync(join(ledger, `${record.id}.json`), JSON.stringify(record))
+    const run = spawnSync('python3', [new URL('../prepared_block.py', import.meta.url).pathname, ...records.map(record => record.id), '--ledger-dir', ledger], { encoding: 'utf8' })
+    assert.equal(run.status, 0, run.stderr)
+    return JSON.parse(/```mobius-app\n(.*)\n```/s.exec(run.stdout)[1])
+  } finally { rmSync(ledger, { recursive: true, force: true }) }
+}
+async function hostView(block) {
+  const BLOCKS = process.env.MOBIUS_BLOCKS_FRONTEND || ''
+  if (!BLOCKS) return { actions: [block.action, ...block.items.map(item => item.action)].filter(Boolean).map(action => ({ key: action.intent, label: action.label })), items: block.items.map(({ intent }) => ({ intent })) }
+  const { appBlockFromToken, blockActions, blockItems } = await import(`${BLOCKS}/src/components/ChatView/markdown/appBlock.js`)
+  const parsed = appBlockFromToken({ type: 'code', lang: 'mobius-app', text: JSON.stringify(block) })
+  assert.ok(parsed, 'the host accepts the printed card')
+  assert.equal(parsed.expand, false)
+  // The session init's items exactly as the host builds them (#1944 blockItems), read through this app's adapter.
+  const items = blockItems ? readBlockSession({ sessionId: 's', actions: [], items: blockItems(parsed) }).items : parsed.items.map(({ intent }) => ({ intent }))
+  return { actions: blockActions(parsed).map(({ key, label }) => ({ key, label })), items }
+}
+
+test('the printed card has one action that reaches Confirm for exactly its items', async () => {
+  const shots = [{ name: 'before.png', sha256: 'e'.repeat(64), size: 1200, alt: 'Before' }, { name: 'after.png', sha256: 'e'.repeat(64), size: 1200, alt: 'After' }]
+  const records = [prepared('one'), prepared('two', { plan: { screenshots: shots } }), prepared('three')]
+  const view = await hostView(printedCard(records))
+  assert.equal(view.actions.length, 1, 'one block-level action, no per-item actions')
+  const h = harness({ actions: view.actions, items: view.items, records })
+  await openConfirm(h, view.actions[0].key)
+  const state = h.action(view.actions[0].key)
+  assert.equal(state.confirming, true)
+  assert.deepEqual(state.confirmation.map(item => item.title), ['Change one', 'Change two', 'Change three'])
+  // Confirm repeats each item's card facts.
+  const block = printedCard(records)
+  for (const [index, item] of block.items.entries()) assert.deepEqual(state.confirmation[index].facts.slice(0, 2), item.facts)
+  assert.equal(block.items[1].facts[1].value, '1 file · +2 −0 · 2 screenshots', 'the card and Confirm name the same screenshots')
+  // A card printed for one stack layer lists the whole phase, so it reaches Confirm.
+  const layers = [layer('base', 1, ''), layer('top', 2, 'base')]
+  layers[1].plan.base_sha = layers[0].plan.head_sha
+  const ledgerDir = mkdtempSync(join(tmpdir(), 'contribute-card-'))
+  let stackCard
+  try {
+    for (const record of layers) writeFileSync(join(ledgerDir, `${record.id}.json`), JSON.stringify(record))
+    const run = spawnSync('python3', [new URL('../prepared_block.py', import.meta.url).pathname, 'base', '--ledger-dir', ledgerDir], { encoding: 'utf8' })
+    assert.equal(run.status, 0, run.stderr)
+    stackCard = await hostView(JSON.parse(/```mobius-app\n(.*)\n```/s.exec(run.stdout)[1]))
+  } finally { rmSync(ledgerDir, { recursive: true, force: true }) }
+  assert.deepEqual(stackCard.items, reviewItems(['base', 'top']))
+  const stacked = harness({ actions: stackCard.actions, items: stackCard.items, records: layers })
+  await openConfirm(stacked, stackCard.actions[0].key)
+  assert.deepEqual(stacked.action(stackCard.actions[0].key).confirmation.map(item => item.title), ['Change base', 'Change top'])
+  const single = await hostView(printedCard([prepared('one')]))
+  const one = harness({ actions: single.actions, items: single.items, records: [prepared('one')] })
+  await openConfirm(one, single.actions[0].key)
+  assert.deepEqual(one.action(single.actions[0].key).confirmation.map(item => item.title), ['Change one'])
+})
+
+const SHA = 'e'.repeat(64)
+const shot = (name, alt = name) => ({ name, sha256: SHA, size: 1200, alt })
+
+test('the description excerpt never shows raw screenshot markup', () => {
+  assert.equal(descriptionExcerpt('![Before, desktop](screenshot:before-desktop.png)\n\nMakes the header wrap on phones.'), 'Makes the header wrap on phones.', 'an image-only line is skipped')
+  assert.equal(descriptionExcerpt('| Before | After |\n| --- | --- |\n| ![Before](screenshot:before.png) | ![After](screenshot:after.png) |\n\nFixes the clipped title.'), 'Fixes the clipped title.', 'a before/after table is skipped')
+  assert.equal(descriptionExcerpt('The header now wraps ![After](screenshot:after.png) on phones.'), 'The header now wraps After on phones.', 'an inline image becomes its alt text')
+  assert.doesNotMatch(descriptionExcerpt('## Screenshots\n\n![Only](screenshot:only.png)'), /screenshot:|!\[/)
+})
+
+test('Confirm names the screenshots a new pull request will publish on its Change line', () => {
+  const body = '## Summary\n\nFixes the clipped title.\n\n| Before | After |\n| --- | --- |\n| ![Before](screenshot:before.png) | ![After](screenshot:after.png) |'
+  const item = confirmationItem(prepared('shots', { plan: { body_draft: body, screenshots: [shot('before.png'), shot('after.png')] } }))
+  assert.equal(item.facts.find(fact => fact.label === 'Change').value, '1 file · +2 −0 · 2 screenshots')
+  assert.equal(item.facts.some(fact => fact.label === 'Screenshots'), false, 'no separate fact spends the limit')
+  assert.equal(item.facts.find(fact => fact.label === 'Description')?.value, 'Fixes the clipped title.', 'the excerpt is kept')
+  assert.ok(item.facts.length <= 8)
+  assert.ok(item.facts.every(fact => !/screenshot:/.test(fact.value)))
+  assert.equal(confirmationItem(prepared('one', { plan: { screenshots: [shot('one.png')] } })).facts.find(fact => fact.label === 'Change').value,
+    '1 file · +2 −0 · 1 screenshot')
+
+  // Malformed entries are not counted; none at all leaves the Change line as is.
+  const plain = confirmationItem(prepared('plain', { plan: { screenshots: [{ name: '../x.png', sha256: SHA }, { name: 'ok.png', sha256: 'short' }] } }))
+  assert.equal(plain.facts.find(fact => fact.label === 'Change').value, '1 file · +2 −0')
+
+  // Without a readable diff stat, the count still gets its own Change line.
+  const unsized = confirmationItem(prepared('unsized', { plan: { diff_stat: '', screenshots: [shot('a.png')] } }))
+  assert.equal(unsized.facts.find(fact => fact.label === 'Change')?.value, '1 screenshot')
+
+  // A stack layer already uses all eight facts; the count still fits on its Change line.
+  const base = layer('base', 1, '')
+  const full = confirmationItem({ ...base, plan: { ...base.plan, diff_stat: '1 file changed, 1 insertion(+)', screenshots: [shot('a.png'), shot('b.png')] } })
+  assert.equal(full.facts.length, 8)
+  assert.equal(full.facts.find(fact => fact.label === 'Change').value, '1 file · +1 −0 · 2 screenshots')
+})
+
+test('the B2 host accepts a confirmation that names screenshots', async t => {
+  const BLOCKS = process.env.MOBIUS_BLOCKS_FRONTEND || ''
+  if (!BLOCKS) return t.skip('set MOBIUS_BLOCKS_FRONTEND to a Möbius frontend with the passive block host to run this check')
+  const b2 = await import(`${BLOCKS}/src/components/ChatView/markdown/appBlockSession.js`)
+  const base = layer('base', 1, '')
+  const items = [
+    confirmationItem(prepared('shots', { plan: { body_draft: '![Before](screenshot:a.png)\n\nFix.', screenshots: [shot('a.png'), shot('b.png')] } })),
+    confirmationItem({ ...base, plan: { ...base.plan, diff_stat: '1 file changed, 1 insertion(+)', screenshots: [shot('a.png')] } }),
+  ]
+  const parsed = b2.confirmationOf(items)
+  assert.ok(parsed, 'the host rejected the list, which would keep Confirm disabled')
+  assert.equal(parsed[0].facts.find(fact => fact.label === 'Change').value, '1 file · +2 −0 · 2 screenshots')
+  assert.equal(parsed[0].facts.find(fact => fact.label === 'Description').value, 'Fix.')
+  assert.match(parsed[1].facts.find(fact => fact.label === 'Change').value, /1 screenshot$/)
 })

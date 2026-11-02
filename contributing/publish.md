@@ -54,11 +54,21 @@ source chat instead of asking them to open Contribute:
 python3 /data/apps/contribute/prepared_block.py <record-id> [<record-id> …]
 ```
 
-Paste the printed `mobius-app` fence unchanged. One id prints one card with
-**Contribute**; 2–12 ids print one card with a **Contribute** per item and a
-**Contribute all** that names them by a short handle. Tapping re-reads the
+Paste the printed `mobius-app` fence unchanged. The card lists each
+contribution as one item (its PR title, opening that exact entry in
+Contribute, with its **Project** and **Change** size) and has exactly one
+action: **Contribute** for one id, **Contribute all** for several, covering
+exactly the listed items. Items have no buttons of their own, and the card has
+no inline app view. It shows at most 12 items; with more, it says how many
+more are in Contribute and offers no action, so send those from Contribute.
+A card whose items are not all clear for their current version offers no
+action and says so. Naming any layer of a stack lists every prepared layer of
+that stack, because its phase is sent as one; a card that does not list every
+layer is refused in chat. Tapping re-reads the
 exact records and their current review, then turns the same button into
-**Confirm**, listing exactly what will be sent; nothing is sent before Confirm,
+**Confirm**, listing exactly what will be sent, each with the same Project and
+Change as its item (Change also names any screenshots the PR will
+publish); nothing is sent before Confirm,
 and the server refuses if a record changed after that snapshot. Independent
 contributions are sent in parallel; a stack's layers are sent in order. A lost
 response keeps that card locked (it reads the result, it never resends) until

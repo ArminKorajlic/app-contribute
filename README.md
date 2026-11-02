@@ -397,8 +397,24 @@ card never sends, including when the binding disappears between Confirm and the
 write.
 Independent units are sent in parallel; a stack's layers in order. Only
 attempts whose outcome is unknown survive a reload, as a bounded checkpoint of
-ids, and lock their unit until a read shows the result. A batch card's action
-is `chat-send-batch:<16-hex handle>`, bound to the exact records the card lists.
+ids, and lock their unit until a read shows the result.
+
+The card (`"expand": false`, so no inline app view) has one item per
+contribution: its title opens that entry (`review:<id>`) and its facts are
+**Project** and **Change** (`N files · +a −d`, from the staged shortstat,
+plus `· N screenshots` when the PR publishes staged screenshots, as Confirm
+shows it). The
+card itself opens the single entry, the stack all items belong to, or the
+review queue. There are no item actions; the one card action is
+`chat-send:<id>` for one item or `chat-send-batch:<16-hex handle>` over all
+items. The record set comes from the host's session `items` (the card's item
+intents), never from block text: the action must match those items exactly,
+each item must be a ledger entry, and Confirm is built from Contribute's own
+records. A stack phase that includes a layer the card does not list is never
+confirmed ("doesn’t list every layer"); `prepared_block.py` lists every
+prepared layer of any stack it names. A host that sends no `items` gets no Confirm ("needs a newer
+Möbius"). At most 12 items are listed; beyond that the card names how many
+more are in Contribute and has no action.
 
 ### PR links from chat
 

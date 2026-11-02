@@ -117,6 +117,10 @@ def _record_path(name):
 # from listing metadata plus the previous pass's summaries (ledger_scan.py).
 sys.path.insert(0, os.environ["SCRIPT_DIR"])
 from ledger_scan import LedgerScan, awaiting_publication_connection
+from github_events import (
+  AUTHOR_ATTENTION_TYPES, COMMENT_FIELDS, REVIEW_FIELDS, TRUSTED, UNTRUSTED,
+  UNVERIFIED, attention_provenance, latest_events, trusted_changes_request,
+)
 
 LEDGER = LedgerScan(_call, APP_ID, os.environ.get("APP_JOB_STATE_DIR") or None)
 records = LEDGER.records_needing_work()
@@ -260,11 +264,11 @@ for i, (name, rec, etag) in enumerate(targets):
   aliases[alias] = (name, rec, etag)
   url_lit = json.dumps(rec["url"])
   parts.append(
-    "%s: resource(url: %s) { __typename "
+    "%(alias)s: resource(url: %(url)s) { __typename "
     "... on PullRequest { "
     "state isDraft updatedAt reviewDecision mergeable "
-    "comments(last: 10) { nodes { url createdAt author { login } } } "
-    "reviews(last: 10) { nodes { url submittedAt state author { login } } } "
+    "comments(last: 10) { nodes { %(comment)s } } "
+    "reviews(last: 10) { nodes { %(review)s } } "
     "commits(last: 1) { nodes { commit { statusCheckRollup { "
     "state "
     "contexts(first: 30) { nodes { __typename "
@@ -275,8 +279,11 @@ for i, (name, rec, etag) in enumerate(targets):
     "} "
     "... on Issue { "
     "state updatedAt "
-    "comments(last: 10) { nodes { url createdAt author { login } } } "
-    "} }" % (alias, url_lit)
+    "comments(last: 10) { nodes { %(comment)s } } "
+    "} }" % {
+      "alias": alias, "url": url_lit,
+      "comment": COMMENT_FIELDS, "review": REVIEW_FIELDS,
+    }
   )
 query = "query { " + " ".join(parts) + " }"
 
@@ -325,56 +332,6 @@ def _first_node(conn):
   if isinstance(nodes, list) and nodes and isinstance(nodes[0], dict):
     return nodes[0]
   return None
-
-
-def _all_nodes(conn):
-  nodes = conn.get("nodes") if isinstance(conn, dict) else None
-  return [n for n in nodes if isinstance(n, dict)] if isinstance(nodes, list) else []
-
-
-def _author_login(node):
-  author = node.get("author") if isinstance(node, dict) else None
-  return author.get("login") if isinstance(author, dict) else ""
-
-
-def _author_name(node):
-  return _author_login(node) or "GitHub"
-
-
-def _latest_event(node, ignore_urls=None):
-  # Scan the last N comments/reviews and pick the newest. The platform mirrors
-  # exact URLs returned by its own reply calls, so skip only those events—not
-  # every comment written under the owner's GitHub identity.
-  if not isinstance(node, dict):
-    return None
-  ignored = ignore_urls if isinstance(ignore_urls, set) else set()
-  events = []
-  for comment in _all_nodes(node.get("comments")):
-    if not comment.get("createdAt"):
-      continue
-    if comment.get("url") in ignored:
-      continue
-    events.append({
-      "kind": "comment",
-      "at": comment["createdAt"],
-      "url": comment.get("url") or "",
-      "author": _author_name(comment),
-    })
-  for review in _all_nodes(node.get("reviews")):
-    if not review.get("submittedAt"):
-      continue
-    if review.get("url") in ignored:
-      continue
-    events.append({
-      "kind": "review",
-      "state": review.get("state") or "",
-      "at": review["submittedAt"],
-      "url": review.get("url") or "",
-      "author": _author_name(review),
-    })
-  if not events:
-    return None
-  return max(events, key=lambda e: e["at"])
 
 
 def _status_rollup(node):
@@ -596,6 +553,59 @@ def _waiting_blockers(rec: dict, current: dict, attention: dict | None,
   return None, waiting
 
 
+def _ignored_event_urls(rec):
+  block = rec.get("autopilot") if _is_autopilot(rec) else {}
+  return set(
+    str(url) for url in (block.get("ignored_event_urls") or [])
+    if isinstance(url, str) and url
+  )
+
+
+GITHUB_EVENT_LOOKUPS = {}
+
+
+def _fetch_github_event(api_path):
+  # One exact comment or review, at most once per pass (refresh and delivery
+  # both ask). None means GitHub reports it gone; any other failure raises,
+  # so the event stays unverified rather than looking untrusted.
+  if api_path not in GITHUB_EVENT_LOOKUPS:
+    try:
+      out = subprocess.run(
+        ["gh", "api", api_path], capture_output=True, text=True, timeout=20,
+      )
+      if out.returncode == 0:
+        GITHUB_EVENT_LOOKUPS[api_path] = json.loads(out.stdout)
+      elif re.search(r"\(HTTP (404|410)\)", out.stderr or ""):
+        GITHUB_EVENT_LOOKUPS[api_path] = None
+      else:
+        GITHUB_EVENT_LOOKUPS[api_path] = RuntimeError(
+          (out.stderr or "gh api failed").strip()[:200]
+        )
+    except Exception as exc:
+      GITHUB_EVENT_LOOKUPS[api_path] = exc
+  result = GITHUB_EVENT_LOOKUPS[api_path]
+  if isinstance(result, Exception):
+    raise result
+  return result
+
+
+def _attention_provenance(rec, attention, node, ignore_urls):
+  # Autopilot may act on a pending attention only when its provenance holds
+  # now: failing checks come from GitHub's rollup, while an author attention
+  # must name an event GitHub reports as a trusted author's
+  # (github_events.attention_provenance). The stored type alone proves nothing
+  # (records written before authors were classified carry github_activity for
+  # anyone's comment).
+  kind = attention.get("type") if isinstance(attention, dict) else None
+  if kind not in ACTIONABLE_ATTENTION:
+    return UNTRUSTED
+  if kind not in AUTHOR_ATTENTION_TYPES:
+    return TRUSTED
+  return attention_provenance(
+    attention, node, rec.get("url"), _fetch_github_event, ignore_urls,
+  )
+
+
 def _attention_update(rec, node):
   patch = {}
   if not isinstance(node, dict):
@@ -605,11 +615,7 @@ def _attention_update(rec, node):
     if (value or rec.get(key)) and rec.get(key) != value:
       patch[key] = value
 
-  block = rec.get("autopilot") if _is_autopilot(rec) else {}
-  ignore_urls = set(
-    str(url) for url in (block.get("ignored_event_urls") or [])
-    if isinstance(url, str) and url
-  )
+  ignore_urls = _ignored_event_urls(rec)
 
   check_state = _check_state(node)
   failing_checks, base_branch = _classified_failing_checks(rec, node)
@@ -626,7 +632,8 @@ def _attention_update(rec, node):
   previous_mergeable = rec.get("last_mergeable")
   set_if_changed("last_mergeable", mergeable)
 
-  latest = _latest_event(node, ignore_urls=ignore_urls)
+  latest, latest_trusted = latest_events(node, ignore_urls=ignore_urls)
+  changes_request = trusted_changes_request(node, ignore_urls=ignore_urls)
   baseline = (
     rec.get("last_github_activity_at") or
     rec.get("submitted_at") or
@@ -645,6 +652,15 @@ def _attention_update(rec, node):
   if resolved:
     patch["needs_attention"] = False
     patch["attention"] = None
+  # Actionable work still waiting for its round (or its owner) keeps the one
+  # attention slot until it is handled or dismissed. Later outside activity
+  # is reported beside it, never in place of it. Work GitHub could not be
+  # asked about this pass keeps the slot too; only proof of an untrusted or
+  # deleted event gives it up.
+  pending_work = (
+    bool(rec.get("needs_attention")) and "attention" not in patch
+    and _attention_provenance(rec, current_attention, node, ignore_urls) != UNTRUSTED
+  )
   if check_state == "SUCCESS" and rec.get("last_checks_attention_key"):
     patch["last_checks_attention_key"] = None
   if mergeable == "MERGEABLE" and rec.get("last_conflict_attention_key"):
@@ -678,27 +694,52 @@ def _attention_update(rec, node):
   if checks_attention and rec.get("last_checks_attention_key") != checks_attention["key"]:
     attention = checks_attention
     patch["last_checks_attention_key"] = checks_attention["key"]
-  elif review_decision == "CHANGES_REQUESTED" and previous_review != "CHANGES_REQUESTED":
+  elif (
+    review_decision == "CHANGES_REQUESTED"
+    and previous_review != "CHANGES_REQUESTED"
+    and changes_request
+  ):
     attention = {
       "type": "changes_requested",
-      "key": "changes_requested:%s" % (latest["at"] if latest else now),
+      "key": "changes_requested:%s" % changes_request["at"],
       "title": "Changes requested",
       "message": "A GitHub review requested changes.",
-      "url": (latest or {}).get("url") or rec.get("url") or "",
+      "url": changes_request.get("url") or rec.get("url") or "",
+      "detected_at": now,
+    }
+  elif latest_trusted and latest_trusted["at"] > str(baseline):
+    # Only a repository owner, member or collaborator can start an autopilot
+    # round (github_events.py); this event is one of theirs.
+    label = "review" if latest_trusted["kind"] == "review" else "comment"
+    attention = {
+      "type": "github_activity",
+      "key": "github_activity:%s" % latest_trusted["at"],
+      "title": "New GitHub activity",
+      "message": "New %s from %s." % (label, latest_trusted["author"]),
+      "url": latest_trusted.get("url") or rec.get("url") or "",
+      "event_at": latest_trusted["at"],
       "detected_at": now,
     }
   elif latest and latest["at"] > str(baseline):
+    # Someone without standing in the repository commented. Tell the owner;
+    # never start a round from it (outside_activity is not actionable).
     label = "review" if latest["kind"] == "review" else "comment"
-    message = "New %s from %s." % (label, latest["author"])
-    attention = {
-      "type": "github_activity",
-      "key": "github_activity:%s" % latest["at"],
+    outside = {
+      "type": "outside_activity",
+      "key": "outside_activity:%s" % latest["at"],
       "title": "New GitHub activity",
-      "message": message,
+      "message": (
+        "New %s from %s, who is not a maintainer of this repository. "
+        "Autopilot will not act on it." % (label, latest["author"])
+      ),
       "url": latest.get("url") or rec.get("url") or "",
       "event_at": latest["at"],
       "detected_at": now,
     }
+    if pending_work:
+      patch["outside_activity"] = outside
+    else:
+      attention = outside
   elif conflict_pending and (previous_mergeable != "CONFLICTING" or slot_free):
     patch["last_conflict_attention_key"] = conflict_key
     attention = {
@@ -734,6 +775,33 @@ def _attention_update(rec, node):
     (check_state, mergeable, review_decision))
   set_if_changed("waiting_attention", waiting)
   attention = attention or restored
+
+  if (
+    not attention
+    and not resolved
+    and rec.get("needs_attention")
+    and current_attention.get("type") in AUTHOR_ATTENTION_TYPES
+    and not pending_work
+  ):
+    # Pending author attention without trusted provenance (written before
+    # authors were classified, its author lost standing, or the event was
+    # deleted) is kept for the owner as notification-only. A notice already
+    # announced stays announced.
+    downgraded = dict(current_attention)
+    downgraded.update({
+      "type": "outside_activity",
+      "title": "New GitHub activity",
+      "key": "outside_activity:%s" % str(
+        current_attention.get("key") or ""
+      ).split(":", 1)[-1],
+      "message": (
+        "GitHub activity that could not be confirmed as coming from a "
+        "maintainer of this repository. Autopilot will not act on it."
+      ),
+      "downgraded_from": current_attention.get("type"),
+    })
+    patch["attention"] = downgraded
+
   if attention:
     patch["needs_attention"] = True
     patch["attention"] = attention
@@ -811,63 +879,86 @@ def _respond_autopilot(rec, attention):
     return True
 
 
-def _deliver_attention(name):
+def _read_record(path):
+  raw, headers = _call("GET", path, headers={"x-mobius-version": "1"})
+  return json.loads(raw), headers.get("ETag")
+
+
+def _confirm_announced(path, rec, etag, slot, pending):
+  # /notifications/send has no idempotency key (a tag only groups OS
+  # pushes). Confirm only a successful response, never merely detection or
+  # a transient /respond result. An ambiguous send or a crash before this
+  # CAS can still repeat a notification; exactly-once needs endpoint support.
+  # Returns the record and version this job last saw.
+  for attempt in range(3):
+    current = rec.get(slot)
+    if (
+      not _is_target(rec)
+      or (slot == "attention" and not rec.get("needs_attention"))
+      or not isinstance(current, dict)
+      or (current.get("key"), current.get("detected_at"))
+        != (pending.get("key"), pending.get("detected_at"))
+      or current.get("announced_at")
+    ):
+      return rec, etag
+    updated = dict(rec)
+    updated[slot] = dict(current, announced_at=now)
+    try:
+      _, headers = _call("PUT", path, updated, headers={"If-Match": etag})
+      return updated, headers.get("ETag")
+    except urllib.error.HTTPError as exc:
+      if exc.code != 412 or attempt == 2:
+        raise
+    # Merge only confirmation into a fresh record; never restore a stale
+    # attention or overwrite unrelated changes from another writer.
+    rec, etag = _read_record(path)
+    if not etag:
+      return rec, None
+  return rec, etag
+
+
+def _deliver_attention(name, node):
   # A prior pass may have durably written the attention but lost delivery.
   # Detection is not delivery. The scheduled runner owns single-flight for
   # this app; the record owns confirmation across runs. Re-read before routing
   # so a concurrent Dismiss, escalation or terminal transition stays in charge.
   path = _record_path(name)
   try:
-    raw, headers = _call("GET", path, headers={"x-mobius-version": "1"})
-    rec = json.loads(raw)
-    etag = headers.get("ETag")
+    rec, etag = _read_record(path)
+    if not etag or not _is_target(rec):
+      return
     pending = rec.get("attention")
     if (
-      not etag or not _is_target(rec) or not rec.get("needs_attention")
-      or not isinstance(pending, dict) or not pending.get("key")
+      rec.get("needs_attention")
+      and isinstance(pending, dict) and pending.get("key")
       # /escalate owns human_required delivery, not this job.
-      or pending.get("type") == "human_required"
+      and pending.get("type") != "human_required"
     ):
-      return
+      # Only work whose trusted provenance holds against this pass's GitHub
+      # read reaches /respond; anything else is notification-only. Work
+      # GitHub could not be asked about waits quietly for the next pass, like
+      # a transient /respond failure: no round, and no fallback notice.
+      provenance = (
+        _attention_provenance(rec, pending, node, _ignored_event_urls(rec))
+        if _is_autopilot(rec) else UNTRUSTED
+      )
+      held = provenance == UNVERIFIED
+      routed = provenance == TRUSTED and _respond_autopilot(rec, pending)
+      # Legacy attention has no delivery proof either; announce it once
+      # rather than infer success from its presence on the record.
+      if not (held or routed) and not pending.get("announced_at"):
+        _notify_attention(rec, pending)
+        rec, etag = _confirm_announced(path, rec, etag, "attention", pending)
+    # Outside activity that arrived while actionable work held the attention
+    # slot is reported on its own, once, without displacing that work.
+    # Without a version (lost confirmation), the next pass delivers it.
+    outside = rec.get("outside_activity")
     if (
-      _is_autopilot(rec) and pending.get("type") in ACTIONABLE_ATTENTION
-      and _respond_autopilot(rec, pending)
+      etag and _is_target(rec) and isinstance(outside, dict)
+      and outside.get("key") and not outside.get("announced_at")
     ):
-      return
-    # Legacy attention has no delivery proof either; announce it once rather
-    # than infer success from its presence on the record.
-    if pending.get("announced_at"):
-      return
-    _notify_attention(rec, pending)
-    # /notifications/send has no idempotency key (a tag only groups OS
-    # pushes). Confirm only a successful response, never merely detection or
-    # a transient /respond result. An ambiguous send or a crash before this
-    # CAS can still repeat a notification; exactly-once needs endpoint support.
-    for attempt in range(3):
-      current = rec.get("attention")
-      if (
-        not _is_target(rec) or not rec.get("needs_attention")
-        or not isinstance(current, dict)
-        or (current.get("key"), current.get("detected_at"))
-          != (pending.get("key"), pending.get("detected_at"))
-        or current.get("announced_at")
-      ):
-        return
-      updated = dict(rec)
-      updated["attention"] = dict(current, announced_at=now)
-      try:
-        _call("PUT", path, updated, headers={"If-Match": etag})
-        return
-      except urllib.error.HTTPError as exc:
-        if exc.code != 412 or attempt == 2:
-          raise
-      # Merge only confirmation into a fresh record; never restore a stale
-      # attention or overwrite unrelated changes from another writer.
-      raw, headers = _call("GET", path, headers={"x-mobius-version": "1"})
-      rec = json.loads(raw)
-      etag = headers.get("ETag")
-      if not etag:
-        return
+      _notify_attention(rec, outside)
+      _confirm_announced(path, rec, etag, "outside_activity", outside)
   except Exception as exc:
     print("contribute: attention delivery %s pending: %s" % (name, exc),
           file=sys.stderr)
@@ -893,7 +984,7 @@ for alias, (name, rec, etag) in aliases.items():
       patch["needs_attention"] = False
       patch["attention"] = None
   if not patch:
-    _deliver_attention(name)
+    _deliver_attention(name, node)
     continue
   if not etag:
     print("contribute: skip %s — storage version unavailable" % name,
@@ -937,7 +1028,7 @@ for alias, (name, rec, etag) in aliases.items():
             file=sys.stderr)
   if new_status == "merged":
     _finish_publication_connection(updated)
-  _deliver_attention(name)
+  _deliver_attention(name, node)
   if new_status == "merged" and was != "merged":
     title = rec.get("title") or "contribution"
     try:

@@ -104,7 +104,10 @@ test('scheduled autopilot retries durable attention after a lost respond call', 
 test('scheduled autopilot ignores exact own replies, not all owner activity', () => {
   const source = readFileSync(new URL('../job.sh', import.meta.url), 'utf8')
   assert.match(source, /ignored_event_urls/)
-  assert.match(source, /comment\.get\("url"\) in ignored/)
+  // The classifier lives in github_events.py (behavior: test_github_events.py).
+  const events = readFileSync(new URL('../github_events.py', import.meta.url), 'utf8')
+  assert.match(events, /comment\.get\("url"\) not in ignored/)
+  assert.match(events, /review\.get\("url"\) not in ignored/)
   assert.doesNotMatch(source, /gh", "api", "user"/)
   assert.doesNotMatch(source, /ignore_login/)
 })

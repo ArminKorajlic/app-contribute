@@ -29,17 +29,33 @@ const BATCH = /^chat-send-batch:([0-9a-f]{16})$/
 // an approval token.
 export const batchHandle = ids => contributionScopeHash(['contribute-batch-v1', ...[...new Set(ids)].sort()].join('\n'))
 
-// Resolve one card action. A batch resolves only against the per-record send
-// actions listed on the same card; a handle naming any other set is refused.
-export function sendTarget(key, cardKeys = []) {
-  const single = SEND.exec(String(key || ''))
-  if (single) return validRecordId(single[1]) ? { kind: 'record', ids: [single[1]] } : null
-  const batch = BATCH.exec(String(key || ''))
-  if (!batch) return null
-  const ids = [...new Set(cardKeys.map(other => SEND.exec(String(other || ''))?.[1]).filter(validRecordId))]
-  return ids.length >= 2 && ids.length <= MAX_BATCH && batchHandle(ids) === batch[1]
-    ? { kind: 'batch', ids } : { kind: 'batch', ids: [], invalid: true }
+// The records a card names, from the item intents the host sends with the
+// session (`init.items`, in card order, deduplicated by the host). Every item
+// must be a ledger entry (`review:<id>`); any other item makes the card
+// unresolvable rather than silently narrowing it. null means the host sent no
+// items (an older Möbius), so the card's action names nothing.
+const REVIEW_ITEM = /^review:(.+)$/
+export function itemRecordIds(items) {
+  if (!Array.isArray(items)) return null
+  const ids = items.map(item => REVIEW_ITEM.exec(String(item?.intent || ''))?.[1])
+  return ids.every(validRecordId) ? [...new Set(ids)] : []
 }
 
-// Every record a card's send actions name, for read-only status requests.
-export const cardRecordIds = keys => [...new Set(keys.flatMap(key => sendTarget(key, keys)?.ids || []))]
+// Resolve the card's one action against the records its items name. The
+// action is `chat-send:<id>` for a one-item card or `chat-send-batch:<handle>`
+// over every item; either must match the items exactly, or it is refused. The
+// items, never the action, are the source of the record set.
+export function sendTarget(key, items) {
+  const single = SEND.exec(String(key || ''))
+  const batch = BATCH.exec(String(key || ''))
+  if (!(single ? validRecordId(single[1]) : batch)) return null
+  const kind = single ? 'record' : 'batch'
+  const ids = itemRecordIds(items)
+  if (!ids) return { kind, ids: [], needsItems: true }
+  const matches = ids.length >= 1 && ids.length <= MAX_BATCH
+    && (single ? ids.length === 1 && ids[0] === single[1] : batchHandle(ids) === batch[1])
+  return matches ? { kind, ids } : { kind, ids: [], invalid: true }
+}
+
+// Every record a card's action names, for read-only status requests.
+export const cardRecordIds = (keys, items) => [...new Set(keys.flatMap(key => sendTarget(key, items)?.ids || []))]

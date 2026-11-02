@@ -182,6 +182,8 @@ test('the general layer is project-shaped and Möbius facts live in its adapter'
   assert.match(mobius, /the platform \(`\/data\/platform\/`\), and the shell/)
   for (const [name, body] of [['SKILL.md', core], ...['ci.md', 'prepare.md', 'branch.md'].map((n) => [n, mode(n)])]) {
     assert.doesNotMatch(body, /mobius-os\/mobius|area: ui|playwright-local|catalog\.json/, `${name} stays general`)
+    // Send's screenshot hosting is documented with the stage call; capture tools and sizes belong to an adapter.
+    assert.doesNotMatch(body, /mobius-screenshots|screenshot_upload|agent-screenshot|VIEWPORT_WIDTH|390 px/, `${name} leaves screenshot mechanics to ledger.md and the adapter`)
   }
   assert.match(github, /never assume\s+`main`/)
   assert.match(github, /defaultBranchRef/)
@@ -231,4 +233,58 @@ test('the read-only PR link helper has its own routing row outside maintainer ri
   const rights = rows.find(line => line.includes('upstream push or merge rights'))
   assert.ok(rights && !rights.includes('pr_block.py'), 'pr_block.py is not filed under maintainer rights')
   assert.ok(rows.some(line => line.includes('pr_block.py') && /no rights needed/.test(line)))
+})
+
+test('the Send-in-chat guidance describes one item per contribution and exactly one card action', () => {
+  const publish = read('contributing/publish.md').replace(/\s+/g, ' ')
+  assert.match(publish, /one item \(its PR title, opening that exact entry in Contribute, with its \*\*Project\*\* and \*\*Change\*\* size\) and has exactly one action/)
+  assert.match(publish, /Items have no buttons of their own/)
+  assert.match(publish, /at most 12 items; with more, it says how many more are in Contribute and offers no action/)
+  assert.doesNotMatch(publish, /a \*\*Contribute\*\* per item/)
+  assert.match(publish, /Naming any layer of a stack lists every prepared layer of that stack/)
+  const readme = read('README.md').replace(/\s+/g, ' ')
+  assert.match(readme, /session `items`/)
+  assert.match(readme, /"expand": false/)
+})
+
+test('prepared PRs name the bug cause and show visible changes with attached screenshots', () => {
+  const prepare = mode('prepare.md').replace(/\s+/g, ' ')
+  const ledger = mode('ledger.md').replace(/\s+/g, ' ')
+  const mobius = mode('adapter-mobius.md').replace(/\s+/g, ' ')
+  assert.match(prepare, /A bug fix's `body_draft` names the cause/)
+  assert.match(prepare, /you cannot name the cause it answers/)
+  assert.match(prepare, /A change people can see shows it with before\/after screenshots/)
+  assert.match(prepare, /Attach screenshots when you stage, never by pushing them yourself/)
+  assert.match(prepare, /a visible change without screenshots or a stated reason for their absence, is not ready/)
+  // Agents follow the stage call literally, so it carries the availability flag and every refusal.
+  assert.match(ledger, /only when `mapi \/api\/github\/status` reports `"screenshot_upload": true`/)
+  assert.match(ledger, /Staging refuses them on a `pr_update`/)
+  assert.match(ledger, /legacy `mobius-bot` record/)
+  assert.match(ledger, /the hosting repository is private/)
+  assert.match(ledger, /regular file under `\/data` or the temp folder, not a link/)
+  // The screenshot tool has no width option; the narrow capture goes through the helper.
+  assert.match(mobius, /An `area: ui` PR or an app PR that changes what people see/)
+  assert.match(mobius, /VIEWPORT_WIDTH=390 VIEWPORT_HEIGHT=844/)
+  assert.match(mobius, /bash "\$SCRIPTS_DIR\/agent-screenshot\.sh" <route>/)
+  assert.doesNotMatch(mobius, /Capture them with the Möbius `screenshot` tool/)
+})
+
+test('the privacy allowlist has exactly two entries and the mode files link to the screenshot entry', () => {
+  const section = core.split('## What may leave — the privacy allowlist')[1].split(/\n## /)[0]
+  const [allowlist, rest] = section.split('**Never, no exceptions:**')
+  assert.ok(rest, 'the exclusions follow the allowlist')
+  const entries = [...allowlist.matchAll(/^\d+\. \*\*([^*]+)\*\*/gm)].map((match) => match[1])
+  assert.deepEqual(entries, ['Source code', 'UI screenshots of the change'])
+  assert.match(allowlist, /these two, and that is the whole list/)
+  const exclusions = rest.replace(/\s+/g, ' ')
+  for (const item of ['`/data/shared/memory/`', 'app storage', 'the database', 'logs', '`/data/cli-auth/`', 'chat content', 'anything personal']) {
+    assert.ok(exclusions.includes(item), `the allowlist still excludes ${item}`)
+  }
+  const hardStop = core.match(/^2\. \*\*([^*]+)\*\*/m)[1].replace(/\s+/g, ' ')
+  assert.match(hardStop, /Only source code and screenshots of the change leave the instance/)
+  assert.match(prose, /The allowlist below is exhaustive — never memory, storage, db, logs, creds, chat, or personal data\./)
+  for (const name of ['prepare.md', 'ledger.md']) {
+    assert.match(mode(name).replace(/\s+/g, ' '), /screenshot entry of the privacy allowlist in \[SKILL\.md\]\(SKILL\.md\)/, `${name} refers to the core rule`)
+  }
+  assert.match(mode('adapter-mobius.md').replace(/\s+/g, ' '), /attach that screenshot when you stage/)
 })

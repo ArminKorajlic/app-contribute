@@ -80,7 +80,7 @@ test('a side view keeps each app inside one card with its own name and Open', as
   const asked = pullFixture(1915, { updatedAt: '2026-11-02T08:00:00Z' })
   const project = projectFixture('mobius', { reviewRequests: [asked], incomingReviews: [asked] })
   const html = api.view({
-    view: 'requests', projects: [project, projectFixture('quietapp')], records: [], login: 'armin',
+    view: 'requests', projects: [project, projectFixture('quietapp')], records: [], login: 'owner',
     decisionsFor: () => [], lastLooked: '2026-11-01T00:00:00Z', query: '',
     onOpenProject: () => {}, onOpenPull: () => {}, onOpenRecord: () => {},
   })
@@ -99,12 +99,12 @@ test('my PRs read as a stack in merge order when they chain', async t => {
   const api = await ui(t)
   if (!api) return
   const mine = [
-    pullFixture(44, { author: { login: 'armin' }, baseRefName: 'head-43' }),
-    pullFixture(43, { author: { login: 'armin' } }),
+    pullFixture(44, { author: { login: 'owner' }, baseRefName: 'head-43' }),
+    pullFixture(43, { author: { login: 'owner' } }),
   ]
   const project = projectFixture('kanban', { incomingReviews: mine })
   const html = api.view({
-    view: 'mine', projects: [project], records: [], login: 'armin',
+    view: 'mine', projects: [project], records: [], login: 'owner',
     decisionsFor: () => [], lastLooked: '', query: '',
     onOpenProject: () => {}, onOpenPull: () => {}, onOpenRecord: () => {},
   })
@@ -117,7 +117,7 @@ test('the search filters rows and an empty view explains itself', async t => {
   const api = await ui(t)
   if (!api) return
   const project = projectFixture('mobius', { reviewRequests: [pullFixture(7)] })
-  const base = { view: 'requests', projects: [project], records: [], login: 'armin', decisionsFor: () => [], lastLooked: '', onOpenProject: () => {}, onOpenPull: () => {}, onOpenRecord: () => {} }
+  const base = { view: 'requests', projects: [project], records: [], login: 'owner', decisionsFor: () => [], lastLooked: '', onOpenProject: () => {}, onOpenPull: () => {}, onOpenRecord: () => {} }
   assert.match(api.view({ ...base, query: 'thing 7' }), /Improve thing 7/)
   assert.doesNotMatch(api.view({ ...base, query: 'zzz' }), /co-envelope/)
   assert.match(api.view({ ...base, query: 'zzz' }), /Nothing matches your search/)

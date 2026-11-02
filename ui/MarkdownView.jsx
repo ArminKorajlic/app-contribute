@@ -1,24 +1,64 @@
 import React, { useMemo } from 'react'
-import { marked } from 'marked'
+import { Marked } from 'marked'
 import DOMPurify from 'dompurify'
 
-function renderMarkdown(markdown) {
-  const raw = marked.parse(String(markdown || ''), {
-    breaks: false,
-    gfm: true,
-  })
-  return DOMPurify.sanitize(raw, { USE_PROFILES: { html: true } })
+const SCREENSHOT_SCHEME = 'screenshot:'
+const PNG_DATA_URL = /^data:image\/png;base64,[A-Za-z0-9+/]+=*$/
+
+// Like marked's own attribute escape: an entity the text already carries is
+// kept, so marked's escaped alt text is not escaped twice.
+function escapeHtml(value) {
+  return String(value).replace(/&(?!(?:#\d+|#x[0-9a-f]+|[a-z][a-z0-9]*);)|[<>"']/gi, char => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  })[char])
 }
 
-export function MarkdownView({ markdown }) {
+// A prepared PR description names staged screenshots with a screenshot:NAME
+// pseudo-URL that only Send turns into a public link. Such an image renders
+// from the caller's resolved data: URL, or as a neutral placeholder; it never
+// becomes an <img> pointing at screenshot:, so nothing is fetched or broken.
+function screenshotImage(token, alt, images) {
+  const href = String(token.href || '').trim()
+  if (!href.toLowerCase().startsWith(SCREENSHOT_SCHEME)) return false
+  const name = href.slice(SCREENSHOT_SCHEME.length)
+  const src = Object.hasOwn(images || {}, name) ? images[name] : null
+  if (typeof src === 'string' && PNG_DATA_URL.test(src)) {
+    return `<img class="co-markdown-shot" src="${src}" alt="${escapeHtml(alt || 'Screenshot')}">`
+  }
+  return `<span class="co-markdown-shot-pending">${escapeHtml(alt ? `Screenshot: ${alt}` : 'Screenshot')}</span>`
+}
+
+// Marked's HTML before sanitizing; exported for tests, which run without a DOM.
+export function markdownHtml(markdown, images = null) {
+  const parser = new Marked({
+    breaks: false,
+    gfm: true,
+    renderer: {
+      // Alt text as marked's own image renderer derives it (entities and
+      // escapes resolved), then escaped once for the attribute.
+      image(token) {
+        const alt = this.parser.parseInline(token.tokens || [], this.parser.textRenderer).trim()
+        return screenshotImage(token, alt, images)
+      },
+    },
+  })
+  return parser.parse(String(markdown || ''))
+}
+
+function renderMarkdown(markdown, images) {
+  return DOMPurify.sanitize(markdownHtml(markdown, images), { USE_PROFILES: { html: true } })
+}
+
+// `images` optionally maps a screenshot name to its data:image/png URL.
+export function MarkdownView({ markdown, images = null }) {
   const html = useMemo(() => {
     if (typeof DOMPurify.sanitize !== 'function') return null
     try {
-      return renderMarkdown(markdown)
+      return renderMarkdown(markdown, images)
     } catch {
       return DOMPurify.sanitize(String(markdown || ''))
     }
-  }, [markdown])
+  }, [markdown, images])
 
   function handleClick(event) {
     const anchor = event.target?.closest?.('a')

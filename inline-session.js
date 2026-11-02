@@ -8,6 +8,7 @@
 // Only attempts whose outcome is unknown cross a reload, and they lock their
 // unit until a read-only observation proves the result.
 import { sendTarget } from './chat-blocks.js'
+import { planScreenshots, screenshotCountText } from './domain.js'
 import { isPublished, publicationUnits, publishedPull } from './send-readiness.js'
 import { stackMeta } from './stack.js'
 
@@ -20,6 +21,7 @@ const UNKNOWN_NOTE = 'The result is not confirmed yet. Check Contribute before t
 export const LEDGER_NOTE = 'Could not read every contribution. Open Contribute to send.'
 export const TIMEOUT_NOTE = 'Contribute didn’t answer in time. Try again.'
 export const REFRESH_FAILED_NOTE = 'Contribute couldn’t check this right now. Try again.'
+export const NEWER_NOTE = 'Sending from chat needs a newer Möbius. Open Contribute to send.'
 export const RECOVERY_NOTE = 'The previous result from this card could not be restored. Open Contribute to check it; nothing will be sent from here.'
 
 // ---- Recovery checkpoint: unresolved attempt identities only, never records,
@@ -89,12 +91,18 @@ export function changeSize(plan) {
 export function descriptionExcerpt(body, max = 160) {
   // Skip HTML comments (also across lines) and fenced code blocks; prefer
   // prose over headings.
+  // Image-only lines and table rows are skipped and inline images become their
+  // alt text, so a before/after screenshot never shows as raw
+  // ![...](screenshot:...) markup.
   let fenced = false
   const lines = String(body || '').replace(/<!--[\s\S]*?(-->|$)/g, '').split('\n').map(value => value.trim())
     .filter(value => {
       if (/^(```|~~~)/.test(value)) { fenced = !fenced; return false }
-      return value && !fenced
+      return !fenced
     })
+    .map(value => /^\|.*\|$/.test(value) || /^(\s*!\[[^\]]*\]\([^)]*\))+\s*$/.test(value) ? ''
+      : value.replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1').trim())
+    .filter(Boolean)
   const prose = lines.find(value => !/^#+\s/.test(value)) || lines[0] || ''
   // Strip a block marker only when it is one (followed by whitespace), so
   // emphasis such as **Summary** stays intact.
@@ -106,16 +114,24 @@ export function descriptionExcerpt(body, max = 160) {
 export function confirmationItem(record) {
   const plan = record.plan || {}
   const meta = stackMeta(record)
+  // The card's own per-contribution facts (Project, Change) come first, with
+  // the same values, then the exact identity this Confirm binds.
   const facts = [
-    ['Repository', plan.repo || record.repo],
+    ['Project', plan.repo || record.repo],
+    ...(changeSize(plan) ? [['Change', changeSize(plan)]] : []),
     ...(meta ? [['Stack', `Layer ${meta.position} of ${meta.total} · ${meta.name}`]] : []),
     ['Action', plan.action === 'pr_update' ? `Update pull request #${record.number}` : 'Open a new pull request'],
     ['Branch', meta ? `${plan.branch || record.branch} → ${meta.baseBranch}` : plan.branch || record.branch],
     ['Version', String(plan.head_sha || '').slice(0, 12)],
     ['Reviewed diff', String(plan.diff_sha256 || '').slice(0, 12)],
-    ...(changeSize(plan) ? [['Change', changeSize(plan)]] : []),
     ['Review', 'All clear for this version'],
   ]
+  // Screenshots are published with the PR, so Confirm always names them, on
+  // the Change line: the fact budget stays free for the description excerpt.
+  const screenshots = planScreenshots(plan).length
+  const change = facts.findIndex(([label]) => label === 'Change')
+  if (screenshots && change >= 0) facts[change] = ['Change', `${facts[change][1]} · ${screenshotCountText(screenshots)}`]
+  else if (screenshots) facts.splice(1, 0, ['Change', screenshotCountText(screenshots)]) // after Project, as on the card
   // The public text the owner publishes: the PR title is the item's heading,
   // and the description's first line is shown when the 8-fact limit allows.
   const excerpt = descriptionExcerpt(plan.body_draft)
@@ -131,15 +147,16 @@ export const RELAY_NOTE = 'This contribution is sent through the Möbius relay, 
 // The owner must see how big each change is, so a record without a readable
 // diff stat is never confirmable (staging always records one from Git).
 const sized = record => Boolean(changeSize(record?.plan))
+export const UNLISTED_LAYER_NOTE = 'This card doesn’t list every layer of the stack. Open Contribute to send it.'
 export const SIZE_NOTE = 'This contribution needs a fresh check in Contribute before it can be sent: its change size is missing.'
 const confirmable = record => !relayed(record) && sized(record) && confirmationItem(record).facts.every(fact => fact.value)
 
 const PUBLIC_LABELS = { draft: 'Draft', open: 'Open', landing: 'Open', merged: 'Merged', closed: 'Closed' }
 
-export function createInlineSession({ sessionId, actions, checkpoint = null, retain = false, recoveryError = false, publish, loadExact, onNeedRuntime }) {
+export function createInlineSession({ sessionId, actions, items = null, checkpoint = null, retain = false, recoveryError = false, publish, loadExact, onNeedRuntime }) {
   const advertised = [...new Map((actions || []).filter(item => typeof item?.key === 'string').map(item => [item.key, item])).values()]
-  const cardKeys = advertised.map(item => item.key)
-  const targets = new Map(advertised.map(item => [item.key, sendTarget(item.key, cardKeys)]))
+  // The card's items name its records; its one action covers exactly them.
+  const targets = new Map(advertised.map(item => [item.key, sendTarget(item.key, items)]))
   const idsFor = key => targets.get(key)?.ids || []
   let attempts = []
   let fault = ''
@@ -186,13 +203,20 @@ export function createInlineSession({ sessionId, actions, checkpoint = null, ret
   const overlaps = (attempt, unit) => attempt.unitKey === unit.key || attempt.ids.some(id => unit.records.some(record => record.id === id))
   const locked = unit => attempts.some(attempt => UNRESOLVED.has(attempt.state) && overlaps(attempt, unit))
   const units = key => publicationUnits(idsFor(key), [...current().values()], runtime?.reviewStatus, { requireCheck: true })
-  const readyUnits = key => units(key).filter(unit => unit.ready.length && !locked(unit) && unit.ready.every(confirmable))
+  // The action covers exactly the records the card lists: a unit whose ready
+  // phase includes a record the card does not list (another stack layer) is
+  // never confirmed, partly or expanded.
+  const unlisted = (key, unit) => unit.ready.some(record => !idsFor(key).includes(record.id))
+  const readyUnits = key => units(key).filter(unit => unit.ready.length && !unlisted(key, unit) && !locked(unit) && unit.ready.every(confirmable))
   // Readiness is decided only from a complete ledger, a current review check,
   // a known connection and finished exact reads of everything this card names.
   const authoritative = key => Boolean(runtime?.ledgerReady) && runtime.reviewStatus?.state === 'ready'
     && runtime.connection !== 'checking' && !reading.size && !idsFor(key).some(id => unreadable.has(id))
 
   function blockedReason(key) {
+    // A host that does not send the card's items cannot say which records the
+    // action covers, so nothing is confirmable from here.
+    if (targets.get(key)?.needsItems) return NEWER_NOTE
     if (targets.get(key)?.invalid) return 'This card no longer matches its listed contributions. Open Contribute to send them.'
     if (!runtime) return ''
     if (runtime.reviewStatus?.state === 'unavailable') return 'Could not verify the current review. Try again; nothing was sent.'
@@ -203,11 +227,12 @@ export function createInlineSession({ sessionId, actions, checkpoint = null, ret
     // Without server-side binding of the confirmed snapshot, or a review check
     // addressed to these exact records, chat never sends.
     if (runtime.frozenBinding !== true || !idsFor(key).every(id => runtime.reviewStatus?.addressed?.includes(id))) {
-      return 'Sending from chat needs a newer Möbius. Open Contribute to send.'
+      return NEWER_NOTE
     }
     if (idsFor(key).some(id => relayed(current().get(id)))) return RELAY_NOTE
-    if (readyUnits(key).length) return ''
     const all = units(key)
+    if (all.some(unit => unlisted(key, unit))) return UNLISTED_LAYER_NOTE
+    if (readyUnits(key).length) return ''
     if (all.some(unit => unit.ready.length && !unit.ready.every(sized))) return SIZE_NOTE
     return all.map(unit => unit.reason).find(Boolean) || (all.some(locked) ? UNKNOWN_NOTE : '')
   }

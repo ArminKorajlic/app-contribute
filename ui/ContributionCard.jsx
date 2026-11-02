@@ -5,6 +5,7 @@ import {
   STATUS_LABELS,
   TYPE_LABELS,
   problemHeadline,
+  screenshotCountText,
   statusNarration,
   timeAgo,
 } from '../domain.js'
@@ -27,6 +28,7 @@ import {
 import { needsSourceRefresh, reviewIncomplete as recordReviewIncomplete, sendNeedsAttention } from '../send-readiness.js'
 import { FileDiffList } from './FileDiffList.jsx'
 import { MarkdownView } from './MarkdownView.jsx'
+import { useScreenshots } from './useScreenshots.js'
 import { Icon } from './Icons.jsx'
 import { AgentHandoffButton } from './BatchAction.jsx'
 
@@ -519,12 +521,16 @@ export function ReviewPlan({ rec, loadDiff }) {
   const plan = rec.plan
   const [tab, setTab] = useState('description')
   const isPr = plan.action === 'pr' || rec.type === 'pr'
+  const screenshots = useScreenshots(rec, tab === 'description')
   return <>
     <nav className="co-detail-tabs" aria-label="Prepared contribution details">
       {['description', ...(isPr ? ['files'] : []), 'activity'].map(key => <button key={key} aria-pressed={tab === key} onClick={() => setTab(key)}>{key === 'description' ? 'Description' : key === 'files' ? 'Files' : 'Activity'}</button>)}
     </nav>
     {tab === 'description' ? <>
-      <MarkdownView markdown={plan.body_draft || rec.summary || 'No written description is saved for this proposal.'} />
+      <MarkdownView markdown={plan.body_draft || rec.summary || 'No written description is saved for this proposal.'} images={screenshots.images} />
+      {screenshots.count && rec.status === 'prepared' ? <p className="co-shot-note">
+        {screenshotCountText(screenshots.count)} will be uploaded to your GitHub account when you send (your fork, or this repository if you own it), so the pull request can show {screenshots.count === 1 ? 'it' : 'them'}.
+      </p> : null}
       {isPr ? <CoauthorOmittedNote rec={rec} /> : null}
       <PublicationReviewNote rec={rec} />
     </> : null}

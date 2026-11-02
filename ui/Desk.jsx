@@ -88,7 +88,7 @@ export function DeskChips({ view, counts, onView }) {
 // to the view that holds it.
 export function DeskCounts({ counts, onView }) {
   const chips = [
-    counts.questions ? { label: counts.questions === 1 ? 'Agent question' : 'Agent questions', count: counts.questions, view: 'work', you: true } : null,
+    counts.questions ? { label: 'To look at', count: counts.questions, view: 'work', you: true } : null,
     { label: 'Review', count: counts.requests, view: 'requests', you: true },
     { label: 'Merge', count: counts.merge, view: 'mine' },
     { label: 'Fix', count: counts.fix, view: 'mine' },

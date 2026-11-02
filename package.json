@@ -1,6 +1,6 @@
 {
   "name": "app-contribute",
-  "version": "0.5.43",
+  "version": "0.5.44",
   "private": true,
   "scripts": {
     "test": "node --test test/*.test.mjs && python3 -m unittest discover -s test -p 'test_*.py'",

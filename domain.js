@@ -12,10 +12,15 @@
 //     needs_attention?, attention?, plan? }
 // A prepared record staged for review carries `plan`: { action, repo,
 // target_url?, title?, body_draft, branch?, repo_path?, base_sha?,
-// head_sha?, diff_sha256?, diff_stat, diff_excerpt?(legacy, unused) } — the
-// review card renders its file list from the sibling storage file
-// contributions/<id>.diff, and falls back to parsing diff_stat when that
+// head_sha?, diff_sha256?, diff_stat, diff_excerpt?(legacy, unused),
+// screenshots? } — the review card renders its file list from the sibling
+// storage file contributions/<id>.diff, and falls back to parsing diff_stat when that
 // blob is missing, so diff_stat is the one diff field it always needs.
+// `screenshots` is an optional list of { name, sha256, size, alt } PNGs the
+// platform staged beside the record; body_draft references each one as
+// ![alt](screenshot:<name>). The card reads the bytes through
+// GET /api/github/contributions/<app>/<record>/screenshots/<name>, and Send
+// uploads them and swaps each screenshot: ref for a public image URL.
 // `submitting` means the platform submit endpoint claimed the record (in
 // flight); `landing` is the atomic green-stack claim; `commented` is the
 // terminal status for comment actions.
@@ -357,4 +362,17 @@ export function timeAgo(iso) {
   if (s < 86400) return Math.floor(s / 3600) + 'h ago'
   if (s < 86400 * 30) return Math.floor(s / 86400) + 'd ago'
   return new Date(t).toLocaleDateString()
+}
+
+// The staged screenshots a plan carries, keeping only well-formed entries so
+// a malformed record never produces a request or a count the owner relies on.
+export const SCREENSHOT_NAME = /^[a-z0-9][a-z0-9-]{0,60}\.png$/
+export function planScreenshots(plan) {
+  if (!Array.isArray(plan?.screenshots)) return []
+  return plan.screenshots.filter(shot => SCREENSHOT_NAME.test(shot?.name || '')
+    && /^[0-9a-f]{64}$/.test(shot.sha256 || ''))
+}
+
+export function screenshotCountText(count) {
+  return `${count} ${count === 1 ? 'screenshot' : 'screenshots'}`
 }

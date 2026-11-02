@@ -922,6 +922,7 @@ export const CSS = `
   font-size: 14px; font-weight: 650; color: var(--muted);
 }
 .co-markdown {
+  align-self: stretch; min-width: 0;
   font-size: 14px; line-height: 1.58; color: var(--text);
   overflow-wrap: anywhere;
 }
@@ -951,6 +952,30 @@ export const CSS = `
 .co-markdown blockquote {
   margin: 0; padding: 0 0 0 12px; border-left: 1px solid var(--border);
   color: var(--muted);
+}
+/* Before/after screenshots usually arrive in a table: columns share the card
+   width and every image scales down to its cell, on a phone too. */
+.co-markdown table {
+  width: 100%; table-layout: fixed; border-collapse: collapse;
+}
+.co-markdown th,
+.co-markdown td {
+  padding: 6px; border: 1px solid var(--border);
+  text-align: left; vertical-align: top;
+}
+.co-markdown img { max-width: 100%; height: auto; }
+.co-markdown-shot {
+  display: block; border: 1px solid var(--border); border-radius: 8px;
+  background: var(--surface-2, var(--surface));
+}
+.co-markdown-shot-pending {
+  display: flex; align-items: center; justify-content: center;
+  min-height: 72px; padding: 10px 12px; border-radius: 8px;
+  border: 1px dashed var(--border); background: var(--surface-2, var(--surface));
+  color: var(--muted); font-size: 14px; line-height: 1.4; text-align: center;
+}
+.co-shot-note {
+  margin: 0; font-size: 14px; line-height: 1.45; color: var(--muted);
 }
 /* Stored contribution totals frame the canonical diff viewer, whose
    disclosures and line styles are injected by ui/diff. */

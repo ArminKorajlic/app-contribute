@@ -665,5 +665,7 @@ input[type=checkbox].co-switch:focus-visible { outline:2px solid var(--accent); 
   .co-desk { display:block; }
   .co-rail { display:none; }
   .co-desk-chips { display:flex; }
+  .co-view-heading { flex-wrap:wrap; }
+  .co-view-heading h2 { white-space:normal; }
 }
 `

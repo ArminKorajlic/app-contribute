@@ -47,7 +47,18 @@ test('state goes through the host handle, or is posted with the document generat
   assert.equal(readBlockSession({ sessionId: 's', generation: 3, actions: [] }).generation, 3)
   assert.equal(readBlockSession({ actions: [] }), null)
   assert.deepEqual(readBlockSession({ sessionId: 's', generation: '3', actions: [], retain: 'yes', checkpoint: { id: 'c', data: '{}', other: 1 } }),
-    { sessionId: 's', generation: null, actions: [], checkpoint: { id: 'c', data: '{}' }, retain: false, recoveryError: false })
+    { sessionId: 's', generation: null, actions: [], items: null, checkpoint: { id: 'c', data: '{}' }, retain: false, recoveryError: false })
+})
+
+test('the card item intents are read in card order, validated and deduplicated, and absent items stay absent', () => {
+  const read = items => readBlockSession({ sessionId: 's', actions: [], items })?.items
+  assert.deepEqual(read([{ intent: 'review:a', title: 'A', facts: [{ label: 'x', value: 'y' }] }, { intent: 'review:b' }, { intent: 'review:a' }]),
+    [{ intent: 'review:a' }, { intent: 'review:b' }], 'intents only: no titles or facts, first wins')
+  assert.deepEqual(read([{ intent: 'Review:a' }, { intent: 'review:a b' }, { intent: 7 }, null, { intent: `review:${'x'.repeat(257)}` }, { intent: 'review:c' }]),
+    [{ intent: 'review:c' }], 'only valid host intents')
+  assert.equal(read(undefined), null)
+  assert.equal(read('review:a'), null)
+  assert.equal(readBlockSession({ sessionId: 's', actions: [] }).items, null, 'an older host sends no items')
 })
 
 // The real B2 host modules, only when MOBIUS_BLOCKS_FRONTEND names a Möbius

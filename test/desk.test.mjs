@@ -27,7 +27,7 @@ const pr = (number, extra = {}) => ({
   number,
   title: `PR ${number}`,
   url: `https://github.com/o/r/pull/${number}`,
-  author: { login: 'armin' },
+  author: { login: 'owner' },
   repository: { nameWithOwner: 'o/r' },
   headRefName: `head-${number}`,
   baseRefName: 'main',
@@ -56,10 +56,10 @@ test('an approval reads ready to merge, but an approved draft still waits on Mar
 test('authored pulls keep only the owner PRs that are not review requests', () => {
   const incoming = [
     pr(1, { reviewRequested: true }),
-    pr(2, { author: { login: 'Armin' } }),
+    pr(2, { author: { login: 'Owner' } }),
     pr(3, { author: { login: 'teammate' } }),
   ]
-  assert.deepEqual(authoredPulls(incoming, 'armin').map(item => item.number), [2])
+  assert.deepEqual(authoredPulls(incoming, 'owner').map(item => item.number), [2])
   assert.deepEqual(authoredPulls(incoming, ''), [])
 })
 
@@ -102,7 +102,7 @@ test('the counts name next steps and the rail badges follow them', () => {
     { kind: 'public_attention', record: { number: 3 } },
     { kind: 'private_review', record: { number: 9 } },
   ]
-  const counts = deskCounts({ decisions, incoming, records: [], login: 'armin' })
+  const counts = deskCounts({ decisions, incoming, records: [], login: 'owner' })
   assert.equal(counts.questions, 1)
   assert.equal(counts.requests, 1)
   assert.equal(counts.merge, 1)

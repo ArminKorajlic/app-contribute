@@ -72,13 +72,19 @@ function projectRows(view, project, { login, decisionsFor, lastLooked, query, on
   const pull = (pr, chip, order) => rows.push(
     <DeskPullRow key={`pr:${pr.number}`} project={project} pr={pr} chip={chip} order={order} lastLooked={lastLooked} onOpenPull={onOpenPull} />,
   )
-  const requests = (project.reviewRequests || []).filter(pr => matches(query, pr.title, String(pr.number), pr.author?.login))
-  const decisions = view === 'needs'
-    ? attentionListItems(decisionsFor(project)).filter(item => matches(query, item.label, String(item.record?.number || '')))
-    : []
+  const requests = view === 'work' ? [] : (project.reviewRequests || []).filter(pr => matches(query, pr.title, String(pr.number), pr.author?.login))
+  const all = decisionsFor(project)
+  const decisions = (view === 'work' ? all : view === 'needs' ? attentionListItems(all) : [])
+    .filter(item => matches(query, item.label, String(item.record?.number || '')))
   const mine = view === 'needs' || view === 'mine'
     ? authoredPulls(project.incomingReviews, login).filter(pr => matches(query, pr.title, String(pr.number)))
     : []
+  if (view === 'work') {
+    decisions.forEach(item => rows.push(
+      <AttentionRow key={`decision:${item.id}`} item={item} heading={() => item.label} onSelect={() => onOpenRecord(project, item)} />,
+    ))
+    return rows
+  }
   if (view !== 'mine') requests.forEach(pr => pull(pr, requestChip))
   decisions.forEach(item => rows.push(
     <AttentionRow key={`decision:${item.id}`} item={item} heading={() => item.label} onSelect={() => onOpenRecord(project, item)} />,
@@ -130,6 +136,7 @@ function EditsRow({ project, onOpenProject }) {
 
 const EMPTY = {
   needs: { title: 'Nothing needs you right now', hint: 'Review requests, approved work and failing checks land here.' },
+  work: { icon: 'prepare', title: 'No saved work waiting', hint: 'Prepared PRs, agent questions and feedback on your contributions land here.' },
   requests: { icon: 'review', title: 'No review requests', hint: 'When someone asks for your review, the PR appears here.' },
   mine: { icon: 'github', title: 'No open PRs of yours', hint: 'PRs you open on GitHub appear here with their next step.' },
   edits: { title: 'No edits waiting', hint: 'When a chat edits a project, the files to publish appear here.' },
