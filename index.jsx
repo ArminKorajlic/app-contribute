@@ -39,7 +39,7 @@ import { buildContributionRun, findRunItemByRecord, ownerAttentionCount } from '
 import { stackPublicationRecords } from './stack.js'
 import { deliverCycleMessage } from './cycle-delivery.js'
 import { abandonPrepared, cacheFeed, cacheSourceSnapshot, loadAppSettings, loadCachedFeed, loadCachedSourceSnapshot, loadContributionRecord, loadFreshContributionRecord, loadFreshContributionRecords, loadCycleState, loadFullDiff, loadLedger, restoreAbandoned, saveAppSettings } from './storage.js'
-import { createRefreshCoordinator, isVisibleFrameMessage } from './refresh.js'
+import { createRefreshCoordinator } from './refresh.js'
 import { checkUpstream } from './upstream-check.js'
 import { DESK_LAST_LOOKED_KEY, deskCounts } from './desk.js'
 import {
@@ -557,8 +557,12 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
     return rows
   }, [token])
 
+  // Review requests count toward the first full sync, so the workspace never
+  // opens with an empty inbox that fills in a beat later.
+  const [incomingReady, setIncomingReady] = useState(false)
   useEffect(() => {
-    if (!sendOnly) refreshIncomingReviews()
+    if (sendOnly || conn.state === 'checking') return
+    Promise.resolve(refreshIncomingReviews()).finally(() => setIncomingReady(true))
   }, [conn.state, refreshIncomingReviews, sendOnly])
 
   // Mount: the cached first screen, GitHub status, and app preferences are all
@@ -645,11 +649,11 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
     return () => { cancelled = true }
   }, [token, fetchRefreshed, replaceFeed, signalReady, sendOnly])
 
-  // Event-driven liveness: refresh when the app becomes actionable again.
-  // Focus + visibility can fire together, and an online transition can land
-  // during either refresh, so one coordinator deduplicates concurrent work and
-  // preserves exactly one trailing refresh when an event arrives mid-flight.
-  // There is deliberately no timer: a hidden/idle app consumes no resources.
+  // One coordinator owns every later full pass (the header's Refresh, a chat
+  // card's Try again, a focused link's catch-up): concurrent requests dedupe
+  // into one run plus at most one trailing run. GitHub is synced once when the
+  // app opens; there is deliberately no timer and no hidden focus/visibility
+  // re-sync — the owner refreshes explicitly from the header.
   const refreshWorkRef = useRef(null)
   const forceRefreshRef = useRef(false)
   const runRefreshWork = useCallback(async () => {
@@ -687,22 +691,6 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
     )
   }
 
-  useEffect(() => {
-    const requestRefresh = refreshCoordinatorRef.current
-    const refreshOnForeground = (event) => {
-      if (isVisibleFrameMessage(event, window.parent)) requestRefresh()
-    }
-    document.addEventListener('visibilitychange', requestRefresh)
-    window.addEventListener('focus', requestRefresh)
-    window.addEventListener('online', requestRefresh)
-    window.addEventListener('message', refreshOnForeground)
-    return () => {
-      document.removeEventListener('visibilitychange', requestRefresh)
-      window.removeEventListener('focus', requestRefresh)
-      window.removeEventListener('online', requestRefresh)
-      window.removeEventListener('message', refreshOnForeground)
-    }
-  }, [])
 
   // Shell review cards use the platform's one-shot app-intent rail. The card
   // names only the ledger record; this app resolves the record's current stage
@@ -1600,6 +1588,39 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
       }} />
   }
 
+  // The one refresh path after the open-time sync: the header's Refresh and
+  // the projects list's Check GitHub both renew everything on screen — local
+  // sources, the contribution feed, review requests, repositories, upstream
+  // checks — and bump refreshKey so every cached PR list reloads too.
+  async function refreshEverything() {
+    const [sourceOk] = await Promise.all([
+      refreshSources(),
+      refreshCoordinatorRef.current(),
+    ])
+    let upstream = null
+    if (conn.state === 'connected') {
+      const [, , checked] = await Promise.all([loadRepositories(), refreshIncomingReviews(), checkUpstream(token, sourceProjects)])
+      upstream = checked
+      if (checked.ok) setUpstreamChecks(checked.results)
+    }
+    setRefreshKey(value => value + 1)
+    return { ok: sourceOk && ledgerCurrentRef.current, upstream }
+  }
+  const [refreshingAll, setRefreshingAll] = useState(false)
+  async function refreshAll() {
+    if (refreshingAll) return
+    setRefreshingAll(true)
+    try { await refreshEverything() } finally { setRefreshingAll(false) }
+  }
+
+  // The workspace opens only once its first sync is complete — the saved
+  // ledger, the project snapshot, the GitHub account and the review-request
+  // inbox — so nothing visibly reloads right after it appears. Latched: a
+  // later manual refresh never drops the app back to the opening screen.
+  const [booted, setBooted] = useState(false)
+  const bootReady = ledgerReady && !sourceLoading && conn.state !== 'checking' && (incomingReady || conn.state !== 'connected')
+  useEffect(() => { if (bootReady) setBooted(true) }, [bootReady])
+
   // The toolbar reflects only the app's first connection/feed read. Once that
   // read settles, an unavailable GitHub status is rendered as a retryable
   // content state instead of leaving "Checking…" visible forever.
@@ -1665,6 +1686,18 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
   const loadScreenshot = useCallback((recordId, shot) => fetchContributionScreenshot(token, appId, recordId, shot), [token, appId])
 
   if (sendOnly) return null
+  if (!booted) {
+    return (
+      <div className="co-root" data-design-seed="ae1883df">
+        <style>{CSS}</style>
+        <div className="co-boot" role="status">
+          <span className="ma-spinner" aria-hidden="true" />
+          <strong>Opening Contribute…</strong>
+          <span>Reading your projects and pull requests from GitHub.</span>
+        </div>
+      </div>
+    )
+  }
   // One workspace owns project context and the exact contribution beneath it.
   return (
     <ScreenshotLoaderContext.Provider value={loadScreenshot}>
@@ -1672,6 +1705,10 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
       <style>{CSS}</style>
       <div className="co-header-shell">
         <Header appId={appId} fromCache={fromCache} checking={checking} onBack={projectOpen ? () => setProjectFocus({ key: '', nonce: crypto.randomUUID() }) : null}>
+          <button type="button" className="co-btn co-toolbar-refresh" onClick={refreshAll} disabled={refreshingAll} aria-busy={refreshingAll} aria-label="Refresh everything from GitHub">
+            <Icon name="refresh" size={16} className={'co-icon' + (refreshingAll ? ' is-spinning' : '')} />
+            <span>{refreshingAll ? 'Refreshing…' : 'Refresh'}</span>
+          </button>
           <ConnectionSettings
             appId={appId} conn={conn} token={token} onChanged={refreshConnection}
             autopilotDefault={autopilotDefault} onToggleAutopilotDefault={onToggleAutopilotDefault}
@@ -1684,23 +1721,7 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
           snapshot={sourceSnapshot} projects={sourceProjects} focusKey={projectFocus} desk={desk}
           onProjectOpenChange={setProjectOpen}
           conn={conn} loading={sourceLoading} error={sourceError}
-          onRetry={async () => {
-            // The one visible refresh control renews everything the screen
-            // shows, including the contribution feed: otherwise a stale or
-            // partial feed has no manual way back to current.
-            const [sourceOk] = await Promise.all([
-              refreshSources(),
-              refreshCoordinatorRef.current(),
-            ])
-            let upstream = null
-            if (conn.state === 'connected') {
-              const [, , checked] = await Promise.all([loadRepositories(), refreshIncomingReviews(), checkUpstream(token, sourceProjects)])
-              upstream = checked
-              if (checked.ok) setUpstreamChecks(checked.results)
-            }
-            setRefreshKey(value => value + 1)
-            return { ok: sourceOk && ledgerCurrentRef.current, upstream }
-          }} checks={upstreamChecks} attention={projectAttention} loadProjectDiff={loadProjectDiff}
+          onRetry={refreshEverything} checks={upstreamChecks} attention={projectAttention} loadProjectDiff={loadProjectDiff}
           repositoryPicker={<RepositoryPicker token={token} connected={conn.state === 'connected'} onAdded={(repo, followed) => {
             setFollowedRepos(followed)
             setRepositoryAccess(old => ({ ...old, repositories: [...old.repositories.filter(item => item.nameWithOwner.toLowerCase() !== repo.nameWithOwner.toLowerCase()), repo] }))
@@ -1730,6 +1751,7 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
               focusTarget={(project?.key || '') === focusedProjectKey ? reviewFocus : null}
               focusReady={focusedReviewReady && !sourceLoading}
               onFocusConsumed={consumeReviewFocus}
+              onOpenPull={project ? pr => openPullPage(project, pr) : null}
             />}
             </ProjectControls> : null}
             </>

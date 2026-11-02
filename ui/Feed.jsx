@@ -12,6 +12,7 @@ import {
   contributionPathDecision,
   contributionStackDecision,
 } from '../contribution-policy.js'
+import { feedbackPull } from '../desk.js'
 import { sortStackRecords, stackMeta, stackPublicationRecords } from '../stack.js'
 import {
   contributionTitle,
@@ -869,6 +870,7 @@ export function ContributionRun({
   focusTarget,
   focusReady,
   onFocusConsumed,
+  onOpenPull = null,
 }) {
   const task = useProjectTask()
   const [missingTarget, setMissingTarget] = useState(false)
@@ -907,6 +909,14 @@ export function ContributionRun({
 
   function selectRunItem(item) { onSelect?.(item.id) }
 
+  // Feedback on a published PR reads best on the PR page itself; anything
+  // without a PR behind it keeps its saved decision card.
+  function openAttentionItem(item) {
+    const target = feedbackPull(item)
+    if (target && onOpenPull) onOpenPull(target)
+    else selectRunItem(item)
+  }
+
 
   const decisions = projectedDecisions
   const privateItems = decisions.filter(item => item.kind === 'private_review' && !isPublicFeedback(item))
@@ -929,7 +939,7 @@ export function ContributionRun({
 
   // What needs the owner opens by itself; it can still be folded away.
   const needsYou = presentation === 'project'
-    ? <AttentionList items={ownerDecisions} heading={itemHeading} onSelect={selectRunItem} />
+    ? <AttentionList items={ownerDecisions} heading={itemHeading} onSelect={openAttentionItem} />
     : null
 
   const missingSelection = selectedId && !selectedId.startsWith('task:') && !selected

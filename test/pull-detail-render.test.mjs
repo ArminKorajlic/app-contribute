@@ -111,3 +111,22 @@ for (const [additions, deletions, expected] of [
     if (deletions === null) assert.doesNotMatch(html, /[0-9]+ deletions/)
   })
 }
+
+test('the description starts folded and unanswered feedback on your PR stays visible under it', async t => {
+  const pr = { number: 9, repository: { nameWithOwner: 'team/repo' }, headRefOid: 'a'.repeat(40), baseRefOid: 'b'.repeat(40), baseRefName: 'main', url: 'https://github.com/team/repo/pull/9' }
+  const html = await render(t, 'PullRequestDetail', { pr, record: { attention: { type: 'changes_requested' } } })
+  if (!html) return
+  assert.doesNotMatch(html, /<details class="co-gh-description" open/)
+  assert.match(html, /class="co-pr-feedback-flag is-blocker"/)
+  assert.match(html, /Changes requested/)
+  assert.match(html, /not addressed yet/)
+})
+
+test('a PR without your tracked record, or with answered feedback, carries no feedback flag', async t => {
+  const pr = { number: 9, repository: { nameWithOwner: 'team/repo' }, headRefOid: 'a'.repeat(40), baseRefOid: 'b'.repeat(40), baseRefName: 'main', url: 'https://github.com/team/repo/pull/9' }
+  const bare = await render(t, 'PullRequestDetail', { pr })
+  if (!bare) return
+  assert.doesNotMatch(bare, /co-pr-feedback-flag/)
+  const answered = await render(t, 'PullRequestDetail', { pr, record: { attention: null } })
+  assert.doesNotMatch(answered, /co-pr-feedback-flag/)
+})

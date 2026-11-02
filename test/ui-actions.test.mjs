@@ -428,11 +428,33 @@ test('private proposals have one actionable home without another merge workflow'
   assert.doesNotMatch(controlsSource, /Options & process/)
 })
 
-test('the projects refresh control also renews the contribution feed and reports a partial one', () => {
-  const retry = appSource.match(/onRetry=\{async \(\) => \{[\s\S]*?\n          \}\}/)?.[0] || ''
-  assert.match(retry, /refreshCoordinatorRef\.current\(\)/)
-  assert.match(retry, /checkUpstream\(token, sourceProjects\)/)
-  assert.match(retry, /return \{ ok: sourceOk && ledgerCurrentRef\.current, upstream \}/)
+test('every refresh control renews the contribution feed and reports a partial one', () => {
+  // The header's Refresh and the projects list's Check GitHub share one full pass.
+  const refresh = appSource.match(/async function refreshEverything\(\) \{[\s\S]*?\n  \}/)?.[0] || ''
+  assert.match(refresh, /refreshCoordinatorRef\.current\(\)/)
+  assert.match(refresh, /checkUpstream\(token, sourceProjects\)/)
+  assert.match(refresh, /return \{ ok: sourceOk && ledgerCurrentRef\.current, upstream \}/)
+  assert.match(appSource, /onRetry=\{refreshEverything\}/)
+  assert.match(appSource, /onClick=\{refreshAll\}/)
+})
+
+test('GitHub is synced once per open: no hidden foreground re-sync, one explicit Refresh', () => {
+  // The owner refreshes from the header (or Check GitHub); returning to the
+  // app or a focus/visibility flip must not quietly reload everything.
+  assert.doesNotMatch(appSource, /isVisibleFrameMessage/)
+  assert.doesNotMatch(appSource, /addEventListener\('visibilitychange', requestRefresh\)/)
+  assert.match(appSource, /className="co-btn co-toolbar-refresh"/)
+})
+
+test('the workspace opens only after its first sync and never falls back to the boot screen', () => {
+  assert.match(appSource, /const bootReady = ledgerReady && !sourceLoading && conn\.state !== 'checking'/)
+  assert.match(appSource, /if \(bootReady\) setBooted\(true\)/)
+  assert.match(appSource, /className="co-boot" role="status"/)
+})
+
+test('To look at feedback on a published PR opens the PR page, not the saved card', () => {
+  assert.match(feedSource, /function openAttentionItem\(item\) \{\s*\n\s*const target = feedbackPull\(item\)/)
+  assert.match(feedSource, /onSelect=\{openAttentionItem\}/)
 })
 
 test('the stale-feed note says offline only when the device is offline', () => {

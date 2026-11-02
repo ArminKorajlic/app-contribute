@@ -113,6 +113,14 @@ export const CSS = `
   width: 36px; height: 36px; display: inline-flex; align-items: center; justify-content: center;
   color: var(--muted);
 }
+.co-toolbar-refresh { gap: 7px; white-space: nowrap; }
+.co-boot {
+  min-height: 70dvh; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; gap: 10px; color: var(--muted); text-align: center; padding: 24px;
+}
+.co-boot strong { color: var(--text); font-size: 16px; }
+.co-boot span:last-child { font-size: 14px; }
+.co-boot .ma-spinner { width: 28px; height: 28px; margin-bottom: 6px; }
 .ma-spinner.is-compact { width: 15px; height: 15px; border-width: 2px; }
 .co-offline-note {
   grid-column: 1 / -1; display: block; margin: -2px 0 0 46px;
@@ -1575,6 +1583,8 @@ export const CSS = `
   .co-title { font-size: 17px; }
   .co-toolbar { gap: 3px; }
   .co-toolbar-check { width: 32px; padding: 0; justify-content: center; }
+  .co-toolbar-refresh span { display: none; }
+  .co-toolbar-refresh { min-width: 40px; justify-content: center; }
   .co-project-control { max-width: 108px; padding-inline: 8px; }
   .co-project-control > span { overflow: hidden; text-overflow: ellipsis; }
   .co-project-control b { display: none; }
