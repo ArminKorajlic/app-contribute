@@ -3,6 +3,7 @@
 // because the mini-app compiler rejects CSS side-output.
 
 import { ensureDiffViewerStyles } from './styles.js'
+import { lineNumberDigits } from './parseUnifiedDiff.js'
 
 ensureDiffViewerStyles()
 
@@ -43,6 +44,7 @@ export default function DiffView({ file }) {
   return (
     <div
       className="diff-view"
+      style={{ '--diff-digits': lineNumberDigits(hunks) }}
       role="region"
       aria-label={file.path ? `Diff for ${file.path}` : 'File diff'}
       tabIndex={0}
