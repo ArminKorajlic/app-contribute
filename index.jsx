@@ -311,6 +311,9 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
   const [autopilotDefault, setAutopilotDefault] = useState(true)
   const [deskView, setDeskView] = useState('needs')
   const [lastLooked, setLastLooked] = useState('')
+  // The PR page the desk pane shows, over whatever view or project is behind
+  // it. Back only clears this, so the place the owner came from is untouched.
+  const [pullPage, setPullPage] = useState(null)
   const submissionMethod = 'github'
   const [refreshKey, setRefreshKey] = useState(0)
   const [earlierCycle, setEarlierCycle] = useState(null)
@@ -1552,10 +1555,16 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
     records,
     lastLooked,
     decisionsFor: project => projectRun(project).decisions,
-    onOpenPull: (project, pr) => openPullFocus({
-      repo: pr.repository?.nameWithOwner || project?.canonical_repo,
-      number: pr.number,
-    }, crypto.randomUUID()),
+    onOpenPull: openPullPage,
+    pull: pullPage,
+    onClosePull: () => setPullPage(null),
+    renderPull: () => {
+      if (!pullPage) return null
+      const project = sourceProjects.find(item => item.key === pullPage.key)
+        || sourceProjects.find(item => item.canonical_repo?.toLowerCase() === pullPage.repo.toLowerCase())
+        || null
+      return renderPullRequests(project, null, null, pullPage)
+    },
   }
   function projectRun(project) {
     return project ? buildContributionRun({
@@ -1563,12 +1572,27 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
       incomingReviews: [],
     }) : contributionRun
   }
+  function openPullPage(project, pr) {
+    const repo = pr?.repository?.nameWithOwner || project?.canonical_repo || ''
+    if (!repo || !pr?.number) return
+    setPullPage({ key: project?.key || '', repo, number: pr.number, nonce: crypto.randomUUID() })
+  }
   // `view` comes from the project tabs: which PRs to show, how to switch tabs,
   // and where to report the open PR count. Without it the list shows all PRs.
-  function renderPullRequests(project, navigation, view = null) {
+  function renderPullRequests(project, navigation, view = null, page = null) {
+    if (page) {
+      return <PullRequests key={`page:${page.repo}#${page.number}`} appId={appId} token={token}
+        project={project} conn={conn} refreshKey={refreshKey} onChanged={refreshIncomingReviews}
+        presentation="page" focusPull={page} onFocusRelease={() => {}}
+        records={recordsForProject(records, project)} onRecord={record => {
+          setPullPage(null)
+          if (project?.key) setProjectFocus({ key: project.key, nonce: crypto.randomUUID() })
+        }} />
+    }
     return <PullRequests key={`pulls:${project?.key || 'all'}`} appId={appId} token={token}
       project={project} conn={conn} refreshKey={refreshKey} onChanged={refreshIncomingReviews}
       scope={view?.scope || 'all'} onScope={view?.onScope} onTotal={view?.onTotal}
+      onOpenPage={pr => openPullPage(project, pr)}
       focusPull={pullFocus?.number ? pullFocus : null} focusRun={pullFocus?.runId ? pullFocus : null} onFocusRelease={releasePullFocus}
       records={recordsForProject(records, project)} onRecord={record => {
         const found = findRunItemByRecord(projectRun(project), record.id)

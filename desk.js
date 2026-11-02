@@ -124,6 +124,17 @@ export function newSince(value, lastLooked) {
   return changed > seen
 }
 
+// Feedback about a published PR reads best on the PR itself: its page shows
+// the review text in Conversation. Publication decisions keep their card.
+export function feedbackPull(item) {
+  if (!['public_attention', 'private_review'].includes(item?.kind)) return null
+  const record = item?.record
+  const repo = record?.plan?.repo || record?.repo
+  const number = Number(record?.number)
+  if (!repo || !Number.isSafeInteger(number) || number <= 0) return null
+  return { number, repository: { nameWithOwner: repo } }
+}
+
 // The rail's project groups, in the directory's own order: projects with
 // something going on first, quiet apps folded, externals last.
 export function splitProjects(projects, attention = {}) {

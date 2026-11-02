@@ -128,3 +128,12 @@ test('edit projects count committed and in-progress files once', () => {
   const edits = editProjects([project])
   assert.equal(edits.length >= 0, true)
 })
+
+test('feedback on a published PR opens the PR itself; publication decisions keep their card', async () => {
+  const { feedbackPull } = await import('../desk.js')
+  const record = { number: 1791, repo: 'mobius-os/mobius' }
+  assert.deepEqual(feedbackPull({ kind: 'public_attention', record }),
+    { number: 1791, repository: { nameWithOwner: 'mobius-os/mobius' } })
+  assert.equal(feedbackPull({ kind: 'publish', record }), null)
+  assert.equal(feedbackPull({ kind: 'public_attention', record: { repo: 'o/r' } }), null)
+})

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { authoredPullState, authoredPulls, chainPulls, editProjects, mergedRecently, newSince } from '../desk.js'
+import { authoredPullState, authoredPulls, chainPulls, editProjects, feedbackPull, mergedRecently, newSince } from '../desk.js'
 import { attentionListItems } from '../run.js'
 import { localChangeSentence, recordsForProject } from '../source-map.js'
 import { STATUS_LABELS } from '../domain.js'
@@ -79,15 +79,20 @@ function projectRows(view, project, { login, decisionsFor, lastLooked, query, on
   const mine = view === 'needs' || view === 'mine'
     ? authoredPulls(project.incomingReviews, login).filter(pr => matches(query, pr.title, String(pr.number)))
     : []
+  const openDecision = item => {
+    const target = feedbackPull(item)
+    if (target) onOpenPull(project, target)
+    else onOpenRecord(project, item)
+  }
   if (view === 'work') {
     decisions.forEach(item => rows.push(
-      <AttentionRow key={`decision:${item.id}`} item={item} heading={() => item.label} onSelect={() => onOpenRecord(project, item)} />,
+      <AttentionRow key={`decision:${item.id}`} item={item} heading={() => item.label} onSelect={() => openDecision(item)} />,
     ))
     return rows
   }
   if (view !== 'mine') requests.forEach(pr => pull(pr, requestChip))
   decisions.forEach(item => rows.push(
-    <AttentionRow key={`decision:${item.id}`} item={item} heading={() => item.label} onSelect={() => onOpenRecord(project, item)} />,
+    <AttentionRow key={`decision:${item.id}`} item={item} heading={() => item.label} onSelect={() => openDecision(item)} />,
   ))
   if (view === 'needs') {
     mine.map(pr => [pr, authoredPullState(pr)])

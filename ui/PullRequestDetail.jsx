@@ -197,18 +197,19 @@ function PullRequestDetailView({ cacheStore, pr, token, onReview, onAssign, onRe
   </div> : null
   const labels = pr.labels?.nodes || []
   const tabs = [['conversation', 'Conversation'], ['files', 'Files changed'], ['checks', 'Checks']]
+  const githubUrl = safeDetailLink(pr.url)
   return <div className="co-pr-detail" aria-label={`Details for PR ${pr.number}`}>
     <header className="co-gh-pr-head">
       <h3 className="co-gh-pr-title">{pr.title} <span>#{pr.number}</span></h3>
-      <div className="co-gh-pr-sub"><PullStateBadge pr={pr} /><span><b>{pr.author?.login || 'Someone'}</b> wants to merge into <code>{pr.baseRefName}</code>{pr.headRefName ? <> from <code>{pr.headRefName}</code></> : null}</span></div>
       {labels.length ? <div className="co-gh-labels">{labels.map(label => <GithubLabel key={label.name} name={label.name} color={label.color} />)}</div> : null}
     </header>
     <div className="co-pr-detail-actions">
       {!readOnly ? <AgentMenu variant="button" align="start" disabled={stale} onChoose={mode => onReview?.(mode)} ariaLabel={`Choose what an agent does with PR ${pr.number}`} /> : null}
       {!readOnly && canAssign ? <button className="co-btn" disabled={stale} onClick={onAssign}><Icon name="person" /> Assign</button> : null}
       {status ? <button className="co-btn" onClick={onProgress}>Agent progress</button> : null}
-      <DetailLink href={pr.url}>Open on GitHub</DetailLink>
+      {githubUrl ? <a className="co-btn" href={githubUrl} target="_blank" rel="noopener noreferrer" aria-label={`Open on GitHub: PR ${pr.number}`}><Icon name="github" /> Open</a> : null}
     </div>
+    <div className="co-gh-pr-sub"><PullStateBadge pr={pr} /><span><b>{pr.author?.login || 'Someone'}</b> wants to merge into <code>{pr.baseRefName}</code>{pr.headRefName ? <> from <code>{pr.headRefName}</code></> : null}</span></div>
     <PullProvenance record={record} onRecord={onRecord} conversations={provenance} />
     <nav className="co-detail-tabs" aria-label="Pull request details">{tabs.map(([key, label]) => <button key={key} aria-pressed={tab === key} onClick={() => setTab(key)}>{label}
       {key === 'files' && Number.isInteger(pr.changedFiles) ? <><span className="co-tab-count">{pr.changedFiles}</span><span className="co-change-total"><b>+{pr.additions}</b><em>−{pr.deletions}</em></span></> : null}
