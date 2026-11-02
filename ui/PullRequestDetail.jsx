@@ -188,14 +188,14 @@ function RelatedRow({ item }) {
 
 export function PullRelated({ data }) {
   if (!data?.items?.length) return null
-  return <section aria-label="Related issues and pull requests"><h4>Related issues & PRs</h4>
+  return <section className="co-related-section" aria-label="Related issues and pull requests"><h4>Related issues & PRs</h4>
     <div className="co-related-list">{data.items.map(item => <RelatedRow key={item.url} item={item} />)}</div>
     {data?.truncated ? <p>Showing the first 50 closing issues and first 50 cross-reference events. More references remain on GitHub.</p> : null}
   </section>
 }
 export function PullThreads({ data }) {
   if (!data?.threads?.length) return null
-  return <section aria-label="Inline review discussions"><h4>Inline discussions</h4>
+  return <section className="co-related-section" aria-label="Inline review discussions"><h4>Inline discussions</h4>
     {data?.threads?.map(thread => <article className="co-activity-item" key={thread.id}>
       <header style={{ overflowWrap: 'anywhere' }}><strong>{thread.path || 'File not provided'}</strong> · {threadLocation(thread)} · {thread.isResolved === true ? 'Resolved' : thread.isResolved === false ? 'Unresolved' : 'Resolution unknown'}{thread.isOutdated ? ' · Outdated location' : ''}</header>
       {thread.comments?.nodes?.filter(Boolean).map(comment => <div key={comment.id} style={{ padding: '12px 0' }}><div className="co-detail-stats"><span>{comment.author?.login || 'Contributor'}</span><DateLabel value={comment.createdAt} time /></div><MarkdownView markdown={comment.body || 'No written comment.'} /></div>)}
