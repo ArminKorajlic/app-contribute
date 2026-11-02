@@ -123,6 +123,8 @@ export function PullFeedbackFlag({ record, status = null, activity = null }) {
 // Where this PR came from, as buttons beside Agent, Assign and Open: the saved
 // contribution behind it and the chats that wrote, reviewed or fixed it. Short
 // role labels keep the row tidy; the chat's own title is the tooltip.
+const COMMENT_PREVIEW = 3
+
 const PROVENANCE_LABELS = { source: 'Source chat', review: 'Review chat', fix: 'Fix chat' }
 function PullProvenance({ record, onRecord, conversations }) {
   const local = record && onRecord
@@ -228,6 +230,12 @@ function PullRequestDetailView({ cacheStore, pr, token, onReview, onAssign, onRe
     for (const request of abandoned) request.controller.abort()
   }, [token])
   const [page, setPage] = useState({ files: 1, checks: 1, conversation: 1 })
+  // More than three comments fold to the newest three — the feedback the owner
+  // came for — with Show all / Show less at the end. The page pager joins the
+  // full list, so a folded view never mixes "all" with "page 2".
+  const [allComments, setAllComments] = useState(false)
+  const commentsOpen = items => allComments || (items?.length || 0) <= COMMENT_PREVIEW
+  const shownComments = items => commentsOpen(items) ? (items || []) : items.slice(-COMMENT_PREVIEW)
   const [threadCursors, setThreadCursors] = useState([null])
   const [versionStale, setVersionStale] = useState(cacheStore?.stale === true)
   useEffect(() => {
@@ -355,9 +363,12 @@ function PullRequestDetailView({ cacheStore, pr, token, onReview, onAssign, onRe
     {tab === 'conversation' && conversationLoading ? <Skeleton lines={7} label="Loading the conversation" /> : null}
     {tab === 'conversation' && !conversationLoading ? <>
       {ready(activity) && !activity.data?.items?.length && number === 1 ? <p className="co-pr-note">No comments yet.</p> : null}
-      {ready(activity) ? activity.data?.items?.map(item => <article className={'co-gh-comment' + reviewTone(item)} key={`${item.kind}:${item.id}`}><header><b>{item.user?.login || 'Contributor'}</b> {item.kind === 'review' ? (item.state || 'reviewed').toLowerCase().replaceAll('_', ' ') : 'commented'} <DateLabel value={item.date} time /><CopyId id={item.id} label={item.kind === 'review' ? 'review id' : 'comment id'} /></header>{item.body ? <div className="co-comment-body"><ClampedMarkdown markdown={item.body} /></div> : null}</article>) : null}
+      {ready(activity) ? shownComments(activity.data?.items).map(item => <article className={'co-gh-comment' + reviewTone(item)} key={`${item.kind}:${item.id}`}><header><b>{item.user?.login || 'Contributor'}</b> {item.kind === 'review' ? (item.state || 'reviewed').toLowerCase().replaceAll('_', ' ') : 'commented'} <DateLabel value={item.date} time /><CopyId id={item.id} label={item.kind === 'review' ? 'review id' : 'comment id'} /></header>{item.body ? <div className="co-comment-body"><ClampedMarkdown markdown={item.body} /></div> : null}</article>) : null}
+      {ready(activity) && (activity.data?.items?.length || 0) > COMMENT_PREVIEW ? <button type="button" className="co-comments-toggle" onClick={() => setAllComments(value => !value)}>
+        {allComments ? 'Show less' : `Show all ${activity.data.items.length} comments`}
+      </button> : null}
       {readState(activity, 'comments')}
-      {ready(activity) ? pager(number, activity.data?.hasMore, false, value => setPage(old => ({ ...old, conversation: value }))) : null}
+      {ready(activity) && commentsOpen(activity.data?.items) ? pager(number, activity.data?.hasMore, false, value => setPage(old => ({ ...old, conversation: value }))) : null}
       {readState(threads, 'inline discussions')}
       {ready(threads) ? <><PullThreads data={threads.data} />{threadCursors.length > 1 || threads.data?.hasMore ? <div className="co-board-actions">{threadCursors.length > 1 ? <button className="co-btn" onClick={() => setThreadCursors(old => old.slice(0, -1))}>Previous discussions</button> : null}{threads.data.hasMore && threads.data.nextCursor ? <button className="co-btn" onClick={() => setThreadCursors(old => [...old, threads.data.nextCursor])}>More discussions</button> : null}</div> : null}</> : null}
       {readState(related, 'related issues', retryRelated)}
