@@ -700,6 +700,10 @@ input[type=checkbox].co-switch:focus-visible { outline:2px solid var(--accent); 
 .co-markdown .co-md-image { display:inline-flex; align-items:center; gap:6px; margin:4px 0; padding:4px 10px; border:1px solid var(--border); border-radius:8px; background:var(--surface); color:var(--accent); font-size:14px; text-decoration:none; }
 .co-markdown .co-md-image::before { content:'🖼'; font-size:14px; }
 .co-markdown .co-md-image:hover { border-color:color-mix(in srgb,var(--accent) 40%,var(--border)); }
+/* Inline discussions and Related issues & PRs are not comments: a rule and a
+   quiet heading separate each from the conversation above it. */
+.co-related-section { margin-top:18px; padding-top:16px; border-top:1px solid var(--border); }
+.co-related-section > h4 { margin:0 0 10px; color:var(--muted); font:650 14px var(--font); text-transform:uppercase; letter-spacing:.04em; }
 .co-related-list { display:flex; flex-direction:column; gap:8px; margin:8px 0 4px; }
 .co-related-row { display:flex; align-items:flex-start; gap:10px; padding:10px 13px; border:1px solid var(--border); border-radius:10px; background:var(--surface); color:var(--text); text-decoration:none; overflow-wrap:anywhere; }
 a.co-related-row:hover { border-color:color-mix(in srgb,var(--accent) 36%,var(--border)); background:color-mix(in srgb,var(--surface-2,var(--surface)) 55%,var(--surface)); }
