@@ -224,6 +224,7 @@ test('tabs carry GitHub-style count pills: comments, files and a checks dot, no 
   assert.match(html, /Comments<span class="co-tab-count">4<\/span>/)
   assert.match(html, /Files changed<span class="co-tab-count">11<\/span>/)
   assert.match(html, /co-tab-dot is-failure/)
-  assert.match(html, /Checks<span[^>]*class="co-tab-dot is-failure"[^>]*><\/span><span class="co-tab-count">42<\/span>/)
-  assert.doesNotMatch(html, /co-change-total|38\/42/)
+  // Passed over total stays readable beside the dot.
+  assert.match(html, /Checks<span[^>]*class="co-tab-dot is-failure"[^>]*><\/span><span class="co-tab-count">38\/42<\/span>/)
+  assert.doesNotMatch(html, /co-change-total/) // the +adds −dels stay inside the Files tab
 })

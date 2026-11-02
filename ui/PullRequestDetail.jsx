@@ -132,7 +132,10 @@ function PullProvenance({ record, onRecord, conversations }) {
   if (!local && !conversations.length) return null
   return <span className="co-gh-provenance" role="group" aria-label="Where this PR came from">
     {local ? <button type="button" className="co-btn co-gh-chat-link" title="The saved contribution this PR was sent from" onClick={() => onRecord(record)}><Icon name="prepare" size={15} />Saved work</button> : null}
-    {conversations.map(link => <button type="button" className="co-btn co-gh-chat-link" key={link.chat_id} title={link.title} onClick={() => openAgentConversation(link.chat_id)}><Icon name="feedback" size={15} />{PROVENANCE_LABELS[link.role] || 'Chat'}</button>)}
+    {conversations.map((link, index) => {
+      const repeat = conversations.slice(0, index).filter(other => other.role === link.role).length
+      return <button type="button" className="co-btn co-gh-chat-link" key={link.chat_id} title={link.title} onClick={() => openAgentConversation(link.chat_id)}><Icon name="feedback" size={15} />{(PROVENANCE_LABELS[link.role] || 'Chat') + (repeat ? ` ${repeat + 1}` : '')}</button>
+    })}
   </span>
 }
 function ReadErrors({ errors, onRetry }) {
@@ -324,10 +327,13 @@ function PullRequestDetailView({ cacheStore, pr, token, onReview, onAssign, onRe
   // issue-comment total stands in. Checks add a pass/fail dot before the pill;
   // the +added −removed totals live inside the Files tab, not on it.
   const checks = checkSummary(pr)
+  // The conversation count reads its cached first page directly: switching to
+  // Files or Checks must not drop it back to GitHub's issue-comment total.
+  const loadedConversation = cache['activity:1']
   const tabCounts = {
-    conversation: ready(activity) ? (activity.data?.items?.length ?? null) : (pr.comments?.totalCount ?? null),
+    conversation: !loadedConversation?.loading && loadedConversation?.data?.items
+      ? loadedConversation.data.items.length : (pr.comments?.totalCount ?? null),
     files: Number.isInteger(pr.changedFiles) ? pr.changedFiles : null,
-    checks: checks?.total || null,
   }
   const githubUrl = safeDetailLink(pr.url)
   // The conversation loads as one unit: a single skeleton stands in for the
@@ -353,7 +359,7 @@ function PullRequestDetailView({ cacheStore, pr, token, onReview, onAssign, onRe
       <PullProvenance record={record} onRecord={onRecord} conversations={provenance} />
     </div>
     <div className="co-gh-pr-sub"><PullStateBadge pr={pr} />
-      <span className="co-branch-flow">{pr.headRefName ? <><code>{pr.headRefName}</code><Icon name="right" size={14} /></> : null}<code>{pr.baseRefName}</code></span>
+      <span className="co-branch-flow">{pr.headRefName ? <><code>{pr.headRefName}</code><Icon name="arrow-right" size={15} /></> : null}<code>{pr.baseRefName}</code></span>
       <span>by <b>{pr.author?.login || 'Someone'}</b></span></div>
     {conversationLoading ? null : <>
     <details className="co-gh-description">
@@ -369,7 +375,7 @@ function PullRequestDetailView({ cacheStore, pr, token, onReview, onAssign, onRe
     <PullFeedbackFlag record={record} status={status} activity={ready(activity) ? activity.data : null} />
     </>}
     <nav className="co-detail-tabs" aria-label="Pull request details">{tabs.map(([key, label]) => <button key={key} aria-pressed={tab === key} onClick={() => setTab(key)}>{label}
-      {key === 'checks' && checks?.total ? <span className={'co-tab-dot is-' + checks.state} title={`${checks.passed} of ${checks.total} checks passed or skipped`} aria-label={{ success: 'checks passed', failure: 'checks failing', pending: 'checks running' }[checks.state]} /> : null}
+      {key === 'checks' && checks?.total ? <><span className={'co-tab-dot is-' + checks.state} title={`${checks.passed} of ${checks.total} checks passed or skipped`} aria-label={{ success: 'checks passed', failure: 'checks failing', pending: 'checks running' }[checks.state]} /><span className="co-tab-count">{checks.passed}/{checks.total}</span></> : null}
       {Number.isInteger(tabCounts[key]) ? <span className="co-tab-count">{tabCounts[key]}</span> : null}</button>)}</nav>
     <div className="co-pr-detail-body" role="region" aria-label="Pull request context">
     {stale ? <p role="alert">This PR changed since the list was loaded. <button className="co-btn" onClick={onRefresh}>Refresh PR list</button></p> : null}
