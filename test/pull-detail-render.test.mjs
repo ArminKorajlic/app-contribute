@@ -20,7 +20,7 @@ test('detail opens on the GitHub-style Comments tab with Files changed and Check
   assert.match(html, />Files changed</)
   assert.match(html, />Checks<\/button>/)
   assert.match(html, /wants to merge into <code>main<\/code>/)
-  assert.match(html, /Loading description/)
+  assert.match(html, /Loading the conversation/)
   assert.match(html, /aria-label="Choose what an agent does with PR \d+"/)
 })
 for (const items of [[], [{ __typename: 'Issue', number: 2, title: 'Usable issue', url: 'https://github.com/team/repo/issues/2', repository: { nameWithOwner: 'team/repo' }, relationships: ['May close'] }]]) {
@@ -112,14 +112,39 @@ for (const [additions, deletions, expected] of [
   })
 }
 
-test('the description starts folded and unanswered feedback on your PR stays visible under it', async t => {
+const loadedConversation = (items = []) => ({ entries: {
+  'description:1': { data: { body: 'Body' }, loading: false },
+  'activity:1': { data: { items }, loading: false },
+  'threads:': { data: { threads: [] }, loading: false },
+  related: { data: { items: [] }, loading: false },
+} })
+
+test('the description starts folded and unanswered feedback stays visible under it with its review id', async t => {
   const pr = { number: 9, repository: { nameWithOwner: 'team/repo' }, headRefOid: 'a'.repeat(40), baseRefOid: 'b'.repeat(40), baseRefName: 'main', url: 'https://github.com/team/repo/pull/9' }
-  const html = await render(t, 'PullRequestDetail', { pr, record: { attention: { type: 'changes_requested' } } })
+  const html = await render(t, 'PullRequestDetail', { pr, cacheStore: loadedConversation(),
+    record: { attention: { type: 'changes_requested', url: 'https://github.com/team/repo/pull/9#pullrequestreview-777' } } })
   if (!html) return
   assert.doesNotMatch(html, /<details class="co-gh-description" open/)
   assert.match(html, /class="co-pr-feedback-flag is-blocker"/)
   assert.match(html, /Changes requested/)
   assert.match(html, /not addressed yet/)
+  assert.match(html, /Copy review id 777/)
+})
+
+test('an approving review or a recorded all-clear turns the flag green with the review id', async t => {
+  const pr = { number: 9, repository: { nameWithOwner: 'team/repo' }, headRefOid: 'a'.repeat(40), baseRefOid: 'b'.repeat(40), baseRefName: 'main', url: 'https://github.com/team/repo/pull/9' }
+  const approving = [{ kind: 'review', id: 555, state: 'APPROVED', user: { login: 'irfan' }, date: '2026-11-01T10:00:00Z', body: 'LGTM' }]
+  const viaReview = await render(t, 'PullRequestDetail', { pr, cacheStore: loadedConversation(approving),
+    record: { attention: { type: 'github_activity', url: 'https://github.com/team/repo/pull/9#pullrequestreview-555' } } })
+  if (!viaReview) return
+  assert.match(viaReview, /class="co-pr-feedback-flag is-clear"/)
+  assert.match(viaReview, /Review clear/)
+  assert.match(viaReview, /Copy review id 555/)
+  const viaRun = await render(t, 'PullRequestDetail', { pr, cacheStore: loadedConversation(),
+    record: { attention: { type: 'github_activity', url: 'https://github.com/team/repo/pull/9#pullrequestreview-888' } },
+    status: { item: { state: 'all_clear', public_review: { state: 'posted', url: 'https://github.com/team/repo/pull/9#pullrequestreview-888' } } } })
+  assert.match(viaRun, /is-clear/)
+  assert.match(viaRun, /Copy review id 888/)
 })
 
 test('a PR without your tracked record, or with answered feedback, carries no feedback flag', async t => {
@@ -151,12 +176,19 @@ test('comments carry their verdict color, a clock time, a Show more clamp, and n
   assert.doesNotMatch(html, />View<\/a>/)
   assert.match(html, /co-comment-body/)
   assert.match(html, /class="co-desc-body/)
+  // Every comment header carries its copyable id after the time.
+  assert.match(html, /Copy review id 1/)
+  assert.match(html, /Copy comment id 3/)
 })
 
 test('a fresh read shows a skeleton, never a Loading sentence', async t => {
   const pr = { number: 9, repository: { nameWithOwner: 'team/repo' }, headRefOid: 'a'.repeat(40), baseRefOid: 'b'.repeat(40), baseRefName: 'main', url: 'https://github.com/team/repo/pull/9' }
   const html = await render(t, 'PullRequestDetail', { pr })
   if (!html) return
-  assert.match(html, /class="co-skel" role="status" aria-label="Loading description"/)
+  // One skeleton stands in for the whole conversation: no separate
+  // description/comments loaders, no partial reveal.
+  assert.match(html, /class="co-skel" role="status" aria-label="Loading the conversation"/)
   assert.doesNotMatch(html, /Loading comments…|Loading description…/)
+  assert.doesNotMatch(html, /co-gh-description/)
+  assert.equal((html.match(/class="co-skel"/g) || []).length, 1)
 })

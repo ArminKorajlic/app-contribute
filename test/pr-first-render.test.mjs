@@ -92,7 +92,7 @@ test('detail keeps actions and tabs outside reserved independently loaded contex
   assert.ok(actions > 0 && tabs > actions && body > tabs)
   assert.match(html, /aria-label="Choose what an agent does with PR 42"/)
  assert.match(html, / Assign<\/button>/)
-  assert.match(html, /Loading description/)
+  assert.match(html, /Loading the conversation/)
   assert.doesNotMatch(html, /Take over review &amp; merge/)
 })
 
