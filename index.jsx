@@ -208,7 +208,7 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
   const [ledgerReady, setLedgerReady] = useState(false)
   const [omittedCount, setOmittedCount] = useState(0)
   const [sourceSnapshot, setSourceSnapshot] = useState(null)
-  // The last Check GitHub answer per project key; empty until the owner asks.
+  // The last upstream answer per project key; empty until Refresh has asked.
   const [upstreamChecks, setUpstreamChecks] = useState({})
   const [projectFocus, setProjectFocus] = useState(null)
   // A chat PR link leases one exact PR in its project; the PR view hands the
@@ -1610,7 +1610,7 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
   }
 
   // The one refresh path after the open-time sync: the header's Refresh and
-  // the projects list's Check GitHub both renew everything on screen — local
+  // the header's Refresh renews everything on screen — local
   // sources, the contribution feed, review requests, repositories, upstream
   // checks — and bump refreshKey so every cached PR list reloads too.
   async function refreshEverything() {
@@ -1628,10 +1628,19 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
     return { ok: sourceOk && ledgerCurrentRef.current, upstream }
   }
   const [refreshingAll, setRefreshingAll] = useState(false)
+  // What the last Refresh found, shown under the page title.
+  const [refreshNote, setRefreshNote] = useState(null)
   async function refreshAll() {
-    if (refreshingAll) return
+    if (refreshingAll) return undefined
     setRefreshingAll(true)
-    try { await refreshEverything() } finally { setRefreshingAll(false) }
+    try {
+      const outcome = await refreshEverything()
+      setRefreshNote({ outcome, at: new Date().toISOString() })
+      return outcome
+    } catch {
+      setRefreshNote({ outcome: null, at: new Date().toISOString() })
+      return null
+    } finally { setRefreshingAll(false) }
   }
 
   // The workspace opens only once its first sync is complete — the saved
@@ -1742,7 +1751,7 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
           snapshot={sourceSnapshot} projects={sourceProjects} focusKey={projectFocus} desk={desk}
           onProjectOpenChange={setProjectOpen}
           conn={conn} loading={sourceLoading} error={sourceError}
-          onRetry={refreshEverything} checks={upstreamChecks} attention={projectAttention} loadProjectDiff={loadProjectDiff}
+          onRetry={refreshAll} refreshNote={refreshNote} checks={upstreamChecks} attention={projectAttention} loadProjectDiff={loadProjectDiff}
           repositoryPicker={<RepositoryPicker token={token} connected={conn.state === 'connected'} onAdded={(repo, followed) => {
             setFollowedRepos(followed)
             setRepositoryAccess(old => ({ ...old, repositories: [...old.repositories.filter(item => item.nameWithOwner.toLowerCase() !== repo.nameWithOwner.toLowerCase()), repo] }))

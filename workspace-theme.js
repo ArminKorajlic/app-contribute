@@ -491,10 +491,8 @@ export const WORKSPACE_CSS = `
 .co-link-action { padding:0; border:0; background:none; color:var(--accent); font:inherit; text-decoration:underline; text-underline-offset:2px; cursor:pointer; }
 .co-link-action:focus-visible { outline:2px solid var(--accent); outline-offset:2px; border-radius:3px; }
 
-/* Check GitHub: a labelled reload with the last answer under it. */
-.co-check-github { display:flex; flex-direction:column; align-items:flex-end; gap:4px; }
-.co-check-github .co-btn { gap:8px; }
-.co-check-note { margin:0; max-width:40ch; color:var(--muted); font-size:14px; text-align:right; }
+/* What the header's Refresh last found, under the page title. */
+.co-check-note { margin:2px 0 0; max-width:60ch; color:var(--muted); font-size:14px; }
 .co-icon.is-spinning { animation:co-spin 1s linear infinite; }
 @keyframes co-spin { to { transform:rotate(360deg); } }
 .co-workspace-head { align-items:flex-start; }
@@ -576,8 +574,6 @@ input[type=checkbox].co-switch:focus-visible { outline:2px solid var(--accent); 
  .co-rw-body { padding:16px 16px 4px; }
  .co-rw-foot { padding:14px 16px 18px; }
  .co-rw-actions { flex-direction:column-reverse; align-items:stretch; }
- .co-check-github { align-items:flex-start; }
- .co-check-note { text-align:left; }
  .co-pr-assign,.co-agent-menu-button { min-height:44px; }
 }
 @media(prefers-reduced-motion:reduce) {
