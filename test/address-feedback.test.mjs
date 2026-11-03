@@ -86,3 +86,11 @@ test('Address feedback is a job the menu can open, and it starts an agent conver
   const app = readFileSync(new URL('../index.jsx', import.meta.url), 'utf8')
   assert.equal((app.match(/onStartAgent=\{startAgentTask\}/g) || []).length, 2)
 })
+
+test('the Address feedback window names the default agent the way the review window does', async () => {
+  const { readFileSync } = await import('node:fs')
+  const source = readFileSync(new URL('../ui/AddressFeedback.jsx', import.meta.url), 'utf8')
+  assert.match(source, /previewWorkflow\(token, appId, requestOptions\(reviewOptions\(/)
+  assert.match(source, /setDefaultChoice\(preview\?\.options\?\.choice \|\| null\)/)
+  assert.match(source, /<AgentModelSettings token=\{token\} choice=\{agent\} defaultChoice=\{defaultChoice\}/)
+})

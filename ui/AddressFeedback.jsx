@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { addressBrief, addressItems, RUNGS } from '../address-feedback.js'
+import { requestOptions } from '../collaboration.js'
+import { loadWorkflowOptions, previewWorkflow, reviewOptions } from '../review-prompts.js'
 import { loadPullActivity, loadPullThreads } from '../pull-details.js'
 import { AgentModelSettings } from './AgentModelSettings.jsx'
 import { openAgentConversation } from './BatchAction.jsx'
@@ -37,11 +39,14 @@ const STEPS = [
 
 // The window behind Agent > Address feedback. It reads what the PR asks for,
 // asks how far to go, then starts an agent conversation from a written brief.
-export function AddressFeedbackWindow({ pr, token, onStart, onClose }) {
+export function AddressFeedbackWindow({ pr, token, appId, onStart, onClose }) {
   const root = useRef(null)
   const [state, setState] = useState({ phase: 'loading', items: [], partial: false })
   const [rung, setRung] = useState('show')
   const [agent, setAgent] = useState(null)
+  // What "default" means right now (the owner's background agent and its quota
+  // fallback), read the way the review window reads it, so the picker can name it.
+  const [defaultChoice, setDefaultChoice] = useState(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [started, setStarted] = useState(null)
@@ -58,6 +63,14 @@ export function AddressFeedbackWindow({ pr, token, onStart, onClose }) {
     })
     return () => controller.abort()
   }, [token, pr.repository.nameWithOwner, pr.number, pr.headRefOid])
+  useEffect(() => {
+    let alive = true
+    loadWorkflowOptions(token, appId)
+      .then(data => previewWorkflow(token, appId, requestOptions(reviewOptions({ post_review: false, propose_verdict: false }, data.options), 'review'), undefined, 'review'))
+      .then(preview => { if (alive) setDefaultChoice(preview?.options?.choice || null) })
+      .catch(() => {})
+    return () => { alive = false }
+  }, [token, appId])
   const toggle = (key, checked) => setState(old => ({ ...old, items: old.items.map(item => item.key === key ? { ...item, checked } : item) }))
   const ticked = state.items.filter(item => item.checked).length
   const pushing = rung === 'push'
@@ -104,7 +117,7 @@ export function AddressFeedbackWindow({ pr, token, onStart, onClose }) {
       <p className={'co-rw-public ' + (pushing ? 'is-public' : 'is-private')} role="status">
         <Icon name={pushing ? 'globe' : 'lock'} size={18} /><span><strong>Seen on GitHub:</strong> {pushing ? 'only the fixes it pushes, after you approve. The drafted replies need their own approval.' : 'nothing. It works in a private copy until you decide.'}</span>
       </p>
-      <AgentModelSettings token={token} choice={agent} defaultHint="Your background agent setting" onChange={next => { setAgent(next); return true }} />
+      <AgentModelSettings token={token} choice={agent} defaultChoice={defaultChoice} defaultHint="Your background agent setting" onChange={next => { setAgent(next); return true }} />
     </div>
     <footer className="co-rw-foot">
       <p>It reads the PR as it is now. If the PR changes while the agent works, it stops and tells you.</p>
