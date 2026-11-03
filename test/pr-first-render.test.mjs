@@ -185,16 +185,25 @@ test('a settled or foreign verdict offers no decision', async t => {
   assert.doesNotMatch(noHandler, />Approve on GitHub</)
 })
 
-test('Private review shows no switches; Review on GitHub shows only the verdict form and merging', async t => {
+test('Review starts private and offers who sees it; Review and merge shows the verdict form and merging', async t => {
   const caps = { post_review:true, post_review_merge:true, propose_verdict:true }
-  const privateHtml = await render(t, 'ReviewConfirmation', { choice:{ pulls:[pr], mode:'review', intent:'private', options:{ post_review:false, propose_verdict:false } }, capabilities:caps, onModeChange:()=>{}, onOptionsChange:()=>{} })
+  const privateHtml = await render(t, 'ReviewConfirmation', { choice:{ pulls:[pr], mode:'review', intent:'review', options:{ post_review:false, propose_verdict:false } }, capabilities:caps, onModeChange:()=>{}, onOptionsChange:()=>{} })
   if (!privateHtml) return
-  assert.match(privateHtml, /<h3[^>]*>Private review<\/h3>/)
-  assert.doesNotMatch(privateHtml, /co-rw-options/)
+  assert.match(privateHtml, /<h3[^>]*>Review<\/h3>/)
+  // Who sees it is the one choice; the verdict form waits until it posts.
+  assert.match(privateHtml, /role="radiogroup" aria-label="Who sees the result"/)
+  assert.match(privateHtml, /aria-checked="true" class="is-on"[^>]*>Keep private</)
+  assert.doesNotMatch(privateHtml, /co-rw-options|Merge when safe/)
   assert.match(privateHtml, /Seen on GitHub:<\/strong> nothing/)
-  const github = await render(t, 'ReviewConfirmation', { choice:{ pulls:[pr], mode:'review', intent:'github', options:{ post_review:true, propose_verdict:true } }, capabilities:caps, onModeChange:()=>{}, onOptionsChange:()=>{} })
-  assert.match(github, /<h3[^>]*>Review on GitHub<\/h3>/)
-  assert.doesNotMatch(github, /Allow posting the review on GitHub/)
-  assert.match(github, />Approve or request changes</)
-  assert.match(github, />Merge when safe</)
+  assert.match(privateHtml, /Start private review/)
+  const posting = await render(t, 'ReviewConfirmation', { choice:{ pulls:[pr], mode:'review', intent:'review', options:{ post_review:true, propose_verdict:true } }, capabilities:caps, onModeChange:()=>{}, onOptionsChange:()=>{} })
+  assert.match(posting, /aria-checked="true" class="is-on"[^>]*>Post to GitHub</)
+  assert.match(posting, />Approve or request changes</)
+  assert.doesNotMatch(posting, /Merge when safe/)
+  assert.match(posting, /Start review, propose a verdict/)
+  const merge = await render(t, 'ReviewConfirmation', { choice:{ pulls:[pr], mode:'review_merge', intent:'merge', options:{ post_review:true, propose_verdict:true } }, capabilities:caps, onModeChange:()=>{}, onOptionsChange:()=>{} })
+  assert.match(merge, /<h3[^>]*>Review and merge<\/h3>/)
+  assert.doesNotMatch(merge, /Allow posting the review on GitHub/)
+  assert.match(merge, />Approve or request changes</)
+  assert.match(merge, />Merge when safe</)
 })

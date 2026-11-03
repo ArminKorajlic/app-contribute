@@ -1,21 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
+import { agentMenuModel } from '../agent-menu.js'
 import { Icon } from './Icons.jsx'
-
-// Each choice names one job; the window it opens shows only that job's
-// settings. `intent` maps to the platform mode and options in reviewIntent().
-const CHOICES = [
-  { intent: 'private', icon: 'lock', title: 'Private review', detail: 'Reads the PR and writes notes only you see. Nothing appears on GitHub.' },
-  { intent: 'github', icon: 'globe', title: 'Review on GitHub', detail: 'Posts its review from your account. You submit any approve or request changes. Can merge when safe.' },
-  { intent: 'review_fix_merge', icon: 'fix', title: 'Fix and merge', detail: 'Pushes fixes itself, gets a second review, then merges when checks pass. You confirm first.' },
-]
 
 // "Agent ▾": choose what an agent should do with the PRs. Choosing only opens
 // the review window; nothing starts until the owner confirms there. `align`
 // names the trigger edge the menu lines up with: 'end' for a trigger at the
 // right of its row, 'start' for one at the left, so the menu opens inward.
-export function AgentMenu({ onChoose, disabled = false, variant = 'ghost', label = 'Agent', ariaLabel, align = 'end' }) {
+export function AgentMenu({ onChoose, pulls = [], disabled = false, variant = 'ghost', label = 'Agent', ariaLabel, align = 'end' }) {
   const [open, setOpen] = useState(false)
   const root = useRef(null)
+  const model = agentMenuModel(pulls)
   useEffect(() => {
     if (!open) return undefined
     const closeOutside = event => { if (!root.current?.contains(event.target)) setOpen(false) }
@@ -33,7 +27,7 @@ export function AgentMenu({ onChoose, disabled = false, variant = 'ghost', label
       node?.removeEventListener('keydown', closeOnEscape)
     }
   }, [open])
-  useEffect(() => { if (open) root.current?.querySelector('[role=menuitem]')?.focus() }, [open])
+  useEffect(() => { if (open) root.current?.querySelector('[role=menuitem]:not([aria-disabled=true])')?.focus() }, [open])
   // The trigger takes focus back first, so whatever opens next returns there.
   function choose(intent) {
     setOpen(false)
@@ -45,8 +39,9 @@ export function AgentMenu({ onChoose, disabled = false, variant = 'ghost', label
       <Icon name="prepare" size={15} /><span>{label}</span><Icon name="chevron" size={14} />
     </button>
     {open ? <div className="co-agent-menu-list" role="menu" aria-label="What should the agent do?">
-      {CHOICES.map(choice => <button type="button" role="menuitem" key={choice.intent} onClick={() => choose(choice.intent)}>
-        <Icon name={choice.icon} size={18} /><span><strong>{choice.title}</strong><small>{choice.detail}</small></span>
+      {model.header ? <p className="co-agent-menu-head"><b>{model.header.label}</b>{model.header.text ? ` · ${model.header.text}` : ''}</p> : null}
+      {model.items.map(item => <button type="button" role="menuitem" key={item.intent} aria-disabled={item.off || undefined} className={(item.rec ? 'is-rec ' : '') + (item.off ? 'is-off' : '')} onClick={() => { if (!item.off) choose(item.intent) }}>
+        <span className="co-agent-menu-tile"><Icon name={item.icon} size={17} /></span><span><strong>{item.title}</strong><small>{item.off ? item.reason : item.detail}</small></span>
       </button>)}
     </div> : null}
   </div>

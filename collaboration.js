@@ -284,12 +284,13 @@ export function earlierReviewForPull(runs, pr) {
   return matches.sort((a, b) => Date.parse(b.run.created_at || '') - Date.parse(a.run.created_at || ''))[0] || null
 }
 
-// The Agent menu's jobs as the platform sees them. Private review and Review
-// on GitHub are both the 'review' mode, preset to opposite publishing options;
-// a raw mode (a retry, a saved link) passes through with its own defaults.
+// The Agent menu's jobs as the platform sees them. Review opens private and
+// the window switches it to a GitHub review; Review and merge is the same
+// window with merging on; Hand it over is the takeover mode. A raw mode (a
+// retry, a saved link) passes through with its own defaults.
 const REVIEW_INTENTS = {
-  private: { mode: 'review', options: { post_review: false, propose_verdict: false } },
-  github: { mode: 'review', options: { post_review: true, propose_verdict: true } },
+  review: { mode: 'review', options: { post_review: false, propose_verdict: false } },
+  merge: { mode: 'review_merge', options: { post_review: true, propose_verdict: true } },
   review_fix_merge: { mode: 'review_fix_merge' },
 }
 export function reviewIntent(choice) {

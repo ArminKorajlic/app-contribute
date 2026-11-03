@@ -29,7 +29,7 @@ function takeoverCopy({ count, draftScope, bindCurrentTarget, intent = '' }) {
   ]
   const scope = count === 1 ? 'this PR' : 'these PRs'
   return {
-    title: intent === 'review_fix_merge' ? 'Fix and merge' : 'Review, fix and merge',
+    title: intent === 'review_fix_merge' ? 'Hand it over' : 'Review, fix and merge',
     steps,
     publicEffect: {
       tone: 'public',
@@ -77,7 +77,9 @@ function reviewStartLabel({ merge, posting, verdict }) {
   return 'Start private review'
 }
 
-const INTENT_TITLES = { private: 'Private review', github: 'Review on GitHub' }
+// Review and merge is the Review window with merging on; if merging is switched
+// off there, it is a plain Review again.
+const INTENT_TITLES = { review: 'Review' }
 
 export function reviewWindowCopy({ mode, intent = '', posting = false, verdict = false, draftScope = false, count = 1, bindCurrentTarget = false }) {
   if (mode === 'review_fix_merge') return takeoverCopy({ count, draftScope, bindCurrentTarget, intent })
@@ -92,7 +94,7 @@ export function reviewWindowCopy({ mode, intent = '', posting = false, verdict =
     { text: 'If it has a question, it asks you first.' },
   ]
   return {
-    title: INTENT_TITLES[intent] || 'Review only',
+    title: intent === 'merge' ? (merge ? 'Review and merge' : 'Review') : INTENT_TITLES[intent] || 'Review only',
     steps,
     publicEffect: reviewPublicEffect({ merge, posting, verdict: proposing, count }),
     startLabel: reviewStartLabel({ merge, posting, verdict: proposing }),

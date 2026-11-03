@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFile } from 'node:fs/promises'
+import { readFileSync } from 'node:fs'
 import { frontendModules, renderModule } from './render-harness.mjs'
 
 async function helpers(t) {
@@ -56,4 +57,13 @@ test('the picker is app-owned: no shell runtime selector, monochrome marks, comp
   // A 44px target per stop; the 13px dot is only the visible mark.
   assert.match(css, /\.co-effort-stop \{[^}]*width:44px; height:44px;/)
   assert.match(css, /\.co-effort-stop::before \{[^}]*width:13px; height:13px;/)
+})
+
+test('the default row carries its own effort track, and choosing a level keeps the default row selected', () => {
+  const source = readFileSync(new URL('../ui/AgentModelSettings.jsx', import.meta.url), 'utf8')
+  assert.match(source, /const matchesDefault = !!\(choice\?\.model && defaultChoice\?\.model && choice\.provider === defaultChoice\.provider && choice\.model === defaultChoice\.model\)/)
+  assert.match(source, /defaultSelected && defaultEfforts\.length \? <div className="co-effort-indent"><EffortTrack efforts=\{defaultEfforts\}/)
+  assert.match(source, /onChange\?\.\(\{ provider: defaultChoice\.provider, model: defaultChoice\.model, effort \}\)/)
+  // The explicit row for the same model is not drawn as a second selection.
+  assert.match(source, /choice\?\.model === model\.id && !matchesDefault/)
 })

@@ -105,6 +105,7 @@
     "ui/diff/parseUnifiedDiff.js",
     "ui/diff/styles.js",
     "ui/ProjectControls.jsx",
+    "agent-menu.js",
     "collaboration.js",
     "ui/PullRequests.jsx",
     "ui/AgentMenu.jsx",

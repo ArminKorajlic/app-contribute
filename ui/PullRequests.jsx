@@ -58,7 +58,7 @@ function SelectionTray({ selection, busy, onClear, onReview, onAssign, visible, 
     <strong className="co-pr-box-count">{selected ? `${selected} selected` : <><Icon name="pull" size={16} />{loading && !shown ? 'Open pull requests' : `${shown} open`}</>}</strong>
     {selected ? <div className="co-pr-box-actions">
       <button className="co-btn" disabled={busy || selected > 20 || !selection.every(pr => mayAssign(pr.repository.viewerPermission))} onClick={onAssign} aria-label="Assign selected PRs to a person"><Icon name="person" size={16} /><span>Assign</span></button>
-      <AgentMenu variant="button" disabled={selected > 20 || busy} onChoose={mode => onReview(selection, mode)} ariaLabel="Choose what an agent does with the selected PRs" />
+      <AgentMenu variant="button" pulls={selection} disabled={selected > 20 || busy} onChoose={mode => onReview(selection, mode)} ariaLabel="Choose what an agent does with the selected PRs" />
       <button className="co-quiet-action" aria-label="Clear selection" onClick={onClear}><Icon name="close" size={16} /></button>
     </div> : null}
     {selected > 20 ? <p role="status">Choose up to 20 PRs per run.</p> : null}
@@ -554,7 +554,7 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
           {open && mayAssign(pr.repository.viewerPermission)
             ? <button className={'co-pr-assign' + (assignees.length ? '' : ' is-quiet')} onClick={() => assignSelection([pr], key)} aria-label={assignees.length ? `Assigned to ${assignees.map(user => user.login).join(', ')}. Change assignment for PR ${pr.number}` : `Assign PR ${pr.number}`} title={assignees.length ? assignees.map(user => user.login).join(', ') : undefined}>{assignees.length ? <span className="co-gh-avatars">{assignees.slice(0, 3).map(user => <Avatar key={user.login} login={user.login} />)}</span> : <><Icon name="person" size={15} /><span>Assign</span></>}</button>
             : assignees.length ? <span className="co-gh-avatars" title={assignees.map(user => user.login).join(', ')}>{assignees.slice(0, 3).map(user => <Avatar key={user.login} login={user.login} />)}</span> : null}
-          {open ? <AgentMenu disabled={busy} onChoose={mode => choose([pr], mode, key)} ariaLabel={`Choose what an agent does with PR ${pr.number}`} /> : null}
+          {open ? <AgentMenu pulls={[pr]} disabled={busy} onChoose={mode => choose([pr], mode, key)} ariaLabel={`Choose what an agent does with PR ${pr.number}`} /> : null}
         </div>
         {assignAnchor === key ? assignPane : null}
         {relevantRuns.filter(run => runAnchor(run) === key).map(runPane)}
