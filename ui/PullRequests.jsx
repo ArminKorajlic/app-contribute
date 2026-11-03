@@ -531,12 +531,15 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
         <label className="co-pr-select"><input type="checkbox" checked={open && selected.has(key)} disabled={!open} onChange={() => toggle(pr)} aria-label={`Select ${pr.repository.nameWithOwner} #${pr.number}`} /></label>
         <PullStateIcon pr={pr} />
         <div className="co-pr-content">
-          <button className="co-pr-open" aria-expanded={task?.activeId === 'task:detail' && opened === key} onClick={() => {
-            if (window.getSelection?.()?.toString().trim()) return
-            inspect(pr)
-          }}>
-            <span className="co-pr-title">{pr.title}</span>
-          </button>
+          <div className="co-pr-headline">
+            <button className="co-pr-open" aria-expanded={task?.activeId === 'task:detail' && opened === key} onClick={() => {
+              if (window.getSelection?.()?.toString().trim()) return
+              inspect(pr)
+            }}>
+              <span className="co-pr-title">{pr.title}</span>
+            </button>
+            <span className="co-pr-states"><PullStateChips pr={pr} /></span>
+          </div>
           <div className="co-pr-meta">
             <span>#{pr.number} · {pr.author?.login || 'Contributor'} <TimeAgo prefix="opened " value={pr.createdAt} /></span>
             <ChecksBadge pr={pr} />
@@ -548,7 +551,6 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
         </div>
         <div className="co-pr-aside">
           {comments ? <span className="co-pr-comments" title={`${comments} in the conversation: comments and reviews`}><Icon name="comment" size={16} />{comments}</span> : null}
-          <PullStateChips pr={pr} />
           {open && mayAssign(pr.repository.viewerPermission)
             ? <button className={'co-pr-assign' + (assignees.length ? '' : ' is-quiet')} onClick={() => assignSelection([pr], key)} aria-label={assignees.length ? `Assigned to ${assignees.map(user => user.login).join(', ')}. Change assignment for PR ${pr.number}` : `Assign PR ${pr.number}`} title={assignees.length ? assignees.map(user => user.login).join(', ') : undefined}>{assignees.length ? <span className="co-gh-avatars">{assignees.slice(0, 3).map(user => <Avatar key={user.login} login={user.login} />)}</span> : <><Icon name="person" size={15} /><span>Assign</span></>}</button>
             : assignees.length ? <span className="co-gh-avatars" title={assignees.map(user => user.login).join(', ')}>{assignees.slice(0, 3).map(user => <Avatar key={user.login} login={user.login} />)}</span> : null}
