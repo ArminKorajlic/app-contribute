@@ -266,4 +266,6 @@ test('on a phone the secondary PR actions keep a name for screen readers', async
   assert.match(html, /aria-label="View on GitHub: PR 7" title="View on GitHub"/)
   const css = (await import('node:fs')).readFileSync(new URL('../workspace-theme.js', import.meta.url), 'utf8')
   assert.match(css, /\.co-pr-detail-actions \.co-btn-label, \.co-pr-detail \.co-tab-more \{ display:none/)
+  // The checks dot says pass or fail on a phone; the passed/total pill needs room the Review tab uses.
+  assert.match(css, /\.co-pr-detail \.co-tab-dot \+ \.co-tab-count \{ display:none/)
 })
