@@ -18,15 +18,16 @@ async function render(t, name, props) {
 const pr = { number: 9, repository: { nameWithOwner: 'team/repo' }, headRefOid: 'a'.repeat(40), baseRefOid: 'b'.repeat(40), baseRefName: 'main', url: 'https://github.com/team/repo/pull/9' }
 const status = (state, item = {}, run = {}) => ({ run: { id: 'r1', state: 'running', execution_state: 'running', mode: 'review', chat_id: 'chat-1', can_stop: true, created_at: new Date().toISOString(), ...run }, item: { repo: 'team/repo', number: 9, head_sha: 'a'.repeat(40), base_ref: 'main', state, ...item } })
 
-test('a PR nobody reviewed still has its Review tab and says so', async t => {
+test('a PR nobody reviewed still has its Review tab and says so, without start buttons', async t => {
   const html = await render(t, 'ReviewTab', { pr, status: null, onStart: () => {} })
   if (!html) return
   assert.match(html, /No review yet/)
   assert.match(html, /You haven’t made a review for this PR/)
-  assert.match(html, />Private review</)
-  assert.match(html, />Review on GitHub</)
+  assert.match(html, /Use Agent above to start one/)
+  // The Agent button above starts a review; the empty tab adds no second set of buttons.
+  assert.doesNotMatch(html, /<button/)
   const closed = await render(t, 'ReviewTab', { pr, status: null, readOnly: true })
-  assert.doesNotMatch(closed, />Private review</, 'a closed PR offers no review')
+  assert.doesNotMatch(closed, /Use Agent above/, 'a closed PR offers no review')
 })
 
 test('a running review shows a smooth spinner, the clock, the version and Stop inside the comet frame', async t => {

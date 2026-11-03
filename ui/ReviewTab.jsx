@@ -45,16 +45,11 @@ export function ReviewTab({ pr, status, earlier = null, own = false, readOnly = 
   const elapsed = useElapsed(status?.run?.created_at, running)
   if (!status && earlier) return <EarlierReview earlier={earlier} readOnly={readOnly} onStart={onStart} />
   if (!status) {
+    // The Agent button above already starts a review, so there is nothing to offer here.
     return <div className="co-review-box" aria-label="Review">
       <h4>No review yet</h4>
       <p className="co-review-note" style={{ color: 'var(--text)', fontSize: 15 }}>You haven’t made a review for this PR.</p>
-      {readOnly ? null : <>
-        <p className="co-review-note">An agent can read the diff, the checks and the discussion and write its findings for you. Choose what it may do:</p>
-        <div className="co-review-actions">
-          <button type="button" className="co-btn co-btn-primary" onClick={() => onStart?.('private')}>Private review</button>
-          <button type="button" className="co-btn" onClick={() => onStart?.('github')}>Review on GitHub</button>
-        </div>
-      </>}
+      {readOnly ? null : <p className="co-review-note">Use Agent above to start one.</p>}
     </div>
   }
   const { run, item } = status
