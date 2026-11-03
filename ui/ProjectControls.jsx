@@ -49,7 +49,7 @@ function UpstreamLine({ project, check }) {
   const line = projectUpstreamLine(project, check)
   if (!line) return null
   const updater = line.update ? projectUpdater(project) : null
-  const checked = check?.checkedAt ? <TimeAgo prefix="Checked " value={check.checkedAt} /> : 'Use Check GitHub for the latest.'
+  const checked = check?.checkedAt ? <TimeAgo prefix="Checked " value={check.checkedAt} /> : 'Use Refresh for the latest.'
   return <StatusLine icon={UPSTREAM_ICON[line.tone]} title="Updates from GitHub" tone={line.tone} strong={line.strong} text={line.text} sub={updater ? updater.where : checked}>
     {updater ? <button type="button" className="co-btn" onClick={updater.open}>{updater.label}</button> : null}
   </StatusLine>

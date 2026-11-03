@@ -60,18 +60,11 @@ function ProjectPosition({ project }) {
   )
 }
 
-// Check GitHub reloads this Möbius and asks GitHub whether anything is new;
-// the note under it says what the last check found.
-// `scope` is the projects the note speaks about: every project on the list,
-// only the open project on its own page.
-function CheckGithub({ state, note, onCheck, scope }) {
-  const running = state === 'running'
-  return <div className="co-check-github">
-    <button type="button" className="co-btn" onClick={onCheck} disabled={running} aria-busy={running}>
-      <Icon name="refresh" size={16} className={'co-icon' + (running ? ' is-spinning' : '')} />{running ? 'Checking…' : 'Check GitHub'}
-    </button>
-    {note && !running ? <p className="co-check-note" role="status">{upstreamCheckSummary(note.outcome, scope)} <TimeAgo prefix="Checked " value={note.at} /></p> : null}
-  </div>
+// The header's Refresh reloads this Möbius and asks GitHub whether anything is
+// new; this line under the page title says what it found, and when.
+function RefreshNote({ note, scope }) {
+  if (!note) return null
+  return <p className="co-check-note" role="status">{upstreamCheckSummary(note.outcome, scope)} <TimeAgo prefix="Checked " value={note.at} /></p>
 }
 
 function ProjectGlyph({ project }) {
@@ -138,8 +131,6 @@ function ProjectDetail({
   renderActivity,
   navigation,
   sourceRevision,
-  checkState,
-  checkNote,
 }) {
   const [publicKeys, setPublicKeys] = useState(new Set())
   const projectView = useRef(null)
@@ -171,7 +162,6 @@ function ProjectDetail({
             <p>{project.canonical_repo ? <a href={`https://github.com/${project.canonical_repo}`} target="_blank" rel="noopener noreferrer">{project.canonical_repo}</a> : <span>Only on your Möbius</span>}
             </p>
           </div></div>
-          <CheckGithub state={checkState} note={checkNote} onCheck={onRefresh} scope={[project]} />
         </header>
         <div className="co-workspace-body">
           <div className="co-workspace-inventory">
@@ -291,6 +281,7 @@ export function SourceMap({
   loading,
   error,
   onRetry,
+  refreshNote,
   loadProjectDiff,
   renderActivity,
   repositoryPicker,
@@ -299,8 +290,6 @@ export function SourceMap({
   attention = {},
   desk = { view: 'projects', onView: () => {}, counts: {}, login: '', records: [], lastLooked: '', decisionsFor: () => [], onOpenPull: () => {}, pull: null, onClosePull: () => {}, renderPull: () => null },
 }) {
-  const [manualRefresh, setManualRefresh] = useState('idle')
-  const [checkNote, setCheckNote] = useState(null)
   const [filter, setFilter] = useState('all')
   const [query, setQuery] = useState('')
   const [deskQuery, setDeskQuery] = useState('')
@@ -328,19 +317,6 @@ export function SourceMap({
   const workTriggerRef = useRef(null)
   const [navigationError, setNavigationError] = useState('')
   const pageScroller = () => document.querySelector('.co-page')
-
-  async function refreshProjects() {
-    if (loading || manualRefresh === 'running') return
-    setManualRefresh('running')
-    try {
-      const outcome = await onRetry?.()
-      setManualRefresh(outcome?.ok ? 'done' : 'failed')
-      setCheckNote({ outcome, at: new Date().toISOString() })
-    } catch {
-      setManualRefresh('failed')
-      setCheckNote({ outcome: null, at: new Date().toISOString() })
-    }
-  }
 
   function closeWork() {
     setSelectedWorkId('')
@@ -473,9 +449,9 @@ export function SourceMap({
         <header className="co-view-heading">
           <div>
             <h2>{viewLabel}</h2>
+            <RefreshNote note={refreshNote} scope={projects} />
           </div>
           <div className="co-project-view-actions">
-            <CheckGithub state={loading ? 'running' : manualRefresh} note={checkNote} onCheck={refreshProjects} scope={projects} />
             {repositoryPicker}
           </div>
         </header>
@@ -568,9 +544,7 @@ export function SourceMap({
             key={selectedProject.key}
             project={selectedProject}
             loadProjectDiff={loadProjectDiff}
-            onRefresh={refreshProjects}
-            checkState={manualRefresh}
-            checkNote={checkNote}
+            onRefresh={onRetry}
             renderActivity={renderActivity}
             navigation={activityNavigation}
             sourceRevision={snapshot?.generated_at}

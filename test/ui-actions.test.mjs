@@ -381,7 +381,6 @@ test('the Projects summary reserves its row while source checks refresh', () => 
   assert.match(appSource, /loading=\{sourceLoading\}/)
   assert.match(appSource, /if \(!quiet\) setSourceLoading\(true\)/)
   assert.match(sourceMapSource, /function LoadingState\(\)/)
-  assert.match(sourceMapSource, /running \? 'Checking…' : 'Check GitHub'/)
   assert.match(sourceMapSource, /className="co-check-note" role="status"/)
   assert.match(sourceMapSource, /className="co-source-loading" role="status"/)
   assert.match(sourceMapSource, /Checking projects…/)
@@ -391,7 +390,6 @@ test('the Projects summary reserves its row while source checks refresh', () => 
 test('project status and essential controls remain visible with a readable type floor', () => {
   assert.doesNotMatch(controlsSource, /More actions|View reviews/)
   assert.match(controlsSource, /className="co-btn co-btn-primary co-task-primary"/)
-  assert.match(sourceMapSource, /<CheckGithub state=\{checkState\} note=\{checkNote\} onCheck=\{onRefresh\} scope=\{\[project\]\} \/>/)
   assert.match(sourceMapSource, /<span>\{facts\.work\}<\/span>/)
   assert.match(sourceMapSource, /className="co-source-shared">\{shared\}/)
   const sizes = [...(themeSource + workspaceTheme).matchAll(/font-size:\s*(\d+(?:\.\d+)?)px/g)].map(match => Number(match[1]))
@@ -412,8 +410,9 @@ test('project chrome consolidates navigation, refresh, files, and preparation ch
   assert.match(appSource, /className="co-header-back"/)
   assert.match(appSource, /onProjectOpenChange=\{setProjectOpen\}/)
   assert.doesNotMatch(sourceMapSource, /className="co-project-switcher"/)
-  // One labelled Check GitHub control on the list and on each project.
-  assert.equal((sourceMapSource.match(/<CheckGithub /g) || []).length, 2)
+  // One refresh control, the header's: no second button on the list or a project.
+  assert.doesNotMatch(sourceMapSource, /CheckGithub|Check GitHub/)
+  assert.match(sourceMapSource, /<RefreshNote note=\{refreshNote\} scope=\{projects\} \/>/)
   assert.doesNotMatch(sourceMapSource, /Refresh project status|Refresh projects/)
   assert.doesNotMatch(sourceMapSource, /Files, branch and versions <Icon/)
   assert.match(controlsSource, /className="co-link-action" onClick=\{\(\) => task\?\.open\('task:files'\)\}>See the files/)
@@ -429,17 +428,18 @@ test('private proposals have one actionable home without another merge workflow'
 })
 
 test('every refresh control renews the contribution feed and reports a partial one', () => {
-  // The header's Refresh and the projects list's Check GitHub share one full pass.
+  // The header's Refresh is the one full pass, and it keeps what it found for the page title.
   const refresh = appSource.match(/async function refreshEverything\(\) \{[\s\S]*?\n  \}/)?.[0] || ''
   assert.match(refresh, /refreshCoordinatorRef\.current\(\)/)
   assert.match(refresh, /checkUpstream\(token, sourceProjects\)/)
   assert.match(refresh, /return \{ ok: sourceOk && ledgerCurrentRef\.current, upstream \}/)
-  assert.match(appSource, /onRetry=\{refreshEverything\}/)
+  assert.match(appSource, /onRetry=\{refreshAll\} refreshNote=\{refreshNote\}/)
+  assert.match(appSource, /setRefreshNote\(\{ outcome, at: new Date\(\)\.toISOString\(\) \}\)/)
   assert.match(appSource, /onClick=\{refreshAll\}/)
 })
 
 test('GitHub is synced once per open: no hidden foreground re-sync, one explicit Refresh', () => {
-  // The owner refreshes from the header (or Check GitHub); returning to the
+  // The owner refreshes from the header; returning to the
   // app or a focus/visibility flip must not quietly reload everything.
   assert.doesNotMatch(appSource, /isVisibleFrameMessage/)
   assert.doesNotMatch(appSource, /addEventListener\('visibilitychange', requestRefresh\)/)
