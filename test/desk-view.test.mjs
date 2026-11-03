@@ -265,3 +265,9 @@ test('the attention bar does not sit inside a second border', () => {
   const css = readFileSync(new URL('../workspace-theme.js', import.meta.url), 'utf8')
   assert.match(css, /\.co-decisions:has\(> \.co-attn:only-child\) \{ border:0; overflow:visible; \}/)
 })
+
+test('a row only counts as assigning while the picker pane is actually open', () => {
+  const list = readFileSync(new URL('../ui/PullRequests.jsx', import.meta.url), 'utf8')
+  // The pane's own close button leaves the assigning state set; the pane being open is what counts.
+  assert.match(list, /assignAnchor === key && task\?\.activeId === 'task:assign' \? ' is-assigning'/)
+})
