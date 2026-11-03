@@ -63,3 +63,7 @@ export function invalidatedSelection(selected, before, after) {
     return !old || !next || !isOpenPull(next) || IDENTITY.some(field => old[field] !== next[field])
   })
 }
+
+// Whether the signed-in owner wrote this PR. GitHub refuses a verdict from a
+// PR's author, so reviews of one's own PRs read and act differently.
+export const isOwnPull = (pr, login) => !!login && !!pr?.author?.login && pr.author.login.toLowerCase() === login.toLowerCase()

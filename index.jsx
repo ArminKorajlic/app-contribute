@@ -1553,10 +1553,10 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
       incomingReviews: [],
     }) : contributionRun
   }
-  function openPullPage(project, pr) {
+  function openPullPage(project, pr, tab = 'conversation') {
     const repo = pr?.repository?.nameWithOwner || project?.canonical_repo || ''
     if (!repo || !pr?.number) return
-    setPullPage({ key: project?.key || '', repo, number: pr.number, nonce: crypto.randomUUID() })
+    setPullPage({ key: project?.key || '', repo, number: pr.number, tab, nonce: crypto.randomUUID() })
   }
   // `view` comes from the project tabs: which PRs to show, how to switch tabs,
   // and where to report the open PR count. Without it the list shows all PRs.
@@ -1573,7 +1573,7 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
     return <PullRequests key={`pulls:${project?.key || 'all'}`} appId={appId} token={token}
       project={project} conn={conn} refreshKey={refreshKey} onChanged={refreshIncomingReviews}
       scope={view?.scope || 'all'} onScope={view?.onScope} onTotal={view?.onTotal}
-      onOpenPage={pr => openPullPage(project, pr)}
+      onOpenPage={(pr, tab) => openPullPage(project, pr, tab)}
       focusPull={pullFocus?.number ? pullFocus : null} focusRun={pullFocus?.runId ? pullFocus : null} onFocusRelease={releasePullFocus}
       records={recordsForProject(records, project)} onRecord={record => {
         const found = findRunItemByRecord(projectRun(project), record.id)

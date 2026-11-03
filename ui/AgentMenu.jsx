@@ -42,7 +42,7 @@ export function AgentMenu({ onChoose, disabled = false, active = false, variant 
   }
   return <div className={`co-agent-menu is-align-${align}`} ref={root}>
     <button type="button" className={`co-agent-menu-button is-${variant}` + (active ? ' is-active' : '')} aria-haspopup="menu" aria-expanded={open} aria-label={ariaLabel} disabled={disabled} onClick={() => setOpen(value => !value)}>
-      <Icon name="prepare" size={15} /><span>{label}</span><Icon name="chevron" size={14} />
+      {active ? <span className="co-arc" aria-hidden="true" /> : <Icon name="prepare" size={15} />}<span>{label}</span><Icon name="chevron" size={14} />
     </button>
     {open ? <div className="co-agent-menu-list" role="menu" aria-label="What should the agent do?">
       {CHOICES.map(choice => <button type="button" role="menuitem" key={choice.intent} onClick={() => choose(choice.intent)}>

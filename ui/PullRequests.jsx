@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { awaitsGithub, reviewIntent, OWNER_ITEM_STATES, collaborationRequest, discoverPull, discoverPulls, liveSelection, loadReviewRuns, matchingPulls, mayAssign, mergeSelection, prKey, reviewForPull, reviewItemProgress, reviewRunRequest, reviewRunTitle, runDetailsElsewhere, notOursToObserve, assignPulls, takeoverScope } from '../collaboration.js'
-import { acknowledgeAssignment, emptyPullView, invalidatedSelection, isOpenPull, observePulls, pullsInView } from '../pull-view.js'
+import { acknowledgeAssignment, emptyPullView, invalidatedSelection, isOpenPull, isOwnPull, observePulls, pullsInView } from '../pull-view.js'
+import { frameState } from '../review-frame.js'
+import { ReviewFrame } from './ReviewFrame.jsx'
 import { pullConversations, recordsForPull } from '../provenance.js'
 import { RunDetail, savedVersion } from './RunDetail.jsx'
 import { PullRequestDetail, Skeleton } from './PullRequestDetail.jsx'
@@ -375,7 +377,7 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
   const statusFor = pr => reviewForPull(relevantRuns, pr)
   const detailPr = pulls.find(pr => prKey(pr) === opened)
   function inspect(pr) {
-    if (onOpenPage) { onOpenPage(pr); return }
+    if (onOpenPage) { onOpenPage(pr, 'conversation'); return }
     setOpened(prKey(pr))
     task?.open('task:detail')
   }
@@ -397,7 +399,6 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
       const result = await collaborationRequest(token, appId, 'review-runs', reviewRunRequest({ ...choice, pulls, options:resolved.options, agent:resolved.agent, preview_sha256:resolved.preview.preview_sha256 }))
       setRuns(old => [result.run, ...old.filter(run => run.id !== result.run.id)])
       setChoice(null); setSelected(new Set())
-      task?.open(`task:run:${result.run.id}`)
     } catch (error) {
       setError(error.message)
       if (error.code === 'changed') void load()
@@ -443,6 +444,17 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
   // A stopped or failed run can be started again on the PRs' current versions;
   // the new launch is a fresh consent with its own model choice.
   const retryPulls = run => (run.items || []).map(item => pulls.find(pr => prKey(pr) === `${item.repo.toLowerCase()}#${item.number}`)).filter(pr => pr && isOpenPull(pr))
+  // What a PR's Review tab needs: the run's own actions and whether you wrote the PR.
+  const reviewProps = pr => {
+    const run = statusFor(pr)?.run
+    return {
+      own: isOwnPull(pr, conn.login), busy, error: runError, pulls, listState: data,
+      onStart: job => choose([pr], job, prKey(pr)),
+      onStop: run ? () => stopRun(run) : undefined,
+      onRetry: run ? () => choose(retryPulls(run), run.mode === 'review_merge' ? 'review' : run.mode, runAnchor(run)) : undefined,
+      onVerdict: run ? (item, proposal, decision) => decideVerdict(run, item, proposal, decision) : undefined,
+    }
+  }
   const runPane = run => <TaskPane key={run.id} dock={false} id={`task:run:${run.id}`}>
       <RunDetail run={run} pulls={pulls} listState={data} busy={busy} error={runError}
         onStop={() => stopRun(run)} onVerdict={(item, proposal, decision) => decideVerdict(run, item, proposal, decision)} retryPulls={retryPulls(run)} onRetry={retry => choose(retry, run.mode === 'review_merge' ? 'review' : run.mode, runAnchor(run))}
@@ -479,7 +491,7 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
       {detailPr ? (
         // The detail is the page itself, not a swappable pane: the review
         // window overlays it and the assignment pane opens above it.
-        <PullRequestDetail key={`${prKey(detailPr)}:${detailPr.headRefOid}:${detailPr.baseRefOid}:${detailRevision}`} cacheStore={detailSnapshot(detailPr)} pr={detailPr} token={token} onReview={mode => choose([detailPr], mode, opened || prKey(detailPr))} onAssign={() => assignSelection([detailPr], opened || prKey(detailPr))} onRefresh={() => load()} readOnly={!isOpenPull(detailPr)} canAssign={mayAssign(detailPr.repository.viewerPermission)} status={statusFor(detailPr)} onProgress={null} record={recordsForPull(records, detailPr)[0]} onRecord={onRecord} provenance={pullConversations(records, relevantRuns, detailPr)} holdUntilLoaded />
+        <PullRequestDetail key={`${prKey(detailPr)}:${detailPr.headRefOid}:${detailPr.baseRefOid}:${detailRevision}`} cacheStore={detailSnapshot(detailPr)} pr={detailPr} token={token} initialTab={focusPull?.tab === 'review' ? 'review' : 'conversation'} review={reviewProps(detailPr)} onReview={mode => choose([detailPr], mode, opened || prKey(detailPr))} onAssign={() => assignSelection([detailPr], opened || prKey(detailPr))} onRefresh={() => load()} readOnly={!isOpenPull(detailPr)} canAssign={mayAssign(detailPr.repository.viewerPermission)} status={statusFor(detailPr)} onProgress={null} record={recordsForPull(records, detailPr)[0]} onRecord={onRecord} provenance={pullConversations(records, relevantRuns, detailPr)} holdUntilLoaded />
       ) : data.loading || data.error || focusKey ? <Skeleton lines={8} label="Loading the pull request" /> : <p className="co-pr-note" role="status">This pull request is not in the open list. It may be closed; refresh to check.</p>}
       {reviewDialog}
     </section>
@@ -512,7 +524,8 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
       const assignees = pr.assignees?.nodes || []
       const comments = pr.comments?.totalCount || 0
       const open = isOpenPull(pr)
-      return <article className={'co-pr-row' + (selected.has(key) ? ' is-selected' : '') + (focusKey === key ? ' is-highlighted' : '')} key={key} data-pr={key}>
+      const framed = frameState(status)
+      return <ReviewFrame key={key} state={framed} inset={4} radius={10}><article className={'co-pr-row' + (selected.has(key) ? ' is-selected' : '') + (focusKey === key ? ' is-highlighted' : '')} data-pr={key}>
         <label className="co-pr-select"><input type="checkbox" checked={open && selected.has(key)} disabled={!open} onChange={() => toggle(pr)} aria-label={`Select ${pr.repository.nameWithOwner} #${pr.number}`} /></label>
         <PullStateIcon pr={pr} />
         <div className="co-pr-content">
@@ -530,7 +543,7 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
             <ChecksBadge pr={pr} />
             {Number.isInteger(pr.additions) ? <span className="co-change-total"><b>+{pr.additions}</b><em>−{pr.deletions}</em></span> : null}
             {requestedKeys.has(key) ? <span className="co-pr-requested">Your review requested</span> : null}
-            {status ? <button className={'co-pr-agent-state' + (attention ? ' needs-you' : '')} onClick={() => task?.open(`task:run:${status.run.id}`)}><Icon name="prepare" size={13} />{halted ? 'Run stopped' : attention ? (['merge_unknown','ready_unknown'].includes(status.item.state) ? 'Check outcome' : 'Needs you') : status.item.state === 'all_clear' && !status.exactBase ? `Reviewed on an older ${pr.baseRefName}` : progress.label}</button> : null}
+            {status ? <button className={'co-pr-agent-state' + (attention ? ' needs-you' : '')} onClick={() => onOpenPage ? onOpenPage(pr, 'review') : task?.open(`task:run:${status.run.id}`)}>{framed === 'reviewing' ? <span className="co-arc" aria-hidden="true" /> : <Icon name="prepare" size={13} />}{halted ? 'Run stopped' : attention ? (['merge_unknown','ready_unknown'].includes(status.item.state) ? 'Check outcome' : 'Needs you') : status.item.state === 'all_clear' && !status.exactBase ? `Reviewed on an older ${pr.baseRefName}` : progress.label}</button> : null}
           </div>
         </div>
         <div className="co-pr-aside">
@@ -542,8 +555,8 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
         </div>
         {assignAnchor === key ? assignPane : null}
         {relevantRuns.filter(run => runAnchor(run) === key).map(runPane)}
-        {opened === key ? <TaskPane id="task:detail" dock={false}>{detailPr ? <PullRequestDetail key={`${prKey(detailPr)}:${detailPr.headRefOid}:${detailPr.baseRefOid}:${detailRevision}`} cacheStore={detailSnapshot(detailPr)} pr={detailPr} token={token} onReview={mode => choose([detailPr], mode, key)} onAssign={() => assignSelection([detailPr], key)} onRefresh={() => load()} readOnly={!isOpenPull(detailPr)} canAssign={mayAssign(detailPr.repository.viewerPermission)} status={statusFor(detailPr)} onProgress={() => task?.open(`task:run:${statusFor(detailPr)?.run.id}`)} record={recordsForPull(records, detailPr)[0]} onRecord={onRecord} provenance={pullConversations(records, relevantRuns, detailPr)} /> : <p>This pull request is no longer in the current list. Refresh to see its latest status.</p>}</TaskPane> : null}
-      </article>
+        {opened === key ? <TaskPane id="task:detail" dock={false}>{detailPr ? <PullRequestDetail key={`${prKey(detailPr)}:${detailPr.headRefOid}:${detailPr.baseRefOid}:${detailRevision}`} cacheStore={detailSnapshot(detailPr)} pr={detailPr} token={token} review={reviewProps(detailPr)} onReview={mode => choose([detailPr], mode, key)} onAssign={() => assignSelection([detailPr], key)} onRefresh={() => load()} readOnly={!isOpenPull(detailPr)} canAssign={mayAssign(detailPr.repository.viewerPermission)} status={statusFor(detailPr)} onProgress={() => task?.open(`task:run:${statusFor(detailPr)?.run.id}`)} record={recordsForPull(records, detailPr)[0]} onRecord={onRecord} provenance={pullConversations(records, relevantRuns, detailPr)} /> : <p>This pull request is no longer in the current list. Refresh to see its latest status.</p>}</TaskPane> : null}
+      </article></ReviewFrame>
     })}</div>
     </div>
     {data.hasNextPage ? <button className="co-btn" disabled={data.loading} onClick={() => load(data.endCursor)}>Load more PRs</button> : null}

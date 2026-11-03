@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { loadPullActivity, loadPullChecks, loadPullDescription, loadPullFiles, loadPullRelated, loadPullThreads, pullFileDiff, safeDetailLink } from '../pull-details.js'
 import { MarkdownView } from './MarkdownView.jsx'
+import { ClampedMarkdown } from './ClampedMarkdown.jsx'
+import { CopyId, commentReference } from './CopyId.jsx'
 import DiffView from './diff/DiffView.jsx'
 import { Icon } from './Icons.jsx'
 import { AgentMenu } from './AgentMenu.jsx'
 import { GithubLabel, PullStateBadge, REVIEW_DECISION } from './GithubParts.jsx'
 import { checkSummary } from '../collaboration.js'
 import { openAgentConversation } from './BatchAction.jsx'
+import { ReviewTab, reviewStateTone } from './ReviewTab.jsx'
 
 export function DateLabel({ value, prefix = '', time = false }) {
   if (!value || !Number.isFinite(Date.parse(value))) return null
@@ -23,21 +26,6 @@ export function Skeleton({ lines = 3, label = 'Loading' }) {
     {Array.from({ length: lines }, (_, index) => <span key={index} style={{ width: `${96 - (index % 3) * 22}%` }} />)}
   </div>
 }
-// Roughly ten text lines stay visible; anything longer waits behind Show
-// more. Measured while clamped, so the control appears only when needed.
-function ClampedMarkdown({ markdown }) {
-  const [expanded, setExpanded] = useState(false)
-  const [overflows, setOverflows] = useState(false)
-  const body = useRef(null)
-  useEffect(() => {
-    if (!expanded && body.current) setOverflows(body.current.scrollHeight > body.current.clientHeight + 1)
-  }, [markdown, expanded])
-  return <>
-    <div ref={body} className={'co-desc-body' + (expanded ? ' is-open' : '')}><MarkdownView markdown={markdown} /></div>
-    {overflows || expanded ? <button type="button" className="co-quiet-action" onClick={() => setExpanded(value => !value)}>{expanded ? 'Show less' : 'Show more'}</button> : null}
-  </>
-}
-
 // Each comment box carries its review verdict on its border: red for a
 // requested change, green for an approval, the accent for a plain review
 // note, grey for a dismissed verdict. Ordinary comments keep the quiet border.
@@ -70,24 +58,6 @@ function threadLocation(thread) {
   if (Number.isInteger(thread.originalLine)) return `original line ${thread.originalStartLine && thread.originalStartLine !== thread.originalLine ? `${thread.originalStartLine}–` : ''}${thread.originalLine}`
   return 'line unavailable'
 }
-// What a GitHub event url points at: the numeric id of the review or comment.
-// The owner copies it to name the exact event in a reply or an agent task.
-export function commentReference(url) {
-  const match = /#(?:pullrequestreview-|issuecomment-|discussion_r)(\d+)/.exec(url || '')
-  return match ? match[1] : ''
-}
-
-export function CopyId({ id, label = 'id' }) {
-  const [copied, setCopied] = useState(false)
-  if (!id) return null
-  return <button type="button" className="co-copy-id" title={`Copy ${label} ${id}`}
-    onClick={() => {
-      try { navigator.clipboard?.writeText(String(id)) } catch { /* title still shows the id */ }
-      setCopied(true)
-      window.setTimeout(() => setCopied(false), 1500)
-    }}>{copied ? 'Copied' : `#${id}`}</button>
-}
-
 // New feedback on a tracked PR, kept visible under the folded description.
 // The record's attention is server-maintained: it appears when a review or
 // comment lands and clears once addressed, so no flag means nothing waits.
@@ -124,6 +94,14 @@ export function PullFeedbackFlag({ record, status = null, activity = null }) {
 // Where this PR came from, as buttons beside Agent, Assign and Open: the saved
 // contribution behind it and the chats that wrote, reviewed or fixed it. Short
 // role labels keep the row tidy; the chat's own title is the tooltip.
+// The Review tab's label: a spinner while an agent works, then a dot for what
+// the review needs from you or found.
+function ReviewMark({ tone }) {
+  if (tone.key === 'running') return <span className="co-arc" role="status" aria-label="Review running" />
+  const mark = { verdict: 'waiting', needs: 'waiting', clear: 'success', changes: 'failure', halted: 'failure' }[tone.key]
+  return mark ? <span className={'co-tab-dot is-' + mark} title={tone.title} aria-label={tone.title} /> : null
+}
+
 const COMMENT_PREVIEW = 4
 
 const PROVENANCE_LABELS = { source: ['Source chat', 'Source chats'], review: ['Review chat', 'Review chats'], fix: ['Fix chat', 'Fix chats'] }
@@ -241,8 +219,16 @@ export function PullRequestDetail(props) {
   const identity = `${pr.repository?.nameWithOwner}#${pr.number}:${pr.headRefOid}:${pr.baseRefOid}:${pr.baseRefName}`
   return <PullRequestDetailView key={identity} {...props} />
 }
-function PullRequestDetailView({ cacheStore, pr, token, onReview, onAssign, onRefresh, canAssign, status, onProgress, onRecord, record, readOnly = false, provenance = [], holdUntilLoaded = false }) {
-  const [tab, setTab] = useState('conversation')
+// `review` carries what the Review tab needs from the run list: whether the
+// viewer wrote the PR, busy and error state, the run actions, and the loaded PRs.
+function PullRequestDetailView({ cacheStore, pr, token, onReview, onAssign, onRefresh, canAssign, status, onProgress, onRecord, record, readOnly = false, provenance = [], holdUntilLoaded = false, initialTab = 'conversation', review = {} }) {
+  const [tab, setTab] = useState(initialTab)
+  // A review that starts while this page is open takes you to its tab.
+  const hadStatus = useRef(!!status)
+  useEffect(() => {
+    if (status && !hadStatus.current) setTab('review')
+    hadStatus.current = !!status
+  }, [status])
   const [cache, setCache] = useState(() => cacheStore?.entries || {})
   const cacheRef = useRef(cache)
   const requests = useRef(new Map())
@@ -284,7 +270,7 @@ function PullRequestDetailView({ cacheStore, pr, token, onReview, onAssign, onRe
     description: 'description:1',
     ...(tab === 'conversation'
       ? { activity: `activity:${number}`, threads: `threads:${threadCursor || ''}`, related: 'related' }
-      : { view: `${tab}:${number}` }),
+      : tab === 'review' ? {} : { view: `${tab}:${number}` }),
   }
   const keySignature = Object.values(keys).join('|')
   useEffect(() => {
@@ -320,7 +306,7 @@ function PullRequestDetailView({ cacheStore, pr, token, onReview, onAssign, onRe
       read(keys.activity, signal => loadPullActivity(token, pr, number, signal))
       read(keys.threads, signal => loadPullThreads(token, pr, threadCursor, signal))
       read(keys.related, signal => loadPullRelated(token, pr, signal))
-    } else {
+    } else if (tab !== 'review') {
       read(keys.view, signal => tab === 'files' ? loadPullFiles(token, pr, number, signal) : loadPullChecks(token, pr, number, signal))
     }
   }, [keySignature, cache, writeCache, token, pr.number, pr.repository?.nameWithOwner, pr.headRefOid, pr.baseRefOid, pr.baseRefName])
@@ -347,7 +333,8 @@ function PullRequestDetailView({ cacheStore, pr, token, onReview, onAssign, onRe
     {hasMore ? <button className="co-btn" onClick={() => set(current + 1)}>{unknown ? 'Check next page' : 'Next page'}</button> : null}
   </div> : null
   const labels = pr.labels?.nodes || []
-  const tabs = [['conversation', 'Comments'], ['files', 'Files changed'], ['checks', 'Checks']]
+  const tabs = [['conversation', 'Comments'], ['files', 'Files changed'], ['checks', 'Checks'], ['review', 'Review']]
+  const reviewState = reviewStateTone(status)
   // GitHub-style tab badges: one neutral count pill per tab. Comments counts
   // the loaded conversation (comments and reviews); until it loads, GitHub's
   // issue-comment total stands in. Checks add a pass/fail dot before the pill;
@@ -378,7 +365,7 @@ function PullRequestDetailView({ cacheStore, pr, token, onReview, onAssign, onRe
       {labels.length ? <div className="co-gh-labels">{labels.map(label => <GithubLabel key={label.name} name={label.name} color={label.color} />)}</div> : null}
     </header>
     <div className="co-pr-detail-actions">
-      {!readOnly ? <AgentMenu variant="button" align="start" disabled={stale} onChoose={mode => onReview?.(mode)} ariaLabel={`Choose what an agent does with PR ${pr.number}`} /> : null}
+      {!readOnly ? <AgentMenu variant="button" align="start" active={reviewState.key === 'running'} disabled={stale} onChoose={mode => onReview?.(mode)} ariaLabel={`Choose what an agent does with PR ${pr.number}`} /> : null}
       {!readOnly && canAssign ? <button className="co-btn" disabled={stale} onClick={onAssign}><Icon name="person" /> Assign</button> : null}
       {status && onProgress ? <button className="co-btn" onClick={onProgress}>Agent progress</button> : null}
       {githubUrl ? <a className="co-btn" href={githubUrl} target="_blank" rel="noopener noreferrer" aria-label={`Open on GitHub: PR ${pr.number}`}><Icon name="github" /> Open</a> : null}
@@ -402,6 +389,7 @@ function PullRequestDetailView({ cacheStore, pr, token, onReview, onAssign, onRe
     </>}
     <nav className="co-detail-tabs" aria-label="Pull request details">{tabs.map(([key, label]) => <button key={key} aria-pressed={tab === key} onClick={() => setTab(key)}>{label}
       {key === 'checks' && checks?.total ? <><span className={'co-tab-dot is-' + checks.state} title={`${checks.passed} of ${checks.total} checks passed or skipped`} aria-label={{ success: 'checks passed', failure: 'checks failing', pending: 'checks running' }[checks.state]} /><span className="co-tab-count">{checks.passed}/{checks.total}</span></> : null}
+      {key === 'review' ? <ReviewMark tone={reviewState} /> : null}
       {Number.isInteger(tabCounts[key]) ? <span className="co-tab-count">{tabCounts[key]}</span> : null}</button>)}</nav>
     <div className="co-pr-detail-body" role="region" aria-label="Pull request context">
     {stale ? <p role="alert">This PR changed since the list was loaded. <button className="co-btn" onClick={onRefresh}>Refresh PR list</button></p> : null}
@@ -420,10 +408,11 @@ function PullRequestDetailView({ cacheStore, pr, token, onReview, onAssign, onRe
       {ready(related) ? <PullRelated data={related.data} /> : null}
       <p className="co-gh-merge-state">{[REVIEW_DECISION[pr.reviewDecision], pr.mergeable === 'CONFLICTING' ? 'Has merge conflicts' : pr.mergeable === 'MERGEABLE' ? 'No conflicts with base branch' : null].filter(Boolean).join(' · ')}</p>
     </> : null}
-    {tab !== 'conversation' ? readState(view, tab === 'files' ? 'files' : 'checks') : null}
+    {tab === 'review' ? <ReviewTab pr={pr} status={status} readOnly={readOnly} {...review} /> : null}
+    {tab === 'files' || tab === 'checks' ? readState(view, tab === 'files' ? 'files' : 'checks') : null}
     {tab === 'files' && ready(view) ? <PullFiles data={view.data} /> : null}
     {tab === 'checks' && ready(view) ? <PullChecks data={view.data} /> : null}
-    {tab !== 'conversation' && ready(view) ? pager(number, view.data?.hasMore, view.data?.paginationUnknown, value => setPage(old => ({ ...old, [tab]: value }))) : null}
+    {(tab === 'files' || tab === 'checks') && ready(view) ? pager(number, view.data?.hasMore, view.data?.paginationUnknown, value => setPage(old => ({ ...old, [tab]: value }))) : null}
     {tab === 'checks' && !view.loading ? <button className="co-quiet-action" onClick={() => { writeCache(old => { const next = { ...old }; delete next[keys.view]; return next }) }}>Refresh checks</button> : null}
     </div>
   </div>

@@ -18,7 +18,10 @@ export function savedVersion(item, pulls = [], listState = {}) {
 
 // A proposed approve or request changes: the exact words GitHub would show,
 // and the owner's own Submit or Discard. Only a proposal still waiting offers them.
-function VerdictProposal({ proposal, mode, busy, onDecide }) {
+// `own`: the viewer wrote this PR. GitHub refuses an approval or a change
+// request from a PR's author and the server rejects the submit, so Submit is not
+// offered there; the proposal can only be discarded.
+export function VerdictProposal({ proposal, mode, busy, onDecide, own = false }) {
   const copy = verdictCopy(proposal, mode)
   const waiting = proposal.state === 'proposed' && onDecide
   return <div className={'co-verdict' + (proposal.event === 'APPROVE' ? ' is-approve' : ' is-changes')}>
@@ -26,9 +29,9 @@ function VerdictProposal({ proposal, mode, busy, onDecide }) {
     {proposal.state === 'posted' && proposal.url ? <a href={proposal.url} target="_blank" rel="noopener noreferrer">View it on GitHub</a> : null}
     {waiting ? <>
       <details className="co-task-details" open><summary>What it would post</summary><MarkdownView markdown={proposal.body} /></details>
-      <p className="co-task-footnote">{copy.note}</p>
+      <p className="co-task-footnote">{own ? 'GitHub does not let you approve or request changes on your own PR, so this cannot be submitted. Discard it, or ask the agent in the review conversation to post a plain comment instead.' : copy.note}</p>
       <div className="co-verdict-actions">
-        <button type="button" className="co-btn co-btn-primary" disabled={busy} onClick={() => onDecide(proposal, 'submit')}>{busy ? 'Working…' : copy.submit}</button>
+        {own ? null : <button type="button" className="co-btn co-btn-primary" disabled={busy} onClick={() => onDecide(proposal, 'submit')}>{busy ? 'Working…' : copy.submit}</button>}
         <button type="button" className="co-btn" disabled={busy} onClick={() => onDecide(proposal, 'discard')}>Discard</button>
       </div>
     </> : null}
