@@ -41,10 +41,10 @@ function DeskPullRow({ project, pr, chip, order, lastLooked, runs, onOpenPull })
           {pr.isDraft ? <span>Draft</span> : null}
           <ChecksBadge pr={pr} />
           {Number.isInteger(pr.additions) ? <span className="co-change-total"><b>+{pr.additions}</b><em>−{pr.deletions}</em></span> : null}
-          <QuietLabels pr={pr} />
           {chip ? <span className={'co-desk-chip is-' + chip.tone}>{chip.label}</span> : null}
           {framed === 'verdict' ? <span className="co-desk-chip is-waiting">{reviewStateTone(status).title}</span> : null}
         </span>
+        <span className="co-pr-labels"><QuietLabels pr={pr} /></span>
       </span>
       {comments ? <span className="co-pr-comments" title={`${comments} in the conversation: comments and reviews`}><Icon name="comment" size={15} />{comments}</span> : null}
     </button>
@@ -59,15 +59,15 @@ function DeskAttentionRow({ item, onSelect }) {
   const detectedAt = item.record?.attention?.detected_at
   const group = groupNote(item)
   return (
-    <button type="button" className="co-desk-row" onClick={() => onSelect(item)}>
-      <Icon name={reason.icon} size={16} className={'co-desk-attention-icon is-' + reason.tone} />
+    <button type="button" className={'co-desk-row is-' + reason.key} onClick={() => onSelect(item)}>
+      <Icon name="info" size={16} className="co-desk-attention-icon" />
       <span className="co-desk-row-main">
         <span className="co-desk-row-title">{item.label}</span>
         {item.detail ? <span className="co-desk-row-why">{item.detail}</span> : null}
         <span className="co-desk-row-meta">
           {group ? <span>{group}</span> : null}
           {detectedAt ? <TimeAgo prefix="Detected " value={detectedAt} /> : null}
-          <span className={'co-desk-chip is-' + (reason.tone === 'blocker' ? 'blocker' : 'you')}>{reason.label}</span>
+          <span className="co-desk-chip is-tone">{reason.label}</span>
         </span>
       </span>
     </button>
