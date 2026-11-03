@@ -381,7 +381,6 @@ test('the Projects summary reserves its row while source checks refresh', () => 
   assert.match(appSource, /loading=\{sourceLoading\}/)
   assert.match(appSource, /if \(!quiet\) setSourceLoading\(true\)/)
   assert.match(sourceMapSource, /function LoadingState\(\)/)
-  assert.match(sourceMapSource, /className="co-check-note" role="status"/)
   assert.match(sourceMapSource, /className="co-source-loading" role="status"/)
   assert.match(sourceMapSource, /Checking projects…/)
   assert.match(sourceMapSource, /No projects with edits/)
@@ -412,7 +411,7 @@ test('project chrome consolidates navigation, refresh, files, and preparation ch
   assert.doesNotMatch(sourceMapSource, /className="co-project-switcher"/)
   // One refresh control, the header's: no second button on the list or a project.
   assert.doesNotMatch(sourceMapSource, /CheckGithub|Check GitHub/)
-  assert.match(sourceMapSource, /<RefreshNote note=\{refreshNote\} scope=\{projects\} \/>/)
+  assert.doesNotMatch(sourceMapSource, /RefreshNote|refreshNote/)
   assert.doesNotMatch(sourceMapSource, /Refresh project status|Refresh projects/)
   assert.doesNotMatch(sourceMapSource, /Files, branch and versions <Icon/)
   assert.match(controlsSource, /className="co-link-action" onClick=\{\(\) => task\?\.open\('task:files'\)\}>See the files/)
@@ -428,17 +427,20 @@ test('private proposals have one actionable home without another merge workflow'
 })
 
 test('every refresh control renews the contribution feed and reports a partial one', () => {
-  // The header's Refresh is the one full pass, and it keeps what it found for the page title.
+  // The header's Sync with GitHub is the one full pass, and it keeps when it last ran.
   const refresh = appSource.match(/async function refreshEverything\(\) \{[\s\S]*?\n  \}/)?.[0] || ''
   assert.match(refresh, /refreshCoordinatorRef\.current\(\)/)
   assert.match(refresh, /checkUpstream\(token, sourceProjects\)/)
   assert.match(refresh, /return \{ ok: sourceOk && ledgerCurrentRef\.current, upstream \}/)
-  assert.match(appSource, /onRetry=\{refreshAll\} refreshNote=\{refreshNote\}/)
+  assert.match(appSource, /onRetry=\{refreshAll\} checks=\{upstreamChecks\}/)
+  // The sync says when it last ran, beside its own button, and is named for what it does.
+  assert.match(appSource, /<SyncNote note=\{refreshNote\} \/>\s*<button[^>]*co-toolbar-refresh[^>]*aria-label="Sync with GitHub"/)
+  assert.match(appSource, /Sync with GitHub/)
   assert.match(appSource, /setRefreshNote\(\{ outcome, at: new Date\(\)\.toISOString\(\) \}\)/)
   assert.match(appSource, /onClick=\{refreshAll\}/)
 })
 
-test('GitHub is synced once per open: no hidden foreground re-sync, one explicit Refresh', () => {
+test('GitHub is synced once per open: no hidden foreground re-sync, one explicit Sync with GitHub', () => {
   // The owner refreshes from the header; returning to the
   // app or a focus/visibility flip must not quietly reload everything.
   assert.doesNotMatch(appSource, /isVisibleFrameMessage/)

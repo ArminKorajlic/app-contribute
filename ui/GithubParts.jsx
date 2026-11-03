@@ -34,6 +34,12 @@ export function labelColors(hex) {
   }
 }
 
+// What the header's sync last did, beside its button: when it finished, or that it failed.
+export function SyncNote({ note }) {
+  if (!note) return null
+  return <span className="co-sync-note" role="status">{note.outcome?.ok ? <TimeAgo prefix="Checked " value={note.at} /> : 'Couldn’t reach GitHub'}</span>
+}
+
 export function GithubLabel({ name, color }) {
   const style = labelColors(color)
   return <span className={'co-gh-label' + (style ? '' : ' is-plain')} style={style || undefined}>{name}</span>

@@ -491,8 +491,6 @@ export const WORKSPACE_CSS = `
 .co-link-action { padding:0; border:0; background:none; color:var(--accent); font:inherit; text-decoration:underline; text-underline-offset:2px; cursor:pointer; }
 .co-link-action:focus-visible { outline:2px solid var(--accent); outline-offset:2px; border-radius:3px; }
 
-/* What the header's Refresh last found, under the page title. */
-.co-check-note { margin:2px 0 0; max-width:60ch; color:var(--muted); font-size:14px; }
 .co-icon.is-spinning { animation:co-spin 1s linear infinite; }
 @keyframes co-spin { to { transform:rotate(360deg); } }
 .co-workspace-head { align-items:flex-start; }
