@@ -1,14 +1,14 @@
 import { useState } from 'react'
-import { authoredPullState, authoredPulls, chainPulls, editProjects, feedbackPull, feedbackPullKeys, mergedRecently, newSince, pullKey } from '../desk.js'
+import { authoredPullState, authoredPulls, chainPulls, editProjects, feedbackPull, mergedRecently, needsPulls, newSince } from '../desk.js'
 import { attentionListItems } from '../run.js'
-import { reviewForPull } from '../collaboration.js'
+import { conversationCount, reviewForPull } from '../collaboration.js'
 import { frameState, reviewForRecord } from '../review-frame.js'
 import { ReviewFrame } from './ReviewFrame.jsx'
 import { reviewStateTone } from './ReviewTab.jsx'
 import { localChangeSentence, localChangeSummary, recordsForProject } from '../source-map.js'
 import { STATUS_LABELS } from '../domain.js'
 import { groupNote, lookAtReason } from './AttentionList.jsx'
-import { ChecksBadge, GithubLabel, PullStateIcon, TimeAgo } from './GithubParts.jsx'
+import { ChecksBadge, PullStateIcon, QuietLabels, TimeAgo } from './GithubParts.jsx'
 import { Icon } from './Icons.jsx'
 import { ProjectIcon } from './ProjectIcon.jsx'
 
@@ -26,7 +26,7 @@ function NewDot({ value, lastLooked }) {
 // a PR with a review running or waiting wears the comet frame, says so in a chip,
 // and opens on its Review tab.
 function DeskPullRow({ project, pr, chip, order, lastLooked, runs, onOpenPull }) {
-  const comments = pr.comments?.totalCount || 0
+  const comments = conversationCount(pr)
   const status = reviewForPull(runs || [], pr)
   const framed = frameState(status)
   return (
@@ -35,18 +35,18 @@ function DeskPullRow({ project, pr, chip, order, lastLooked, runs, onOpenPull })
       <PullStateIcon pr={pr} />
       <span className="co-desk-row-main">
         <span className="co-desk-row-title"><NewDot value={pr.updatedAt} lastLooked={lastLooked} />{pr.title}</span>
-        {pr.labels?.nodes?.length ? <span className="co-desk-row-labels">{pr.labels.nodes.map(label => <GithubLabel key={label.name} name={label.name} color={label.color} />)}</span> : null}
         <span className="co-desk-row-meta">
           {order ? <span className="co-desk-order">{order}</span> : null}
           <span>#{pr.number} · {pr.author?.login || 'Contributor'}{pr.updatedAt ? <TimeAgo prefix=", updated " value={pr.updatedAt} /> : null}</span>
           {pr.isDraft ? <span>Draft</span> : null}
           <ChecksBadge pr={pr} />
           {Number.isInteger(pr.additions) ? <span className="co-change-total"><b>+{pr.additions}</b><em>−{pr.deletions}</em></span> : null}
+          <QuietLabels pr={pr} />
           {chip ? <span className={'co-desk-chip is-' + chip.tone}>{chip.label}</span> : null}
           {framed === 'verdict' ? <span className="co-desk-chip is-waiting">{reviewStateTone(status).title}</span> : null}
         </span>
       </span>
-      {comments ? <span className="co-pr-comments"><Icon name="comment" size={15} />{comments}</span> : null}
+      {comments ? <span className="co-pr-comments" title={`${comments} in the conversation: comments and reviews`}><Icon name="comment" size={15} />{comments}</span> : null}
     </button>
     </ReviewFrame>
   )
@@ -131,9 +131,8 @@ function projectRows(view, project, { login, decisionsFor, lastLooked, query, ru
   decisions.forEach(item => rows.push(decisionRow(item)))
   if (view === 'needs') {
     // A PR that already has its feedback card above is listed once, there.
-    const covered = feedbackPullKeys(attentionListItems(all))
-    mine.filter(pr => !covered.has(pullKey(pr))).map(pr => [pr, authoredPullState(pr)])
-      .filter(([, state]) => state.tone !== 'quiet' && state.key !== 'approved_draft')
+    needsPulls(project, attentionListItems(all), login)
+      .filter(([pr]) => matches(query, pr.title, String(pr.number)))
       .forEach(([pr, state]) => pull(pr, state))
   }
   if (view === 'mine') {

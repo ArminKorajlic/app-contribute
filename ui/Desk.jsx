@@ -2,10 +2,11 @@ import { DESK_VIEWS, needsCount, railBadge, splitProjects } from '../desk.js'
 import { Icon } from './Icons.jsx'
 import { ProjectIcon } from './ProjectIcon.jsx'
 
-// The count a project's rail row shows: saved-work attention plus review
-// requests — the same things Needs you lists for it.
+// The count a project's rail row shows: how many things in it wait on the
+// owner. `attention` already holds exactly what its Needs you card lists
+// (desk.js projectNeedsCount); it is not the number of open PRs.
 export function projectRailCount(project, attention) {
-  return (attention?.[project.key] || 0) + (project.reviewRequests?.length || 0)
+  return attention?.[project.key] || 0
 }
 
 // Only these views are things waiting on the owner; the rest are information
@@ -37,7 +38,7 @@ function RailProjectButton({ project, attention, selectedKey, onOpenProject }) {
     >
       <ProjectIcon project={project} className="co-rail-glyph" />
       <span className="co-rail-label">{project.name}</span>
-      {count ? <b className="co-rail-count is-you">{count}</b> : null}
+      {count ? <b className="co-rail-count is-you" title={`${count} waiting on you in ${project.name}`}>{count}</b> : null}
     </button>
   )
 }

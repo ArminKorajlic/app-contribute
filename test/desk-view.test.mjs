@@ -59,8 +59,9 @@ test('the rail shows every view with its count and marks the open project', asyn
   assert.match(html, /Needs you/)
   assert.match(html, /Merged this week/)
   assert.match(html, /Möbius/)
-  // 2 saved-work decisions + 1 review request on the project row.
-  assert.equal(api.projectRailCount(project, { mobius: 2 }), 3)
+  // The project row shows exactly the count held for it (what its Needs you card lists).
+  assert.equal(api.projectRailCount(project, { mobius: 3 }), 3)
+  assert.equal(api.projectRailCount(project, {}), 0)
   assert.match(html, /aria-current="page"[^>]*>[\s\S]*?Möbius|Möbius[\s\S]*?aria-current/)
 })
 
@@ -205,4 +206,40 @@ test('the sync note says only when it last checked, or that GitHub could not be 
   const theme = readFileSync(new URL('../theme.js', import.meta.url), 'utf8')
   // Beside the button on a wide header; a phone header has no room for it.
   assert.match(theme, /\.co-toolbar-refresh span, \.co-sync-note \{ display: none; \}/)
+})
+
+test('list labels are a dot and plain text, two at most, and a bot says bot', async t => {
+  const html = await (async () => {
+    if (!frontendModules) { t.skip('MOBIUS_FRONTEND_NODE_MODULES is required'); return null }
+    const mod = await renderModule(`
+      import React from 'react'
+      import { renderToStaticMarkup } from 'react-dom/server'
+      import { QuietLabels, PullStateChips } from './ui/GithubParts.jsx'
+      export const labels = pr => renderToStaticMarkup(React.createElement(QuietLabels, { pr }))
+      export const chips = pr => renderToStaticMarkup(React.createElement(PullStateChips, { pr }))
+    `)
+    return mod
+  })()
+  if (!html) return
+  const node = (name, color = '0075ca') => ({ name, color })
+  const human = html.labels({ author: { login: 'owner' }, labels: { nodes: [node('area: ui'), node('bug', 'd73a4a'), node('maintenance')] } })
+  assert.match(human, /<i aria-hidden="true"><\/i>ui</)
+  assert.doesNotMatch(human, /area:/)
+  assert.match(human, /is-more" title="maintenance">\+1</)
+  assert.equal((human.match(/co-quiet-label"/g) || []).length, 2)
+  const bot = html.labels({ author: { login: 'dependabot' }, labels: { nodes: [node('dependencies'), node('javascript')] } })
+  assert.match(bot, /is-bot">bot</)
+  assert.doesNotMatch(bot, /dependencies/)
+  const chips = html.chips({ isDraft: true, reviewDecision: 'APPROVED' })
+  assert.match(chips, /co-desk-chip">Draft</)
+  assert.match(chips, /co-desk-chip is-ready">Approved</)
+})
+
+test('rows keep their checkbox and Assign out of sight until wanted, and the header checkbox stays', () => {
+  const css = readFileSync(new URL('../workspace-theme.js', import.meta.url), 'utf8')
+  assert.match(css, /\.co-pr-row \.co-pr-select \{ opacity:0/)
+  assert.match(css, /\.co-pr-row:focus-within \.co-pr-select/)
+  assert.match(css, /\.co-pr-assign\.is-quiet \{ opacity:0/)
+  assert.match(css, /@media \(hover:none\) \{ \.co-pr-row \.co-pr-select, \.co-pr-assign\.is-quiet \{ opacity:1/)
+  assert.doesNotMatch(css, /\n\.co-pr-select \{ opacity:0/)
 })

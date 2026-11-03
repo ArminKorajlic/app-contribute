@@ -5,6 +5,7 @@ import {
   authoredPulls,
   chainPulls,
   deskCounts,
+  projectNeedsCount,
   editProjects,
   mergedRecently,
   needsCount,
@@ -148,4 +149,13 @@ test('a PR with a feedback card and a fix step counts once in Needs you', () => 
   assert.equal(counts.doubled, 1)
   assert.equal(needsCount(counts), 2)
   assert.equal(railBadge('needs', counts), 2)
+})
+
+test('a project number is what its Needs you card lists: requests, feedback cards, and own PRs not already covered', () => {
+  const owned = (number, extra = {}) => ({ number, repository: { nameWithOwner: 'o/r' }, author: { login: 'owner' }, reviewDecision: 'CHANGES_REQUESTED', ...extra })
+  const project = { reviewRequests: [{ number: 50 }], incomingReviews: [owned(1), owned(2), owned(3, { reviewDecision: 'REVIEW_REQUIRED' })] }
+  const decisions = [{ kind: 'public_attention', record: { repo: 'o/r', number: 1 } }]
+  // 1 request + 1 feedback card (#1) + #2 (needs a fix); #1 is covered and #3 is just waiting.
+  assert.equal(projectNeedsCount(project, decisions, 'owner'), 3)
+  assert.equal(projectNeedsCount({ incomingReviews: [] }, [], 'owner'), 0)
 })

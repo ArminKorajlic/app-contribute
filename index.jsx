@@ -35,13 +35,13 @@ import {
   upsertRecord,
 } from './domain.js'
 import { contributionActionScope, contributionApprovalIsCurrent, contributionPhaseApprovalIsCurrent, contributionReviewTargetFromIntent, focusedContributionNavigationReady, focusedContributionReady, indexReviewStatus, qualityReviewFor } from './review.js'
-import { buildContributionRun, findRunItemByRecord, ownerAttentionCount } from './run.js'
+import { buildContributionRun, findRunItemByRecord } from './run.js'
 import { stackPublicationRecords } from './stack.js'
 import { deliverCycleMessage } from './cycle-delivery.js'
 import { abandonPrepared, cacheFeed, cacheSourceSnapshot, loadAppSettings, loadCachedFeed, loadCachedSourceSnapshot, loadContributionRecord, loadFreshContributionRecord, loadFreshContributionRecords, loadCycleState, loadFullDiff, loadLedger, restoreAbandoned, saveAppSettings } from './storage.js'
 import { createRefreshCoordinator } from './refresh.js'
 import { checkUpstream } from './upstream-check.js'
-import { DESK_LAST_LOOKED_KEY, deskCounts } from './desk.js'
+import { DESK_LAST_LOOKED_KEY, deskCounts, projectNeedsCount } from './desk.js'
 import { hasActiveReview } from './review-frame.js'
 import { loadReviewRuns } from './collaboration.js'
 import {
@@ -1537,10 +1537,10 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
     setProjectFocus({ key: focusedProjectKey, nonce: reviewFocus.nonce })
   }, [reviewFocus, focusedReviewReady, sourceLoading, focusedProjectKey])
 
-  // What waits on the owner in each project, for the projects list.
+  // What waits on the owner in each project: the same count its Needs you
+  // card lists, so the rail and the card never disagree.
   const projectAttention = useMemo(() => Object.fromEntries(sourceProjects
-    .filter(project => recordsForProject(records, project).length)
-    .map(project => [project.key, ownerAttentionCount(projectRun(project).decisions)])), [sourceProjects, records, reviewStatus])
+    .map(project => [project.key, projectNeedsCount(project, projectRun(project).decisions, conn.login || '')])), [sourceProjects, records, reviewStatus, conn.login])
   // The home's clickable counts: every number names a next step and its view.
   const deskCountsValue = useMemo(() => deskCounts({
     projects: sourceProjects,

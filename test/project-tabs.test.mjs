@@ -64,7 +64,7 @@ test('the PR list follows its tab: requests explain themselves and My work shows
   const base = { appId: 'app', token: 'token', project, conn: { state: 'connected', login: 'owner' } }
   const all = render('PullRequests', base)
   assert.match(all, /aria-label="Filter pull requests"/)
-  assert.match(all, /Show: opened by me/)
+  assert.match(all, />Opened by me</)
   const requests = render('PullRequests', { ...base, scope: 'requests' })
   assert.match(requests, /PRs where someone asked for your review/)
   assert.doesNotMatch(requests, /aria-label="Filter pull requests"/)
