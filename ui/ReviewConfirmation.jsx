@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
+import { OPENABLE_JOBS } from '../agent-menu.js'
 import { baseTip, DRAFT_TAKEOVER_SCOPE, mayMerge, prKey, takeoverBlocker } from '../collaboration.js'
 import { mergeWhenSafeBlocker, reviewSwitchHints, reviewWindowCopy } from '../review-copy.js'
 import { focusActionRegion } from './TaskPane.jsx'
@@ -182,7 +183,7 @@ export function ReviewConfirmation({ choice, busy, disabled, error, onConfirm, o
     <PullHeading pulls={choice.pulls} title={copy.title} titleId={titleId} onCancel={onCancel} takeover={takeover} />
     <div className="co-rw-body">
       {takeover
-        ? <p className="co-rw-note">No options here. The agent keeps going until {choice.pulls.length === 1 ? 'the PR is' : 'the PRs are'} merged, or until it needs you. It fixes what its own review finds. To act on your reviewers’ comments, use Address feedback.</p>
+        ? <p className="co-rw-note">No options here. The agent keeps going until {choice.pulls.length === 1 ? 'the PR is' : 'the PRs are'} merged, or until it needs you. It fixes what its own review finds.{OPENABLE_JOBS.includes('address') ? ' To act on your reviewers’ comments, use Address feedback.' : ''}</p>
         : <ReviewSwitches choice={choice} promptOptions={promptOptions} capabilities={capabilities} onModeChange={onModeChange} onOptionsChange={onOptionsChange} busy={busy} />}
       {startBlocked ? <p className="co-rw-blocker" role="status">{blocker}</p> : null}
       {postingUnavailable ? <p className="co-rw-blocker" role="status">Posting reviews on GitHub needs a newer Möbius. This would run as a private review.</p> : null}
