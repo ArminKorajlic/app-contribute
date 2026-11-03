@@ -169,11 +169,11 @@ test('the new-dot legend shows only when a dot is on screen', () => {
   assert.match(css, /\.co-desk-pane:has\(\.co-desk-row \.co-newdot\) \.co-desk-legend \{ display:flex/)
 })
 
-test('the project status is two cards, each a real button with an icon, never a text link', () => {
+test('the project status is one panel of equal rows, with real buttons and icons, never a text link', () => {
   const css = readFileSync(new URL('../workspace-theme.js', import.meta.url), 'utf8')
-  assert.match(css, /\.co-project-position \{ display:grid;/)
-  assert.match(css, /\.co-status-card\.is-warn \{ border-color/)
-  assert.match(css, /\.co-status-actions \.co-btn \{ gap:8px;/)
+  assert.match(css, /\.co-project-position \{ margin:12px 0 16px; border:1px solid var\(--border\); border-radius:12px;/)
+  assert.match(css, /\.co-status-row \{ display:flex; align-items:center; gap:12px; min-height:56px;/)
+  assert.match(css, /\.co-status-actions \.co-btn \{ gap:8px; height:40px; min-height:40px;/)
   assert.doesNotMatch(css, /co-link-action/)
 })
 
@@ -270,4 +270,12 @@ test('a row only counts as assigning while the picker pane is actually open', ()
   const list = readFileSync(new URL('../ui/PullRequests.jsx', import.meta.url), 'utf8')
   // The pane's own close button leaves the assigning state set; the pane being open is what counts.
   assert.match(list, /assignAnchor === key && task\?\.activeId === 'task:assign' \? ' is-assigning'/)
+})
+
+test('the attention bar toggle has no frame and swaps its word with the chevron', () => {
+  const css = readFileSync(new URL('../workspace-theme.js', import.meta.url), 'utf8')
+  const toggle = css.match(/\.co-attn-toggle \{[^}]*\}/)?.[0] || ''
+  assert.ok(toggle && !/border|background/.test(toggle))
+  assert.match(css, /\.co-attn-hide, \.co-attn\[open\] \.co-attn-show \{ display:none; \}/)
+  assert.match(css, /\.co-attn\[open\] \.co-attn-toggle \.co-icon \{ transform:rotate\(180deg\)/)
 })

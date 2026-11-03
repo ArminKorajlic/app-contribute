@@ -48,12 +48,14 @@ test('an older merge blocker stays visible ahead of three newer comments', async
   assert.doesNotMatch(html, /aria-label="To look at" open/)
   assert.match(html, /<b class="co-attn-count">4<\/b>/)
   assert.match(html, /4 things need you/)
-  // The bar names the most urgent item and gives its button.
-  assert.match(html, /co-attn-tag is-conflict">Merge blocked<\/span> #9/)
-  assert.match(html, /Merge blocked[\s\S]*#9[\s\S]*Review conflict/)
+  // The folded bar counts by reason, most urgent first, and picks no single PR; its toggle has words.
+  assert.match(html, /co-attn-rs is-conflict"><i aria-hidden="true"><\/i><b>1<\/b> merge blocked[\s\S]*co-attn-rs is-feedback"><i aria-hidden="true"><\/i><b>3<\/b> new feedback/)
+  assert.match(html, /<span class="co-attn-show">Show 4<\/span><span class="co-attn-hide">Hide<\/span>/)
+  assert.doesNotMatch(html, /co-attn-go/)
+  assert.match(html, /#9[\s\S]*Merge blocked[\s\S]*Review conflict/)
   assert.doesNotMatch(html, /#12/)
-  assert.match(html, /Show all 4/)
-  assert.match(html, /Review requests have their own tab below/)
+  assert.match(html, /Show the other one/)
+  assert.doesNotMatch(html, /own tab below/)
 })
 
 test('a related group is one row that names the affected PR and its group', async t => {
@@ -65,8 +67,8 @@ test('a related group is one row that names the affected PR and its group', asyn
   assert.equal(groupNote(item('s', 'private_review', affected)), '')
   const html = render({ items: [group], heading })
   assert.match(html, /On #117 · 3 related PRs/)
-  assert.match(html, /Detected just now/)
-  assert.doesNotMatch(html, /Show all/)
+  assert.match(html, /just now/)
+  assert.doesNotMatch(html, /Show the other/)
 })
 
 test('nothing to look at renders nothing rather than an all-clear', async t => {

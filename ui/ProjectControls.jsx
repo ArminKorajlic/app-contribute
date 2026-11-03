@@ -26,9 +26,9 @@ const CYCLE_CSS = `
 
 // One plain-language fact about the project, with its next step beside it.
 function StatusLine({ icon, title, tone = 'plain', strong, text, sub, children }) {
-  return <div className={'co-status-card is-' + tone} role="group" aria-label={title}>
+  return <div className={'co-status-row is-' + tone} role="group" aria-label={title}>
     <span className="co-status-icon" aria-hidden="true"><Icon name={icon} size={18} /></span>
-    <div className="co-status-text"><p><strong>{strong}</strong>{text}</p>{sub ? <small>{sub}</small> : null}</div>
+    <p className="co-status-text"><strong>{strong}</strong>{text}{sub ? <span className="co-status-sub"> {sub}</span> : null}</p>
     {children ? <div className="co-status-actions">{children}</div> : null}
   </div>
 }
@@ -40,7 +40,7 @@ function LocalLine({ project, run, task }) {
   return <StatusLine icon="edit" title="Your edits" strong={local.strong} text={local.text} sub={local.sub || null}>
     {local.edits ? <>
       <button type="button" className="co-btn" disabled={!run?.privateAction} onClick={() => task?.open('task:prepare')}><Icon name="prepare" size={15} />Make PRs from my edits</button>
-      <button type="button" className="co-btn" onClick={() => task?.open('task:files')}><Icon name="search" size={15} />See the files</button>
+      <button type="button" className="co-btn is-icon" onClick={() => task?.open('task:files')} aria-label="See the files" title="See the files"><Icon name="search" size={16} /></button>
     </> : null}
   </StatusLine>
 }
@@ -50,7 +50,7 @@ function UpstreamLine({ project, check }) {
   if (!line) return null
   const updater = line.update ? projectUpdater(project) : null
   const checked = check?.checkedAt ? <TimeAgo prefix="Checked " value={check.checkedAt} /> : 'Use Sync with GitHub for the latest.'
-  return <StatusLine icon={UPSTREAM_ICON[line.tone]} title="Updates from GitHub" tone={line.tone} strong={line.strong} text={line.text} sub={updater ? updater.where : checked}>
+  return <StatusLine icon={UPSTREAM_ICON[line.tone]} title="Updates from GitHub" tone={line.tone} strong={line.strong} text={line.text} sub={updater ? null : checked}>
     {updater ? <button type="button" className="co-btn" onClick={updater.open}><Icon name="settings" size={15} />{updater.label}</button> : null}
   </StatusLine>
 }
