@@ -496,7 +496,7 @@ export const WORKSPACE_CSS = `
 .co-attn-toggle .co-icon { transition:transform .15s; }
 .co-attn[open] .co-attn-toggle .co-icon { transform:rotate(180deg); }
 .co-attn > .co-run-list { border-top:1px solid color-mix(in srgb,var(--accent) 22%,transparent); }
-.co-attention-row { display:grid; grid-template-columns:36px minmax(0,1fr) 20px; align-items:center; gap:12px; width:100%; padding:10px 12px; border:0; border-top:1px solid color-mix(in srgb,var(--accent) 16%,transparent); background:none; color:var(--text); font:inherit; text-align:left; cursor:pointer; }
+.co-attention-row { box-sizing:border-box; display:grid; grid-template-columns:36px minmax(0,1fr) 20px; align-items:center; gap:12px; width:100%; padding:10px 12px; border:0; border-top:1px solid color-mix(in srgb,var(--accent) 16%,transparent); background:none; color:var(--text); font:inherit; text-align:left; cursor:pointer; }
 .co-attention-row:first-child { border-top:0; }
 .co-attention-row:hover { background:color-mix(in srgb,var(--accent) 7%,transparent); }
 .co-attention-row:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
@@ -506,7 +506,7 @@ export const WORKSPACE_CSS = `
 .co-attention-main strong { font-size:15px; font-weight:600; line-height:1.35; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .co-attention-main small { color:var(--muted); font-size:14px; line-height:1.45; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .co-attention-reason, .co-attn-tag { display:inline-block; margin-right:8px; padding:1px 8px; border-radius:999px; background:color-mix(in srgb,var(--tone,var(--accent)) 14%,transparent); color:var(--tone,var(--accent)); font-size:14px; font-weight:600; line-height:22px; }
-.co-attn-more { display:flex; align-items:center; gap:12px; width:100%; min-height:44px; padding:0 12px; border:0; border-top:1px solid color-mix(in srgb,var(--accent) 16%,transparent); background:none; color:var(--muted); font:500 14px var(--font); cursor:pointer; }
+.co-attn-more { box-sizing:border-box; display:flex; align-items:center; gap:12px; width:100%; min-height:44px; padding:0 12px; border:0; border-top:1px solid color-mix(in srgb,var(--accent) 16%,transparent); background:none; color:var(--muted); font:500 14px var(--font); cursor:pointer; }
 .co-attn-more:hover { color:var(--text); }
 .co-attn-more .co-icon { margin-inline:11px; }
 .co-desk-row > .co-desk-attention-icon { color:var(--tone,var(--muted)); }
