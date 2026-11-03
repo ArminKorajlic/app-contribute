@@ -568,6 +568,20 @@ export const WORKSPACE_CSS = `
 .co-rw-body { display:flex; flex-direction:column; gap:18px; padding:18px 20px 4px; }
 .co-rw-options { border:1px solid var(--border); border-radius:12px; background:var(--bg); }
 .co-rw-who .co-rw-label { margin-top:0; }
+.co-rw-checks { list-style:none; margin:0; padding:0; border:1px solid var(--border); border-radius:12px; background:var(--bg); }
+.co-rw-checks li + li { border-top:1px solid var(--border); }
+.co-rw-check { display:flex; align-items:flex-start; gap:12px; padding:10px 14px; cursor:pointer; }
+.co-rw-check input { flex:none; width:18px; height:18px; margin-top:2px; accent-color:var(--accent); cursor:pointer; }
+.co-rw-check strong { display:block; font-size:15px; font-weight:600; }
+.co-rw-check small { display:block; color:var(--muted); font-size:14px; line-height:1.45; }
+.co-rw-rungs { display:grid; gap:8px; }
+.co-rw-rung { display:flex; align-items:flex-start; gap:12px; width:100%; padding:10px 14px; border:1px solid var(--border); border-radius:12px; background:var(--bg); color:var(--text); text-align:left; font:inherit; cursor:pointer; }
+.co-rw-rung i { flex:none; width:16px; height:16px; margin-top:3px; border:2px solid var(--muted); border-radius:50%; }
+.co-rw-rung.is-on { border-color:var(--accent); background:color-mix(in srgb,var(--accent) 10%,var(--bg)); }
+.co-rw-rung.is-on i { border-color:var(--accent); background:radial-gradient(circle,var(--accent) 45%,transparent 50%); }
+.co-rw-rung strong { display:block; font-size:15px; font-weight:600; }
+.co-rw-rung small { display:block; color:var(--muted); font-size:14px; line-height:1.45; }
+.co-rw-rung:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 .co-seg { display:flex; width:max-content; max-width:100%; padding:3px; border:1px solid var(--border); border-radius:10px; background:var(--bg); }
 .co-seg button { min-height:36px; padding:0 14px; border:0; border-radius:7px; background:none; color:var(--muted); font:500 14px var(--font); cursor:pointer; }
 .co-seg button.is-on { background:var(--surface-2,var(--surface)); color:var(--text); font-weight:600; }

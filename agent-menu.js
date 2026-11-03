@@ -13,7 +13,7 @@ export const AGENT_JOBS = [
 ]
 
 // The jobs this build can open. Address feedback joins when its window exists.
-export const OPENABLE_JOBS = ['review', 'merge', 'review_fix_merge']
+export const OPENABLE_JOBS = ['review', 'address', 'merge', 'review_fix_merge']
 
 // What a single PR's list data says about it.
 export function pullStanding(pr) {

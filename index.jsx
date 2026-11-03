@@ -1589,7 +1589,7 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
     if (page) {
       return <PullRequests key={`page:${page.repo}#${page.number}`} appId={appId} token={token}
         project={project} conn={conn} refreshKey={refreshKey} onChanged={refreshIncomingReviews}
-        presentation="page" focusPull={page} onFocusRelease={() => {}}
+        presentation="page" focusPull={page} onFocusRelease={() => {}} onStartAgent={startAgentTask}
         records={recordsForProject(records, project)} onRecord={record => {
           setPullPage(null)
           if (project?.key) setProjectFocus({ key: project.key, nonce: crypto.randomUUID() })
@@ -1597,7 +1597,7 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
     }
     return <PullRequests key={`pulls:${project?.key || 'all'}`} appId={appId} token={token}
       project={project} conn={conn} refreshKey={refreshKey} onChanged={refreshIncomingReviews}
-      scope={view?.scope || 'all'} onScope={view?.onScope} onTotal={view?.onTotal}
+      scope={view?.scope || 'all'} onScope={view?.onScope} onTotal={view?.onTotal} onStartAgent={startAgentTask}
       onOpenPage={(pr, tab) => openPullPage(project, pr, tab)}
       focusPull={pullFocus?.number ? pullFocus : null} focusRun={pullFocus?.runId ? pullFocus : null} onFocusRelease={releasePullFocus}
       records={recordsForProject(records, project)} onRecord={record => {
