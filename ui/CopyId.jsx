@@ -15,5 +15,5 @@ export function CopyId({ id, label = 'id' }) {
       try { navigator.clipboard?.writeText(String(id)) } catch { /* title still shows the id */ }
       setCopied(true)
       window.setTimeout(() => setCopied(false), 1500)
-    }}>{copied ? 'Copied' : `#${id}`}</button>
+    }}>{copied ? 'Copied' : 'Copy id'}</button>
 }
