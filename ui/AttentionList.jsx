@@ -44,23 +44,23 @@ export function groupNote(item) {
   return `${affected}${records.length} related PRs${numbers.length ? `: ${numbers.join(', ')}` : ''}`
 }
 
+// One thing that needs the owner: a colour-coded icon, the PR on one line, why
+// on the second. The whole row opens it.
 export function AttentionRow({ item, heading, onSelect }) {
   const reason = lookAtReason(item)
   const detectedAt = item.record?.attention?.detected_at
   const group = groupNote(item)
+  const why = [group, item.detail].filter(Boolean).join(' · ')
   return (
-    <article className={'co-attention-row is-' + reason.tone + ' is-' + reason.key}>
+    <button type="button" className={'co-attention-row is-' + reason.tone + ' is-' + reason.key} onClick={() => onSelect?.(item)}>
       <Icon name="info" size={18} />
-      <button type="button" className="co-attention-main" onClick={() => onSelect?.(item)}>
-        <span className="co-attention-reason">{reason.label}</span>
+      <span className="co-attention-main">
         <strong>{heading(item)}</strong>
-        {item.detail ? <small>{item.detail}</small> : null}
-        {group || detectedAt ? <small className="co-attention-meta">
-          {group}{group && detectedAt ? ' · ' : ''}{detectedAt ? <TimeAgo prefix="Detected " value={detectedAt} /> : null}
-        </small> : null}
-      </button>
-      <button type="button" className="co-run-row-action" onClick={() => onSelect?.(item)}>{reason.action}</button>
-    </article>
+        <small><span className="co-attention-reason">{reason.label}</span>{why ? <>{why}</> : null}{detectedAt ? <>{why ? ' · ' : ''}<TimeAgo value={detectedAt} /></> : null}</small>
+      </span>
+      <Icon name="right" size={16} className="co-attention-go" />
+      <span className="co-visually-hidden">{reason.action}</span>
+    </button>
   )
 }
 
@@ -68,29 +68,37 @@ const VISIBLE_ROWS = 3
 
 // What on the owner's tracked contributions needs them, blockers first. Review
 // requests and agent questions keep their own places below.
+// What is waiting, counted by reason and ordered by urgency, so the folded bar
+// can say "1 changes requested, 4 new feedback" without picking a PR.
+function reasonCounts(items) {
+  const counts = new Map()
+  for (const item of byUrgency(items)) {
+    const reason = lookAtReason(item)
+    counts.set(reason.key, { reason, count: (counts.get(reason.key)?.count || 0) + 1 })
+  }
+  return [...counts.values()]
+}
+
 // Nothing to look at renders nothing: an empty bar would read as an all-clear
 // the app cannot prove (GitHub may be unreachable or partly loaded).
 export function AttentionList({ items = [], heading, onSelect }) {
   const [showAll, setShowAll] = useState(false)
   if (!items.length) return null
   const ordered = byUrgency(items)
-  const first = ordered[0]
-  const firstReason = lookAtReason(first)
   const shown = showAll ? ordered : ordered.slice(0, VISIBLE_ROWS)
+  const rest = items.length - VISIBLE_ROWS
   return (
     <details className="co-attn co-look-at" aria-label="To look at">
       <summary>
         <b className="co-attn-count">{items.length}</b>
         <span className="co-attn-text">
           <strong>{items.length === 1 ? '1 thing needs you' : `${items.length} things need you`}</strong>
-          <small className="co-attn-first"><span className={'co-attn-tag is-' + firstReason.key}>{firstReason.label}</span> {heading(first)}</small>
+          <span className="co-attn-sum">{reasonCounts(items).map(({ reason, count }) => <span key={reason.key} className={'co-attn-rs is-' + reason.key}><i aria-hidden="true" /><b>{count}</b> {reason.label.toLowerCase()}</span>)}</span>
         </span>
-        <button type="button" className="co-btn co-btn-primary co-attn-go" onClick={event => { event.preventDefault(); event.stopPropagation(); onSelect?.(first) }}><Icon name="info" size={16} />{firstReason.action}</button>
-        <Icon name="chevron" size={14} />
+        <span className="co-attn-toggle"><span className="co-attn-show">{items.length === 1 ? 'Show' : `Show ${items.length}`}</span><span className="co-attn-hide">Hide</span><Icon name="chevron" size={14} /></span>
       </summary>
-      <p className="co-attention-scope">On your tracked contributions. Review requests have their own tab below.</p>
       <div className="co-run-list">{shown.map(item => <AttentionRow key={item.id} item={item} heading={heading} onSelect={onSelect} />)}</div>
-      {items.length > VISIBLE_ROWS ? <button type="button" className="co-quiet-action" onClick={() => setShowAll(!showAll)}>{showAll ? 'Show fewer' : `Show all ${items.length}`}</button> : null}
+      {rest > 0 ? <button type="button" className="co-attn-more" onClick={() => setShowAll(!showAll)}><Icon name="chevron" size={14} />{showAll ? 'Show fewer' : rest === 1 ? 'Show the other one' : `Show the other ${rest}`}</button> : null}
     </details>
   )
 }
