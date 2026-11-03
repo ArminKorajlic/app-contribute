@@ -527,7 +527,7 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
       const comments = conversationCount(pr)
       const open = isOpenPull(pr)
       const framed = frameState(status)
-      return <ReviewFrame key={key} state={framed} inset={4} radius={10}><article className={'co-pr-row' + (selected.has(key) ? ' is-selected' : '') + (focusKey === key ? ' is-highlighted' : '') + (assignAnchor === key ? ' is-assigning' : '')} data-pr={key}>
+      return <ReviewFrame key={key} state={framed} inset={4} radius={10}><article className={'co-pr-row' + (selected.has(key) ? ' is-selected' : '') + (focusKey === key ? ' is-highlighted' : '') + (assignAnchor === key && task?.activeId === 'task:assign' ? ' is-assigning' : '')} data-pr={key}>
         <label className="co-pr-select"><input type="checkbox" checked={open && selected.has(key)} disabled={!open} onChange={() => toggle(pr)} aria-label={`Select ${pr.repository.nameWithOwner} #${pr.number}`} /></label>
         <PullStateIcon pr={pr} />
         <div className="co-pr-content">
