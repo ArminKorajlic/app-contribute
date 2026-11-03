@@ -507,7 +507,6 @@ export const WORKSPACE_CSS = `
 .co-pr-row:hover .co-pr-assign,.co-pr-row:hover .co-agent-menu-button,.co-pr-row:focus-within .co-agent-menu-button { color:var(--text); }
 .co-pr-assign:focus-visible,.co-agent-menu-button:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
 .co-agent-menu-button.is-button { min-height:36px; padding:6px 12px; border-color:var(--border); background:var(--surface); color:var(--text); }
-.co-agent-menu-button.is-active { border-color:color-mix(in srgb,var(--accent) 45%,var(--border)); background:var(--accent-dim); color:var(--text); }
 .co-agent-menu-button:disabled { opacity:.5; cursor:default; }
 .co-agent-menu-button > .co-icon:last-child { transition:transform .15s; }
 .co-agent-menu-button[aria-expanded=true] > .co-icon:last-child { transform:rotate(180deg); }
@@ -678,7 +677,6 @@ input[type=checkbox].co-switch:focus-visible { outline:2px solid var(--accent); 
 .co-desk-chip { padding:1px 8px; border-radius:6px; font-size:14px; font-weight:600; background:var(--surface-2); color:var(--text); }
 .co-desk-chip.is-you { background:var(--accent-dim, var(--surface-2)); color:var(--accent); }
 .co-desk-chip.is-blocker { background:color-mix(in srgb, var(--danger, #f87171) 14%, transparent); color:var(--danger, #f87171); }
-.co-desk-chip.is-review { display:inline-flex; align-items:center; gap:6px; background:var(--accent-dim, var(--surface-2)); color:var(--accent); }
 .co-desk-chip.is-waiting { background:color-mix(in srgb, var(--co-warn,#b38235) 16%, transparent); color:var(--co-warn,#b38235); }
 .co-desk-chip.is-ready { background:color-mix(in srgb, var(--green, #10b981) 14%, transparent); color:var(--green, #10b981); }
 .co-desk-merged-icon { color:var(--muted); margin-top:3px; }
@@ -757,10 +755,9 @@ a.co-related-row:hover { border-color:color-mix(in srgb,var(--accent) 36%,var(--
 @keyframes co-comet { from { stroke-dashoffset:var(--L); } to { stroke-dashoffset:calc(var(--L) - var(--lap)); } }
 @media(prefers-reduced-motion:reduce) { .co-frame-comet { animation:none; } .co-arc { animation:none; } }
 /* A smooth gradient ring that fades out behind its head, like the comet. */
-.co-arc { display:inline-block; width:14px; height:14px; flex:none; border-radius:50%; background:conic-gradient(from 0deg,transparent 0%,color-mix(in srgb,var(--accent) 35%,transparent) 40%,var(--accent) 100%); -webkit-mask:radial-gradient(farthest-side,transparent calc(100% - 2.6px),#000 calc(100% - 2.2px)); mask:radial-gradient(farthest-side,transparent calc(100% - 2.6px),#000 calc(100% - 2.2px)); animation:co-arc-spin 1.05s linear infinite; will-change:transform; transform:translateZ(0); }
-@keyframes co-arc-spin { to { transform:rotate(360deg); } }
-.co-agent-menu-button.is-active .co-arc { margin-right:-2px; }
-.co-pr-agent-state .co-arc { width:13px; height:13px; }
+.co-arc { display:inline-block; width:14px; height:14px; flex:none; border-radius:50%; background:conic-gradient(from 0deg,transparent 0%,color-mix(in srgb,var(--accent) 35%,transparent) 40%,var(--accent) 100%); -webkit-mask:radial-gradient(farthest-side,transparent calc(100% - 2.6px),#000 calc(100% - 2.2px)); mask:radial-gradient(farthest-side,transparent calc(100% - 2.6px),#000 calc(100% - 2.2px)); animation:co-arc-spin 1.05s linear infinite; will-change:transform; }
+/* Both ends are the same kind of transform, so the browser turns it by rotating. */
+@keyframes co-arc-spin { from { transform:rotate(0deg); } to { transform:rotate(360deg); } }
 /* The Review tab. */
 .co-review-box { display:grid; gap:12px; padding:16px 18px; border:1px solid var(--border); border-radius:12px; background:var(--surface); }
 .co-review-box > h4, .co-review-head h4 { margin:0; font-size:17px; letter-spacing:-.01em; }

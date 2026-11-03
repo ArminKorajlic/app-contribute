@@ -43,7 +43,7 @@ function DeskPullRow({ project, pr, chip, order, lastLooked, runs, onOpenPull })
           <ChecksBadge pr={pr} />
           {Number.isInteger(pr.additions) ? <span className="co-change-total"><b>+{pr.additions}</b><em>−{pr.deletions}</em></span> : null}
           {chip ? <span className={'co-desk-chip is-' + chip.tone}>{chip.label}</span> : null}
-          {framed !== 'idle' ? <span className={'co-desk-chip ' + (framed === 'reviewing' ? 'is-review' : 'is-waiting')}>{framed === 'reviewing' ? <span className="co-arc" aria-hidden="true" /> : null}{reviewStateTone(status).title}</span> : null}
+          {framed === 'verdict' ? <span className="co-desk-chip is-waiting">{reviewStateTone(status).title}</span> : null}
         </span>
       </span>
       {comments ? <span className="co-pr-comments"><Icon name="comment" size={15} />{comments}</span> : null}

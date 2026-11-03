@@ -455,7 +455,8 @@ test('the workspace opens only after its first sync and never falls back to the 
 test('a review chip opens the PR on its Review tab, and a started review no longer opens a pane in the list', () => {
   const pullsSource = readFileSync(new URL('../ui/PullRequests.jsx', import.meta.url), 'utf8')
   assert.match(pullsSource, /onOpenPage \? onOpenPage\(pr, 'review'\)/)
-  assert.match(pullsSource, /onOpenPage\(pr, 'conversation'\)/) // the title still opens Comments
+  // The title opens Comments, or the Review tab while a review is running.
+  assert.match(pullsSource, /onOpenPage\(pr, frameState\(statusFor\(pr\)\) === 'reviewing' \? 'review' : 'conversation'\)/)
   assert.doesNotMatch(pullsSource, /setChoice\(null\); setSelected\(new Set\(\)\)\n\s*task\?\.open\(`task:run:\$\{result\.run\.id\}`\)/)
   // The row wears the comet frame while an agent works; the Review tab knows your own PRs.
   assert.match(pullsSource, /<ReviewFrame key=\{key\} state=\{framed\}/)
@@ -474,6 +475,28 @@ test('the desk reads review runs once, wraps its rows in the frame, and opens a 
   assert.match(appSource, /checkUpstream\(token, sourceProjects\), refreshReviewRuns\(\)/)
   assert.match(appSource, /if \(!reviewActive\) return undefined/)
   assert.match(sourceMapSource, /runs=\{desk\.runs\}/)
+})
+
+test('a running review is shown by the frame and the Review tab only: no Reviewing tag, no Agent spinner or highlight', () => {
+  const pullsSource = readFileSync(new URL('../ui/PullRequests.jsx', import.meta.url), 'utf8')
+  const deskSource = readFileSync(new URL('../ui/DeskViews.jsx', import.meta.url), 'utf8')
+  const menuSource = readFileSync(new URL('../ui/AgentMenu.jsx', import.meta.url), 'utf8')
+  const detailSource = readFileSync(new URL('../ui/PullRequestDetail.jsx', import.meta.url), 'utf8')
+  // Tags for finished or waiting reviews stay; the one for a running review goes.
+  assert.match(pullsSource, /\{status && framed !== 'reviewing' \? <button className=\{'co-pr-agent-state'/)
+  assert.match(deskSource, /\{framed === 'verdict' \? <span className="co-desk-chip is-waiting">/)
+  assert.doesNotMatch(deskSource, /is-review/)
+  assert.doesNotMatch(menuSource, /co-arc|is-active|active =/)
+  assert.doesNotMatch(pullsSource, /<AgentMenu active=/)
+  assert.doesNotMatch(detailSource, /<AgentMenu[^>]* active=/)
+  assert.doesNotMatch(workspaceTheme, /co-agent-menu-button\.is-active/)
+})
+
+test('the spinner turns: both ends of its animation are rotations, with no base transform to cancel it', () => {
+  // A base translateZ(0) next to a keyframe rotate(360deg) interpolates to no movement at all.
+  const arc = workspaceTheme.match(/\.co-arc \{[^}]*\}/)?.[0] || ''
+  assert.doesNotMatch(arc, /transform\s*:/)
+  assert.match(workspaceTheme, /@keyframes co-arc-spin \{ from \{ transform:rotate\(0deg\); \} to \{ transform:rotate\(360deg\); \} \}/)
 })
 
 test('the PR page is a task surface: the review window opens, panes close, the detail stays put', () => {
