@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { awaitsGithub, reviewIntent, OWNER_ITEM_STATES, collaborationRequest, discoverPull, discoverPulls, liveSelection, loadReviewRuns, matchingPulls, mayAssign, mergeSelection, prKey, reviewForPull, reviewItemProgress, reviewRunRequest, reviewRunTitle, runDetailsElsewhere, notOursToObserve, assignPulls, takeoverScope } from '../collaboration.js'
+import { awaitsGithub, earlierReviewForPull, reviewIntent, OWNER_ITEM_STATES, collaborationRequest, discoverPull, discoverPulls, liveSelection, loadReviewRuns, matchingPulls, mayAssign, mergeSelection, prKey, reviewForPull, reviewItemProgress, reviewRunRequest, reviewRunTitle, runDetailsElsewhere, notOursToObserve, assignPulls, takeoverScope } from '../collaboration.js'
 import { acknowledgeAssignment, emptyPullView, invalidatedSelection, isOpenPull, isOwnPull, observePulls, pullsInView } from '../pull-view.js'
 import { frameState } from '../review-frame.js'
 import { ReviewFrame } from './ReviewFrame.jsx'
@@ -448,7 +448,7 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
   const reviewProps = pr => {
     const run = statusFor(pr)?.run
     return {
-      own: isOwnPull(pr, conn.login), busy, error: runError, pulls, listState: data,
+      own: isOwnPull(pr, conn.login), earlier: run ? null : earlierReviewForPull(relevantRuns, pr), busy, error: runError, pulls, listState: data,
       onStart: job => choose([pr], job, prKey(pr)),
       onStop: run ? () => stopRun(run) : undefined,
       onRetry: run ? () => choose(retryPulls(run), run.mode === 'review_merge' ? 'review' : run.mode, runAnchor(run)) : undefined,

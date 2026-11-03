@@ -5,6 +5,7 @@ import { openAgentConversation } from './BatchAction.jsx'
 import { ClampedMarkdown } from './ClampedMarkdown.jsx'
 import { CopyId, commentReference } from './CopyId.jsx'
 import { ReviewFrame } from './ReviewFrame.jsx'
+import { TimeAgo } from './GithubParts.jsx'
 import { VerdictProposal, savedVersion } from './RunDetail.jsx'
 
 // Seconds since the run started, ticking once a second while `running`.
@@ -38,10 +39,11 @@ export function reviewStateTone(status) {
 
 // The Review tab of a PR: nothing yet, a running review, or what the last review
 // found. It reuses the run's own verdict and conversation actions.
-export function ReviewTab({ pr, status, own = false, readOnly = false, busy = false, error = '', onStart, onStop, onRetry, onVerdict, pulls = [], listState = {} }) {
+export function ReviewTab({ pr, status, earlier = null, own = false, readOnly = false, busy = false, error = '', onStart, onStop, onRetry, onVerdict, pulls = [], listState = {} }) {
   const tone = reviewStateTone(status)
   const running = tone.key === 'running'
   const elapsed = useElapsed(status?.run?.created_at, running)
+  if (!status && earlier) return <EarlierReview earlier={earlier} readOnly={readOnly} onStart={onStart} />
   if (!status) {
     return <div className="co-review-box" aria-label="Review">
       <h4>No review yet</h4>
@@ -84,4 +86,25 @@ export function ReviewTab({ pr, status, own = false, readOnly = false, busy = fa
     </div>
   </div>
   return <ReviewFrame state={frameState(status)} radius={12}>{body}</ReviewFrame>
+}
+
+// The PR changed after its last review, so that review is of an earlier version:
+// show it for what it was, and offer to review the version that is here now.
+function EarlierReview({ earlier, readOnly, onStart }) {
+  const { run, item } = earlier
+  return <div className="co-review-box" aria-label="Review">
+    <div className="co-review-head">
+      <h4>Reviewed an earlier version</h4>
+      <span className="co-review-version">{item.head_sha?.slice(0, 7) || '…'} → {item.base_ref || 'main'}</span>
+    </div>
+    <p className="co-review-note" style={{ color: 'var(--text)', fontSize: 15 }}>The last review was <TimeAgo value={run.created_at} />, on commit <code>{item.head_sha?.slice(0, 7)}</code>. This PR has changed since, so its findings may no longer apply.</p>
+    {item.summary ? <ClampedMarkdown markdown={item.summary} /> : null}
+    <div className="co-review-actions">
+      {run.chat_id ? <button type="button" className="co-btn" onClick={() => openAgentConversation(run.chat_id)}>Open that review conversation</button> : null}
+      {readOnly ? null : <>
+        <button type="button" className="co-btn co-btn-primary" onClick={() => onStart?.('private')}>Review this version</button>
+        <button type="button" className="co-btn" onClick={() => onStart?.('github')}>Review on GitHub</button>
+      </>}
+    </div>
+  </div>
 }

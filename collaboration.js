@@ -261,6 +261,17 @@ export function reviewForPull(runs, pr) {
   return matches.find(match => match.exactBase) || matches[0] || null
 }
 
+// The newest review of this PR at some other version, for when the PR has
+// changed since it was reviewed: reviewForPull only matches the current head, and
+// "never reviewed" would be wrong.
+export function earlierReviewForPull(runs, pr) {
+  const key = `${pr.repository.nameWithOwner.toLowerCase()}#${pr.number}`
+  const matches = (runs || []).flatMap(run => (run.items || [])
+    .filter(item => `${item.repo.toLowerCase()}#${item.number}` === key && item.head_sha !== pr.headRefOid)
+    .map(item => ({ run, item })))
+  return matches.sort((a, b) => Date.parse(b.run.created_at || '') - Date.parse(a.run.created_at || ''))[0] || null
+}
+
 // The Agent menu's jobs as the platform sees them. Private review and Review
 // on GitHub are both the 'review' mode, preset to opposite publishing options;
 // a raw mode (a retry, a saved link) passes through with its own defaults.

@@ -287,3 +287,19 @@ test('the Agent menu jobs map to exact platform modes and publishing presets', a
   // A raw mode (a retry) passes through with its own defaults.
   assert.deepEqual(reviewIntent('review_merge'), { mode: 'review_merge' })
 })
+
+test('a PR changed after its review still finds that review, as an earlier version', async () => {
+  const { earlierReviewForPull, reviewForPull } = await import('../collaboration.js')
+  const pr = { number: 233, headRefOid: 'new'.padEnd(40, '1'), baseRefName: 'main', repository: { nameWithOwner: 'Team/Repo' } }
+  const run = (id, at, head, number = 233, repo = 'team/repo') => ({ id, created_at: at, items: [{ repo, number, head_sha: head, base_ref: 'main', state: 'all_clear' }] })
+  const older = run('older', '2026-11-03T08:00:00Z', 'old'.padEnd(40, '0'))
+  const newest = run('newest', '2026-11-03T09:30:00Z', 'mid'.padEnd(40, '0'))
+  const runs = [older, newest, run('other-pr', '2026-11-03T09:40:00Z', 'zzz'.padEnd(40, '0'), 9), run('other-repo', '2026-11-03T09:50:00Z', 'yyy'.padEnd(40, '0'), 233, 'team/else')]
+  // Nothing was reviewed at the current head, so it is not "never reviewed".
+  assert.equal(reviewForPull(runs, pr), null)
+  assert.equal(earlierReviewForPull(runs, pr).run.id, 'newest')
+  assert.equal(earlierReviewForPull([], pr), null)
+  // A review of the current head is the review, not an earlier one.
+  const current = run('current', '2026-11-03T10:00:00Z', pr.headRefOid)
+  assert.equal(earlierReviewForPull([current], pr), null)
+})

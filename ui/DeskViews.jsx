@@ -1,6 +1,10 @@
 import { useState } from 'react'
 import { authoredPullState, authoredPulls, chainPulls, editProjects, feedbackPull, mergedRecently, newSince } from '../desk.js'
 import { attentionListItems } from '../run.js'
+import { reviewForPull } from '../collaboration.js'
+import { frameState, reviewForRecord } from '../review-frame.js'
+import { ReviewFrame } from './ReviewFrame.jsx'
+import { reviewStateTone } from './ReviewTab.jsx'
 import { localChangeSentence, recordsForProject } from '../source-map.js'
 import { STATUS_LABELS } from '../domain.js'
 import { AttentionRow } from './AttentionList.jsx'
@@ -18,12 +22,16 @@ function NewDot({ value, lastLooked }) {
   return <span className="co-newdot" title="Changed since you last looked" />
 }
 
-// One PR under its project's card. The whole row opens the PR in its project,
-// where review, assignment and agent actions live; the chip says why it is here.
-function DeskPullRow({ project, pr, chip, order, lastLooked, onOpenPull }) {
+// One PR under its project's card. The whole row opens the PR on its own page;
+// a PR with a review running or waiting wears the comet frame, says so in a chip,
+// and opens on its Review tab.
+function DeskPullRow({ project, pr, chip, order, lastLooked, runs, onOpenPull }) {
   const comments = pr.comments?.totalCount || 0
+  const status = reviewForPull(runs || [], pr)
+  const framed = frameState(status)
   return (
-    <button type="button" className="co-desk-row" onClick={() => onOpenPull(project, pr)}>
+    <ReviewFrame state={framed} inset={3} radius={10}>
+    <button type="button" className="co-desk-row" onClick={() => onOpenPull(project, pr, framed === 'idle' ? 'conversation' : 'review')}>
       <PullStateIcon pr={pr} />
       <span className="co-desk-row-main">
         <span className="co-desk-row-title"><NewDot value={pr.updatedAt} lastLooked={lastLooked} />{pr.title}</span>
@@ -35,10 +43,12 @@ function DeskPullRow({ project, pr, chip, order, lastLooked, onOpenPull }) {
           <ChecksBadge pr={pr} />
           {Number.isInteger(pr.additions) ? <span className="co-change-total"><b>+{pr.additions}</b><em>−{pr.deletions}</em></span> : null}
           {chip ? <span className={'co-desk-chip is-' + chip.tone}>{chip.label}</span> : null}
+          {framed !== 'idle' ? <span className={'co-desk-chip ' + (framed === 'reviewing' ? 'is-review' : 'is-waiting')}>{framed === 'reviewing' ? <span className="co-arc" aria-hidden="true" /> : null}{reviewStateTone(status).title}</span> : null}
         </span>
       </span>
       {comments ? <span className="co-pr-comments"><Icon name="comment" size={15} />{comments}</span> : null}
     </button>
+    </ReviewFrame>
   )
 }
 
@@ -67,10 +77,10 @@ const requestChip = { label: 'Asks for your review', tone: 'you' }
 
 // Rows per project and view. Review requests come first in Needs you; the
 // owner's saved-work decisions follow; then their own actionable PRs.
-function projectRows(view, project, { login, decisionsFor, lastLooked, query, onOpenPull, onOpenRecord }) {
+function projectRows(view, project, { login, decisionsFor, lastLooked, query, runs, onOpenPull, onOpenRecord }) {
   const rows = []
   const pull = (pr, chip, order) => rows.push(
-    <DeskPullRow key={`pr:${pr.number}`} project={project} pr={pr} chip={chip} order={order} lastLooked={lastLooked} onOpenPull={onOpenPull} />,
+    <DeskPullRow key={`pr:${pr.number}`} project={project} pr={pr} chip={chip} order={order} lastLooked={lastLooked} runs={runs} onOpenPull={onOpenPull} />,
   )
   const requests = view === 'work' ? [] : (project.reviewRequests || []).filter(pr => matches(query, pr.title, String(pr.number), pr.author?.login))
   const all = decisionsFor(project)
@@ -79,21 +89,22 @@ function projectRows(view, project, { login, decisionsFor, lastLooked, query, on
   const mine = view === 'needs' || view === 'mine'
     ? authoredPulls(project.incomingReviews, login).filter(pr => matches(query, pr.title, String(pr.number)))
     : []
+  const decisionRow = item => (
+    <ReviewFrame key={`decision:${item.id}`} state={frameState(reviewForRecord(runs, item.record))} inset={3} radius={10}>
+      <AttentionRow item={item} heading={() => item.label} onSelect={() => openDecision(item)} />
+    </ReviewFrame>
+  )
   const openDecision = item => {
     const target = feedbackPull(item)
     if (target) onOpenPull(project, target)
     else onOpenRecord(project, item)
   }
   if (view === 'work') {
-    decisions.forEach(item => rows.push(
-      <AttentionRow key={`decision:${item.id}`} item={item} heading={() => item.label} onSelect={() => openDecision(item)} />,
-    ))
+    decisions.forEach(item => rows.push(decisionRow(item)))
     return rows
   }
   if (view !== 'mine') requests.forEach(pr => pull(pr, requestChip))
-  decisions.forEach(item => rows.push(
-    <AttentionRow key={`decision:${item.id}`} item={item} heading={() => item.label} onSelect={() => openDecision(item)} />,
-  ))
+  decisions.forEach(item => rows.push(decisionRow(item)))
   if (view === 'needs') {
     mine.map(pr => [pr, authoredPullState(pr)])
       .filter(([, state]) => state.tone !== 'quiet' && state.key !== 'approved_draft')
@@ -149,8 +160,8 @@ const EMPTY = {
 }
 
 // The selected side view: one card per app, in the projects list's own order.
-export function DeskView({ view, projects, records, login, decisionsFor, lastLooked, query, onOpenProject, onOpenPull, onOpenRecord }) {
-  const context = { login, decisionsFor, lastLooked, query, onOpenPull, onOpenRecord }
+export function DeskView({ view, projects, records, login, decisionsFor, lastLooked, query, runs = [], onOpenProject, onOpenPull, onOpenRecord }) {
+  const context = { login, decisionsFor, lastLooked, query, runs, onOpenPull, onOpenRecord }
   const envelopes = []
   for (const project of projects) {
     let rows = []
