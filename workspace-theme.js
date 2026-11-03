@@ -735,6 +735,7 @@ input[type=checkbox].co-switch:focus-visible { outline:2px solid var(--accent); 
  .co-pr-detail-actions .co-btn-label, .co-pr-detail .co-tab-more { display:none; }
  .co-pr-detail-actions .co-btn:has(.co-btn-label) { min-width:44px; padding-inline:12px; }
  .co-pr-detail .co-detail-tabs { gap:14px; }
+ .co-pr-detail .co-tab-dot + .co-tab-count { display:none; }
  .co-pr-detail .co-detail-tabs button { font-size:14px; }
 }
 .co-markdown .co-md-image { display:inline-flex; align-items:center; gap:6px; margin:4px 0; padding:4px 10px; border:1px solid var(--border); border-radius:8px; background:var(--surface); color:var(--accent); font-size:14px; text-decoration:none; }
