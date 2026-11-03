@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { frontendModules, renderModule } from './render-harness.mjs'
@@ -121,4 +122,23 @@ test('the search filters rows and an empty view explains itself', async t => {
   assert.match(api.view({ ...base, query: 'thing 7' }), /Improve thing 7/)
   assert.doesNotMatch(api.view({ ...base, query: 'zzz' }), /co-envelope/)
   assert.match(api.view({ ...base, query: 'zzz' }), /Nothing matches your search/)
+})
+
+test('each app card folds with a chevron: down means open it, up means fold it', async t => {
+  const api = await ui(t)
+  if (!api) return
+  const project = projectFixture('mobius', { reviewRequests: [pullFixture(7)] })
+  const html = api.view({
+    view: 'requests', projects: [project], records: [], login: 'owner', decisionsFor: () => [],
+    lastLooked: '', query: '', onOpenProject: () => {}, onOpenPull: () => {}, onOpenRecord: () => {},
+  })
+  assert.match(html, /class="co-envelope-toggle"[^>]*aria-expanded="true"[^>]*aria-label="Collapse Möbius"/)
+  assert.match(html, /Improve thing 7/)
+})
+
+test('the status boxes start at the top, with only a button sitting low', () => {
+  const css = readFileSync(new URL('../workspace-theme.js', import.meta.url), 'utf8')
+  assert.match(css, /\.co-position-line \{[^}]*align-items:flex-start/)
+  assert.match(css, /\.co-position-line > \.co-btn \{[^}]*align-self:flex-end/)
+  assert.match(css, /\.co-envelope-toggle\[aria-expanded="true"\] \.co-icon \{ transform:rotate\(180deg\)/)
 })

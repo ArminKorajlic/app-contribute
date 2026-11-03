@@ -288,8 +288,8 @@ export const WORKSPACE_CSS = `
    fit and stacked on a phone. The 1px gap over a border-coloured box draws the
    divider in either layout. */
 .co-project-position { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:1px; margin:16px 0 18px; border:1px solid var(--border); border-radius:8px; background:var(--border); overflow:hidden; }
-.co-position-line { display:flex; flex-wrap:wrap; align-items:flex-end; gap:8px 12px; padding:12px 14px; background:var(--bg); }
-.co-position-line > .co-btn { flex:0 0 auto; min-height:44px; padding:8px 12px; font-size:14px; }
+.co-position-line { display:flex; flex-wrap:wrap; align-items:flex-start; gap:8px 12px; padding:12px 14px; background:var(--bg); }
+.co-position-line > .co-btn { flex:0 0 auto; align-self:flex-end; min-height:44px; padding:8px 12px; font-size:14px; }
 .co-workspace .co-pr-assignment { padding:0; background:none; border:0; border-radius:0; }
 .co-workspace .co-run { margin-top:0; }
 .co-workspace .co-public-work { margin-top:0; }
@@ -660,6 +660,12 @@ input[type=checkbox].co-switch:focus-visible { outline:2px solid var(--accent); 
 .co-envelope-head strong { font-size:15.5px; font-weight:650; }
 .co-envelope-head .co-rail-count { margin-left:2px; }
 .co-envelope-head .co-quiet-action { margin-left:auto; }
+.co-envelope-toggle { display:inline-flex; align-items:center; justify-content:center; width:44px; min-height:44px; margin:-6px -8px -6px 0; padding:0; border:0; border-radius:8px; background:none; color:var(--muted); cursor:pointer; }
+.co-envelope-toggle:hover { color:var(--text); background:var(--surface-2); }
+.co-envelope-toggle .co-icon { transition:transform .15s; }
+.co-envelope-toggle[aria-expanded="true"] .co-icon { transform:rotate(180deg); }
+@media (prefers-reduced-motion:reduce) { .co-envelope-toggle .co-icon { transition:none; } }
+.co-envelope.is-folded .co-envelope-body { display:none; }
 .co-envelope-glyph { width:22px; height:22px; border-radius:6px; }
 .co-envelope-body { border-top:1px solid var(--border); }
 .co-envelope-body > * + * { border-top:1px solid var(--border); }
