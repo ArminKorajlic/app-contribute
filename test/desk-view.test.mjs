@@ -127,13 +127,45 @@ test('the search filters rows and an empty view explains itself', async t => {
 test('each app card folds with a chevron: down means open it, up means fold it', async t => {
   const api = await ui(t)
   if (!api) return
-  const project = projectFixture('mobius', { reviewRequests: [pullFixture(7)] })
-  const html = api.view({
-    view: 'requests', projects: [project], records: [], login: 'owner', decisionsFor: () => [],
-    lastLooked: '', query: '', onOpenProject: () => {}, onOpenPull: () => {}, onOpenRecord: () => {},
-  })
-  assert.match(html, /class="co-envelope-toggle"[^>]*aria-expanded="true"[^>]*aria-label="Collapse Möbius"/)
-  assert.match(html, /Improve thing 7/)
+  const base = { view: 'requests', records: [], login: 'owner', decisionsFor: () => [], lastLooked: '', query: '', onOpenProject: () => {}, onOpenPull: () => {}, onOpenRecord: () => {} }
+  const two = api.view({ ...base, projects: [projectFixture('mobius', { reviewRequests: [pullFixture(7), pullFixture(8)] })] })
+  assert.match(two, /class="co-envelope-toggle"[^>]*aria-expanded="true"[^>]*aria-label="Collapse Möbius"/)
+  assert.match(two, /Improve thing 7/)
+  // One row has nothing to fold away.
+  const one = api.view({ ...base, projects: [projectFixture('mobius', { reviewRequests: [pullFixture(7)] })] })
+  assert.doesNotMatch(one, /co-envelope-toggle/)
+})
+
+test('a PR with a feedback card is listed once in Needs you, and My PRs keeps it', async t => {
+  const api = await ui(t)
+  if (!api) return
+  const authored = pullFixture(5, { author: { login: 'owner' }, reviewDecision: 'CHANGES_REQUESTED' })
+  const quiet = pullFixture(6, { author: { login: 'owner' }, reviewDecision: 'CHANGES_REQUESTED' })
+  const project = projectFixture('mobius', { incomingReviews: [authored, quiet] })
+  const feedback = { id: 'f5', kind: 'public_attention', label: 'Feedback on five', record: { repo: 'o/r', number: 5 } }
+  const base = { projects: [project], records: [], login: 'owner', decisionsFor: () => [feedback], lastLooked: '', query: '', onOpenProject: () => {}, onOpenPull: () => {}, onOpenRecord: () => {} }
+  const needs = api.view({ ...base, view: 'needs' })
+  assert.equal((needs.match(/Improve thing 5/g) || []).length, 0)
+  assert.match(needs, /Feedback on five/)
+  // A PR with no feedback card still gets its own row.
+  assert.match(needs, /Improve thing 6/)
+  assert.match(api.view({ ...base, view: 'mine' }), /Improve thing 5/)
+})
+
+test('Your edits shows the fact once: no second Open, and it says what the files do', async t => {
+  const api = await ui(t)
+  if (!api) return
+  const project = projectFixture('mobius', { localFiles: 3, compatibleFiles: 3 })
+  const html = api.view({ view: 'edits', projects: [project], records: [], login: 'owner', decisionsFor: () => [], lastLooked: '', query: '', onOpenProject: () => {}, onOpenPull: () => {}, onOpenRecord: () => {} })
+  assert.doesNotMatch(html, /on this Möbius/)
+  assert.match(html, /differ from GitHub/)
+  assert.equal((html.match(/>Open</g) || []).length, 1)
+})
+
+test('the new-dot legend shows only when a dot is on screen', () => {
+  const css = readFileSync(new URL('../workspace-theme.js', import.meta.url), 'utf8')
+  assert.match(css, /\.co-desk-legend \{ display:none/)
+  assert.match(css, /\.co-desk-pane:has\(\.co-desk-row \.co-newdot\) \.co-desk-legend \{ display:flex/)
 })
 
 test('the status boxes start at the top, with only a button sitting low', () => {

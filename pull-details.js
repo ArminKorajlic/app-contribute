@@ -7,10 +7,26 @@ export function pullPath(pr) {
   if (!/^[\w.-]+\/[\w.-]+$/.test(repo || '') || repo.split('/').some(part => part === '.' || part === '..') || !Number.isInteger(pr.number) || pr.number < 1) throw new Error('Choose a valid pull request.')
   return `repos/${repo}/pulls/${pr.number}`
 }
-export async function githubRead(token, path, signal) {
+const RETRY_DELAY_MS = 600
+const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
+
+// One quiet retry for a dropped connection or a GitHub 5xx: the failure the
+// owner would only fix by pressing Try again. A real answer (401, 404, 403)
+// and an abort are never retried.
+async function fetchGithub(token, path, signal, retry) {
   const response = await fetch(`/api/github/api/${path}`, { signal, headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json' } })
-  const data = await response.json().catch(() => null)
-  if (!response.ok || data === null) throw new Error(response.status === 401 ? 'Reconnect GitHub in Möbius Settings → Accounts to read this contribution.' : 'Could not load this information from GitHub. Try again.')
+    .catch(error => (signal?.aborted ? Promise.reject(error) : null))
+  if (retry && (!response || response.status >= 500)) {
+    await wait(RETRY_DELAY_MS)
+    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
+    return fetchGithub(token, path, signal, false)
+  }
+  return response
+}
+export async function githubRead(token, path, signal) {
+  const response = await fetchGithub(token, path, signal, true)
+  const data = response ? await response.json().catch(() => null) : null
+  if (!response?.ok || data === null) throw new Error(response?.status === 401 ? 'Reconnect GitHub in Möbius Settings → Accounts to read this contribution.' : `Could not load this information from GitHub${response ? ` (HTTP ${response.status})` : ' (no connection)'}. Try again.`)
   return data
 }
 export function assertPullVersion(pr, detail) {

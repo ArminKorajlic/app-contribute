@@ -462,7 +462,7 @@ export function SourceMap({
       <div className="co-desk-pane">
       {desk.pull ? (
         <div className="co-pull-page">
-          <button type="button" className="co-desk-back" onClick={desk.onClosePull}><Icon name="left" size={16} />Back</button>
+          <button type="button" className="co-desk-back" onClick={desk.onClosePull}><Icon name="left" size={16} />Back to {selectedProject ? selectedProject.name : viewLabel}</button>
           <PullPageTask>{desk.renderPull()}</PullPageTask>
         </div>
       ) : (

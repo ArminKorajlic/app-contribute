@@ -650,7 +650,8 @@ input[type=checkbox].co-switch:focus-visible { outline:2px solid var(--accent); 
 .co-desk-counts button { display:inline-flex; align-items:center; gap:8px; min-height:38px; padding:6px 12px; border:1px solid var(--border); border-radius:10px; background:var(--surface); color:var(--text); font:500 14px var(--font); cursor:pointer; }
 .co-desk-counts button:hover { border-color:var(--accent); }
 .co-desk-counts button b { color:var(--accent); font-weight:700; font-variant-numeric:tabular-nums; }
-.co-desk-legend { display:flex; align-items:center; gap:7px; margin:0 0 14px; color:var(--muted); font-size:14px; }
+.co-desk-legend { display:none; align-items:center; gap:7px; margin:0 0 14px; color:var(--muted); font-size:14px; }
+.co-desk-pane:has(.co-desk-row .co-newdot) .co-desk-legend { display:flex; }
 .co-newdot { display:inline-block; flex:0 0 auto; width:7px; height:7px; border-radius:50%; background:var(--accent); }
 .co-desk-search { display:flex; align-items:center; gap:9px; margin:0 0 16px; padding:0 12px; min-height:42px; border:1px solid var(--border); border-radius:10px; background:var(--surface); color:var(--muted); }
 .co-desk-search input { flex:1; min-width:0; border:0; background:none; color:var(--text); font:400 15px var(--font); outline:none; }
