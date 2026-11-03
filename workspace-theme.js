@@ -297,7 +297,7 @@ export const WORKSPACE_CSS = `
 .co-status-text p { margin:0; font-size:15px; overflow-wrap:anywhere; }
 .co-status-text p strong { font-weight:650; }
 .co-status-text small { display:block; margin-top:2px; color:var(--muted); font-size:14px; }
-.co-status-actions { display:flex; flex-wrap:wrap; gap:8px; flex:1 0 100%; padding-left:46px; }
+.co-status-actions { display:flex; flex-wrap:wrap; gap:8px; flex:1 0 100%; }
 .co-status-actions .co-btn { gap:8px; min-height:44px; padding:8px 12px; font-size:14px; }
 .co-workspace .co-pr-assignment { padding:0; background:none; border:0; border-radius:0; }
 .co-workspace .co-run { margin-top:0; }
@@ -316,7 +316,6 @@ export const WORKSPACE_CSS = `
 .co-work-progress-row small { font-size:14px; }
 @media(max-width:680px) {
  .co-projects-view { padding:14px 16px 40px; }
- .co-status-actions { padding-left:0; }
  .co-workspace .co-run-primary { align-items:flex-start; gap:12px; }
  .co-workspace .co-run-primary .co-btn { max-width:42%; white-space:normal; }
 }
@@ -498,6 +497,8 @@ export const WORKSPACE_CSS = `
 .co-attn-text { flex:1; min-width:0; display:flex; flex-direction:column; gap:2px; }
 .co-attn-text strong { font-size:15px; font-weight:650; }
 .co-attn-first { display:flex; align-items:center; gap:8px; color:var(--muted); font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.co-decisions:has(> .co-attn:only-child) { border:0; overflow:visible; }
+.co-decisions > .co-attn:not(:only-child) { margin:0; border:0; border-bottom:1px solid var(--border); border-radius:0; }
 .co-attn-go { flex:0 0 auto; gap:8px; min-height:40px; padding:6px 12px; }
 .co-attn > .co-attention-scope, .co-attn > .co-run-list { margin-inline:12px; }
 .co-attn > .co-attention-scope { margin-top:0; margin-bottom:4px; }

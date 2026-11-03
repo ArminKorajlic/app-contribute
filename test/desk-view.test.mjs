@@ -259,3 +259,8 @@ test('labels sit on their own line under the meta line, in list rows and desk ro
   const desk = readFileSync(new URL('../ui/DeskViews.jsx', import.meta.url), 'utf8')
   assert.match(desk, /<\/span>\s*<span className="co-pr-labels"><QuietLabels pr=\{pr\} \/><\/span>/)
 })
+
+test('the attention bar does not sit inside a second border', () => {
+  const css = readFileSync(new URL('../workspace-theme.js', import.meta.url), 'utf8')
+  assert.match(css, /\.co-decisions:has\(> \.co-attn:only-child\) \{ border:0; overflow:visible; \}/)
+})
