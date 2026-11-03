@@ -4,7 +4,7 @@ import { Icon } from './Icons.jsx'
 import { ReviewPromptSettings } from './ReviewPromptSettings.jsx'
 // Component-local settings layout. The app shell keeps its existing theme tokens.
 export const SETTINGS_CSS = `
-.co-settings-workspace { box-sizing:border-box; width:min(820px,calc(100vw - 32px)); height:min(852px,calc(100dvh - 110px)); max-height:calc(100dvh - 110px); display:flex; flex-direction:column; padding:20px; overflow:hidden; }
+.co-settings-workspace { box-sizing:border-box; width:min(820px,calc(100vw - 32px)); height:min(947px,calc(100dvh - 110px)); max-height:calc(100dvh - 110px); display:flex; flex-direction:column; padding:20px; overflow:hidden; }
 .co-settings-workspace > header { flex:0 0 auto; display:flex; align-items:center; justify-content:space-between; margin:0; padding-bottom:12px; border-bottom:1px solid var(--border); }
 .co-settings-layout { flex:1; min-height:0; display:flex; }
 .co-settings-content { flex:1; min-width:0; min-height:0; display:flex; flex-direction:column; padding-top:4px; }
