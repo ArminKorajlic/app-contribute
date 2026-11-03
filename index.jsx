@@ -1632,6 +1632,18 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
     return { ok: sourceOk && ledgerCurrentRef.current, upstream }
   }
   const [refreshingAll, setRefreshingAll] = useState(false)
+  // Whether the last input was the keyboard or a pointer. A row shows its
+  // hover-only controls for keyboard focus, but a mouse user who closed a
+  // picker must not be left with them showing (focus returning from a text
+  // field counts as focus-visible in every browser).
+  useEffect(() => {
+    const root = document.documentElement
+    const keyboard = () => { root.dataset.input = 'keyboard' }
+    const pointer = () => { root.dataset.input = 'pointer' }
+    document.addEventListener('keydown', keyboard, true)
+    document.addEventListener('pointerdown', pointer, true)
+    return () => { document.removeEventListener('keydown', keyboard, true); document.removeEventListener('pointerdown', pointer, true) }
+  }, [])
   // What the last Refresh found, shown under the page title.
   const [refreshNote, setRefreshNote] = useState(null)
   async function refreshAll() {

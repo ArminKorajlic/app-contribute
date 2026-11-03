@@ -741,9 +741,9 @@ input[type=checkbox].co-switch:focus-visible { outline:2px solid var(--accent); 
 [data-theme="light"] .co-quiet-label i { background:var(--co-label-light-bg,var(--muted)); }
 .co-quiet-label.is-bot { padding:0 8px; border-radius:6px; background:var(--surface-2,var(--surface)); font-weight:600; }
 .co-pr-row .co-pr-select { opacity:0; transition:opacity .12s; }
-.co-pr-row:hover .co-pr-select, .co-pr-row:has(:focus-visible) .co-pr-select, .co-pr-row.is-selected .co-pr-select, .co-pr-box.has-selection .co-pr-row .co-pr-select { opacity:1; }
+.co-pr-row:hover .co-pr-select, html[data-input="keyboard"] .co-pr-row:has(:focus-visible) .co-pr-select, .co-pr-row.is-selected .co-pr-select, .co-pr-box.has-selection .co-pr-row .co-pr-select { opacity:1; }
 .co-pr-assign.is-quiet { opacity:0; transition:opacity .12s; }
-.co-pr-row:hover .co-pr-assign.is-quiet, .co-pr-row:has(:focus-visible) .co-pr-assign.is-quiet, .co-pr-row.is-assigning .co-pr-assign.is-quiet { opacity:1; }
+.co-pr-row:hover .co-pr-assign.is-quiet, html[data-input="keyboard"] .co-pr-row:has(:focus-visible) .co-pr-assign.is-quiet, .co-pr-row.is-assigning .co-pr-assign.is-quiet { opacity:1; }
 .co-pr-aside { gap:2px; }
 .co-pr-headline { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
 .co-pr-headline .co-pr-open { flex:1; min-width:0; }

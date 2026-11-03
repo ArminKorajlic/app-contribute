@@ -239,7 +239,8 @@ test('list labels are a dot and plain text, two at most, and a bot says bot', as
 test('rows keep their checkbox and Assign out of sight until wanted, and the header checkbox stays', () => {
   const css = readFileSync(new URL('../workspace-theme.js', import.meta.url), 'utf8')
   assert.match(css, /\.co-pr-row \.co-pr-select \{ opacity:0/)
-  assert.match(css, /\.co-pr-row:has\(:focus-visible\) \.co-pr-select/)
+  // Keyboard focus reveals them; a mouse user who closed a picker is not left with them showing.
+  assert.match(css, /html\[data-input="keyboard"\] \.co-pr-row:has\(:focus-visible\) \.co-pr-select/)
   assert.match(css, /\.co-pr-row\.is-assigning \.co-pr-assign\.is-quiet \{ opacity:1/)
   assert.match(css, /\.co-pr-assign\.is-quiet \{ opacity:0/)
   assert.match(css, /@media \(hover:none\) \{ \.co-pr-row \.co-pr-select, \.co-pr-assign\.is-quiet \{ opacity:1/)
