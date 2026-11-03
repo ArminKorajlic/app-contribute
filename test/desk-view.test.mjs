@@ -243,3 +243,10 @@ test('rows keep their checkbox and Assign out of sight until wanted, and the hea
   assert.match(css, /@media \(hover:none\) \{ \.co-pr-row \.co-pr-select, \.co-pr-assign\.is-quiet \{ opacity:1/)
   assert.doesNotMatch(css, /\n\.co-pr-select \{ opacity:0/)
 })
+
+test('state chips sit beside the title, and the hover Assign is an icon so the row keeps its width', () => {
+  const css = readFileSync(new URL('../workspace-theme.js', import.meta.url), 'utf8')
+  assert.match(css, /\.co-pr-headline \{ display:flex;[^}]*justify-content:space-between/)
+  assert.match(css, /\.co-pr-assign\.is-quiet span \{ display:none; \}/)
+  assert.match(css, /\.co-pr-assign\.is-quiet span \{ display:inline; \}/)
+})
