@@ -347,7 +347,7 @@ export const WORKSPACE_CSS = `
    with one PR; the header and the last row round their own corners instead. */
 .co-pr-box { border:1px solid var(--border); border-radius:8px; }
 .co-pr-box-head { display:flex; align-items:center; gap:6px; flex-wrap:wrap; min-height:52px; padding:4px 12px 4px 4px; background:var(--surface); border-radius:7px 7px 0 0; }
-.co-pr-list > .co-pr-row:last-child { border-radius:0 0 7px 7px; }
+.co-pr-list > .co-frame:last-child > .co-pr-row { border-radius:0 0 7px 7px; }
 .co-pr-box-count { display:inline-flex; align-items:center; gap:6px; margin-right:auto; font-size:14px; font-weight:600; }
 .co-pr-box-actions { display:flex; align-items:center; gap:8px; }
 .co-pr-box-actions .co-btn { min-height:36px; padding:6px 12px; font-size:14px; display:inline-flex; align-items:center; gap:6px; }
@@ -766,7 +766,8 @@ a.co-related-row:hover { border-color:color-mix(in srgb,var(--accent) 36%,var(--
 .co-review-head .co-review-version { margin-left:auto; color:var(--muted); font:13px var(--mono,monospace); }
 .co-review-elapsed { color:var(--muted); font-variant-numeric:tabular-nums; font-size:14px; }
 .co-review-note { margin:0; color:var(--muted); font-size:14px; }
-.co-review-actions { display:flex; flex-wrap:wrap; gap:8px; }
+.co-review-actions { display:flex; flex-wrap:wrap; justify-content:flex-start; gap:8px; }
+.co-review-box > .co-btn, .co-review-box .co-review-actions .co-btn { margin-left:0; }
 .co-review-box.is-clear { border-color:color-mix(in srgb,var(--green) 40%,var(--border)); }
 .co-review-box.is-changes { border-color:color-mix(in srgb,var(--danger) 40%,var(--border)); }
 .co-review-box.is-verdict { border-color:color-mix(in srgb,var(--co-warn,#b38235) 45%,var(--border)); }
