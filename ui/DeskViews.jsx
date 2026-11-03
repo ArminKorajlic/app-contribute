@@ -7,7 +7,7 @@ import { ReviewFrame } from './ReviewFrame.jsx'
 import { reviewStateTone } from './ReviewTab.jsx'
 import { localChangeSentence, localChangeSummary, recordsForProject } from '../source-map.js'
 import { STATUS_LABELS } from '../domain.js'
-import { AttentionRow } from './AttentionList.jsx'
+import { groupNote, lookAtReason } from './AttentionList.jsx'
 import { ChecksBadge, GithubLabel, PullStateIcon, TimeAgo } from './GithubParts.jsx'
 import { Icon } from './Icons.jsx'
 import { ProjectIcon } from './ProjectIcon.jsx'
@@ -52,6 +52,28 @@ function DeskPullRow({ project, pr, chip, order, lastLooked, runs, onOpenPull })
   )
 }
 
+// A saved-work card (review feedback, a decision) in the same shape as a PR
+// row: icon, title, one muted line on why it is here, and a state chip.
+function DeskAttentionRow({ item, onSelect }) {
+  const reason = lookAtReason(item)
+  const detectedAt = item.record?.attention?.detected_at
+  const group = groupNote(item)
+  return (
+    <button type="button" className="co-desk-row" onClick={() => onSelect(item)}>
+      <Icon name={reason.icon} size={16} className={'co-desk-attention-icon is-' + reason.tone} />
+      <span className="co-desk-row-main">
+        <span className="co-desk-row-title">{item.label}</span>
+        {item.detail ? <span className="co-desk-row-why">{item.detail}</span> : null}
+        <span className="co-desk-row-meta">
+          {group ? <span>{group}</span> : null}
+          {detectedAt ? <TimeAgo prefix="Detected " value={detectedAt} /> : null}
+          <span className={'co-desk-chip is-' + (reason.tone === 'blocker' ? 'blocker' : 'you')}>{reason.label}</span>
+        </span>
+      </span>
+    </button>
+  )
+}
+
 // The card that keeps one app's work together: its icon and name on top, the
 // rows inside, and Open to the project page itself.
 function Envelope({ project, count, foldable, children, onOpenProject }) {
@@ -93,7 +115,7 @@ function projectRows(view, project, { login, decisionsFor, lastLooked, query, ru
     : []
   const decisionRow = item => (
     <ReviewFrame key={`decision:${item.id}`} state={frameState(reviewForRecord(runs, item.record))} inset={3} radius={10}>
-      <AttentionRow item={item} heading={() => item.label} onSelect={() => openDecision(item)} />
+      <DeskAttentionRow item={item} onSelect={openDecision} />
     </ReviewFrame>
   )
   const openDecision = item => {

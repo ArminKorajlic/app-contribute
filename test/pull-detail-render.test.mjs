@@ -17,11 +17,10 @@ test('detail opens on the GitHub-style Comments tab with Files changed and Check
   const html = await render(t, 'PullRequestDetail', { pr: { number: 7, repository: { nameWithOwner: 'team/repo' }, headRefOid: 'a'.repeat(40), baseRefOid: 'b'.repeat(40), baseRefName: 'main', url: 'https://github.com/team/repo/pull/7' } })
   if (!html) return
   assert.match(html, /aria-pressed="true">Comments/)
-  assert.match(html, />Files changed</)
+  assert.match(html, />Files<span class="co-tab-more"> changed<\/span></)
   assert.match(html, />Checks<\/button>/)
-  // Bitbucket-style flow: head branch → target, then the author.
-  assert.match(html, /co-branch-flow/)
-  assert.match(html, /<code>main<\/code>/)
+  // The header keeps the state and the author; branch names live in the Description fold.
+  assert.doesNotMatch(html, /co-branch-flow/)
   assert.match(html, /by <b>/)
   assert.match(html, /Loading the conversation/)
   assert.match(html, /aria-label="Choose what an agent does with PR \d+"/)
@@ -41,7 +40,7 @@ for (const items of [[], [{ __typename: 'Issue', number: 2, title: 'Usable issue
     assert.match(html, /Cross-references are unavailable\./)
     assert.match(html, /role="alert"/)
     assert.match(html, />Retry<\/button>/)
-    assert.match(html, /Open on GitHub/)
+    assert.match(html, /View on GitHub/)
     if (items.length) {
       // A boxed row with the issue icon, the title leading, and the reference line under it.
       assert.match(html, /class="co-related-row"/)
@@ -134,6 +133,7 @@ test('the description starts folded and unanswered feedback stays visible under 
     record: { attention: { type: 'changes_requested', url: 'https://github.com/team/repo/pull/9#pullrequestreview-777' } } })
   if (!html) return
   assert.doesNotMatch(html, /<details class="co-gh-description" open/)
+  assert.match(html, /class="co-desc-content"><p class="co-branch-flow" aria-label="Branches"><code>main<\/code>/)
   assert.match(html, /class="co-pr-feedback-flag is-blocker"/)
   assert.match(html, /Changes requested/)
   assert.match(html, /not addressed yet/)
@@ -222,7 +222,7 @@ test('tabs carry GitHub-style count pills: comments, files and a checks dot, no 
   const html = await render(t, 'PullRequestDetail', { pr, cacheStore: loadedConversation(items) })
   if (!html) return
   assert.match(html, /Comments<span class="co-tab-count">4<\/span>/)
-  assert.match(html, /Files changed<span class="co-tab-count">11<\/span>/)
+  assert.match(html, /Files<span class="co-tab-more"> changed<\/span><span class="co-tab-count">11<\/span>/)
   assert.match(html, /co-tab-dot is-failure/)
   // Passed over total stays readable beside the dot.
   assert.match(html, /Checks<span[^>]*class="co-tab-dot is-failure"[^>]*><\/span><span class="co-tab-count">38\/42<\/span>/)
@@ -244,4 +244,26 @@ test('several conversations of one kind fold into a Source chats dropdown, one s
   const one = await render(t, 'PullRequestDetail', { pr, cacheStore: loadedConversation(), provenance: [{ chat_id: 'c1', role: 'source', title: 'Build the thing' }] })
   assert.match(one, /Source chat</)
   assert.doesNotMatch(one, /Source chats|co-chat-group/)
+})
+
+test('files read as one line each, coloured by change, and filter once the list is long', async t => {
+  const file = (name, extra = {}) => ({ filename: name, status: 'modified', additions: 4, deletions: 1, patch: '@@ -1 +1 @@\n-a\n+b', ...extra })
+  const few = await render(t, 'PullFiles', { data: { totals: { files: 2, additions: 8, deletions: 2 }, files: [file('a.js'), file('b.js', { status: 'added' })] } })
+  if (!few) return
+  assert.match(few, /<span class="co-file-name">a\.js<\/span><span class="co-file-stat"><b class="co-file-add">\+4<\/b><b class="co-file-del">−1<\/b>/)
+  // A plain modified file needs no status; an added one says so.
+  assert.doesNotMatch(few, /co-file-status">modified/)
+  assert.match(few, /co-file-status">added/)
+  assert.doesNotMatch(few, /co-file-tools/)
+  const many = await render(t, 'PullFiles', { data: { totals: { files: 12, additions: 48, deletions: 12 }, files: Array.from({ length: 12 }, (_, index) => file(`f${index}.js`)) } })
+  assert.match(many, /aria-label="Filter files by name"/)
+  assert.match(many, />Expand all</)
+})
+
+test('on a phone the secondary PR actions keep a name for screen readers', async t => {
+  const html = await render(t, 'PullRequestDetail', { pr: { number: 7, repository: { nameWithOwner: 'team/repo' }, headRefOid: 'a'.repeat(40), baseRefOid: 'b'.repeat(40), baseRefName: 'main', url: 'https://github.com/team/repo/pull/7' } })
+  if (!html) return
+  assert.match(html, /aria-label="View on GitHub: PR 7" title="View on GitHub"/)
+  const css = (await import('node:fs')).readFileSync(new URL('../workspace-theme.js', import.meta.url), 'utf8')
+  assert.match(css, /\.co-pr-detail-actions \.co-btn-label, \.co-pr-detail \.co-tab-more \{ display:none/)
 })

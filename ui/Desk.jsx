@@ -8,6 +8,10 @@ export function projectRailCount(project, attention) {
   return (attention?.[project.key] || 0) + (project.reviewRequests?.length || 0)
 }
 
+// Only these views are things waiting on the owner; the rest are information
+// and show a quiet number, so a badge always means "do something".
+const WAITING_ON_YOU = ['needs', 'requests', 'work']
+
 function RailViewButton({ view, current, counts, onView }) {
   const badge = railBadge(view.key, counts)
   return (
@@ -17,7 +21,9 @@ function RailViewButton({ view, current, counts, onView }) {
     >
       <Icon name={view.icon} size={16} />
       <span className="co-rail-label">{view.label}</span>
-      {badge ? <b className={'co-rail-count' + (['needs', 'requests'].includes(view.key) ? ' is-you' : '')}>{badge}</b> : null}
+      {badge ? (WAITING_ON_YOU.includes(view.key)
+        ? <b className="co-rail-count is-you">{badge}</b>
+        : <span className="co-rail-quiet" title={view.key === 'edits' ? `${badge} edited ${badge === 1 ? 'file' : 'files'}` : undefined}>{badge}</span>) : null}
     </button>
   )
 }

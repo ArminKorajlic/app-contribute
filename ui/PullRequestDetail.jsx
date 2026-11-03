@@ -120,10 +120,10 @@ function ProvenanceGroup({ role, links }) {
   }, [open])
   const [one, many] = PROVENANCE_LABELS[role] || ['Chat', 'Chats']
   if (links.length === 1) {
-    return <button type="button" className="co-btn co-gh-chat-link" title={links[0].title} onClick={() => openAgentConversation(links[0].chat_id)}><Icon name="feedback" size={15} />{one}</button>
+    return <button type="button" className="co-btn co-gh-chat-link" title={links[0].title} onClick={() => openAgentConversation(links[0].chat_id)} aria-label={one}><Icon name="feedback" size={15} /><span className="co-btn-label">{one}</span></button>
   }
   return <span className="co-chat-group" ref={root} onKeyDown={event => { if (event.key === 'Escape') setOpen(false) }}>
-    <button type="button" className="co-btn co-gh-chat-link" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(value => !value)}><Icon name="feedback" size={15} />{many}<Icon name="chevron" size={14} /></button>
+    <button type="button" className="co-btn co-gh-chat-link" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(value => !value)} aria-label={many}><Icon name="feedback" size={15} /><span className="co-btn-label">{many}</span><Icon name="chevron" size={14} /></button>
     {open ? <div className="co-chat-group-list" role="menu" aria-label={many}>
       {links.map((link, index) => <button type="button" role="menuitem" key={link.chat_id} onClick={() => { setOpen(false); openAgentConversation(link.chat_id) }}>
         <strong>{one} #{index + 1}</strong>{link.title ? <small>{link.title}</small> : null}
@@ -137,7 +137,7 @@ function PullProvenance({ record, onRecord, conversations }) {
   if (!local && !conversations.length) return null
   const roles = [...new Set(conversations.map(link => link.role))]
   return <span className="co-gh-provenance" role="group" aria-label="Where this PR came from">
-    {local ? <button type="button" className="co-btn co-gh-chat-link" title="The saved contribution this PR was sent from" onClick={() => onRecord(record)}><Icon name="prepare" size={15} />Saved work</button> : null}
+    {local ? <button type="button" className="co-btn co-gh-chat-link" title="The saved contribution this PR was sent from" onClick={() => onRecord(record)} aria-label="Saved work"><Icon name="prepare" size={15} /><span className="co-btn-label">Saved work</span></button> : null}
     {roles.map(role => <ProvenanceGroup key={role} role={role} links={conversations.filter(link => link.role === role)} />)}
   </span>
 }
@@ -149,16 +149,27 @@ export function PullFileTotals({ totals, label = 'Total change' }) {
   if (!totals || Object.values(totals).every(value => value === null)) return null
   return <p className="co-detail-stats" aria-label={label}><span>{label}</span>{totals.files !== null ? <span>{totals.files} {totals.files === 1 ? 'file' : 'files'}</span> : null}{totals.additions !== null ? <span className="co-file-add">+{totals.additions} lines</span> : null}{totals.deletions !== null ? <span className="co-file-del">−{totals.deletions} lines</span> : null}</p>
 }
+const FILTER_AFTER = 10
+
 export function PullFiles({ data }) {
+  const [filter, setFilter] = useState('')
+  const [expanded, setExpanded] = useState(false)
   const totals = data?.totals
   const counts = [
     Number.isInteger(totals?.additions) ? `${totals.additions} additions` : null,
     Number.isInteger(totals?.deletions) ? `${totals.deletions} deletions` : null,
   ].filter(Boolean).join(' and ')
+  const needle = filter.trim().toLowerCase()
+  const shownFiles = (data?.files || []).filter(file => !needle || file.filename.toLowerCase().includes(needle))
   return <>
     {Number.isInteger(totals?.files) ? <p className="co-pr-note">Showing {totals.files} changed {totals.files === 1 ? 'file' : 'files'}{counts ? ` with ${counts}` : ''}{data?.page > 1 ? ` · page ${data.page}` : ''}. GitHub may omit or shorten large patches.</p> : null}
-    {(data?.files || []).map(file => <details key={file.filename} className="co-file-disclosure"><summary>{file.filename} <span className="co-detail-stats">{file.status} · +{file.additions} −{file.deletions}</span></summary>{file.previous_filename ? <p>Previously {file.previous_filename}</p> : null}{file.patch ? <DiffView file={pullFileDiff(file)} /> : <p>No text patch is available for this file; it may be binary or too large.</p>}</details>)}
+    {(data?.files || []).length > FILTER_AFTER ? <div className="co-file-tools">
+      <input type="search" value={filter} onChange={event => setFilter(event.target.value)} placeholder="Filter files by name" aria-label="Filter files by name" />
+      <button type="button" className="co-quiet-action" aria-pressed={expanded} onClick={() => setExpanded(value => !value)}>{expanded ? 'Collapse all' : 'Expand all'}</button>
+    </div> : null}
+    {shownFiles.map(file => <details key={`${file.filename}:${expanded}`} className="co-file-disclosure" open={expanded}><summary><span className="co-file-name">{file.filename}</span>{file.status && file.status !== 'modified' ? <em className="co-file-status">{file.status}</em> : null}<span className="co-file-stat"><b className="co-file-add">+{file.additions}</b><b className="co-file-del">−{file.deletions}</b></span></summary>{file.previous_filename ? <p>Previously {file.previous_filename}</p> : null}{file.patch ? <DiffView file={pullFileDiff(file)} /> : <p>No text patch is available for this file; it may be binary or too large.</p>}</details>)}
     {!data?.files?.length ? <p>No changed files returned on this page.</p> : null}
+    {data?.files?.length && !shownFiles.length ? <p>No file on this page matches “{filter}”.</p> : null}
     {data?.capped ? <p>GitHub’s 3,000-file limit has been reached. More files may be omitted; use the review conversation for the full source.</p> : null}
   </>
 }
@@ -223,6 +234,9 @@ export function PullRequestDetail(props) {
 // viewer wrote the PR, busy and error state, the run actions, and the loaded PRs.
 function PullRequestDetailView({ cacheStore, pr, token, onReview, onAssign, onRefresh, canAssign, status, onProgress, onRecord, record, readOnly = false, provenance = [], holdUntilLoaded = false, initialTab = 'conversation', review = {} }) {
   const [tab, setTab] = useState(initialTab)
+  // On a phone the four tabs can overflow; the open one is always brought into view.
+  const tabStrip = useRef(null)
+  useEffect(() => { tabStrip.current?.querySelector('[aria-pressed="true"]')?.scrollIntoView?.({ inline: 'nearest', block: 'nearest' }) }, [tab])
   // A review that starts while this page is open takes you to its tab.
   const hadStatus = useRef(!!status)
   useEffect(() => {
@@ -333,7 +347,7 @@ function PullRequestDetailView({ cacheStore, pr, token, onReview, onAssign, onRe
     {hasMore ? <button className="co-btn" onClick={() => set(current + 1)}>{unknown ? 'Check next page' : 'Next page'}</button> : null}
   </div> : null
   const labels = pr.labels?.nodes || []
-  const tabs = [['conversation', 'Comments'], ['files', 'Files changed'], ['checks', 'Checks'], ['review', 'Review']]
+  const tabs = [['conversation', 'Comments'], ['files', <>Files<span className="co-tab-more"> changed</span></>], ['checks', 'Checks'], ['review', 'Review']]
   const reviewState = reviewStateTone(status)
   // GitHub-style tab badges: one neutral count pill per tab. Comments counts
   // the loaded conversation (comments and reviews); until it loads, GitHub's
@@ -366,13 +380,12 @@ function PullRequestDetailView({ cacheStore, pr, token, onReview, onAssign, onRe
     </header>
     <div className="co-pr-detail-actions">
       {!readOnly ? <AgentMenu variant="button" align="start" disabled={stale} onChoose={mode => onReview?.(mode)} ariaLabel={`Choose what an agent does with PR ${pr.number}`} /> : null}
-      {!readOnly && canAssign ? <button className="co-btn" disabled={stale} onClick={onAssign}><Icon name="person" /> Assign</button> : null}
+      {!readOnly && canAssign ? <button className="co-btn" disabled={stale} onClick={onAssign} aria-label="Assign" title="Assign"><Icon name="person" /><span className="co-btn-label">Assign</span></button> : null}
       {status && onProgress ? <button className="co-btn" onClick={onProgress}>Agent progress</button> : null}
-      {githubUrl ? <a className="co-btn" href={githubUrl} target="_blank" rel="noopener noreferrer" aria-label={`Open on GitHub: PR ${pr.number}`}><Icon name="github" /> View on GitHub</a> : null}
+      {githubUrl ? <a className="co-btn" href={githubUrl} target="_blank" rel="noopener noreferrer" aria-label={`View on GitHub: PR ${pr.number}`} title="View on GitHub"><Icon name="github" /><span className="co-btn-label">View on GitHub</span></a> : null}
       <PullProvenance record={record} onRecord={onRecord} conversations={provenance} />
     </div>
     <div className="co-gh-pr-sub"><PullStateBadge pr={pr} />
-      <span className="co-branch-flow">{pr.headRefName ? <><code>{pr.headRefName}</code><Icon name="arrow-right" size={15} /></> : null}<code>{pr.baseRefName}</code></span>
       <span>by <b>{pr.author?.login || 'Someone'}</b></span></div>
     {conversationLoading ? null : <>
     <details className="co-gh-description">
@@ -381,13 +394,14 @@ function PullRequestDetailView({ cacheStore, pr, token, onReview, onAssign, onRe
         <small>{openedLine(description.data?.user?.login || pr.author?.login, pr.createdAt)}</small>
       </summary>
       <div className="co-desc-content">
+        <p className="co-branch-flow" aria-label="Branches">{pr.headRefName ? <><code>{pr.headRefName}</code><Icon name="arrow-right" size={15} /></> : null}<code>{pr.baseRefName}</code></p>
         {readState(description, 'description')}
         {ready(description) ? <ClampedMarkdown markdown={description.data?.body || '_No description provided._'} /> : null}
       </div>
     </details>
     <PullFeedbackFlag record={record} status={status} activity={ready(activity) ? activity.data : null} />
     </>}
-    <nav className="co-detail-tabs" aria-label="Pull request details">{tabs.map(([key, label]) => <button key={key} aria-pressed={tab === key} onClick={() => setTab(key)}>{label}
+    <nav className="co-detail-tabs" aria-label="Pull request details" ref={tabStrip}>{tabs.map(([key, label]) => <button key={key} aria-pressed={tab === key} onClick={() => setTab(key)}>{label}
       {key === 'checks' && checks?.total ? <><span className={'co-tab-dot is-' + checks.state} title={`${checks.passed} of ${checks.total} checks passed or skipped`} aria-label={{ success: 'checks passed', failure: 'checks failing', pending: 'checks running' }[checks.state]} /><span className="co-tab-count">{checks.passed}/{checks.total}</span></> : null}
       {key === 'review' ? <ReviewMark tone={reviewState} /> : null}
       {Number.isInteger(tabCounts[key]) ? <span className="co-tab-count">{tabCounts[key]}</span> : null}</button>)}</nav>

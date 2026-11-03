@@ -174,3 +174,27 @@ test('the status boxes start at the top, with only a button sitting low', () => 
   assert.match(css, /\.co-position-line > \.co-btn \{[^}]*align-self:flex-end/)
   assert.match(css, /\.co-envelope-toggle\[aria-expanded="true"\] \.co-icon \{ transform:rotate\(180deg\)/)
 })
+
+test('a feedback card is shaped like a PR row: title, why, chip, no second button', async t => {
+  const api = await ui(t)
+  if (!api) return
+  const project = projectFixture('mobius')
+  const item = { id: 'f1', kind: 'public_attention', label: '#9 Feedback title', detail: 'A GitHub review requested changes.', record: { repo: 'o/r', number: 9, attention: { type: 'changes_requested', detected_at: '2026-11-02T08:00:00Z' } } }
+  const html = api.view({ view: 'work', projects: [project], records: [], login: 'owner', decisionsFor: () => [item], lastLooked: '', query: '', onOpenProject: () => {}, onOpenPull: () => {}, onOpenRecord: () => {} })
+  assert.match(html, /class="co-desk-row"/)
+  assert.match(html, /co-desk-row-title">#9 Feedback title/)
+  assert.match(html, /co-desk-row-why">A GitHub review requested changes\./)
+  assert.match(html, /co-desk-chip is-blocker">Changes requested/)
+  assert.doesNotMatch(html, /View PR/)
+})
+
+test('rail badges mark only what waits on you; information shows a quiet number', async t => {
+  const api = await ui(t)
+  if (!api) return
+  const html = api.rail({ view: 'needs', counts: countsFixture, projects: [], attention: {}, selectedKey: '', onView: () => {}, onOpenProject: () => {} })
+  assert.match(html, /co-rail-count is-you">7</)
+  assert.match(html, /co-rail-quiet" title="28 edited files">28</)
+  assert.match(html, /Merged this week<\/span>/)
+  // Edits, My PRs and Merged are quiet numbers, never pills.
+  assert.equal((html.match(/co-rail-quiet/g) || []).length, 2)
+})

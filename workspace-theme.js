@@ -716,6 +716,27 @@ input[type=checkbox].co-switch:focus-visible { outline:2px solid var(--accent); 
 .co-pr-feedback-flag.is-clear b, .co-pr-feedback-flag.is-clear .co-icon { color:var(--green); }
 .co-copy-id { border:1px solid var(--border); border-radius:6px; padding:1px 7px; background:var(--surface-2,var(--surface)); color:var(--muted); font:500 13px var(--mono,monospace); cursor:pointer; }
 .co-copy-id:hover { color:var(--text); border-color:color-mix(in srgb,var(--accent) 34%,var(--border)); }
+.co-rail-quiet { flex:0 0 auto; padding-right:7px; color:var(--muted); font:500 14px/22px var(--font); font-variant-numeric:tabular-nums; }
+.co-desk-row-why { color:var(--muted); font-size:14px; line-height:1.45; overflow-wrap:anywhere; }
+.co-desk-row > .co-desk-attention-icon { margin-top:2px; color:var(--muted); }
+.co-desk-row > .co-desk-attention-icon.is-blocker { color:var(--danger); }
+.co-pr-detail .co-detail-tabs button { font-size:15px; }
+.co-desc-content > .co-branch-flow { margin:0 0 10px; }
+.co-file-tools { display:flex; align-items:center; gap:10px; margin:8px 0 6px; }
+.co-file-tools input { flex:1; min-width:0; min-height:40px; padding:0 12px; border:1px solid var(--border); border-radius:8px; background:var(--surface); color:var(--text); font:inherit; font-size:14px; }
+.co-file-disclosure > summary { display:flex; align-items:center; gap:10px; }
+.co-file-name { flex:1; min-width:0; overflow-wrap:anywhere; }
+.co-file-status { flex:0 0 auto; color:var(--muted); font-size:14px; font-style:normal; }
+.co-file-stat { display:inline-flex; gap:8px; flex:0 0 auto; font:600 14px var(--mono,monospace); font-variant-numeric:tabular-nums; }
+.co-file-add { color:var(--green); }
+.co-file-del { color:var(--danger); }
+@media(max-width:680px) {
+ .co-pr-detail-actions { flex-wrap:nowrap; }
+ .co-pr-detail-actions .co-btn-label, .co-pr-detail .co-tab-more { display:none; }
+ .co-pr-detail-actions .co-btn:has(.co-btn-label) { min-width:44px; padding-inline:12px; }
+ .co-pr-detail .co-detail-tabs { gap:14px; }
+ .co-pr-detail .co-detail-tabs button { font-size:14px; }
+}
 .co-markdown .co-md-image { display:inline-flex; align-items:center; gap:6px; margin:4px 0; padding:4px 10px; border:1px solid var(--border); border-radius:8px; background:var(--surface); color:var(--accent); font-size:14px; text-decoration:none; }
 .co-markdown .co-md-image::before { content:'🖼'; font-size:14px; }
 .co-markdown .co-md-image:hover { border-color:color-mix(in srgb,var(--accent) 40%,var(--border)); }
@@ -750,7 +771,6 @@ a.co-related-row:hover { border-color:color-mix(in srgb,var(--accent) 36%,var(--
 @media(prefers-reduced-motion:reduce) { .co-desc-title .co-icon { transition:none; } }
 .co-pull-page .co-gh-pr-title { font-size:24px; letter-spacing:-.015em; }
 .co-gh-labels { margin-top:8px; }
-.co-envelope .co-attention-row { padding:12px 14px; border:0; border-radius:0; }
 /* The comet frame: a faint base frame, with one comet travelling along it while an agent works. */
 .co-frame { position:relative; border-radius:var(--frame-radius,12px); }
 .co-frame[data-frame="reviewing"] { background:color-mix(in srgb,var(--accent) 5%,transparent); }
