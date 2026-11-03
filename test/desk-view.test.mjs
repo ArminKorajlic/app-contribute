@@ -279,3 +279,9 @@ test('the attention bar toggle has no frame and swaps its word with the chevron'
   assert.match(css, /\.co-attn-hide, \.co-attn\[open\] \.co-attn-show \{ display:none; \}/)
   assert.match(css, /\.co-attn\[open\] \.co-attn-toggle \.co-icon \{ transform:rotate\(180deg\)/)
 })
+
+test('attention rows and the show-more control stay inside the bar', () => {
+  const css = readFileSync(new URL('../workspace-theme.js', import.meta.url), 'utf8')
+  assert.match(css, /\.co-attention-row \{ box-sizing:border-box;/)
+  assert.match(css, /\.co-attn-more \{ box-sizing:border-box;/)
+})
