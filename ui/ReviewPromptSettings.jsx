@@ -5,10 +5,16 @@ import { requestOptions } from '../collaboration.js'
 const PROMPTS = [['review_prompt','Review'],['fix_prompt','Fix'],['merge_prompt','Merge decision']]
 export const PROMPT_CSS = `
 .co-prompt-settings { margin:20px 0; padding:20px 0; border-top:1px solid var(--border); }
-.co-prompt-choices { display:flex; gap:6px; margin:14px 0 8px; }
-.co-prompt-choices button { min-height:44px; min-width:44px; padding:8px 14px; border:0; border-radius:7px; color:var(--muted); background:none; font:inherit; cursor:pointer; }
-.co-prompt-choices button[aria-pressed=true] { color:var(--accent); background:var(--accent-dim); }
-.co-prompt-settings h3 { margin:0 0 8px; font-size:18px; }
+.co-prompt-choices { display:inline-flex; gap:2px; padding:3px; border:1px solid var(--border); border-radius:10px; background:var(--bg); }
+.co-prompt-choices button { min-height:36px; min-width:44px; padding:0 12px; border:0; border-radius:7px; color:var(--muted); background:none; font:500 14px var(--font); cursor:pointer; }
+.co-prompt-choices button[aria-pressed=true] { color:var(--text); background:var(--surface-2,var(--surface)); font-weight:600; }
+.co-prompt-head { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin:14px 0 8px; }
+.co-prompt-head h3 { margin:0; }
+.co-prompt-foot { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-top:10px; }
+.co-prompt-foot-left { display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+.co-prompt-foot-left p { margin:0; }
+.co-prompt-foot-left .co-quiet-action { display:inline-flex; align-items:center; gap:6px; min-height:44px; margin:0; }
+.co-prompt-settings h3 { margin:0 0 8px; font-size:14px; }
 .co-prompt-settings p { font-size:14px; line-height:1.5; color:var(--muted); }
 .co-prompt-settings label { display:block; margin:14px 0 6px; font-size:14px; }
 .co-prompt-settings textarea { box-sizing:border-box; width:100%; min-height:120px; padding:12px; border:1px solid var(--border); border-radius:8px; background:var(--bg); color:var(--text); font:inherit; font-size:16px; line-height:1.5; resize:vertical; }
@@ -69,17 +75,20 @@ export function ReviewPromptSettings({ token, appId }) {
   const bytes = data ? promptBytes(data.options[active]) : 0
   const tooLong = data ? oversizedPrompt(data.options) : ''
   return <section className="co-prompt-settings" aria-label="Review workflow settings"><style>{PROMPT_CSS}</style>
+    <div className="co-prompt-head"><h3>Agent prompts</h3>{data ? <PromptChoices active={active} onChange={setActive} /> : null}</div>
     {!data && !error ? <div className="co-settings-skeleton" role="status">Loading settings…</div> : null}
     {data ? <>
-      <p>Edit guidance for new runs. Existing runs stay unchanged.</p>
-      <PromptChoices active={active} onChange={setActive} />
       <div className="co-prompt-editor-group">
-        <label className="co-visually-hidden" htmlFor={`co-${active}`}>{PROMPTS.find(([key]) => key === active)[1]} prompt</label>
+        <label className="co-visually-hidden" htmlFor={`co-${active}`}>{PROMPTS.find(([key]) => key === active)[1]} prompt. Guidance for new runs; existing runs stay unchanged.</label>
         <textarea id={`co-${active}`} value={data.options[active] || ''} aria-describedby={`co-${active}-size`} onChange={event => change(active, event.target.value)} />
-        <p id={`co-${active}-size`} className={bytes > PROMPT_BYTE_LIMIT ? 'co-task-footnote is-failed' : 'co-task-footnote'}>{bytes.toLocaleString('en-US')} of {PROMPT_BYTE_LIMIT.toLocaleString('en-US')} bytes{bytes > PROMPT_BYTE_LIMIT ? ': too long to save' : ''}</p>
-        <button type="button" className="co-quiet-action" onClick={() => change(active, data.defaults[active])}>Restore this prompt</button>
+        <div className="co-prompt-foot">
+          <div className="co-prompt-foot-left">
+            <p id={`co-${active}-size`} className={bytes > PROMPT_BYTE_LIMIT ? 'co-task-footnote is-failed' : 'co-task-footnote'}>{bytes.toLocaleString('en-US')} of {PROMPT_BYTE_LIMIT.toLocaleString('en-US')} bytes{bytes > PROMPT_BYTE_LIMIT ? ': too long to save' : ''}</p>
+            <button type="button" className="co-quiet-action" onClick={() => change(active, data.defaults[active])}><svg className="co-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 7v6h6" /><path d="M3 13a9 9 0 1 0 5-8" /></svg>Restore this prompt</button>
+          </div>
+          <button type="button" className="co-btn co-btn-primary" disabled={busy || Boolean(tooLong)} onClick={save}>Save defaults</button>
+        </div>
       </div>
-      <div className="co-board-actions"><button type="button" className="co-btn co-btn-primary" disabled={busy || Boolean(tooLong)} onClick={save}>Save defaults</button></div>
       {tooLong ? <p role="status">The {PROMPTS.find(([key]) => key === tooLong)[1]} prompt is too long to save.</p> : null}
     </> : null}
     {error ? <p role="alert">{error} <button className="co-quiet-action" disabled={busy} onClick={() => setRetry(x => x + 1)}>{data ? 'Reload settings' : 'Retry'}</button></p> : null}

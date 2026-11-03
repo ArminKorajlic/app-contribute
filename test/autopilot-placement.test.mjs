@@ -18,9 +18,10 @@ test('autopilot defaults on and lives only in Contribute settings', () => {
   assert.match(appSource, /autopilotDefault=\{autopilotDefault\}/)
   assert.match(appSource, /onToggleAutopilotDefault=\{onToggleAutopilotDefault\}/)
   assert.doesNotMatch(appSource, /className="co-autopilot-default/)
-  assert.match(connectionSource, /className="co-autopilot-setting"/)
-  assert.match(connectionSource, /<label htmlFor="co-follow-sent-prs">Follow sent PRs<\/label>/)
-  assert.match(connectionSource, /What Follow sent PRs does/)
+  // One row of the settings card: the label, its helper sentence (always shown, no popover), the switch.
+  assert.match(connectionSource, /<label className="co-set-text" htmlFor="co-follow-sent-prs">/)
+  assert.match(connectionSource, /<strong>Follow sent PRs<\/strong>/)
+  assert.doesNotMatch(connectionSource, /What Follow sent PRs does|co-setting-popover/)
   assert.match(connectionSource, /addresses comments automatically/)
   assert.equal(normalizeAppSettings(null).autopilot_default, true)
   assert.doesNotMatch(cardSource, /After you send, autopilot answers reviews/)

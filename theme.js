@@ -461,56 +461,6 @@ export const CSS = `
     background: var(--surface);
   }
 }
-.co-conn-settings {
-  position: absolute; z-index: 50; top: calc(100% + 7px); right: 0;
-  width: min(320px, calc(100vw - 24px));
-  display: flex; flex-direction: column; gap: 0;
-  padding: 7px; border: 1px solid var(--border); border-radius: 13px;
-  background: var(--surface); box-shadow: 0 14px 36px color-mix(in srgb, #000 28%, transparent);
-}
-.co-autopilot-setting {
-  display: flex; align-items: flex-start; gap: 9px;
-  padding: 0 0 10px; border-bottom: 1px solid var(--border);
-  color: var(--muted); cursor: pointer;
-}
-.co-autopilot-setting input { margin-top: 3px; cursor: pointer; }
-.co-autopilot-setting > span {
-  display: flex; flex-direction: column; gap: 2px; min-width: 0;
-}
-.co-autopilot-setting strong {
-  color: var(--text); font-size: 14px; font-weight: 650;
-}
-.co-autopilot-setting small {
-  font-size: 14px; line-height: 1.45; color: var(--muted);
-}
-.co-conn-settings .co-autopilot-setting {
-  display: grid; grid-template-columns: minmax(0, 1fr) 44px 34px;
-  align-items: center; gap: 2px;
-  min-height: 44px; margin: 0; padding: 7px 8px; cursor: default;
-}
-.co-conn-settings .co-autopilot-setting > label { color: var(--text); font-size: 14px; font-weight: 650; cursor: pointer; }
-.co-setting-help { position: relative; min-width: 44px; height: 44px; }
-.co-setting-info {
-  min-width: 44px; height: 44px; display: inline-flex; align-items: center; justify-content: center;
-  padding: 0; border: 0; border-radius: 9px; background: transparent;
-  color: var(--muted); cursor: pointer;
-}
-.co-setting-info:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-@media (hover: hover) { .co-setting-info:hover { color: var(--text); background: var(--surface-2, var(--bg)); } }
-.co-setting-popover {
-  position: absolute; z-index: 2; top: calc(100% + 5px); right: -36px;
-  width: min(248px, calc(100vw - 48px)); margin: 0; padding: 10px 11px;
-  border: 1px solid var(--border); border-radius: 10px;
-  background: var(--surface); color: var(--muted);
-  box-shadow: 0 10px 28px color-mix(in srgb, #000 24%, transparent);
-  font-size: 14px; line-height: 1.5; text-wrap: pretty;
-}
-.co-setting-popover::before {
-  content: ''; position: absolute; top: -5px; right: 53px;
-  width: 8px; height: 8px; transform: rotate(45deg);
-  border-top: 1px solid var(--border); border-left: 1px solid var(--border);
-  background: var(--surface);
-}
 .co-setting-switch { position: relative; flex: 0 0 auto; width: 34px; height: 20px; display: block !important; }
 .co-setting-switch input { position: absolute; inset: 0; z-index: 1; width: 100%; height: 100%; margin: 0 !important; opacity: 0; cursor: pointer; }
 .co-setting-switch i {
@@ -548,8 +498,6 @@ export const CSS = `
   background: var(--surface); color: var(--text);
   box-shadow: 0 1px 4px color-mix(in srgb, #000 20%, transparent);
 }
-.co-conn-settings > .co-conn-actions { padding: 7px 8px 2px; }
-.co-conn-settings > .co-conn-actions .co-btn { min-height: 44px; padding: 8px 10px; font-size: 14px; }
 
 /* Account summary in the settings panel. The disconnected card switches to a
    column layout; every control uses the shared theme tokens and a 44px min
@@ -567,9 +515,7 @@ export const CSS = `
 .co-settings-panel > header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
 .co-settings-panel h2 { margin: 0; font-size: 18px; }
 .co-settings-panel .co-conn { border: 0; padding: 0; margin: 0; background: transparent; }
-.co-settings-panel .co-conn-settings { position: static; width: 100%; max-width: none; border: 0; box-shadow: none; background: transparent; padding: 0; }
 .co-settings-panel .co-conn.is-connected { display: block; }
-.co-account-login { display: flex; gap: 8px; align-items: center; margin: 0 0 18px; font-size: 14px; }
 .co-account-default { display: flex; gap: 10px; align-items: center; }
 .co-account-default > .co-icon { color: var(--accent); }
 .co-account-default > div { display: grid; gap: 4px; }
