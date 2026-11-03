@@ -198,3 +198,11 @@ test('rail badges mark only what waits on you; information shows a quiet number'
   // Edits, My PRs and Merged are quiet numbers, never pills.
   assert.equal((html.match(/co-rail-quiet/g) || []).length, 2)
 })
+
+test('the sync note says only when it last checked, or that GitHub could not be reached', () => {
+  const guard = readFileSync(new URL('../ui/GithubParts.jsx', import.meta.url), 'utf8')
+  assert.match(guard, /note\.outcome\?\.ok \? <TimeAgo prefix="Checked " value=\{note\.at\} \/> : 'Couldn’t reach GitHub'/)
+  const theme = readFileSync(new URL('../theme.js', import.meta.url), 'utf8')
+  // Beside the button on a wide header; a phone header has no room for it.
+  assert.match(theme, /\.co-toolbar-refresh span, \.co-sync-note \{ display: none; \}/)
+})

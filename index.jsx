@@ -71,6 +71,7 @@ import { openAgentConversation } from './ui/BatchAction.jsx'
 import { ContributionRun } from './ui/Feed.jsx'
 import { Icon } from './ui/Icons.jsx'
 import { SourceMap } from './ui/SourceMap.jsx'
+import { SyncNote } from './ui/GithubParts.jsx'
 import { RepositoryPicker } from './ui/RepositoryPicker.jsx'
 import { ReviewSelection } from './ui/ReviewSelection.jsx'
 import { reviewSelectionIdFromIntent } from './review-selection.js'
@@ -1724,9 +1725,10 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
       <style>{CSS}</style>
       <div className="co-header-shell">
         <Header appId={appId} fromCache={fromCache} checking={checking} onBack={projectOpen && !pullPage ? () => setProjectFocus({ key: '', nonce: crypto.randomUUID() }) : null}>
-          <button type="button" className="co-btn co-toolbar-refresh" onClick={refreshAll} disabled={refreshingAll} aria-busy={refreshingAll} aria-label="Refresh everything from GitHub">
-            <Icon name="refresh" size={16} className={'co-icon' + (refreshingAll ? ' is-spinning' : '')} />
-            <span>{refreshingAll ? 'Refreshing…' : 'Refresh'}</span>
+          <SyncNote note={refreshNote} />
+          <button type="button" className="co-btn co-toolbar-refresh" onClick={refreshAll} disabled={refreshingAll} aria-busy={refreshingAll} aria-label="Sync with GitHub">
+            <Icon name={refreshingAll ? 'refresh' : 'github'} size={16} className={'co-icon' + (refreshingAll ? ' is-spinning' : '')} />
+            <span>{refreshingAll ? 'Syncing…' : 'Sync with GitHub'}</span>
           </button>
           <ConnectionSettings
             appId={appId} conn={conn} token={token} onChanged={refreshConnection}
@@ -1740,7 +1742,7 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
           snapshot={sourceSnapshot} projects={sourceProjects} focusKey={projectFocus} desk={desk}
           onProjectOpenChange={setProjectOpen}
           conn={conn} loading={sourceLoading} error={sourceError}
-          onRetry={refreshAll} refreshNote={refreshNote} checks={upstreamChecks} attention={projectAttention} loadProjectDiff={loadProjectDiff}
+          onRetry={refreshAll} checks={upstreamChecks} attention={projectAttention} loadProjectDiff={loadProjectDiff}
           repositoryPicker={<RepositoryPicker token={token} connected={conn.state === 'connected'} onAdded={(repo, followed) => {
             setFollowedRepos(followed)
             setRepositoryAccess(old => ({ ...old, repositories: [...old.repositories.filter(item => item.nameWithOwner.toLowerCase() !== repo.nameWithOwner.toLowerCase()), repo] }))

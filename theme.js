@@ -114,6 +114,7 @@ export const CSS = `
   color: var(--muted);
 }
 .co-toolbar-refresh { gap: 7px; white-space: nowrap; }
+.co-sync-note { color: var(--muted); font-size: 14px; white-space: nowrap; }
 .co-boot {
   min-height: 70dvh; display: flex; flex-direction: column; align-items: center;
   justify-content: center; gap: 10px; color: var(--muted); text-align: center; padding: 24px;
@@ -1558,7 +1559,7 @@ export const CSS = `
   .co-title { font-size: 17px; }
   .co-toolbar { gap: 3px; }
   .co-toolbar-check { width: 32px; padding: 0; justify-content: center; }
-  .co-toolbar-refresh span { display: none; }
+  .co-toolbar-refresh span, .co-sync-note { display: none; }
   .co-toolbar-refresh { min-width: 40px; justify-content: center; }
   .co-project-control { max-width: 108px; padding-inline: 8px; }
   .co-project-control > span { overflow: hidden; text-overflow: ellipsis; }

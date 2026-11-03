@@ -6,7 +6,6 @@ import {
   projectReadyToPrepare,
   projectBoardFacts,
 } from '../source-map.js'
-import { upstreamCheckSummary } from '../upstream-check.js'
 import { Icon } from './Icons.jsx'
 import { ProjectIcon } from './ProjectIcon.jsx'
 import { TimeAgo } from './GithubParts.jsx'
@@ -58,13 +57,6 @@ function ProjectPosition({ project }) {
       </dl>
     </details>
   )
-}
-
-// The header's Refresh reloads this Möbius and asks GitHub whether anything is
-// new; this line under the page title says what it found, and when.
-function RefreshNote({ note, scope }) {
-  if (!note) return null
-  return <p className="co-check-note" role="status">{upstreamCheckSummary(note.outcome, scope)} <TimeAgo prefix="Checked " value={note.at} /></p>
 }
 
 function ProjectGlyph({ project }) {
@@ -281,7 +273,6 @@ export function SourceMap({
   loading,
   error,
   onRetry,
-  refreshNote,
   loadProjectDiff,
   renderActivity,
   repositoryPicker,
@@ -449,7 +440,6 @@ export function SourceMap({
         <header className="co-view-heading">
           <div>
             <h2>{viewLabel}</h2>
-            <RefreshNote note={refreshNote} scope={projects} />
           </div>
           <div className="co-project-view-actions">
             {repositoryPicker}

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { readUpstreamCheck, upstreamCheckQuery, upstreamCheckSummary, upstreamCheckTargets } from '../upstream-check.js'
+import { readUpstreamCheck, upstreamCheckQuery, upstreamCheckTargets } from '../upstream-check.js'
 
 const sha = 'a'.repeat(40)
 const projects = [
@@ -27,22 +27,4 @@ test('an unanswered repository is left out rather than reported up to date', () 
   const targets = upstreamCheckTargets(projects)
   const results = readUpstreamCheck(targets, { p0: { defaultBranchRef: { compare: { behindBy: 4, status: 'BEHIND' } } }, p1: null }, 'when')
   assert.deepEqual(results, { platform: { newCommits: 4, checkedAt: 'when' } })
-})
-
-test('the check result is one plain sentence for every outcome', () => {
-  assert.equal(upstreamCheckSummary(null, projects), 'Could not reload this Möbius. Try again.')
-  assert.match(upstreamCheckSummary({ ok: true, upstream: null }, projects), /Connect GitHub/)
-  assert.match(upstreamCheckSummary({ ok: true, upstream: { ok: false, results: {} } }, projects), /could not be reached/)
-  const quiet = { platform: { newCommits: 0 }, 'app:1': { newCommits: 0 } }
-  assert.equal(upstreamCheckSummary({ ok: true, upstream: { ok: true, results: quiet } }, projects), 'Nothing new on GitHub.')
-  const moved = { platform: { newCommits: 2 }, 'app:1': { newCommits: 1 } }
-  assert.equal(upstreamCheckSummary({ ok: true, upstream: { ok: true, results: moved } }, projects), 'New on GitHub: Möbius and Kanban.')
-})
-
-test('a project GitHub did not answer for is never summarised as nothing new', () => {
-  assert.equal(upstreamCheckSummary({ ok: true, upstream: { ok: true, results: {} } }, projects), 'Couldn’t check Möbius and Kanban.')
-  const partial = { platform: { newCommits: 3 } }
-  assert.equal(upstreamCheckSummary({ ok: true, upstream: { ok: true, results: partial } }, projects), 'New on GitHub: Möbius. Couldn’t check Kanban.')
-  const local = projects.filter(project => project.builtHere)
-  assert.match(upstreamCheckSummary({ ok: true, upstream: { ok: true, results: {} } }, local), /Nothing here can be compared/)
 })
