@@ -12,6 +12,7 @@ import { useFocusLease } from './useFocusLease.js'
 import { Icon } from './Icons.jsx'
 import { AgentMenu } from './AgentMenu.jsx'
 import { ReviewDialog } from './ReviewDialog.jsx'
+import { AddressFeedbackWindow } from './AddressFeedback.jsx'
 import { ReviewConfirmation } from './ReviewConfirmation.jsx'
 import { projectUpdater } from '../updates.js'
 
@@ -146,7 +147,7 @@ const runAnchor = run => run.items?.length === 1 ? `${run.items[0].repo.toLowerC
 
 // `scope` follows the project tabs: 'all' (every open PR), 'requests' (PRs that
 // ask for the owner's review) or 'mine' (the saved agent reviews only).
-export function PullRequests({ appId, token, project, conn, onChanged, records = [], onRecord, refreshKey, focusPull, focusRun, onFocusRelease, scope = 'all', onScope, onTotal, presentation = 'list', onOpenPage = null }) {
+export function PullRequests({ appId, token, project, conn, onChanged, records = [], onRecord, refreshKey, focusPull, focusRun, onFocusRelease, scope = 'all', onScope, onTotal, presentation = 'list', onOpenPage = null, onStartAgent = null }) {
   const repo = project?.canonical_repo || ''
   const publicRevision = records.filter(record => record.url).map(record => `${record.id}:${record.status}:${record.number}:${record.last_updated_pr_at || ''}`).sort().join('|')
   const session = sessionEntry(repo, `${refreshKey}|${publicRevision}`)
@@ -176,6 +177,8 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
   selectedRef.current = selected
   const pulls = pullsInView(view, focusKey)
   const [assigning, setAssigning] = useState(null)
+  // Address feedback has its own window: it starts an agent conversation, not a review run.
+  const [addressing, setAddressing] = useState(null)
   const [choice, setChoice] = useState(null)
   const [resolved, setResolved] = useState(null)
   // The platform's advertised workflows, remembered across launches.
@@ -385,6 +388,7 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
   // A launch or assignment opened from one PR stays beside that PR; a batch
   // opens under the list header. `anchor` is only placement, never scope.
   function choose(pulls, job, anchor = '') {
+    if (job === 'address') { setAssigning(null); setAddressing({ ...pulls[0], repository: { ...pulls[0].repository } }); return }
     const { mode, intent, options } = reviewIntent(job)
     setResolved(null)
     task?.open('task:review')
@@ -463,6 +467,7 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
     </TaskPane>
   const closeReview = () => { setChoice(null); task?.close() }
   const reviewDialog = task?.activeId === 'task:review' && choice ? <ReviewDialog onClose={closeReview}><ReviewConfirmation appId={appId} token={token} bindCurrentTarget onResolved={value => { setResolved(value); if (value?.capabilities) setCapabilities(value.capabilities) }} disabled={!resolved} onOptionsChange={options => { setResolved(null); setChoice(old => ({ ...old, options, request_id:crypto.randomUUID() })) }} onAgentChange={agent => { setResolved(null); setChoice(old => ({ ...old, agent, request_id:crypto.randomUUID() })) }} choice={choice} busy={busy} error={error} onConfirm={start} onCancel={closeReview} onModeChange={mode => { setError(''); setResolved(null); setChoice(old => ({ ...old, mode, confirmation_scope: undefined, ...scopeFor(mode, old.pulls), request_id: crypto.randomUUID() })) }} capabilities={capabilities} /></ReviewDialog> : null
+  const addressDialog = addressing && onStartAgent ? <ReviewDialog onClose={() => setAddressing(null)}><AddressFeedbackWindow pr={addressing} token={token} onStart={onStartAgent} onClose={() => setAddressing(null)} /></ReviewDialog> : null
   const assignPane = <TaskPane id="task:assign" dock={false}>{assigning ? <AssigneePicker key={assigning.map(prKey).join(',')} pulls={assigning} appId={appId} token={token} ownLogin={conn.login} onClose={() => { setAssigning(null); task?.close() }} onAssigned={(login, keys) => {
       viewRef.current = acknowledgeAssignment(viewRef.current, keys, login, ++generation.current)
       setView(viewRef.current)
@@ -480,6 +485,7 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
     {loadError}
     {relevantRuns.map(runPane)}
     {reviewDialog}
+    {addressDialog}
     <AgentReviewHistory runs={relevantRuns} pulls={pulls} listState={data} onOpen={openRun} />
   </section>
   if (presentation === 'page') {
@@ -496,6 +502,7 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
         <PullRequestDetail key={`${prKey(detailPr)}:${detailPr.headRefOid}:${detailPr.baseRefOid}:${detailRevision}`} cacheStore={detailSnapshot(detailPr)} pr={detailPr} token={token} initialTab={focusPull?.tab === 'review' ? 'review' : 'conversation'} review={reviewProps(detailPr)} onReview={mode => choose([detailPr], mode, opened || prKey(detailPr))} onAssign={() => assignSelection([detailPr], opened || prKey(detailPr))} onRefresh={() => load()} readOnly={!isOpenPull(detailPr)} canAssign={mayAssign(detailPr.repository.viewerPermission)} status={statusFor(detailPr)} onProgress={null} record={recordsForPull(records, detailPr)[0]} onRecord={onRecord} provenance={pullConversations(records, relevantRuns, detailPr)} holdUntilLoaded />
       ) : data.loading || data.error || focusKey ? <Skeleton lines={8} label="Loading the pull request" /> : <p className="co-pr-note" role="status">This pull request is not in the open list. It may be closed; refresh to check.</p>}
       {reviewDialog}
+    {addressDialog}
     </section>
   }
   const assignAnchor = assigning?.anchor && visibleKeys.has(assigning.anchor) ? assigning.anchor : ''
@@ -564,6 +571,7 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
     </div>
     {data.hasNextPage ? <button className="co-btn" disabled={data.loading} onClick={() => load(data.endCursor)}>Load more PRs</button> : null}
     {reviewDialog}
+    {addressDialog}
 
 
   </section>
