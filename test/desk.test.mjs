@@ -137,3 +137,15 @@ test('feedback on a published PR opens the PR itself; publication decisions keep
   assert.equal(feedbackPull({ kind: 'publish', record }), null)
   assert.equal(feedbackPull({ kind: 'public_attention', record: { repo: 'o/r' } }), null)
 })
+
+test('a PR with a feedback card and a fix step counts once in Needs you', () => {
+  const owned = number => ({ number, repository: { nameWithOwner: 'o/r' }, author: { login: 'owner' }, reviewDecision: 'CHANGES_REQUESTED' })
+  const decisions = [{ kind: 'public_attention', record: { repo: 'o/r', number: 1 } }]
+  const counts = deskCounts({ decisions, incoming: [owned(1), owned(2)], records: [], login: 'owner' })
+  // One feedback card + two fixes, but #1 is the same work as its card.
+  assert.equal(counts.questions, 1)
+  assert.equal(counts.fix, 2)
+  assert.equal(counts.doubled, 1)
+  assert.equal(needsCount(counts), 2)
+  assert.equal(railBadge('needs', counts), 2)
+})

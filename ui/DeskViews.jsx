@@ -1,11 +1,11 @@
 import { useState } from 'react'
-import { authoredPullState, authoredPulls, chainPulls, editProjects, feedbackPull, mergedRecently, newSince } from '../desk.js'
+import { authoredPullState, authoredPulls, chainPulls, editProjects, feedbackPull, feedbackPullKeys, mergedRecently, newSince, pullKey } from '../desk.js'
 import { attentionListItems } from '../run.js'
 import { reviewForPull } from '../collaboration.js'
 import { frameState, reviewForRecord } from '../review-frame.js'
 import { ReviewFrame } from './ReviewFrame.jsx'
 import { reviewStateTone } from './ReviewTab.jsx'
-import { localChangeSentence, recordsForProject } from '../source-map.js'
+import { localChangeSentence, localChangeSummary, recordsForProject } from '../source-map.js'
 import { STATUS_LABELS } from '../domain.js'
 import { AttentionRow } from './AttentionList.jsx'
 import { ChecksBadge, GithubLabel, PullStateIcon, TimeAgo } from './GithubParts.jsx'
@@ -54,7 +54,7 @@ function DeskPullRow({ project, pr, chip, order, lastLooked, runs, onOpenPull })
 
 // The card that keeps one app's work together: its icon and name on top, the
 // rows inside, and Open to the project page itself.
-function Envelope({ project, count, children, onOpenProject }) {
+function Envelope({ project, count, foldable, children, onOpenProject }) {
   const [open, setOpen] = useState(true)
   return (
     <section className={'co-envelope' + (open ? '' : ' is-folded')} aria-label={project.name}>
@@ -64,7 +64,7 @@ function Envelope({ project, count, children, onOpenProject }) {
         {PROJECT_TAGS[project.kind] ? <span className="co-source-tag">{PROJECT_TAGS[project.kind]}</span> : null}
         {count ? <b className="co-rail-count">{count}</b> : null}
         <button type="button" className="co-quiet-action" onClick={() => onOpenProject(project.key)}>Open<Icon name="right" size={14} /></button>
-        <button type="button" className="co-envelope-toggle" aria-expanded={open} aria-label={(open ? 'Collapse ' : 'Expand ') + project.name} onClick={() => setOpen(!open)}><Icon name="chevron" size={16} /></button>
+        {foldable ? <button type="button" className="co-envelope-toggle" aria-expanded={open} aria-label={(open ? 'Collapse ' : 'Expand ') + project.name} onClick={() => setOpen(!open)}><Icon name="chevron" size={16} /></button> : null}
       </header>
       <div className="co-envelope-body">{children}</div>
     </section>
@@ -108,7 +108,9 @@ function projectRows(view, project, { login, decisionsFor, lastLooked, query, ru
   if (view !== 'mine') requests.forEach(pr => pull(pr, requestChip))
   decisions.forEach(item => rows.push(decisionRow(item)))
   if (view === 'needs') {
-    mine.map(pr => [pr, authoredPullState(pr)])
+    // A PR that already has its feedback card above is listed once, there.
+    const covered = feedbackPullKeys(attentionListItems(all))
+    mine.filter(pr => !covered.has(pullKey(pr))).map(pr => [pr, authoredPullState(pr)])
       .filter(([, state]) => state.tone !== 'quiet' && state.key !== 'approved_draft')
       .forEach(([pr, state]) => pull(pr, state))
   }
@@ -138,16 +140,21 @@ function MergedRows({ project, records, query, lastLooked }) {
     ))
 }
 
+// The card's own Open already goes to the project, so this row is only the
+// fact. "Differ from GitHub" is what the files are known to do; they may
+// already be in an open PR.
 function EditsRow({ project, onOpenProject }) {
   const sentence = localChangeSentence(project)
+  const text = sentence.edits && !project.builtHere
+    ? ` ${localChangeSummary(project).changed === 1 ? 'differs' : 'differ'} from GitHub.`
+    : sentence.text
   return (
     <button type="button" className="co-desk-row" onClick={() => onOpenProject(project.key)}>
       <Icon name="edit" size={16} className="co-desk-merged-icon" />
       <span className="co-desk-row-main">
-        <span className="co-desk-row-title"><strong>{sentence.strong}</strong>{sentence.text}</span>
+        <span className="co-desk-row-title"><strong>{sentence.strong}</strong>{text}</span>
         {sentence.sub ? <span className="co-desk-row-meta"><span>{sentence.sub}</span></span> : null}
       </span>
-      <span className="co-quiet-action">Open<Icon name="right" size={14} /></span>
     </button>
   )
 }
@@ -179,7 +186,7 @@ export function DeskView({ view, projects, records, login, decisionsFor, lastLoo
       count = rows.length
     }
     if (rows.length) envelopes.push(
-      <Envelope key={project.key} project={project} count={count} onOpenProject={onOpenProject}>{rows}</Envelope>,
+      <Envelope key={project.key} project={project} count={count} foldable={rows.length > 1} onOpenProject={onOpenProject}>{rows}</Envelope>,
     )
   }
   if (!envelopes.length) {

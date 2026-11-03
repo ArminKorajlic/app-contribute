@@ -44,3 +44,18 @@ test('file boundaries and LOC come from full PR totals, not current-page sums', 
   assert.equal(result.hasMore, false)
   assert.equal(result.paginationUnknown, false)
 })
+
+test('one quiet retry covers a dropped connection or a GitHub 5xx, nothing else', async t => {
+  let calls = 0
+  t.mock.method(globalThis, 'fetch', async () => { calls += 1; return calls === 1 ? new Response('{}', { status: 502 }) : response(detail()) })
+  assert.equal((await loadPullDescription('fixture', pr)).body, 'Description')
+  assert.equal(calls, 2)
+  calls = 0
+  t.mock.method(globalThis, 'fetch', async () => { calls += 1; throw new TypeError('network') })
+  await assert.rejects(loadPullDescription('fixture', pr), /no connection/)
+  assert.equal(calls, 2)
+  calls = 0
+  t.mock.method(globalThis, 'fetch', async () => { calls += 1; return new Response('{}', { status: 404 }) })
+  await assert.rejects(loadPullDescription('fixture', pr), /HTTP 404/)
+  assert.equal(calls, 1)
+})

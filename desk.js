@@ -81,25 +81,39 @@ export function mergedRecently(records, now = Date.now()) {
     && (Date.parse(record.updated_at || record.created_at || '') || 0) >= cutoff)
 }
 
+// A PR's identity across feedback records and the authored-PR list.
+export const pullKey = pr => `${String(pr?.repository?.nameWithOwner || '').toLowerCase()}#${pr?.number}`
+
+// PRs that already have a feedback card, so the PR is not listed a second time.
+export function feedbackPullKeys(items) {
+  return new Set((items || []).map(feedbackPull).filter(Boolean).map(pullKey))
+}
+
 // The clickable counts under the heading: what needs the owner, by next step.
 export function deskCounts({ projects = [], decisions = [], incoming = [], records = [], login = '' } = {}) {
-  const states = authoredPulls(incoming, login).map(authoredPullState)
+  const questionItems = attentionListItems(decisions)
+  const covered = feedbackPullKeys(questionItems)
+  const pulls = authoredPulls(incoming, login)
+  const states = pulls.map(authoredPullState)
+  // A PR with a feedback card AND a merge or fix step is one thing to do, not two.
+  const doubled = pulls.filter((pr, index) => covered.has(pullKey(pr)) && (states[index].key === 'ready' || states[index].tone === 'blocker')).length
   const edits = editProjects(projects)
   return {
-    questions: attentionListItems(decisions).length,
+    questions: questionItems.length,
+    doubled,
     requests: (incoming || []).filter(pr => pr.reviewRequested).length,
     merge: states.filter(state => state.key === 'ready').length,
     fix: states.filter(state => state.tone === 'blocker').length,
     drafts: states.filter(state => state.key === 'approved_draft').length,
     editedFiles: edits.reduce((total, project) => total + localChangeSummary(project).changed, 0),
     editProjects: edits.length,
-    mine: authoredPulls(incoming, login).length,
+    mine: pulls.length,
     work: decisions.length,
     merged: mergedRecently(records).length,
   }
 }
 
-export const needsCount = counts => counts.questions + counts.requests + counts.merge + counts.fix
+export const needsCount = counts => counts.questions + counts.requests + counts.merge + counts.fix - (counts.doubled || 0)
 
 export function railBadge(view, counts) {
   switch (view) {

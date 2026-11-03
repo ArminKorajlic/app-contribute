@@ -1725,7 +1725,7 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
     <div className="co-root" data-design-seed="ae1883df">
       <style>{CSS}</style>
       <div className="co-header-shell">
-        <Header appId={appId} fromCache={fromCache} checking={checking} onBack={projectOpen ? () => setProjectFocus({ key: '', nonce: crypto.randomUUID() }) : null}>
+        <Header appId={appId} fromCache={fromCache} checking={checking} onBack={projectOpen && !pullPage ? () => setProjectFocus({ key: '', nonce: crypto.randomUUID() }) : null}>
           <button type="button" className="co-btn co-toolbar-refresh" onClick={refreshAll} disabled={refreshingAll} aria-busy={refreshingAll} aria-label="Refresh everything from GitHub">
             <Icon name="refresh" size={16} className={'co-icon' + (refreshingAll ? ' is-spinning' : '')} />
             <span>{refreshingAll ? 'Refreshing…' : 'Refresh'}</span>
