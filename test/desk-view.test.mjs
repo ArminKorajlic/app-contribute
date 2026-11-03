@@ -169,11 +169,12 @@ test('the new-dot legend shows only when a dot is on screen', () => {
   assert.match(css, /\.co-desk-pane:has\(\.co-desk-row \.co-newdot\) \.co-desk-legend \{ display:flex/)
 })
 
-test('the status boxes start at the top, with only a button sitting low', () => {
+test('the project status is two cards, each a real button with an icon, never a text link', () => {
   const css = readFileSync(new URL('../workspace-theme.js', import.meta.url), 'utf8')
-  assert.match(css, /\.co-position-line \{[^}]*align-items:flex-start/)
-  assert.match(css, /\.co-position-line > \.co-btn \{[^}]*align-self:flex-end/)
-  assert.match(css, /\.co-envelope-toggle\[aria-expanded="true"\] \.co-icon \{ transform:rotate\(180deg\)/)
+  assert.match(css, /\.co-project-position \{ display:grid;/)
+  assert.match(css, /\.co-status-card\.is-warn \{ border-color/)
+  assert.match(css, /\.co-status-actions \.co-btn \{ gap:8px;/)
+  assert.doesNotMatch(css, /co-link-action/)
 })
 
 test('a feedback card is shaped like a PR row: title, why, chip, no second button', async t => {
@@ -182,10 +183,10 @@ test('a feedback card is shaped like a PR row: title, why, chip, no second butto
   const project = projectFixture('mobius')
   const item = { id: 'f1', kind: 'public_attention', label: '#9 Feedback title', detail: 'A GitHub review requested changes.', record: { repo: 'o/r', number: 9, attention: { type: 'changes_requested', detected_at: '2026-11-02T08:00:00Z' } } }
   const html = api.view({ view: 'work', projects: [project], records: [], login: 'owner', decisionsFor: () => [item], lastLooked: '', query: '', onOpenProject: () => {}, onOpenPull: () => {}, onOpenRecord: () => {} })
-  assert.match(html, /class="co-desk-row"/)
+  assert.match(html, /class="co-desk-row is-changes"/)
   assert.match(html, /co-desk-row-title">#9 Feedback title/)
   assert.match(html, /co-desk-row-why">A GitHub review requested changes\./)
-  assert.match(html, /co-desk-chip is-blocker">Changes requested/)
+  assert.match(html, /co-desk-chip is-tone">Changes requested/)
   assert.doesNotMatch(html, /View PR/)
 })
 
@@ -238,7 +239,8 @@ test('list labels are a dot and plain text, two at most, and a bot says bot', as
 test('rows keep their checkbox and Assign out of sight until wanted, and the header checkbox stays', () => {
   const css = readFileSync(new URL('../workspace-theme.js', import.meta.url), 'utf8')
   assert.match(css, /\.co-pr-row \.co-pr-select \{ opacity:0/)
-  assert.match(css, /\.co-pr-row:focus-within \.co-pr-select/)
+  assert.match(css, /\.co-pr-row:has\(:focus-visible\) \.co-pr-select/)
+  assert.match(css, /\.co-pr-row\.is-assigning \.co-pr-assign\.is-quiet \{ opacity:1/)
   assert.match(css, /\.co-pr-assign\.is-quiet \{ opacity:0/)
   assert.match(css, /@media \(hover:none\) \{ \.co-pr-row \.co-pr-select, \.co-pr-assign\.is-quiet \{ opacity:1/)
   assert.doesNotMatch(css, /\n\.co-pr-select \{ opacity:0/)
@@ -249,4 +251,11 @@ test('state chips sit beside the title, and the hover Assign is an icon so the r
   assert.match(css, /\.co-pr-headline \{ display:flex;[^}]*justify-content:space-between/)
   assert.match(css, /\.co-pr-assign\.is-quiet span \{ display:none; \}/)
   assert.match(css, /\.co-pr-assign\.is-quiet span \{ display:inline; \}/)
+})
+
+test('labels sit on their own line under the meta line, in list rows and desk rows', () => {
+  const list = readFileSync(new URL('../ui/PullRequests.jsx', import.meta.url), 'utf8')
+  assert.match(list, /<div className="co-pr-meta">[\s\S]*?<\/div>\s*<div className="co-pr-labels"><QuietLabels pr=\{pr\} \/><\/div>/)
+  const desk = readFileSync(new URL('../ui/DeskViews.jsx', import.meta.url), 'utf8')
+  assert.match(desk, /<\/span>\s*<span className="co-pr-labels"><QuietLabels pr=\{pr\} \/><\/span>/)
 })

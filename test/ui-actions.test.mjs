@@ -415,7 +415,7 @@ test('project chrome consolidates navigation, refresh, files, and preparation ch
   assert.doesNotMatch(sourceMapSource, /RefreshNote|refreshNote/)
   assert.doesNotMatch(sourceMapSource, /Refresh project status|Refresh projects/)
   assert.doesNotMatch(sourceMapSource, /Files, branch and versions <Icon/)
-  assert.match(controlsSource, /className="co-link-action" onClick=\{\(\) => task\?\.open\('task:files'\)\}>See the files/)
+  assert.match(controlsSource, /className="co-btn" onClick=\{\(\) => task\?\.open\('task:files'\)\}><Icon name="search" size=\{15\} \/>See the files/)
 })
 
 test('private proposals have one actionable home without another merge workflow', () => {

@@ -24,6 +24,8 @@ test('each To look at reason names what it is and what its button opens', async 
   if (!lookAtReason) return
   const conflict = lookAtReason(item('a', 'public_attention', pr(1, { type: 'merge_conflict' })))
   assert.deepEqual([conflict.label, conflict.tone, conflict.action], ['Merge blocked', 'blocker', 'Review conflict'])
+  // One general icon, a colour per reason: each reason carries the key that names its colour.
+  assert.deepEqual(['conflict', 'checks', 'changes', 'feedback'].map(key => key), [conflict.key, lookAtReason(item('b2', 'public_attention', pr(2, { type: 'checks_failed' }))).key, lookAtReason(item('c2', 'public_attention', pr(3, { type: 'changes_requested' }))).key, lookAtReason(item('d2', 'private_review', pr(4, { type: 'github_activity' }))).key])
   // Failing checks on a published PR are a blocker, never called feedback.
   const checks = lookAtReason(item('b', 'private_review', pr(2, { type: 'checks_failed' })))
   assert.deepEqual([checks.label, checks.action], ['Checks failing', 'Review checks'])
@@ -44,7 +46,10 @@ test('an older merge blocker stays visible ahead of three newer comments', async
   assert.match(html, /aria-label="To look at"/)
   // Folded on open: the count is enough until the owner expands it.
   assert.doesNotMatch(html, /aria-label="To look at" open/)
-  assert.match(html, /<b>4<\/b>/)
+  assert.match(html, /<b class="co-attn-count">4<\/b>/)
+  assert.match(html, /4 things need you/)
+  // The bar names the most urgent item and gives its button.
+  assert.match(html, /co-attn-tag is-conflict">Merge blocked<\/span> #9/)
   assert.match(html, /Merge blocked[\s\S]*#9[\s\S]*Review conflict/)
   assert.doesNotMatch(html, /#12/)
   assert.match(html, /Show all 4/)

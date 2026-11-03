@@ -4,21 +4,23 @@ import { Icon } from './Icons.jsx'
 import { TimeAgo } from './GithubParts.jsx'
 
 // Why a contribution is in To look at. A blocker stops the PR from merging;
-// news is feedback to read. Every button only opens the saved detail, so its
-// label says what it opens, never that it fixes anything.
+// news is feedback to read. `key` names the colour (see .is-<key> in the
+// stylesheet): one general icon, a different colour per reason. Every button
+// only opens the saved detail, so its label says what it opens, never that it
+// fixes anything.
 const ATTENTION_REASONS = {
-  merge_conflict: { label: 'Merge blocked', tone: 'blocker', icon: 'fix', action: 'Review conflict' },
-  checks_failed: { label: 'Checks failing', tone: 'blocker', icon: 'fix', action: 'Review checks' },
-  changes_requested: { label: 'Changes requested', tone: 'blocker', icon: 'feedback', action: 'View PR' },
-  github_activity: { label: 'New feedback', tone: 'news', icon: 'feedback', action: 'View PR' },
+  merge_conflict: { key: 'conflict', label: 'Merge blocked', tone: 'blocker', action: 'Review conflict' },
+  checks_failed: { key: 'checks', label: 'Checks failing', tone: 'blocker', action: 'Review checks' },
+  changes_requested: { key: 'changes', label: 'Changes requested', tone: 'blocker', action: 'View PR' },
+  github_activity: { key: 'feedback', label: 'New feedback', tone: 'news', action: 'View PR' },
 }
 // Decisions about publishing itself, whatever the record's GitHub attention.
 const KIND_REASONS = {
-  ready_attention: { label: 'Not marked ready', tone: 'blocker', icon: 'info', action: 'Review' },
-  route_attention: { label: 'Choose where to send', tone: 'blocker', icon: 'send', action: 'Choose' },
+  ready_attention: { key: 'ready', label: 'Not marked ready', tone: 'blocker', action: 'Review' },
+  route_attention: { key: 'route', label: 'Choose where to send', tone: 'blocker', action: 'Choose' },
 }
 const FEEDBACK = ATTENTION_REASONS.github_activity
-const DECISION = { label: 'Needs your decision', tone: 'blocker', icon: 'info', action: 'Open' }
+const DECISION = { key: 'decision', label: 'Needs your decision', tone: 'blocker', action: 'Open' }
 
 export function lookAtReason(item) {
   return KIND_REASONS[item?.kind]
@@ -47,8 +49,8 @@ export function AttentionRow({ item, heading, onSelect }) {
   const detectedAt = item.record?.attention?.detected_at
   const group = groupNote(item)
   return (
-    <article className={'co-attention-row is-' + reason.tone}>
-      <Icon name={reason.icon} size={18} />
+    <article className={'co-attention-row is-' + reason.tone + ' is-' + reason.key}>
+      <Icon name="info" size={18} />
       <button type="button" className="co-attention-main" onClick={() => onSelect?.(item)}>
         <span className="co-attention-reason">{reason.label}</span>
         <strong>{heading(item)}</strong>
@@ -66,14 +68,26 @@ const VISIBLE_ROWS = 3
 
 // What on the owner's tracked contributions needs them, blockers first. Review
 // requests and agent questions keep their own places below.
+// Nothing to look at renders nothing: an empty bar would read as an all-clear
+// the app cannot prove (GitHub may be unreachable or partly loaded).
 export function AttentionList({ items = [], heading, onSelect }) {
   const [showAll, setShowAll] = useState(false)
   if (!items.length) return null
   const ordered = byUrgency(items)
+  const first = ordered[0]
+  const firstReason = lookAtReason(first)
   const shown = showAll ? ordered : ordered.slice(0, VISIBLE_ROWS)
   return (
-    <details className="co-run-fold co-look-at" aria-label="To look at">
-      <summary><span>To look at</span><b>{items.length}</b><Icon name="chevron" size={14} /></summary>
+    <details className="co-attn co-look-at" aria-label="To look at">
+      <summary>
+        <b className="co-attn-count">{items.length}</b>
+        <span className="co-attn-text">
+          <strong>{items.length === 1 ? '1 thing needs you' : `${items.length} things need you`}</strong>
+          <small className="co-attn-first"><span className={'co-attn-tag is-' + firstReason.key}>{firstReason.label}</span> {heading(first)}</small>
+        </span>
+        <button type="button" className="co-btn co-btn-primary co-attn-go" onClick={event => { event.preventDefault(); event.stopPropagation(); onSelect?.(first) }}><Icon name="info" size={16} />{firstReason.action}</button>
+        <Icon name="chevron" size={14} />
+      </summary>
       <p className="co-attention-scope">On your tracked contributions. Review requests have their own tab below.</p>
       <div className="co-run-list">{shown.map(item => <AttentionRow key={item.id} item={item} heading={heading} onSelect={onSelect} />)}</div>
       {items.length > VISIBLE_ROWS ? <button type="button" className="co-quiet-action" onClick={() => setShowAll(!showAll)}>{showAll ? 'Show fewer' : `Show all ${items.length}`}</button> : null}

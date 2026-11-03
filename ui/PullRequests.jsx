@@ -527,7 +527,7 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
       const comments = conversationCount(pr)
       const open = isOpenPull(pr)
       const framed = frameState(status)
-      return <ReviewFrame key={key} state={framed} inset={4} radius={10}><article className={'co-pr-row' + (selected.has(key) ? ' is-selected' : '') + (focusKey === key ? ' is-highlighted' : '')} data-pr={key}>
+      return <ReviewFrame key={key} state={framed} inset={4} radius={10}><article className={'co-pr-row' + (selected.has(key) ? ' is-selected' : '') + (focusKey === key ? ' is-highlighted' : '') + (assignAnchor === key ? ' is-assigning' : '')} data-pr={key}>
         <label className="co-pr-select"><input type="checkbox" checked={open && selected.has(key)} disabled={!open} onChange={() => toggle(pr)} aria-label={`Select ${pr.repository.nameWithOwner} #${pr.number}`} /></label>
         <PullStateIcon pr={pr} />
         <div className="co-pr-content">
@@ -544,10 +544,10 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
             <span>#{pr.number} · {pr.author?.login || 'Contributor'} <TimeAgo prefix="opened " value={pr.createdAt} /></span>
             <ChecksBadge pr={pr} />
             {Number.isInteger(pr.additions) ? <span className="co-change-total"><b>+{pr.additions}</b><em>−{pr.deletions}</em></span> : null}
-            <QuietLabels pr={pr} />
             {requestedKeys.has(key) ? <span className="co-pr-requested">Your review requested</span> : null}
             {status && framed !== 'reviewing' ? <button className={'co-pr-agent-state' + (attention ? ' needs-you' : '')} onClick={() => onOpenPage ? onOpenPage(pr, 'review') : task?.open(`task:run:${status.run.id}`)}><Icon name="prepare" size={13} />{halted ? 'Run stopped' : attention ? (['merge_unknown','ready_unknown'].includes(status.item.state) ? 'Check outcome' : 'Needs you') : status.item.state === 'all_clear' && !status.exactBase ? `Reviewed on an older ${pr.baseRefName}` : progress.label}</button> : null}
           </div>
+          <div className="co-pr-labels"><QuietLabels pr={pr} /></div>
         </div>
         <div className="co-pr-aside">
           {comments ? <span className="co-pr-comments" title={`${comments} in the conversation: comments and reviews`}><Icon name="comment" size={16} />{comments}</span> : null}
