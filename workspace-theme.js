@@ -744,6 +744,34 @@ a.co-related-row:hover { border-color:color-mix(in srgb,var(--accent) 36%,var(--
 .co-pull-page .co-gh-pr-title { font-size:24px; letter-spacing:-.015em; }
 .co-gh-labels { margin-top:8px; }
 .co-envelope .co-attention-row { padding:12px 14px; border:0; border-radius:0; }
+/* The comet frame: a faint base frame, with one comet travelling along it while an agent works. */
+.co-frame { position:relative; border-radius:var(--frame-radius,12px); }
+.co-frame[data-frame="reviewing"] { background:color-mix(in srgb,var(--accent) 5%,transparent); }
+.co-frame-svg { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; overflow:visible; z-index:2; }
+.co-frame-track { fill:none; stroke:var(--accent); stroke-opacity:.26; }
+.co-frame[data-frame="verdict"] .co-frame-track { stroke:var(--co-warn,#b38235); stroke-opacity:1; }
+.co-frame[data-frame="reviewing"] .co-frame-svg { filter:drop-shadow(0 0 3px color-mix(in srgb,var(--accent) 80%,transparent)); }
+.co-frame-comet { fill:none; stroke:var(--accent); stroke-linecap:butt; animation:co-comet 15s linear infinite; }
+@keyframes co-comet { from { stroke-dashoffset:var(--L); } to { stroke-dashoffset:calc(var(--L) - var(--lap)); } }
+@media(prefers-reduced-motion:reduce) { .co-frame-comet { animation:none; } .co-arc { animation:none; } }
+/* A smooth gradient ring that fades out behind its head, like the comet. */
+.co-arc { display:inline-block; width:14px; height:14px; flex:none; border-radius:50%; background:conic-gradient(from 0deg,transparent 0%,color-mix(in srgb,var(--accent) 35%,transparent) 40%,var(--accent) 100%); -webkit-mask:radial-gradient(farthest-side,transparent calc(100% - 2.6px),#000 calc(100% - 2.2px)); mask:radial-gradient(farthest-side,transparent calc(100% - 2.6px),#000 calc(100% - 2.2px)); animation:co-arc-spin 1.05s linear infinite; will-change:transform; transform:translateZ(0); }
+@keyframes co-arc-spin { to { transform:rotate(360deg); } }
+.co-agent-menu-button.is-active .co-arc { margin-right:-2px; }
+.co-pr-agent-state .co-arc { width:13px; height:13px; }
+/* The Review tab. */
+.co-review-box { display:grid; gap:12px; padding:16px 18px; border:1px solid var(--border); border-radius:12px; background:var(--surface); }
+.co-review-box > h4, .co-review-head h4 { margin:0; font-size:17px; letter-spacing:-.01em; }
+.co-review-head { display:flex; flex-wrap:wrap; align-items:center; gap:8px 12px; }
+.co-review-head .co-review-version { margin-left:auto; color:var(--muted); font:13px var(--mono,monospace); }
+.co-review-elapsed { color:var(--muted); font-variant-numeric:tabular-nums; font-size:14px; }
+.co-review-note { margin:0; color:var(--muted); font-size:14px; }
+.co-review-actions { display:flex; flex-wrap:wrap; gap:8px; }
+.co-review-box.is-clear { border-color:color-mix(in srgb,var(--green) 40%,var(--border)); }
+.co-review-box.is-changes { border-color:color-mix(in srgb,var(--danger) 40%,var(--border)); }
+.co-review-box.is-verdict { border-color:color-mix(in srgb,var(--co-warn,#b38235) 45%,var(--border)); }
+.co-tab-dot.is-waiting { background:var(--co-warn,#b38235); }
+
 @media(max-width:980px) {
   .co-desk { display:block; }
   .co-rail { display:none; }

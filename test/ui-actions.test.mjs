@@ -452,6 +452,17 @@ test('the workspace opens only after its first sync and never falls back to the 
   assert.match(appSource, /className="co-boot" role="status"/)
 })
 
+test('a review chip opens the PR on its Review tab, and a started review no longer opens a pane in the list', () => {
+  const pullsSource = readFileSync(new URL('../ui/PullRequests.jsx', import.meta.url), 'utf8')
+  assert.match(pullsSource, /onOpenPage \? onOpenPage\(pr, 'review'\)/)
+  assert.match(pullsSource, /onOpenPage\(pr, 'conversation'\)/) // the title still opens Comments
+  assert.doesNotMatch(pullsSource, /setChoice\(null\); setSelected\(new Set\(\)\)\n\s*task\?\.open\(`task:run:\$\{result\.run\.id\}`\)/)
+  // The row wears the comet frame while an agent works; the Review tab knows your own PRs.
+  assert.match(pullsSource, /<ReviewFrame key=\{key\} state=\{framed\}/)
+  assert.match(pullsSource, /own: isOwnPull\(pr, conn\.login\)/)
+  assert.match(appSource, /setPullPage\(\{ key: project\?\.key \|\| '', repo, number: pr\.number, tab,/)
+})
+
 test('the PR page is a task surface: the review window opens, panes close, the detail stays put', () => {
   const pullsSource = readFileSync(new URL('../ui/PullRequests.jsx', import.meta.url), 'utf8')
   // Without a TaskContext every TaskPane renders bare, always, and cannot
