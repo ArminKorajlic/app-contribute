@@ -42,6 +42,8 @@ import { abandonPrepared, cacheFeed, cacheSourceSnapshot, loadAppSettings, loadC
 import { createRefreshCoordinator } from './refresh.js'
 import { checkUpstream } from './upstream-check.js'
 import { DESK_LAST_LOOKED_KEY, deskCounts } from './desk.js'
+import { hasActiveReview } from './review-frame.js'
+import { loadReviewRuns } from './collaboration.js'
 import {
   contributionPathDecision,
   contributionStackDecision,
@@ -552,6 +554,24 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
 
   // Review requests count toward the first full sync, so the workspace never
   // opens with an empty inbox that fills in a beat later.
+  // Review runs for the whole desk: its rows show which PRs are under review.
+  // Read once at open and on Refresh; polled only while a review is running.
+  const [reviewRuns, setReviewRuns] = useState([])
+  const [runsReady, setRunsReady] = useState(false)
+  const refreshReviewRuns = useCallback(async () => {
+    try { setReviewRuns((await loadReviewRuns(token, appId)).runs || []) } catch { /* the rows simply show no frame */ }
+  }, [token, appId])
+  useEffect(() => {
+    if (sendOnly || conn.state === 'checking') return
+    if (conn.state !== 'connected') { setRunsReady(true); return }
+    void refreshReviewRuns().finally(() => setRunsReady(true))
+  }, [conn.state, refreshReviewRuns, sendOnly])
+  const reviewActive = hasActiveReview(reviewRuns)
+  useEffect(() => {
+    if (!reviewActive) return undefined
+    const timer = window.setInterval(() => { void refreshReviewRuns() }, 15000)
+    return () => window.clearInterval(timer)
+  }, [reviewActive, refreshReviewRuns])
   const [incomingReady, setIncomingReady] = useState(false)
   useEffect(() => {
     if (sendOnly || conn.state === 'checking') return
@@ -1534,6 +1554,7 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
     counts: deskCountsValue,
     login: conn.login || '',
     records,
+    runs: reviewRuns,
     lastLooked,
     decisionsFor: project => projectRun(project).decisions,
     onOpenPull: openPullPage,
@@ -1592,7 +1613,7 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
     ])
     let upstream = null
     if (conn.state === 'connected') {
-      const [, , checked] = await Promise.all([loadRepositories(), refreshIncomingReviews(), checkUpstream(token, sourceProjects)])
+      const [, , checked] = await Promise.all([loadRepositories(), refreshIncomingReviews(), checkUpstream(token, sourceProjects), refreshReviewRuns()])
       upstream = checked
       if (checked.ok) setUpstreamChecks(checked.results)
     }
@@ -1611,7 +1632,7 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
   // inbox — so nothing visibly reloads right after it appears. Latched: a
   // later manual refresh never drops the app back to the opening screen.
   const [booted, setBooted] = useState(false)
-  const bootReady = ledgerReady && !sourceLoading && conn.state !== 'checking' && (incomingReady || conn.state !== 'connected')
+  const bootReady = ledgerReady && !sourceLoading && conn.state !== 'checking' && (incomingReady || conn.state !== 'connected') && runsReady
   useEffect(() => { if (bootReady) setBooted(true) }, [bootReady])
 
   // The toolbar reflects only the app's first connection/feed read. Once that

@@ -41,3 +41,18 @@ test('the frame travels while an agent works and holds amber while the review wa
   for (const done of ['all_clear', 'merged', 'queued', 'complete', 'failed']) assert.equal(frameState(status(done)), 'idle', done)
   assert.equal(frameState(status('reviewing', { execution_state: 'stopped' })), 'idle')
 })
+
+test('the desk polls only while a review is working, and finds a saved record\'s review by repository and number', async () => {
+  const { hasActiveReview, reviewForRecord } = await import('../review-frame.js')
+  const working = { id: 'a', state: 'running', execution_state: 'running', created_at: '2026-11-03T09:00:00Z', items: [{ repo: 'team/repo', number: 9, state: 'reviewing' }] }
+  const done = { id: 'b', state: 'complete', execution_state: 'completed', created_at: '2026-11-03T08:00:00Z', items: [{ repo: 'team/repo', number: 9, state: 'all_clear' }] }
+  const stopped = { id: 'c', state: 'running', execution_state: 'stopped', items: [{ repo: 'team/repo', number: 3, state: 'reviewing' }] }
+  assert.equal(hasActiveReview([done]), false)
+  assert.equal(hasActiveReview([done, working]), true)
+  assert.equal(hasActiveReview([stopped]), false, 'a stopped run is not working')
+  assert.equal(hasActiveReview([]), false)
+  assert.equal(reviewForRecord([done, working], { repo: 'Team/Repo', number: 9 }).run.id, 'a')
+  assert.equal(reviewForRecord([done, working], { plan: { repo: 'team/repo' }, number: 9 }).run.id, 'a')
+  assert.equal(reviewForRecord([done, working], { repo: 'team/repo', number: 4 }), null)
+  assert.equal(reviewForRecord([working], {}), null)
+})

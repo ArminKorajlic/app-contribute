@@ -463,6 +463,19 @@ test('a review chip opens the PR on its Review tab, and a started review no long
   assert.match(appSource, /setPullPage\(\{ key: project\?\.key \|\| '', repo, number: pr\.number, tab,/)
 })
 
+test('the desk reads review runs once, wraps its rows in the frame, and opens a reviewed PR on its Review tab', () => {
+  const deskSource = readFileSync(new URL('../ui/DeskViews.jsx', import.meta.url), 'utf8')
+  assert.match(deskSource, /<ReviewFrame state=\{framed\} inset=\{3\}/)
+  assert.match(deskSource, /onOpenPull\(project, pr, framed === 'idle' \? 'conversation' : 'review'\)/)
+  assert.match(deskSource, /frameState\(reviewForRecord\(runs, item\.record\)\)/)
+  assert.match(appSource, /const reviewActive = hasActiveReview\(reviewRuns\)/)
+  assert.match(appSource, /runs: reviewRuns,/)
+  // Refresh renews the runs with everything else; nothing polls unless a review is working.
+  assert.match(appSource, /checkUpstream\(token, sourceProjects\), refreshReviewRuns\(\)/)
+  assert.match(appSource, /if \(!reviewActive\) return undefined/)
+  assert.match(sourceMapSource, /runs=\{desk\.runs\}/)
+})
+
 test('the PR page is a task surface: the review window opens, panes close, the detail stays put', () => {
   const pullsSource = readFileSync(new URL('../ui/PullRequests.jsx', import.meta.url), 'utf8')
   // Without a TaskContext every TaskPane renders bare, always, and cannot

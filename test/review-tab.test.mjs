@@ -80,3 +80,17 @@ test('the PR page carries a fourth Review tab with its state, and opens on it wh
   const clear = await render(t, 'PullRequestDetail', { pr, status: status('all_clear', {}, { state: 'complete', execution_state: 'completed' }), cacheStore: { entries: {} } })
   assert.match(clear, /Review<span class="co-tab-dot is-success"/)
 })
+
+test('a PR that changed after its review says so, shows the old findings and offers to review this version', async t => {
+  const earlier = status('all_clear', { head_sha: 'b'.repeat(40), summary: 'No blockers at the old commit.' }, { state: 'complete', execution_state: 'completed' })
+  const html = await render(t, 'ReviewTab', { pr, status: null, earlier, onStart: () => {} })
+  if (!html) return
+  assert.match(html, /Reviewed an earlier version/)
+  assert.match(html, /bbbbbbb/)
+  assert.match(html, /may no longer apply/)
+  assert.match(html, /No blockers at the old commit/)
+  assert.match(html, />Review this version</)
+  assert.doesNotMatch(html, /You haven’t made a review/, 'an earlier review exists, so it was reviewed')
+  const closed = await render(t, 'ReviewTab', { pr, status: null, earlier, readOnly: true })
+  assert.doesNotMatch(closed, />Review this version</)
+})

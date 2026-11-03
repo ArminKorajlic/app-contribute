@@ -1,6 +1,6 @@
 // The comet frame around a PR under review: pure geometry and state mapping,
 // so it is testable without a DOM. ui/ReviewFrame.jsx draws it.
-import { OWNER_ITEM_STATES, reviewItemProgress } from './collaboration.js'
+import { OWNER_ITEM_STATES, reviewItemProgress, reviewRunHalted } from './collaboration.js'
 
 export const COMET_SPEED = 160 // pixels per second: a slow, steady lap
 export const COMET_LAYERS = 36
@@ -41,4 +41,20 @@ export function frameState(status) {
   if (OWNER_ITEM_STATES.has(item.state) && item.state !== 'failed') return 'verdict'
   if (progress.waiting) return 'verdict'
   return WORKING_ITEMS.has(item.state) ? 'reviewing' : 'idle'
+}
+
+// Whether any review is still being worked on, so the desk polls only then.
+export const hasActiveReview = runs => (runs || []).some(run => !reviewRunHalted(run)
+  && (run.items || []).some(item => WORKING_ITEMS.has(item.state)))
+
+// A saved record names its PR by repository and number; the newest review of
+// that PR (at any version) is what its desk row should reflect while it runs.
+export function reviewForRecord(runs, record) {
+  const repo = String(record?.plan?.repo || record?.repo || '').toLowerCase()
+  const number = Number(record?.number)
+  if (!repo || !number) return null
+  const matches = (runs || []).flatMap(run => (run.items || [])
+    .filter(item => item.repo?.toLowerCase() === repo && item.number === number)
+    .map(item => ({ run, item })))
+  return matches.sort((a, b) => Date.parse(b.run.created_at || '') - Date.parse(a.run.created_at || ''))[0] || null
 }

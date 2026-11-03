@@ -678,6 +678,8 @@ input[type=checkbox].co-switch:focus-visible { outline:2px solid var(--accent); 
 .co-desk-chip { padding:1px 8px; border-radius:6px; font-size:14px; font-weight:600; background:var(--surface-2); color:var(--text); }
 .co-desk-chip.is-you { background:var(--accent-dim, var(--surface-2)); color:var(--accent); }
 .co-desk-chip.is-blocker { background:color-mix(in srgb, var(--danger, #f87171) 14%, transparent); color:var(--danger, #f87171); }
+.co-desk-chip.is-review { display:inline-flex; align-items:center; gap:6px; background:var(--accent-dim, var(--surface-2)); color:var(--accent); }
+.co-desk-chip.is-waiting { background:color-mix(in srgb, var(--co-warn,#b38235) 16%, transparent); color:var(--co-warn,#b38235); }
 .co-desk-chip.is-ready { background:color-mix(in srgb, var(--green, #10b981) 14%, transparent); color:var(--green, #10b981); }
 .co-desk-merged-icon { color:var(--muted); margin-top:3px; }
 .co-desk-row .co-pr-comments { margin-top:2px; }
