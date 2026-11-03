@@ -336,7 +336,7 @@ test('GitHub account changes live only in Möbius Settings', () => {
   assert.doesNotMatch(connectionSource, /personal access token|connectToken|runDeviceConnection|startDeviceFlow|migrateLimitedConnection/)
   assert.doesNotMatch(apiSource, /connectStart|connectPoll|connectCancel|export function disconnect/)
   assert.match(connectionSource, /settingsButton\('Go to Settings to connect', true\)/)
-  assert.match(connectionSource, /GitHub account settings/)
+  assert.match(connectionSource, /Manage account/)
   assert.doesNotMatch(connectionSource, /hasFullPrAccess|unsupported|open-contribute-settings/)
 })
 
@@ -344,20 +344,14 @@ test('one on-demand settings surface owns account setup in the toolbar', () => {
   assert.equal((appSource.match(/<ConnectionSettings/g) || []).length, 1)
   assert.match(connectionSource, /open \? <div className="co-settings-panel co-settings-workspace"/)
   assert.match(connectionSource, /Contribute settings/)
-  assert.match(connectionSource, /className="co-autopilot-setting"/)
+  assert.match(connectionSource, /className="co-set-card"/)
   assert.match(themeSource, /\.co-settings-panel \{[\s\S]*?position: absolute/)
 })
 
-test('Follow sent PRs help opens as an anchored dismissible popover', () => {
-  assert.match(connectionSource, /className="co-setting-help" ref=\{autopilotHelpRef\}/)
-  assert.match(connectionSource, /role="tooltip"/)
-  assert.match(connectionSource, /aria-describedby=\{autopilotHelpOpen/)
-  assert.match(connectionSource, /document\.addEventListener\('pointerdown', dismissOutside\)/)
-  assert.match(connectionSource, /event\.key !== 'Escape'/)
-  assert.match(connectionSource, /autopilotInfoRef\.current\?\.focus\(\)/)
-  assert.match(themeSource, /\.co-setting-help \{ position: relative/)
-  assert.match(themeSource, /\.co-setting-popover \{[\s\S]*?position: absolute/)
-  assert.doesNotMatch(connectionSource, /className="co-autopilot-help"/)
+test('Follow sent PRs says what it does in its own row, with no hidden help to open', () => {
+  assert.match(connectionSource, /<small>Follows sent PRs through checks and review, addresses comments automatically, and asks when it needs you\.<\/small>/)
+  assert.doesNotMatch(connectionSource, /autopilotHelp|role="tooltip"|co-setting-info/)
+  assert.doesNotMatch(themeSource, /co-setting-popover|co-setting-info|co-autopilot-setting/)
 })
 
 test('background checks have one shared accessible toolbar indicator', () => {
