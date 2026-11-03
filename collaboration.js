@@ -45,13 +45,25 @@ export function checkSummary(pr) {
 // while a run is bound to the target branch's live tip when the owner
 // consents (the server checks exactly that). Runs and review links use the tip.
 export const baseTip = pr => pr?.baseRef?.target?.oid || null
+// The conversation count a row shows: issue-style comments plus review
+// submissions, the same two sources the PR page's Comments tab lists.
+export const conversationCount = pr => (pr?.comments?.totalCount || 0) + (pr?.reviews?.totalCount || 0)
 export const prKey = pr => `${pr.repository.nameWithOwner.toLowerCase()}#${pr.number}`
 export const mergeSelection = (old, next) => [...new Map([...old, ...next].map(pr => [prKey(pr), pr])).values()]
+const BOT_LOGINS = new Set(['dependabot', 'renovate', 'github-actions'])
+export const isBotAuthor = login => /\[bot\]$|bot$/i.test(login || '') || BOT_LOGINS.has((login || '').toLowerCase())
+
 export function matchingPulls(pulls, filter, login) {
   const same = value => value?.toLowerCase() === login?.toLowerCase()
-  return pulls.filter(pr => filter === 'unassigned' ? !pr.assignees?.nodes?.length
-    : filter === 'assigned' ? pr.assignees?.nodes?.some(user => same(user.login))
-      : filter === 'authored' ? same(pr.author?.login) : true)
+  const test = {
+    unassigned: pr => !pr.assignees?.nodes?.length,
+    assigned: pr => pr.assignees?.nodes?.some(user => same(user.login)),
+    authored: pr => same(pr.author?.login),
+    drafts: pr => pr.isDraft,
+    failing: pr => checkSummary(pr)?.failed > 0,
+    bots: pr => isBotAuthor(pr.author?.login),
+  }[filter]
+  return test ? pulls.filter(test) : pulls
 }
 
 async function graph(token, query) {

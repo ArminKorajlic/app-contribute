@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { discoverPull, discoverPulls, discoverRepositories, matchingPulls, mayAssign, mayMerge, mergeSelection, collaborationRequest, reviewRunRequest, assignPulls, loadReviewRuns, awaitsGithub, OBSERVE_EVERY_MS, reviewRunTitle, reviewForPull, runDetailsElsewhere, notOursToObserve } from '../collaboration.js'
+import { conversationCount, isBotAuthor, discoverPull, discoverPulls, discoverRepositories, matchingPulls, mayAssign, mayMerge, mergeSelection, collaborationRequest, reviewRunRequest, assignPulls, loadReviewRuns, awaitsGithub, OBSERVE_EVERY_MS, reviewRunTitle, reviewForPull, runDetailsElsewhere, notOursToObserve } from '../collaboration.js'
 import { attachSourceProjects } from '../source-map.js'
 import { frontendModules, renderModule } from './render-harness.mjs'
 const pull = (number, extra = {}) => ({ number, title: 'A clear change', url: 'https://github.com/team/repo/pull/' + number,
@@ -302,4 +302,19 @@ test('a PR changed after its review still finds that review, as an earlier versi
   // A review of the current head is the review, not an earlier one.
   const current = run('current', '2026-11-03T10:00:00Z', pr.headRefOid)
   assert.equal(earlierReviewForPull([current], pr), null)
+})
+
+test('a row counts the conversation the PR page lists: comments plus reviews', () => {
+  assert.equal(conversationCount({ comments: { totalCount: 1 }, reviews: { totalCount: 2 } }), 3)
+  assert.equal(conversationCount({ comments: { totalCount: 0 }, reviews: { totalCount: 2 } }), 2)
+  assert.equal(conversationCount({}), 0)
+})
+
+test('drafts, failing checks and bots are filters of their own', () => {
+  const failing = { commits: { nodes: [{ commit: { statusCheckRollup: { contexts: { totalCount: 2, checkRunCountsByState: [{ state: 'FAILURE', count: 1 }, { state: 'SUCCESS', count: 1 }], statusContextCountsByState: [] } } } }] } }
+  const rows = [{ number: 1, isDraft: true, author: { login: 'owner' } }, { number: 2, author: { login: 'dependabot' }, ...failing }, { number: 3, author: { login: 'renovate[bot]' } }]
+  assert.deepEqual(matchingPulls(rows, 'drafts', 'owner').map(pr => pr.number), [1])
+  assert.deepEqual(matchingPulls(rows, 'failing', 'owner').map(pr => pr.number), [2])
+  assert.deepEqual(matchingPulls(rows, 'bots', 'owner').map(pr => pr.number), [2, 3])
+  assert.equal(isBotAuthor('ArminKorajlic'), false)
 })

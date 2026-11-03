@@ -109,6 +109,7 @@
     "ui/PullRequests.jsx",
     "ui/AgentMenu.jsx",
     "ui/AttentionList.jsx",
+    "ui/ProjectEdits.jsx",
     "ui/ProjectTabs.jsx",
     "ui/ReviewDialog.jsx",
     "ui/ReviewConfirmation.jsx",

@@ -372,8 +372,8 @@ test('SSR public review inventory replaces duplicate public rows but retains pri
   }, { activeId: 'task:review', host: null, publicKeys: new Set(['owner/project#7', 'owner/project#8']) })
   assert.match(html, /aria-label="Pull requests"/)
   assert.match(html, /aria-label="Filter pull requests"/)
-  assert.match(html, /Show: opened by me/)
-  assert.match(html, /Show: assigned/)
+  assert.match(html, />Opened by me</)
+  assert.match(html, />Assigned to me</)
   for (const label of ['Private work', 'Still preparing', 'Unfetched PR', 'Different repository']) assert.match(html, new RegExp(label))
   assert.doesNotMatch(html, /Duplicate open row|Duplicate draft row|This contribution moved/)
   const mine = ui.renderPublicRun({ run: current, githubState: 'connected', defaultTab: 'mine' }, {

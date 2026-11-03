@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { awaitsGithub, earlierReviewForPull, reviewIntent, OWNER_ITEM_STATES, collaborationRequest, discoverPull, discoverPulls, liveSelection, loadReviewRuns, matchingPulls, mayAssign, mergeSelection, prKey, reviewForPull, reviewItemProgress, reviewRunRequest, reviewRunTitle, runDetailsElsewhere, notOursToObserve, assignPulls, takeoverScope } from '../collaboration.js'
+import { awaitsGithub, earlierReviewForPull, reviewIntent, OWNER_ITEM_STATES, collaborationRequest, discoverPull, discoverPulls, liveSelection, loadReviewRuns, conversationCount, matchingPulls, mayAssign, mergeSelection, prKey, reviewForPull, reviewItemProgress, reviewRunRequest, reviewRunTitle, runDetailsElsewhere, notOursToObserve, assignPulls, takeoverScope } from '../collaboration.js'
 import { acknowledgeAssignment, emptyPullView, invalidatedSelection, isOpenPull, isOwnPull, observePulls, pullsInView } from '../pull-view.js'
 import { frameState } from '../review-frame.js'
 import { ReviewFrame } from './ReviewFrame.jsx'
 import { pullConversations, recordsForPull } from '../provenance.js'
 import { RunDetail, savedVersion } from './RunDetail.jsx'
 import { PullRequestDetail, Skeleton } from './PullRequestDetail.jsx'
-import { Avatar, ChecksBadge, GithubLabel, PullStateIcon, REVIEW_DECISION, TimeAgo } from './GithubParts.jsx'
+import { Avatar, ChecksBadge, PullStateChips, PullStateIcon, QuietLabels, TimeAgo } from './GithubParts.jsx'
 import { TaskPane, useProjectTask, focusActionRegion } from './TaskPane.jsx'
 import { useFocusLease } from './useFocusLease.js'
 import { Icon } from './Icons.jsx'
@@ -18,7 +18,7 @@ import { projectUpdater } from '../updates.js'
 // One draft-scope decision for the chooser, its copy and the start body.
 const scopeFor = (mode, pulls) => mode === 'review_fix_merge' ? { confirmation_scope: takeoverScope(pulls) } : {}
 
-const FILTERS = [['all', 'Show: all'], ['unassigned', 'Show: unassigned'], ['assigned', 'Show: assigned'], ['authored', 'Show: opened by me']]
+const FILTERS = [['all', 'All'], ['authored', 'Opened by me'], ['drafts', 'Drafts'], ['failing', 'Failing checks'], ['bots', 'Bots'], ['unassigned', 'Unassigned'], ['assigned', 'Assigned to me']]
 
 // Saved agent review conversations for this project, shown in My work.
 function AgentReviewHistory({ runs, pulls, listState, onOpen }) {
@@ -43,8 +43,8 @@ function EmptyRequests({ query, hasNextPage, waiting }) {
 
 export function EmptyPulls({ scope, filter, query, hasNextPage, waiting = 0 }) {
   if (scope === 'requests') return <EmptyRequests query={query} hasNextPage={hasNextPage} waiting={waiting} />
-  const kind = filter === 'unassigned' ? 'unassigned ' : filter === 'assigned' ? 'assigned ' : ''
-  const hint = hasNextPage ? 'Load more to search the remaining results.' : filter === 'all' ? 'When work is shared on GitHub, it appears here.' : 'Choose Show: all to see the project’s other pull requests.'
+  const kind = { unassigned: 'unassigned ', assigned: 'assigned ', drafts: 'draft ', failing: 'failing ', bots: 'bot ', authored: 'your ' }[filter] || ''
+  const hint = hasNextPage ? 'Load more to search the remaining results.' : filter === 'all' ? 'When work is shared on GitHub, it appears here.' : 'Choose All to see the project’s other pull requests.'
   return <div className="co-pr-empty"><strong>No {kind}pull requests{query ? ' match' : ''}</strong><p>{hint}</p></div>
 }
 
@@ -474,6 +474,7 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
   const openRun = run => task?.open(`task:run:${run.id}`)
   // Saved reviews compare with the loaded PRs, so a failed read shows on every tab.
   const loadError = data.error ? <div className="co-alert" role="alert"><strong>Couldn’t load pull requests</strong><p className="co-alert-text">{data.error}</p><button className="co-btn" disabled={data.loading} onClick={() => { void load(); void loadRuns() }}>Try again</button></div> : null
+  if (scope === 'edits') return null
   if (scope === 'mine') return <section className="co-public-work is-mine" aria-label="Agent reviews">
     {runError ? <p className="co-pr-note" role="status">Agent progress unavailable: {runError}</p> : null}
     {loadError}
@@ -502,14 +503,14 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
     <div className={'co-pr-list-controls' + (searchOpen ? ' is-searching' : '')}>
       <label className="co-pr-search"><Icon name="search" size={16} /><input ref={searchField} type="search" aria-label="Find a pull request" placeholder="Search pull requests" value={query} onChange={event => setQuery(event.target.value)} /></label>
       <button type="button" className="co-pr-search-toggle" aria-label={query ? `Search PRs: ${query}` : 'Search pull requests'} aria-expanded={searchOpen} onClick={() => setSearchOpen(value => !value)}><Icon name="search" size={18} /></button>
-      {scope === 'all' ? <select className="co-pr-filter-select" aria-label="Filter pull requests" value={filter} onChange={event => setFilter(event.target.value)}>{FILTERS.map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select> : null}
     </div>
+    {scope === 'all' ? <div className="co-pr-filters" role="group" aria-label="Filter pull requests">{FILTERS.map(([key, label]) => <button key={key} type="button" aria-pressed={filter === key} onClick={() => setFilter(key)}>{label}{key !== 'all' && !data.hasNextPage && !data.loading ? <span className="co-pr-filter-count">{matchingPulls(pulls.filter(isOpenPull), key, conn.login).length}</span> : null}</button>)}</div> : null}
     {scope === 'requests' ? <p className="co-pr-intro">PRs where someone asked for your review. Start an agent review, or open the PR yourself.</p> : null}
     {selectionNotice ? <p className="co-pr-note" role="status">{selectionNotice}</p> : null}
     {focusRead ? <p className="co-pr-note" role="alert">Could not read that pull request: {focusRead.message}{focusRow ? ' Showing the previous snapshot.' : ''}</p> : null}
     {runError ? <p className="co-pr-note" role="status">Agent progress unavailable: {runError}</p> : null}
     {loadError}
-    <div className="co-pr-box">
+    <div className={'co-pr-box' + (selection.length ? ' has-selection' : '')}>
     <SelectionTray selection={selection} visible={selectableVisible} shown={data.hasNextPage ? data.total || visible.length : visible.length} loading={data.loading} busy={busy} onClear={() => setSelected(new Set())} onSelectVisible={() => setSelected(old => { const next = new Set(old); const all = selectableVisible.every(pr => next.has(prKey(pr))); selectableVisible.forEach(pr => all ? next.delete(prKey(pr)) : next.add(prKey(pr))); return next })} onReview={choose} onAssign={() => assignSelection()} />
     {!assignAnchor ? assignPane : null}
     {relevantRuns.filter(run => !visibleKeys.has(runAnchor(run))).map(runPane)}
@@ -523,7 +524,7 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
       const halted = progress?.halted
       const attention = halted || progress?.waiting || (status?.run.chat_id && OWNER_ITEM_STATES.has(status.item.state))
       const assignees = pr.assignees?.nodes || []
-      const comments = pr.comments?.totalCount || 0
+      const comments = conversationCount(pr)
       const open = isOpenPull(pr)
       const framed = frameState(status)
       return <ReviewFrame key={key} state={framed} inset={4} radius={10}><article className={'co-pr-row' + (selected.has(key) ? ' is-selected' : '') + (focusKey === key ? ' is-highlighted' : '')} data-pr={key}>
@@ -535,22 +536,21 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
             inspect(pr)
           }}>
             <span className="co-pr-title">{pr.title}</span>
-            {pr.labels?.nodes?.map(label => <GithubLabel key={label.name} name={label.name} color={label.color} />)}
           </button>
           <div className="co-pr-meta">
             <span>#{pr.number} · {pr.author?.login || 'Contributor'} <TimeAgo prefix="opened " value={pr.createdAt} /></span>
-            {pr.isDraft ? <span>Draft</span> : null}
-            {REVIEW_DECISION[pr.reviewDecision] && pr.reviewDecision !== 'REVIEW_REQUIRED' ? <span>{REVIEW_DECISION[pr.reviewDecision]}</span> : null}
             <ChecksBadge pr={pr} />
             {Number.isInteger(pr.additions) ? <span className="co-change-total"><b>+{pr.additions}</b><em>−{pr.deletions}</em></span> : null}
+            <QuietLabels pr={pr} />
             {requestedKeys.has(key) ? <span className="co-pr-requested">Your review requested</span> : null}
             {status && framed !== 'reviewing' ? <button className={'co-pr-agent-state' + (attention ? ' needs-you' : '')} onClick={() => onOpenPage ? onOpenPage(pr, 'review') : task?.open(`task:run:${status.run.id}`)}><Icon name="prepare" size={13} />{halted ? 'Run stopped' : attention ? (['merge_unknown','ready_unknown'].includes(status.item.state) ? 'Check outcome' : 'Needs you') : status.item.state === 'all_clear' && !status.exactBase ? `Reviewed on an older ${pr.baseRefName}` : progress.label}</button> : null}
           </div>
         </div>
         <div className="co-pr-aside">
-          {comments ? <span className="co-pr-comments" title={`${comments} ${comments === 1 ? 'comment' : 'comments'}`}><Icon name="comment" size={16} />{comments}</span> : null}
+          {comments ? <span className="co-pr-comments" title={`${comments} in the conversation: comments and reviews`}><Icon name="comment" size={16} />{comments}</span> : null}
+          <PullStateChips pr={pr} />
           {open && mayAssign(pr.repository.viewerPermission)
-            ? <button className="co-pr-assign" onClick={() => assignSelection([pr], key)} aria-label={assignees.length ? `Assigned to ${assignees.map(user => user.login).join(', ')}. Change assignment for PR ${pr.number}` : `Assign PR ${pr.number}`} title={assignees.length ? assignees.map(user => user.login).join(', ') : undefined}>{assignees.length ? <span className="co-gh-avatars">{assignees.slice(0, 3).map(user => <Avatar key={user.login} login={user.login} />)}</span> : <><Icon name="person" size={15} /><span>Assign</span></>}</button>
+            ? <button className={'co-pr-assign' + (assignees.length ? '' : ' is-quiet')} onClick={() => assignSelection([pr], key)} aria-label={assignees.length ? `Assigned to ${assignees.map(user => user.login).join(', ')}. Change assignment for PR ${pr.number}` : `Assign PR ${pr.number}`} title={assignees.length ? assignees.map(user => user.login).join(', ') : undefined}>{assignees.length ? <span className="co-gh-avatars">{assignees.slice(0, 3).map(user => <Avatar key={user.login} login={user.login} />)}</span> : <><Icon name="person" size={15} /><span>Assign</span></>}</button>
             : assignees.length ? <span className="co-gh-avatars" title={assignees.map(user => user.login).join(', ')}>{assignees.slice(0, 3).map(user => <Avatar key={user.login} login={user.login} />)}</span> : null}
           {open ? <AgentMenu disabled={busy} onChoose={mode => choose([pr], mode, key)} ariaLabel={`Choose what an agent does with PR ${pr.number}`} /> : null}
         </div>

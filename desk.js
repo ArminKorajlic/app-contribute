@@ -89,6 +89,22 @@ export function feedbackPullKeys(items) {
   return new Set((items || []).map(feedbackPull).filter(Boolean).map(pullKey))
 }
 
+// What a project's card lists in Needs you, as one definition for the card
+// and for the project's number in the rail: review requests, feedback cards,
+// and the owner's own PRs that need a step and have no feedback card already.
+export function needsPulls(project, items, login) {
+  const covered = feedbackPullKeys(items)
+  return authoredPulls(project.incomingReviews, login)
+    .filter(pr => !covered.has(pullKey(pr)))
+    .map(pr => [pr, authoredPullState(pr)])
+    .filter(([, state]) => state.tone !== 'quiet' && state.key !== 'approved_draft')
+}
+
+export function projectNeedsCount(project, decisions, login) {
+  const items = attentionListItems(decisions)
+  return (project.reviewRequests?.length || 0) + items.length + needsPulls(project, items, login).length
+}
+
 // The clickable counts under the heading: what needs the owner, by next step.
 export function deskCounts({ projects = [], decisions = [], incoming = [], records = [], login = '' } = {}) {
   const questionItems = attentionListItems(decisions)

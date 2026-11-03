@@ -7,7 +7,7 @@ import DiffView from './diff/DiffView.jsx'
 import { Icon } from './Icons.jsx'
 import { AgentMenu } from './AgentMenu.jsx'
 import { GithubLabel, PullStateBadge, REVIEW_DECISION } from './GithubParts.jsx'
-import { checkSummary } from '../collaboration.js'
+import { checkSummary, conversationCount } from '../collaboration.js'
 import { openAgentConversation } from './BatchAction.jsx'
 import { ReviewTab, reviewStateTone } from './ReviewTab.jsx'
 
@@ -359,7 +359,7 @@ function PullRequestDetailView({ cacheStore, pr, token, onReview, onAssign, onRe
   const loadedConversation = cache['activity:1']
   const tabCounts = {
     conversation: !loadedConversation?.loading && loadedConversation?.data?.items
-      ? loadedConversation.data.items.length : (pr.comments?.totalCount ?? null),
+      ? loadedConversation.data.items.length : (pr.comments?.totalCount == null ? null : conversationCount(pr)),
     files: Number.isInteger(pr.changedFiles) ? pr.changedFiles : null,
   }
   const githubUrl = safeDetailLink(pr.url)
