@@ -281,8 +281,9 @@ test('a minimized run detail points to the owning conversation and offers no Sto
 
 test('the Agent menu jobs map to exact platform modes and publishing presets', async () => {
   const { reviewIntent } = await import('../collaboration.js')
-  assert.deepEqual(reviewIntent('private'), { intent: 'private', mode: 'review', options: { post_review: false, propose_verdict: false } })
-  assert.deepEqual(reviewIntent('github'), { intent: 'github', mode: 'review', options: { post_review: true, propose_verdict: true } })
+  // Review opens private; Review and merge is the merge mode with a GitHub review.
+  assert.deepEqual(reviewIntent('review'), { intent: 'review', mode: 'review', options: { post_review: false, propose_verdict: false } })
+  assert.deepEqual(reviewIntent('merge'), { intent: 'merge', mode: 'review_merge', options: { post_review: true, propose_verdict: true } })
   assert.deepEqual(reviewIntent('review_fix_merge'), { intent: 'review_fix_merge', mode: 'review_fix_merge' })
   // A raw mode (a retry) passes through with its own defaults.
   assert.deepEqual(reviewIntent('review_merge'), { mode: 'review_merge' })

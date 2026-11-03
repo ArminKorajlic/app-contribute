@@ -540,6 +540,15 @@ export const WORKSPACE_CSS = `
 .co-agent-menu-list button { display:flex; align-items:flex-start; gap:10px; width:100%; padding:10px; border:0; border-radius:8px; background:none; color:var(--text); text-align:left; font:inherit; cursor:pointer; }
 .co-agent-menu-list button:hover,.co-agent-menu-list button:focus-visible { background:var(--surface-2,var(--surface)); outline:none; }
 .co-agent-menu-list .co-icon { flex:none; margin-top:2px; color:var(--muted); }
+.co-agent-menu-head { margin:0 0 4px; padding:8px 10px; border-bottom:1px solid var(--border); color:var(--muted); font-size:14px; }
+.co-agent-menu-head b { color:var(--text); font-weight:650; }
+.co-agent-menu-tile { flex:none; display:grid; place-items:center; width:32px; height:32px; border-radius:8px; background:var(--surface-2,var(--bg)); }
+.co-agent-menu-list .co-agent-menu-tile .co-icon { margin:0; }
+.co-agent-menu-list button.is-rec { background:color-mix(in srgb,var(--accent) 12%,transparent); }
+.co-agent-menu-list button.is-rec .co-agent-menu-tile { background:var(--accent); }
+.co-agent-menu-list button.is-rec .co-agent-menu-tile .co-icon { color:var(--accent-fg,#fff); }
+.co-agent-menu-list button.is-off { cursor:default; opacity:.55; }
+.co-agent-menu-list button.is-off:hover { background:none; }
 .co-agent-menu-list strong { display:block; font-size:15px; font-weight:600; }
 .co-agent-menu-list small { display:block; margin-top:2px; color:var(--muted); font-size:14px; line-height:1.45; }
 
@@ -558,6 +567,11 @@ export const WORKSPACE_CSS = `
 .co-rw-close { display:grid; place-items:center; width:40px; height:40px; }
 .co-rw-body { display:flex; flex-direction:column; gap:18px; padding:18px 20px 4px; }
 .co-rw-options { border:1px solid var(--border); border-radius:12px; background:var(--bg); }
+.co-rw-who .co-rw-label { margin-top:0; }
+.co-seg { display:flex; width:max-content; max-width:100%; padding:3px; border:1px solid var(--border); border-radius:10px; background:var(--bg); }
+.co-seg button { min-height:36px; padding:0 14px; border:0; border-radius:7px; background:none; color:var(--muted); font:500 14px var(--font); cursor:pointer; }
+.co-seg button.is-on { background:var(--surface-2,var(--surface)); color:var(--text); font-weight:600; }
+.co-seg button:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
 .co-rw-option { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:16px; align-items:center; padding:14px 16px; cursor:pointer; }
 .co-rw-option + .co-rw-option { border-top:1px solid var(--border); }
 .co-rw-option strong { display:block; font-size:15px; font-weight:600; }

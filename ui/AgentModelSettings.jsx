@@ -158,9 +158,18 @@ export function AgentModelSettings({ token, choice, onChange, defaultChoice = nu
   const defaultName = defaultModel?.label || defaultChoice?.model
   const defaultEffort = defaultChoice?.effort ? modelEfforts(defaultChoice.provider, defaultModel).find(effort => effort.value === defaultChoice.effort)?.label : ''
   const defaultTitle = defaultName ? `Default (${defaultName})` : 'Default model'
-  const summary = choice?.model
-    ? { provider: choice.provider, title: selected?.label || choice.model, detail: selectedEfforts.find(effort => effort.value === selectedEffort)?.label }
-    : { provider: defaultChoice?.provider || '', title: defaultTitle, detail: defaultEffort || defaultHint }
+  // The default model with its own effort chosen is still the Default row: the
+  // run names the model explicitly, but the list does not jump to another row.
+  const matchesDefault = !!(choice?.model && defaultChoice?.model && choice.provider === defaultChoice.provider && choice.model === defaultChoice.model)
+  const defaultSelected = !choice?.model || matchesDefault
+  const defaultEfforts = defaultChoice?.model ? modelEfforts(defaultChoice.provider, defaultModel) : []
+  const defaultEffortValue = defaultEfforts.length ? preferredEffort(defaultEfforts, matchesDefault ? choice.effort : defaultChoice.effort, defaultModel) : ''
+  const defaultEffortLabel = defaultEfforts.find(effort => effort.value === defaultEffortValue)?.label || defaultEffort
+  const summary = matchesDefault
+    ? { provider: choice.provider, title: defaultTitle, detail: defaultEfforts.find(effort => effort.value === defaultEffortValue)?.label }
+    : choice?.model
+      ? { provider: choice.provider, title: selected?.label || choice.model, detail: selectedEfforts.find(effort => effort.value === selectedEffort)?.label }
+      : { provider: defaultChoice?.provider || '', title: defaultTitle, detail: defaultEffort || defaultHint }
 
   function chooseModel(provider, model) {
     if (!model) return onChange?.({ provider: '', model: '', effort: '' })
@@ -168,6 +177,10 @@ export function AgentModelSettings({ token, choice, onChange, defaultChoice = nu
     const effort = preferredEffort(efforts, effortByProvider[provider] ?? (choice?.provider === provider ? choice.effort : ''), model)
     setEffortByProvider(old => ({ ...old, [provider]: effort }))
     onChange?.({ provider, model: model.id, effort })
+  }
+  function chooseDefaultEffort(effort) {
+    setEffortByProvider(old => ({ ...old, [defaultChoice.provider]: effort }))
+    onChange?.({ provider: defaultChoice.provider, model: defaultChoice.model, effort })
   }
   function chooseEffort(effort) {
     setEffortByProvider(old => ({ ...old, [choice.provider]: effort }))
@@ -182,9 +195,10 @@ export function AgentModelSettings({ token, choice, onChange, defaultChoice = nu
       <Icon name="chevron" size={16} className="co-icon co-agent-trigger-chevron" />
     </button>
     {open ? <div className="co-model-list" ref={list}>
-      <ModelRow provider={defaultChoice?.provider || ''} title={defaultTitle} subtitle={defaultEffort ? `${defaultEffort} · ${defaultHint}` : defaultHint} selected={!choice?.model} onClick={() => chooseModel('', null)} />
+      <ModelRow provider={defaultChoice?.provider || ''} title={defaultTitle} subtitle={defaultEffortLabel ? `${defaultEffortLabel} · ${defaultHint}` : defaultHint} selected={defaultSelected} onClick={() => chooseModel('', null)} />
+      {defaultSelected && defaultEfforts.length ? <div className="co-effort-indent"><EffortTrack efforts={defaultEfforts} value={defaultEffortValue} onChange={chooseDefaultEffort} label="Reasoning effort for the default model" /></div> : null}
       {rows.map(({ provider, model, configured }) => {
-        const isSelected = choice?.provider === provider && choice?.model === model.id
+        const isSelected = choice?.provider === provider && choice?.model === model.id && !matchesDefault
         return <div key={`${provider}:${model.id}`}>
           <ModelRow provider={provider} title={model.label || model.id} subtitle={configured ? providerLabel(provider, status) : `${providerLabel(provider, status)} · Not connected`}
             selected={isSelected} disabled={!configured} onClick={() => chooseModel(provider, model)} />
