@@ -377,7 +377,8 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
   const statusFor = pr => reviewForPull(relevantRuns, pr)
   const detailPr = pulls.find(pr => prKey(pr) === opened)
   function inspect(pr) {
-    if (onOpenPage) { onOpenPage(pr, 'conversation'); return }
+    // While a review runs, the frame on the row is the signal; opening it lands on the Review tab.
+    if (onOpenPage) { onOpenPage(pr, frameState(statusFor(pr)) === 'reviewing' ? 'review' : 'conversation'); return }
     setOpened(prKey(pr))
     task?.open('task:detail')
   }
@@ -543,7 +544,7 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
             <ChecksBadge pr={pr} />
             {Number.isInteger(pr.additions) ? <span className="co-change-total"><b>+{pr.additions}</b><em>−{pr.deletions}</em></span> : null}
             {requestedKeys.has(key) ? <span className="co-pr-requested">Your review requested</span> : null}
-            {status ? <button className={'co-pr-agent-state' + (attention ? ' needs-you' : '')} onClick={() => onOpenPage ? onOpenPage(pr, 'review') : task?.open(`task:run:${status.run.id}`)}>{framed === 'reviewing' ? <span className="co-arc" aria-hidden="true" /> : <Icon name="prepare" size={13} />}{halted ? 'Run stopped' : attention ? (['merge_unknown','ready_unknown'].includes(status.item.state) ? 'Check outcome' : 'Needs you') : status.item.state === 'all_clear' && !status.exactBase ? `Reviewed on an older ${pr.baseRefName}` : progress.label}</button> : null}
+            {status && framed !== 'reviewing' ? <button className={'co-pr-agent-state' + (attention ? ' needs-you' : '')} onClick={() => onOpenPage ? onOpenPage(pr, 'review') : task?.open(`task:run:${status.run.id}`)}><Icon name="prepare" size={13} />{halted ? 'Run stopped' : attention ? (['merge_unknown','ready_unknown'].includes(status.item.state) ? 'Check outcome' : 'Needs you') : status.item.state === 'all_clear' && !status.exactBase ? `Reviewed on an older ${pr.baseRefName}` : progress.label}</button> : null}
           </div>
         </div>
         <div className="co-pr-aside">
@@ -551,7 +552,7 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
           {open && mayAssign(pr.repository.viewerPermission)
             ? <button className="co-pr-assign" onClick={() => assignSelection([pr], key)} aria-label={assignees.length ? `Assigned to ${assignees.map(user => user.login).join(', ')}. Change assignment for PR ${pr.number}` : `Assign PR ${pr.number}`} title={assignees.length ? assignees.map(user => user.login).join(', ') : undefined}>{assignees.length ? <span className="co-gh-avatars">{assignees.slice(0, 3).map(user => <Avatar key={user.login} login={user.login} />)}</span> : <><Icon name="person" size={15} /><span>Assign</span></>}</button>
             : assignees.length ? <span className="co-gh-avatars" title={assignees.map(user => user.login).join(', ')}>{assignees.slice(0, 3).map(user => <Avatar key={user.login} login={user.login} />)}</span> : null}
-          {open ? <AgentMenu active={!!status && !progress.halted && (attention || !progress.settled)} disabled={busy} onChoose={mode => choose([pr], mode, key)} ariaLabel={`Choose what an agent does with PR ${pr.number}`} /> : null}
+          {open ? <AgentMenu disabled={busy} onChoose={mode => choose([pr], mode, key)} ariaLabel={`Choose what an agent does with PR ${pr.number}`} /> : null}
         </div>
         {assignAnchor === key ? assignPane : null}
         {relevantRuns.filter(run => runAnchor(run) === key).map(runPane)}
