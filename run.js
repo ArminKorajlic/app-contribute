@@ -58,10 +58,6 @@ export const attentionListItems = (decisions = []) => decisions.filter(item => i
   'publish', 'mark_ready', 'private_review', 'request',
 ].includes(item.kind))
 
-export function ownerAttentionCount(decisions = []) {
-  return decisions.filter(item => isPublicFeedback(item) || !['private_review', 'request'].includes(item.kind)).length
-}
-
 export function runUnitRecords(value) {
   const unit = value?.unit || value
   if (Array.isArray(unit?.records)) return unit.records.filter(Boolean)

@@ -9,8 +9,7 @@ import {
 import { Icon } from './Icons.jsx'
 import { ProjectIcon } from './ProjectIcon.jsx'
 import { TimeAgo } from './GithubParts.jsx'
-import UnifiedDiff from './diff/UnifiedDiff.jsx'
-import { parseUnifiedDiff } from './diff/parseUnifiedDiff.js'
+import { ProjectFileChanges } from './ProjectEdits.jsx'
 import { TaskContext, TaskPane } from './TaskPane.jsx'
 import { DESK_VIEWS, splitProjects } from '../desk.js'
 import { DeskChips, DeskCounts, DeskRail } from './Desk.jsx'
@@ -61,59 +60,6 @@ function ProjectPosition({ project }) {
 
 function ProjectGlyph({ project }) {
   return <ProjectIcon project={project} className="co-source-glyph" />
-}
-
-function ProjectFileChanges({ project, loadProjectDiff, onRefresh }) {
-  const [state, setState] = useState({ phase: 'loading', data: null })
-  const [retry, setRetry] = useState(0)
-  useEffect(() => {
-    let cancelled = false
-    setState({ phase: 'loading', data: null })
-    Promise.resolve(loadProjectDiff?.(project))
-      .then((result) => {
-        if (cancelled) return
-        if (result?.ok) setState({ phase: 'ready', data: result.data })
-        else setState({ phase: result?.stale ? 'stale' : 'error', data: null })
-      })
-      .catch(() => {
-        if (!cancelled) setState({ phase: 'error', data: null })
-      })
-    return () => { cancelled = true }
-  }, [project.key, project.head_sha, project.comparison_sha, project.base_sha, loadProjectDiff, retry])
-
-  const files = state.phase === 'ready' ? parseUnifiedDiff(state.data?.diff) : []
-  const countLabel = state.phase === 'ready'
-    ? `${files.length} ${files.length === 1 ? 'file' : 'files'}${state.data?.diff_truncated ? ' shown' : ''}`
-    : null
-
-  return (
-    <section className="co-project-files">
-      <header><span>Changed files</span>{countLabel ? <small>{countLabel}</small> : null}</header>
-      {state.phase === 'ready' ? (
-        files.length ? <>
-          {state.data?.diff_truncated ? (
-            <p className="co-project-diff-note">This is a large change, so only the available part of the diff is shown.</p>
-          ) : null}
-          <UnifiedDiff
-            diff={state.data?.diff}
-            diffTruncated={state.data?.diff_truncated === true}
-            initiallyOpenFirst
-          />
-        </> : <p className="co-project-diff-empty">No changed files in this comparison.</p>
-      ) : state.phase === 'loading' ? (
-        <div className="co-project-diff-loading" role="status"><span className="ma-spinner is-compact" aria-hidden="true" /> Loading file diffs…</div>
-      ) : (
-        <button
-          type="button"
-          className="co-project-files-toggle"
-          onClick={state.phase === 'stale' ? onRefresh : () => setRetry(value => value + 1)}
-        >
-          {state.phase === 'stale' ? 'Project changed · check again' : 'Could not load diffs · try again'}
-          <Icon name="refresh" size={15} />
-        </button>
-      )}
-    </section>
-  )
 }
 
 function ProjectDetail({

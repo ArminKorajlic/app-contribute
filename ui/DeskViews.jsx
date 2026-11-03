@@ -5,7 +5,7 @@ import { conversationCount, reviewForPull } from '../collaboration.js'
 import { frameState, reviewForRecord } from '../review-frame.js'
 import { ReviewFrame } from './ReviewFrame.jsx'
 import { reviewStateTone } from './ReviewTab.jsx'
-import { localChangeSentence, localChangeSummary, recordsForProject } from '../source-map.js'
+import { deskEditsSentence, recordsForProject } from '../source-map.js'
 import { STATUS_LABELS } from '../domain.js'
 import { groupNote, lookAtReason } from './AttentionList.jsx'
 import { ChecksBadge, PullStateIcon, QuietLabels, TimeAgo } from './GithubParts.jsx'
@@ -165,15 +165,12 @@ function MergedRows({ project, records, query, lastLooked }) {
 // fact. "Differ from GitHub" is what the files are known to do; they may
 // already be in an open PR.
 function EditsRow({ project, onOpenProject }) {
-  const sentence = localChangeSentence(project)
-  const text = sentence.edits && !project.builtHere
-    ? ` ${localChangeSummary(project).changed === 1 ? 'differs' : 'differ'} from GitHub.`
-    : sentence.text
+  const sentence = deskEditsSentence(project)
   return (
     <button type="button" className="co-desk-row" onClick={() => onOpenProject(project.key)}>
       <Icon name="edit" size={16} className="co-desk-merged-icon" />
       <span className="co-desk-row-main">
-        <span className="co-desk-row-title"><strong>{sentence.strong}</strong>{text}</span>
+        <span className="co-desk-row-title"><strong>{sentence.strong}</strong>{sentence.text}</span>
         {sentence.sub ? <span className="co-desk-row-meta"><span>{sentence.sub}</span></span> : null}
       </span>
     </button>

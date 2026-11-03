@@ -726,6 +726,11 @@ input[type=checkbox].co-switch:focus-visible { outline:2px solid var(--accent); 
 .co-pr-aside { gap:6px; }
 @media (hover:none) { .co-pr-row .co-pr-select, .co-pr-assign.is-quiet { opacity:1; } }
 @media (prefers-reduced-motion:reduce) { .co-pr-row .co-pr-select, .co-pr-assign.is-quiet { transition:none; } }
+.co-edits-head { display:flex; align-items:center; justify-content:space-between; gap:10px 16px; flex-wrap:wrap; margin:0 0 12px; }
+.co-edits-head p { margin:0; font-size:15px; }
+.co-edits-head small { display:block; color:var(--muted); font-size:14px; }
+.co-edits-head .co-btn { gap:8px; min-height:44px; }
+.co-project-edits .co-project-files { border-top:0; }
 .co-rail-quiet { flex:0 0 auto; padding-right:7px; color:var(--muted); font:500 14px/22px var(--font); font-variant-numeric:tabular-nums; }
 .co-desk-row-why { color:var(--muted); font-size:14px; line-height:1.45; overflow-wrap:anywhere; }
 .co-desk-row > .co-desk-attention-icon { margin-top:2px; color:var(--muted); }

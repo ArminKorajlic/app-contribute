@@ -20,6 +20,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CSS } from './theme.js'
 import {
   attachSourceProjects,
+  localChangeSentence,
+  localChangeSummary,
   proposalSourceCommits,
   recordsForProject,
 } from './source-map.js'
@@ -72,6 +74,7 @@ import { ContributionRun } from './ui/Feed.jsx'
 import { Icon } from './ui/Icons.jsx'
 import { SourceMap } from './ui/SourceMap.jsx'
 import { SyncNote } from './ui/GithubParts.jsx'
+import { ProjectEdits } from './ui/ProjectEdits.jsx'
 import { RepositoryPicker } from './ui/RepositoryPicker.jsx'
 import { ReviewSelection } from './ui/ReviewSelection.jsx'
 import { reviewSelectionIdFromIntent } from './review-selection.js'
@@ -1757,6 +1760,8 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
             {({ controls, progress }) => <ContributionRun
               renderPublicWork={project ? view => renderPullRequests(project, navigation, view) : null}
               reviewRequestCount={project?.reviewRequests?.length || 0}
+              edits={project && localChangeSentence(project).edits ? <ProjectEdits project={project} run={projectRun(project)} loadProjectDiff={loadProjectDiff} onRefresh={refreshAll} /> : null}
+              editsCount={project && localChangeSentence(project).edits ? localChangeSummary(project).changed : null}
               controls={controls}
               projectProgress={progress}
               run={projectRun(project)} presentation={project ? 'project' : 'overview'}

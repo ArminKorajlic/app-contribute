@@ -861,6 +861,8 @@ export function ContributionRun({
   controls,
   projectProgress,
   reviewRequestCount = 0,
+  edits = null,
+  editsCount = null,
   defaultTab = 'all',
   projectName = 'project',
   selectedId = '',
@@ -1036,7 +1038,7 @@ export function ContributionRun({
       </div>
       {presentation === 'project' ? controls : null}
 
-      {presentation === 'project' ? <ProjectTabs reviewCount={reviewRequestCount} renderPullRequests={renderPublicWork} inventory={inventory} myJobs={projectProgress} myWork={myWork} defaultTab={defaultTab} /> : null}
+      {presentation === 'project' ? <ProjectTabs reviewCount={reviewRequestCount} renderPullRequests={renderPublicWork} inventory={inventory} myJobs={projectProgress} myWork={myWork} edits={edits} editsCount={editsCount} defaultTab={defaultTab} /> : null}
       {presentation !== 'project' ? renderPublicWork?.() : null}
       {omittedCount > 0 ? <p className="co-run-maintenance">{omittedCount} contribution records could not be shown.</p> : null}
     </section>

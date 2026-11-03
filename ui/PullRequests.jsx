@@ -474,6 +474,7 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
   const openRun = run => task?.open(`task:run:${run.id}`)
   // Saved reviews compare with the loaded PRs, so a failed read shows on every tab.
   const loadError = data.error ? <div className="co-alert" role="alert"><strong>Couldn’t load pull requests</strong><p className="co-alert-text">{data.error}</p><button className="co-btn" disabled={data.loading} onClick={() => { void load(); void loadRuns() }}>Try again</button></div> : null
+  if (scope === 'edits') return null
   if (scope === 'mine') return <section className="co-public-work is-mine" aria-label="Agent reviews">
     {runError ? <p className="co-pr-note" role="status">Agent progress unavailable: {runError}</p> : null}
     {loadError}
