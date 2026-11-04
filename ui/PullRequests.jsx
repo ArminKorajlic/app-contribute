@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { awaitsGithub, earlierReviewForPull, mergePull, reviewIntent, collaborationRequest, discoverPull, discoverPulls, liveSelection, loadReviewRuns, conversationCount, matchingPulls, mayAssign, mergeSelection, prKey, reviewForPull, reviewItemProgress, reviewRunRequest, reviewRunTitle, runDetailsElsewhere, notOursToObserve, assignPulls, takeoverScope } from '../collaboration.js'
+import { awaitsGithub, earlierReviewForPull, markReadyPull, mergePull, reviewIntent, collaborationRequest, discoverPull, discoverPulls, liveSelection, loadReviewRuns, conversationCount, matchingPulls, mayAssign, mergeSelection, prKey, reviewForPull, reviewItemProgress, reviewRunRequest, reviewRunTitle, runDetailsElsewhere, notOursToObserve, assignPulls, takeoverScope } from '../collaboration.js'
 import { acknowledgeAssignment, emptyPullView, invalidatedSelection, isOpenPull, isOwnPull, observePulls, pullsInView } from '../pull-view.js'
 import { frameState, rowReview } from '../review-frame.js'
 import { ReviewFrame } from './ReviewFrame.jsx'
@@ -17,6 +17,8 @@ import { savedFindings } from '../address-feedback.js'
 import { ReviewConfirmation } from './ReviewConfirmation.jsx'
 import { ActionConfirm } from './ActionConfirm.jsx'
 import { IgnoreReview } from './IgnoreReview.jsx'
+import { PostFindings } from './PostFindings.jsx'
+import { isPersonalDraft } from '../domain.js'
 import { RunOnce } from './RunOnce.jsx'
 import { YOUR_INTENTS } from '../actions-menu.js'
 import { ACTION_COPY, methodToSend } from '../action-copy.js'
@@ -190,6 +192,7 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
   const [addressing, setAddressing] = useState(null)
   // One of the owner's own actions (Open for review, Merge) waiting on its confirm sheet.
   const [acting, setActing] = useState(null)
+  const [posting, setPosting] = useState(null)
   // A review's findings waiting on the owner's reason to set them aside.
   const [ignoring, setIgnoring] = useState(null)
   const [choice, setChoice] = useState(null)
@@ -477,6 +480,8 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
     return {
       own: isOwnPull(pr, conn.login), earlier: run ? null : earlierReviewForPull(relevantRuns, pr), busy, error: runError, pulls, listState: data,
       ignored: ignoredReviews,
+      canPost: capabilities?.post_findings_now === true,
+      onPost: ({ run: postRun, item }) => setPosting({ pr, run: postRun, item, own: isOwnPull(pr, conn.login) }),
       onStart: job => choose([pr], job, prKey(pr)),
       onFix: onStartAgent ? () => choose([pr], 'address', prKey(pr)) : undefined,
       onIgnore: onIgnoreReview ? item => setIgnoring({ pr, item }) : undefined,
@@ -495,15 +500,22 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
   const reviewDialog = task?.activeId === 'task:review' && choice ? <ReviewDialog onClose={closeReview}><ReviewConfirmation appId={appId} token={token} bindCurrentTarget onResolved={value => { setResolved(value); if (value?.capabilities) setCapabilities(value.capabilities) }} disabled={!resolved} onOptionsChange={options => { setResolved(null); setChoice(old => ({ ...old, options, request_id:crypto.randomUUID() })) }} onAgentChange={agent => { setResolved(null); setChoice(old => ({ ...old, agent, request_id:crypto.randomUUID() })) }} choice={choice} busy={busy} error={error} onConfirm={start} onCancel={closeReview} onModeChange={mode => { setError(''); setResolved(null); setChoice(old => ({ ...old, mode, confirmation_scope: undefined, ...scopeFor(mode, old.pulls), request_id: crypto.randomUUID() })) }} capabilities={capabilities} /></ReviewDialog> : null
   const addressDialog = addressing && onStartAgent ? <ReviewDialog onClose={() => setAddressing(null)}><AddressFeedbackWindow pr={addressing.pr} findings={addressing.findings} token={token} appId={appId} onStart={onStartAgent} onClose={() => setAddressing(null)} /></ReviewDialog> : null
   const closeIgnore = () => setIgnoring(null)
+  // A posted review changes what the run shows (a link to it, and whose turn it is), so the runs are read again.
+  async function refreshRuns() {
+    try { const list = await collaborationRequest(token, appId, 'review-runs'); runsEpoch.current++; setRuns(list.runs || []); setRunError('') } catch (error) { setRunError(error.message) }
+  }
+  const closePost = () => setPosting(null)
+  const postDialog = posting ? <ReviewDialog onClose={closePost}><PostFindings pr={posting.pr} run={posting.run} item={posting.item} own={posting.own} token={token} appId={appId} onDone={refreshRuns} onClose={closePost} /></ReviewDialog> : null
   const ignoreDialog = ignoring ? <ReviewDialog onClose={closeIgnore}><IgnoreReview pr={ignoring.pr} onPick={reason => { onIgnoreReview(ignoring.item, reason); closeIgnore() }} onClose={closeIgnore} /></ReviewDialog> : null
   // Each of your own actions runs the app's one guarded handler for it.
   const actionHandlers = {
-    open_review: ({ record }) => onOpenForReview ? onOpenForReview(record) : { error: 'Opening for review is not available here.' },
+    // A draft this app sent is marked ready through its saved record; any other draft of yours, by the platform's own action.
+    open_review: ({ pr, record }) => isPersonalDraft(record) ? (onOpenForReview ? onOpenForReview(record) : { error: 'Opening for review is not available here.' }) : markReadyPull(token, appId, pr),
     merge_now: ({ pr, choice }) => mergePull(token, appId, pr, { method: methodToSend(pr.repository, choice) }),
   }
   const closeAction = () => setActing(null)
   // A merge changes the list (the PR leaves it), so it reads again once done.
-  const actionDialog = acting ? <ReviewDialog onClose={closeAction}><ActionConfirm pr={acting.pr} copy={ACTION_COPY[acting.intent](acting.pr, { status: statusFor(acting.pr), ignored: ignoredReviews })} onConfirm={({ choice }) => actionHandlers[acting.intent]({ ...acting, choice })} onDone={() => { if (acting.intent === 'merge_now') { void load(); void onChanged?.() } }} onClose={closeAction} /></ReviewDialog> : null
+  const actionDialog = acting ? <ReviewDialog onClose={closeAction}><ActionConfirm pr={acting.pr} copy={ACTION_COPY[acting.intent](acting.pr, { status: statusFor(acting.pr), ignored: ignoredReviews })} onConfirm={({ choice }) => actionHandlers[acting.intent]({ ...acting, choice })} onDone={() => { if (acting.intent === 'merge_now' || !isPersonalDraft(acting.record)) { void load(); void onChanged?.() } }} onClose={closeAction} /></ReviewDialog> : null
   const assignPane = <TaskPane id="task:assign" dock={false}>{assigning ? <AssigneePicker key={assigning.map(prKey).join(',')} pulls={assigning} appId={appId} token={token} ownLogin={conn.login} onClose={() => { setAssigning(null); task?.close() }} onAssigned={(login, keys) => {
       viewRef.current = acknowledgeAssignment(viewRef.current, keys, login, ++generation.current)
       setView(viewRef.current)
@@ -524,6 +536,7 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
     {addressDialog}
     {actionDialog}
     {ignoreDialog}
+    {postDialog}
     <AgentReviewHistory runs={relevantRuns} pulls={pulls} listState={data} onOpen={openRun} />
   </section>
   if (presentation === 'page') {
@@ -545,6 +558,7 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
     {addressDialog}
     {actionDialog}
     {ignoreDialog}
+    {postDialog}
     </section>
   }
   const assignAnchor = assigning?.anchor && visibleKeys.has(assigning.anchor) ? assigning.anchor : ''
@@ -599,7 +613,7 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
           {open && mayAssign(pr.repository.viewerPermission)
             ? <button className={'co-pr-assign' + (assignees.length ? '' : ' is-quiet')} onClick={() => assignSelection([pr], key)} aria-label={assignees.length ? `Assigned to ${assignees.map(user => user.login).join(', ')}. Change assignment for PR ${pr.number}` : `Assign PR ${pr.number}`} title={assignees.length ? assignees.map(user => user.login).join(', ') : undefined}>{assignees.length ? <span className="co-gh-avatars">{assignees.slice(0, 3).map(user => <Avatar key={user.login} login={user.login} />)}</span> : <><Icon name="person" size={15} /><span>Assign</span></>}</button>
             : assignees.length ? <span className="co-gh-avatars" title={assignees.map(user => user.login).join(', ')}>{assignees.slice(0, 3).map(user => <Avatar key={user.login} login={user.login} />)}</span> : null}
-          {open ? <ActionsMenu pulls={[pr]} record={recordsForPull(records, pr)[0]} capabilities={capabilities} disabled={busy} onChoose={mode => choose([pr], mode, key)} ariaLabel={`Choose an action for PR ${pr.number}`} /> : null}
+          {open ? <ActionsMenu pulls={[pr]} record={recordsForPull(records, pr)[0]} capabilities={capabilities} own={isOwnPull(pr, conn.login)} disabled={busy} onChoose={mode => choose([pr], mode, key)} ariaLabel={`Choose an action for PR ${pr.number}`} /> : null}
         </div>
         {assignAnchor === key ? assignPane : null}
         {relevantRuns.filter(run => runAnchor(run) === key).map(runPane)}
@@ -612,5 +626,6 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
     {addressDialog}
     {actionDialog}
     {ignoreDialog}
+    {postDialog}
   </section>
 }

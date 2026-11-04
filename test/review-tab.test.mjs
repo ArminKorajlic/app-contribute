@@ -146,3 +146,22 @@ test('an ignored finding says so for this version, quietly, and can be taken bac
   const detail = await render(t, 'PullRequestDetail', { pr, status: found, cacheStore: { entries: {} }, review: { own: true, ignored } })
   assert.doesNotMatch(detail, /co-tab-dot is-waiting/)
 })
+
+test('a private finding offers Post to GitHub only when the platform can post it and nothing of it is on GitHub yet', async t => {
+  const done = { state: 'needs_you', execution_state: 'completed', can_stop: true }
+  const privateFound = status('needs_you', { summary: 'Three problems in the lost-reply path.' }, done)
+  const common = { pr, status: privateFound, onStart: () => {}, onFix: () => {}, onIgnore: () => {}, onPost: () => {} }
+  const others = await render(t, 'ReviewTab', { ...common, own: false, canPost: true })
+  if (!others) return
+  assert.match(others, /co-btn co-btn-primary">Post to GitHub</, 'on someone else\'s PR posting is the next step')
+  const own = await render(t, 'ReviewTab', { ...common, own: true, canPost: true })
+  assert.match(own, /co-btn co-btn-primary">Fix these findings</)
+  assert.match(own, /class="co-btn">Post to GitHub</, 'on your own PR posting is there, after the fix')
+  assert.doesNotMatch(await render(t, 'ReviewTab', { ...common, own: false, canPost: false }), /Post to GitHub/, 'not until the platform offers it')
+  assert.doesNotMatch(await render(t, 'ReviewTab', { ...common, own: false, canPost: true, onPost: undefined }), /Post to GitHub/)
+  assert.doesNotMatch(await render(t, 'ReviewTab', { ...common, own: false, canPost: true, readOnly: true }), /Post to GitHub/, 'a closed PR posts nothing')
+  const posted = status('needs_you', { summary: 'Three problems.', public_review: { state: 'posted', url: 'https://github.com/team/repo/pull/9#pullrequestreview-1' } }, done)
+  const afterwards = await render(t, 'ReviewTab', { ...common, status: posted, own: true, canPost: true })
+  assert.doesNotMatch(afterwards, /Post to GitHub/, 'once it is on GitHub there is nothing left to post')
+  assert.match(afterwards, /View the posted review on GitHub/)
+})

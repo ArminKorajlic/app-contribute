@@ -107,3 +107,15 @@ test('with nothing of your own to do the menu is the plain agent list', () => {
   assert.deepEqual(model.you, [])
   assert.equal(model.agent.length, 4)
 })
+
+test('a draft you wrote can be opened for review when this Möbius can mark it ready, whoever sent it', () => {
+  const draft = pull({ isDraft: true })
+  const ready = { mark_ready_now: true }
+  assert.deepEqual(youSummary(actionsMenuModel([draft], { capabilities: ready, own: true })), ['open_review:ok'])
+  assert.deepEqual(actionsMenuModel([draft], { capabilities: ready }).you, [], 'someone else\'s draft is not yours to open here')
+  assert.deepEqual(actionsMenuModel([draft], { own: true }).you, [], 'until this Möbius can mark it ready there is nothing to offer')
+  assert.deepEqual(actionsMenuModel([pull()], { capabilities: ready, own: true }).you, [], 'a PR that is already open has nothing to open')
+  assert.deepEqual(actionsMenuModel([draft, pull({ number: 121, isDraft: true })], { capabilities: ready, own: true }).you, [], 'never for a batch')
+  const approved = actionsMenuModel([pull({ isDraft: true, reviewDecision: 'APPROVED' })], { capabilities: ready, own: true })
+  assert.equal(approved.you.find(item => item.intent === 'open_review').rec, true, 'an approved draft of yours has opening as its next step')
+})

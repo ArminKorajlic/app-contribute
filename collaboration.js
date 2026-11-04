@@ -295,6 +295,39 @@ export async function mergePull(token, appId, pr, { method = '' } = {}) {
   }
 }
 
+// The owner's own "open this draft for review", for a draft Contribute did not open: this exact
+// version, once. Same outcome shapes as mergePull: { ok } | { pending } (GitHub may have done it; read
+// it back, never repeat) | { error }. GitHub cannot pin a version on this write, so the platform reports
+// the head it saw afterwards (observedHead) and the sheet says so if it moved.
+export async function markReadyPull(token, appId, pr) {
+  try {
+    const result = await collaborationRequest(token, appId, 'pulls/ready', {
+      repo: pr.repository.nameWithOwner, number: pr.number, head_sha: pr.headRefOid,
+    })
+    return { ok: true, state: result.state, observedHead: result.observed_head_sha || '' }
+  } catch (error) {
+    return error.code === 'ready_unconfirmed' ? { pending: true, error: error.message } : { error: error.message }
+  }
+}
+
+// What a finished private review would say on GitHub, word for word, with the hash that binds the
+// post to it. Read-only: the platform writes nothing here.
+export const previewPostedFindings = (token, appId, run, item) =>
+  collaborationRequest(token, appId, `review-runs/${encodeURIComponent(run.id)}/post-preview`,
+    { repo: item.repo, number: item.number, head_sha: item.head_sha })
+
+// Post exactly the previewed words, once, as a plain comment review at the reviewed version. Same
+// outcome shapes as mergePull.
+export async function postFindings(token, appId, run, item, preview) {
+  try {
+    const result = await collaborationRequest(token, appId, `review-runs/${encodeURIComponent(run.id)}/post`,
+      { repo: item.repo, number: item.number, head_sha: item.head_sha, preview_sha256: preview.preview_sha256 })
+    return { ok: true, state: result.state, url: result.url || '' }
+  } catch (error) {
+    return error.code === 'post_unconfirmed' ? { pending: true, error: error.message } : { error: error.message }
+  }
+}
+
 // Assignment is additive on GitHub. Return each outcome so partial batches
 // never look like an all-or-nothing success or silently retry failed requests.
 export async function assignPulls(token, appId, pulls, login) {

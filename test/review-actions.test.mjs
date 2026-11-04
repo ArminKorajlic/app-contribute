@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { IGNORE_REASONS, reviewActionPlan } from '../review-actions.js'
+import { IGNORE_REASONS, postableFindings, reviewActionPlan } from '../review-actions.js'
 
 const keys = plan => plan.map(action => action.key)
 const everything = { retry: true, fix: true, ignore: true, again: true }
@@ -61,4 +61,27 @@ test('the ignore sheet has one close control: its header tile is not another X',
   assert.doesNotMatch(html, /co-rw-icon"><svg[^>]*><path[^>]*d="M[^"]*18 6[^"]*"/, 'the tile must not draw a cross')
   for (const reason of IGNORE_REASONS) assert.match(html, new RegExp(`>${reason}<`))
   assert.doesNotMatch(html, />Cancel</)
+})
+
+test('findings can be posted: first on someone else\'s PR, after the fix on your own', () => {
+  const can = { ...everything, post: true }
+  const own = reviewActionPlan({ tone: 'findings', own: true, chat: true, can })
+  assert.deepEqual(keys(own), ['fix', 'post', 'ignore', 'again', 'ask'])
+  assert.equal(own.find(action => action.key === 'fix').primary, true)
+  assert.equal(own.find(action => action.key === 'post').primary, undefined, 'on your own PR the fix stays the one next step')
+  const others = reviewActionPlan({ tone: 'findings', own: false, chat: true, can })
+  assert.deepEqual(keys(others), ['post', 'ignore', 'again', 'ask'])
+  assert.equal(others[0].primary, true)
+  assert.deepEqual(keys(reviewActionPlan({ tone: 'changes', own: false, chat: true, can })), ['post', 'ignore', 'again', 'ask'], 'a discarded verdict leaves the same findings')
+  for (const tone of ['running', 'needs', 'clear', 'waiting', 'ignored', 'settled', 'verdict']) {
+    assert.ok(!keys(reviewActionPlan({ tone, own: false, chat: true, can, stoppable: true })).includes('post'), `${tone} offers no post`)
+  }
+})
+
+test('only findings with nothing of theirs on GitHub can be posted', () => {
+  assert.equal(postableFindings({ state: 'needs_you' }), true)
+  assert.equal(postableFindings({ public_review: { state: 'not_dispatched' } }), true, 'an attempt that certainly did not go out can be made again')
+  assert.equal(postableFindings({ public_review: { state: 'posted', url: 'https://github.com/o/r/pull/1#pullrequestreview-1' } }), false)
+  assert.equal(postableFindings({ public_review: { state: 'unknown' } }), false, 'an attempt that may have gone out is never repeated')
+  assert.equal(postableFindings(null), true)
 })

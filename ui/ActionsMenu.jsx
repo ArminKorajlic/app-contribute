@@ -24,10 +24,10 @@ function Group({ title, items, onPick, named }) {
 }
 
 // `defaultOpen` shows the list on first render, which is how the menu's own words are tested.
-export function ActionsMenu({ onChoose, pulls = [], record = null, capabilities = null, disabled = false, variant = 'ghost', label = 'Actions', ariaLabel, align = 'end', defaultOpen = false }) {
+export function ActionsMenu({ onChoose, pulls = [], record = null, capabilities = null, own = false, disabled = false, variant = 'ghost', label = 'Actions', ariaLabel, align = 'end', defaultOpen = false }) {
   const [open, setOpen] = useState(defaultOpen)
   const root = useRef(null)
-  const model = actionsMenuModel(pulls, { record, capabilities })
+  const model = actionsMenuModel(pulls, { record, capabilities, own })
   useDismissableMenu(root, open, setOpen)
   // The trigger takes focus back first, so whatever opens next returns there.
   function choose(intent) {

@@ -8,6 +8,9 @@
 // is posted, and it applies to this exact version of the PR only.
 export const IGNORE_REASONS = ['Not a problem', 'I’ll do it later', 'Already fixed', 'Out of scope']
 
+// Findings can be posted while nothing of theirs is on GitHub (or an attempt certainly did not go out).
+export const postableFindings = item => !item?.public_review || item.public_review.state === 'not_dispatched'
+
 const primary = action => ({ ...action, primary: true })
 const quiet = action => ({ ...action, quiet: true })
 
@@ -27,6 +30,8 @@ export function reviewActionPlan({ tone, own = false, chat = false, asked = fals
     case 'changes':
       return [
         ...(own && can.fix ? [primary({ key: 'fix', label: 'Fix these findings' })] : []),
+        // On someone else's PR the next step is saying what you found; on your own it comes after the fix.
+        ...(can.post ? [own ? { key: 'post', label: 'Post to GitHub' } : primary({ key: 'post', label: 'Post to GitHub' })] : []),
         ...(can.ignore ? [{ key: 'ignore', label: 'Ignore…' }] : []),
         ...(can.again ? [{ key: 'again', label: 'Review again' }] : []),
         ...ask('Ask the reviewer something'),

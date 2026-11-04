@@ -68,12 +68,13 @@ export function mergeBlocker(standing) {
   return ''
 }
 
-// Your own actions on one PR. Open for review exists only for a draft this app
-// sent and can mark ready; Merge only where this Möbius can merge for you.
-function yourActions({ one, first, record, capabilities }) {
+// Your own actions on one PR. Open for review exists for a draft this app sent
+// and for a draft you wrote where this Möbius can mark it ready for you; Merge
+// only where this Möbius can merge for you.
+function yourActions({ one, first, record, capabilities, own }) {
   if (!one) return []
   const offered = YOUR_ACTIONS.filter(action => action.intent === 'open_review'
-    ? first.draft && isPersonalDraft(record)
+    ? first.draft && (isPersonalDraft(record) || (own === true && capabilities?.mark_ready_now === true))
     : capabilities?.merge_now === true)
   return offered.map(action => {
     const reason = action.intent === 'merge_now' ? mergeBlocker(first) : ''
@@ -84,8 +85,8 @@ function yourActions({ one, first, record, capabilities }) {
 // `offered` lists the agent intents this build can open. Returns
 // { header, you, agent }; each item is a job plus { rec, off, reason }. `record`
 // is the saved contribution behind a single PR (if any), and `capabilities`
-// what this Möbius advertises.
-export function actionsMenuModel(pulls, { offered = OPENABLE_JOBS, record = null, capabilities = null } = {}) {
+// what this Möbius advertises, and `own` whether you wrote the PR.
+export function actionsMenuModel(pulls, { offered = OPENABLE_JOBS, record = null, capabilities = null, own = false } = {}) {
   const list = Array.isArray(pulls) ? pulls.filter(Boolean) : []
   const one = list.length === 1
   const standings = list.map(pullStanding)
@@ -94,7 +95,7 @@ export function actionsMenuModel(pulls, { offered = OPENABLE_JOBS, record = null
   const feedbackNeeded = one && (first.decision === 'CHANGES_REQUESTED' || first.failing || first.conflict)
   const ready = one && !first.draft && first.decision === 'APPROVED' && !first.failing && !first.conflict
     && first.canMerge && (!first.checks || first.checks.state === 'success')
-  const you = yourActions({ one, first, record, capabilities })
+  const you = yourActions({ one, first, record, capabilities, own })
   const canMergeNow = you.some(item => item.intent === 'merge_now' && !item.off)
   // Merge yourself outranks asking an agent to merge; a draft waits on Open for review.
   const recommended = feedbackNeeded && offered.includes('address') ? 'address'

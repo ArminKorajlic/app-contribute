@@ -118,6 +118,7 @@
     "ui/ActionConfirm.jsx",
     "ui/OpenSplitButton.jsx",
     "ui/IgnoreReview.jsx",
+    "ui/PostFindings.jsx",
     "ui/Envelope.jsx",
     "ui/RunOnce.jsx",
     "ui/ReviewsView.jsx",

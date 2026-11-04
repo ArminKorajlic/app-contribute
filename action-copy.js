@@ -40,7 +40,42 @@ export function openForReviewCopy(pr) {
       { tone: 'warn', text: 'Contribute cannot turn it back into a draft yet' },
     ].filter(Boolean),
     footnote: `Opens the version you are looking at (${short(pr.headRefOid)}). Nothing merges.`,
-    done: { title: 'Open for review', text: 'Reviewers can see it now.' },
+    // GitHub cannot pin a version on this write, so the platform reports the head it saw afterwards.
+    done: outcome => ({
+      title: 'Open for review',
+      text: outcome?.observedHead && outcome.observedHead !== pr.headRefOid
+        ? `Reviewers can see it now. It changed while you were looking: GitHub shows ${short(outcome.observedHead)} now, so check what they will read.`
+        : 'Reviewers can see it now.',
+    }),
+  }
+}
+
+// Post what a finished private review found, as a plain comment review on the PR. The words are the
+// platform's own, shown as they will appear; nothing is posted until the owner confirms here. Until the
+// words have arrived (or when the platform refuses) the button stays off and the sheet says why.
+export function postFindingsCopy(pr, { preview = null, error = '', own = false } = {}) {
+  const base = {
+    icon: 'globe',
+    title: `Post this review on #${pr.number}?`,
+    confirm: 'Post to GitHub',
+    working: 'Posting…',
+  }
+  if (error) return { ...base, disabled: true, facts: [{ tone: 'bad', text: error }], footnote: 'Nothing was posted.', done: { title: 'Posted', text: '' } }
+  if (!preview) return { ...base, disabled: true, facts: [{ tone: 'warn', text: 'Reading what it would post…' }], footnote: 'Nothing is posted until you confirm.', done: { title: 'Posted', text: '' } }
+  return {
+    ...base,
+    facts: [
+      { tone: 'ok', text: own ? 'A comment on your own PR, from your GitHub account' : 'A comment on this PR, from your GitHub account' },
+      { tone: 'ok', text: 'Not an approval and not a request for changes' },
+      { tone: 'warn', text: 'Anyone who can see this PR can read it' },
+    ],
+    says: { label: 'What it would post', markdown: preview.body },
+    footnote: `Posts exactly this text, once, at the version you reviewed (${short(preview.head_sha || pr.headRefOid)}). If anyone pushes first, nothing is posted and you are told. Contribute cannot take it back: on GitHub you can edit or hide it.`,
+    done: outcome => ({
+      title: 'Posted on GitHub',
+      text: `Your review is on #${pr.number} now.`,
+      ...(outcome?.url ? { link: { href: outcome.url, label: 'View the review on GitHub' } } : {}),
+    }),
   }
 }
 
