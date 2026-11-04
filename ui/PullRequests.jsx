@@ -17,6 +17,7 @@ import { savedFindings } from '../address-feedback.js'
 import { ReviewConfirmation } from './ReviewConfirmation.jsx'
 import { ActionConfirm } from './ActionConfirm.jsx'
 import { IgnoreReview } from './IgnoreReview.jsx'
+import { RunOnce } from './RunOnce.jsx'
 import { YOUR_INTENTS } from '../actions-menu.js'
 import { ACTION_COPY } from '../action-copy.js'
 import { projectUpdater } from '../updates.js'
@@ -538,6 +539,8 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
         // window overlays it and the assignment pane opens above it.
         <PullRequestDetail key={`${prKey(detailPr)}:${detailPr.headRefOid}:${detailPr.baseRefOid}:${detailRevision}`} cacheStore={detailSnapshot(detailPr)} pr={detailPr} token={token} initialTab={focusPull?.tab === 'review' ? 'review' : 'conversation'} review={reviewProps(detailPr)} onReview={mode => choose([detailPr], mode, opened || prKey(detailPr))} onAssign={() => assignSelection([detailPr], opened || prKey(detailPr))} onRefresh={() => load()} readOnly={!isOpenPull(detailPr)} canAssign={mayAssign(detailPr.repository.viewerPermission)} status={statusFor(detailPr)} onProgress={null} record={recordsForPull(records, detailPr)[0]} capabilities={capabilities} onRecord={onRecord} provenance={pullConversations(records, relevantRuns, detailPr)} holdUntilLoaded />
       ) : data.loading || data.error || focusKey ? <Skeleton lines={8} label="Loading the pull request" /> : <p className="co-pr-note" role="status">This pull request is not in the open list. It may be closed; refresh to check.</p>}
+      {/* A desk row's Fix these findings opens the PR straight into its fix window. */}
+      {focusPull?.intent === 'fix' && onStartAgent ? <RunOnce ready={!!detailPr} nonce={focusPull.nonce} run={() => choose([detailPr], 'address', prKey(detailPr))} /> : null}
       {reviewDialog}
     {addressDialog}
     {actionDialog}

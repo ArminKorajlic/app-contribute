@@ -747,6 +747,10 @@ input[type=checkbox].co-switch:focus-visible { outline:2px solid var(--accent); 
 .co-envelope-body > * + * { border-top:1px solid var(--border); }
 .co-desk-row { display:flex; align-items:flex-start; gap:10px; width:100%; padding:12px 14px; border:0; background:none; color:var(--text); font:inherit; text-align:left; cursor:pointer; }
 .co-desk-row:hover { background:var(--surface-2); }
+.co-desk-row-split { display:flex; align-items:center; gap:10px; padding-right:14px; }
+.co-desk-row-split > .co-desk-row { flex:1; min-width:0; }
+.co-desk-row-action { flex:none; min-height:44px; }
+@media(max-width:680px) { .co-desk-row-split { flex-direction:column; align-items:stretch; gap:0; padding:0 14px 12px; } .co-desk-row-split > .co-desk-row { padding-left:0; padding-right:0; } .co-desk-row-action { width:100%; } }
 .co-desk-row.is-static { cursor:default; }
 .co-desk-row.is-static:hover { background:none; }
 .co-desk-row > .co-icon, .co-desk-row > .co-gh-state { margin-top:2px; }

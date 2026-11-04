@@ -119,6 +119,7 @@
     "ui/OpenSplitButton.jsx",
     "ui/IgnoreReview.jsx",
     "ui/Envelope.jsx",
+    "ui/RunOnce.jsx",
     "ui/ReviewsView.jsx",
     "ui/useReviewList.js",
     "ui/useDismissableMenu.js",

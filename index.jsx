@@ -1616,10 +1616,11 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
       incomingReviews: [],
     }) : contributionRun
   }
-  function openPullPage(project, pr, tab = 'conversation') {
+  // `intent` lets a desk row open the PR straight into a window ('fix' = Address feedback).
+  function openPullPage(project, pr, tab = 'conversation', intent = '') {
     const repo = pr?.repository?.nameWithOwner || project?.canonical_repo || ''
     if (!repo || !pr?.number) return
-    setPullPage({ key: project?.key || '', repo, number: pr.number, tab, nonce: crypto.randomUUID() })
+    setPullPage({ key: project?.key || '', repo, number: pr.number, tab, intent, nonce: crypto.randomUUID() })
   }
   // `view` comes from the project tabs: which PRs to show, how to switch tabs,
   // and where to report the open PR count. Without it the list shows all PRs.

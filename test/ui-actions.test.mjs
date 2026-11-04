@@ -467,7 +467,7 @@ test('the desk reads review runs once, wraps its rows in the frame, and opens a 
   const deskSource = readFileSync(new URL('../ui/DeskViews.jsx', import.meta.url), 'utf8')
   assert.match(deskSource, /<ReviewFrame state=\{framed\} inset=\{3\}/)
   assert.match(deskSource, /onOpenPull\(project, pr, framed === 'idle' \? 'conversation' : 'review'\)/)
-  assert.match(deskSource, /frameState\(reviewForRecord\(runs, item\.record\), \{ own: true \}\)/)
+  assert.match(deskSource, /frameState\(reviewForRecord\(runs, item\.record\), \{ own: true, ignored \}\)/)
   assert.match(appSource, /const reviewActive = hasActiveReview\(reviewRuns\)/)
   assert.match(appSource, /runs: reviewRuns,/)
   // Refresh renews the runs with everything else; nothing polls unless a review is working.
@@ -565,4 +565,13 @@ test('an opened panel scrolls into view after the project restores its scroll, a
   assert.match(helper, /requestAnimationFrame\(/)
   assert.match(helper, /scrollIntoView\(\{ block: 'nearest'/)
   assert.doesNotMatch(helper, /block: 'start'/)
+})
+
+test('a desk row can open a PR straight into its fix window, once per visit, and only where agents can start', () => {
+  const pullsSource = readFileSync(new URL('../ui/PullRequests.jsx', import.meta.url), 'utf8')
+  assert.match(pullsSource, /focusPull\?\.intent === 'fix' && onStartAgent \? <RunOnce ready=\{!!detailPr\} nonce=\{focusPull\.nonce\}/)
+  assert.match(appSource, /function openPullPage\(project, pr, tab = 'conversation', intent = ''\)/)
+  assert.match(appSource, /setPullPage\(\{ key: project\?\.key \|\| '', repo, number: pr\.number, tab, intent, nonce: crypto\.randomUUID\(\) \}\)/)
+  const once = readFileSync(new URL('../ui/RunOnce.jsx', import.meta.url), 'utf8')
+  assert.match(once, /done\.current === nonce/)
 })

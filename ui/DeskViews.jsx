@@ -1,6 +1,7 @@
 import { authoredPullState, authoredPulls, chainPulls, editProjects, feedbackPull, mergedRecently, needsPulls, newSince } from '../desk.js'
 import { attentionListItems } from '../run.js'
-import { conversationCount, reviewForPull } from '../collaboration.js'
+import { conversationCount, prKey, reviewForPull } from '../collaboration.js'
+import { savedFindings } from '../address-feedback.js'
 import { frameState, reviewForRecord } from '../review-frame.js'
 import { isOwnPull } from '../pull-view.js'
 import { ReviewFrame } from './ReviewFrame.jsx'
@@ -53,11 +54,11 @@ function DeskPullRow({ project, pr, chip, order, lastLooked, runs, onOpenPull, o
 
 // A saved-work card (review feedback, a decision) in the same shape as a PR
 // row: icon, title, one muted line on why it is here, and a state chip.
-function DeskAttentionRow({ item, onSelect }) {
+function DeskAttentionRow({ item, onSelect, action = null }) {
   const reason = lookAtReason(item)
   const detectedAt = item.record?.attention?.detected_at
   const group = groupNote(item)
-  return (
+  const row = (
     <button type="button" className={'co-desk-row is-' + reason.key} onClick={() => onSelect(item)}>
       <Icon name="info" size={16} className="co-desk-attention-icon" />
       <span className="co-desk-row-main">
@@ -71,6 +72,8 @@ function DeskAttentionRow({ item, onSelect }) {
       </span>
     </button>
   )
+  // The row's own answer sits beside it, never inside the button that opens the PR.
+  return action ? <div className="co-desk-row-split">{row}<button type="button" className="co-btn co-btn-primary co-desk-row-action" onClick={action.run}>{action.label}</button></div> : row
 }
 
 const requestChip = { label: 'Asks for your review', tone: 'you' }
@@ -89,9 +92,17 @@ function projectRows(view, project, { login, decisionsFor, lastLooked, query, ru
   const mine = view === 'needs' || view === 'mine'
     ? authoredPulls(project.incomingReviews, login).filter(pr => matches(query, pr.title, String(pr.number)))
     : []
+  // Your own agent review of your own PR found problems at its current version:
+  // the row offers the fix itself, and opens the PR straight into it.
+  const fixAction = item => {
+    const target = feedbackPull(item)
+    const pr = target && authoredPulls(project.incomingReviews, login).find(candidate => prKey(candidate) === prKey(target))
+    if (!pr || !savedFindings(reviewForPull(runs, pr), ignored)) return null
+    return { label: 'Fix these findings', run: () => onOpenPull(project, target, 'review', 'fix') }
+  }
   const decisionRow = item => (
-    <ReviewFrame key={`decision:${item.id}`} state={frameState(reviewForRecord(runs, item.record), { own: true })} inset={3} radius={10}>
-      <DeskAttentionRow item={item} onSelect={openDecision} />
+    <ReviewFrame key={`decision:${item.id}`} state={frameState(reviewForRecord(runs, item.record), { own: true, ignored })} inset={3} radius={10}>
+      <DeskAttentionRow item={item} onSelect={openDecision} action={fixAction(item)} />
     </ReviewFrame>
   )
   const openDecision = item => {
