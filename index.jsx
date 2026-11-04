@@ -76,6 +76,7 @@ import { ContributionRun } from './ui/Feed.jsx'
 import { ScreenshotLoaderContext } from './ui/useScreenshots.js'
 import { Icon } from './ui/Icons.jsx'
 import { SourceMap } from './ui/SourceMap.jsx'
+import { useReviewList } from './ui/useReviewList.js'
 import { SyncNote } from './ui/GithubParts.jsx'
 import { ProjectEdits } from './ui/ProjectEdits.jsx'
 import { RepositoryPicker } from './ui/RepositoryPicker.jsx'
@@ -1577,13 +1578,16 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
   const projectAttention = useMemo(() => Object.fromEntries(sourceProjects
     .map(project => [project.key, projectNeedsCount(project, projectRun(project).decisions, conn.login || '')])), [sourceProjects, records, reviewStatus, conn.login])
   // The home's clickable counts: every number names a next step and its view.
+  // Reviews you started: one row per PR for the PR reviews page, counted in the rail.
+  const reviewList = useReviewList({ token, runs: reviewRuns, ignored: ignoredReviews, login: conn.login || '' })
   const deskCountsValue = useMemo(() => deskCounts({
     projects: sourceProjects,
     decisions: contributionRun.decisions,
     incoming: incomingReviews,
     records,
     login: conn.login || '',
-  }), [sourceProjects, contributionRun, incomingReviews, records, conn.login])
+    reviews: reviewList.counts,
+  }), [sourceProjects, contributionRun, incomingReviews, records, conn.login, reviewList.counts])
   const desk = {
     view: deskView,
     onView: setDeskView,
@@ -1592,6 +1596,7 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
     records,
     runs: reviewRuns,
     ignored: ignoredReviews,
+    reviews: reviewList,
     lastLooked,
     decisionsFor: project => projectRun(project).decisions,
     onOpenPull: openPullPage,

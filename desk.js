@@ -15,6 +15,7 @@ export const DESK_VIEWS = [
   { key: 'requests', label: 'Review requests', icon: 'feedback' },
   { key: 'mine', label: 'My PRs', icon: 'github' },
   { key: 'work', label: 'My work', icon: 'prepare' },
+  { key: 'reviews', label: 'PR reviews', icon: 'review' },
   { key: 'edits', label: 'Your edits', icon: 'edit' },
   { key: 'merged', label: 'Merged this week', icon: 'check' },
 ]
@@ -106,7 +107,7 @@ export function projectNeedsCount(project, decisions, login) {
 }
 
 // The clickable counts under the heading: what needs the owner, by next step.
-export function deskCounts({ projects = [], decisions = [], incoming = [], records = [], login = '' } = {}) {
+export function deskCounts({ projects = [], decisions = [], incoming = [], records = [], login = '', reviews = null } = {}) {
   const questionItems = attentionListItems(decisions)
   const covered = feedbackPullKeys(questionItems)
   const pulls = authoredPulls(incoming, login)
@@ -126,6 +127,9 @@ export function deskCounts({ projects = [], decisions = [], incoming = [], recor
     mine: pulls.length,
     work: decisions.length,
     merged: mergedRecently(records).length,
+    // Reviews you started: waiting on you (the badge) and agents still at work (a spinner).
+    reviewsWaiting: reviews?.waiting || 0,
+    reviewsRunning: reviews?.running || 0,
   }
 }
 
@@ -137,6 +141,7 @@ export function railBadge(view, counts) {
     case 'requests': return counts.requests
     case 'mine': return counts.mine
     case 'work': return counts.work
+    case 'reviews': return counts.reviewsWaiting || 0
     case 'edits': return counts.editedFiles
     case 'merged': return counts.merged
     default: return 0

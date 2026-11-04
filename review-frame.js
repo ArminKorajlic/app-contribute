@@ -44,6 +44,8 @@ export function frameState(status, ctx) {
 }
 
 const OWNER_CHIP_WORDS = { merge_unknown: 'Check outcome', ready_unknown: 'Check outcome', verdict_pending: 'Verdict waiting', verdict_unknown: 'Verdict waiting' }
+// What a review that waits on the owner calls itself, on a row and on the PR reviews page alike.
+export const ownerChipLabel = item => OWNER_CHIP_WORDS[item.state] || 'Needs you'
 
 // The chip beside a PR row's meta line for its current review. Only the owner's
 // own move is amber; a review that waits on the PR's author reads quietly.
@@ -52,7 +54,7 @@ function currentReviewChip(status, pr, own, ignored, frame) {
   const progress = reviewItemProgress(run, item, { own, ignored })
   if (frame === 'reviewing') return null // the travelling frame says it
   if (progress.halted) return { label: 'Run stopped', tone: 'owner' }
-  if (progress.turn === 'owner' && (progress.waiting || run.chat_id)) return { label: OWNER_CHIP_WORDS[item.state] || 'Needs you', tone: 'owner' }
+  if (progress.turn === 'owner' && (progress.waiting || run.chat_id)) return { label: ownerChipLabel(item), tone: 'owner' }
   if (progress.turn === 'author') return { label: `Waiting on ${pr.author?.login || 'the author'}`, tone: 'waiting' }
   if (ignoredNote(item, ignored)) return { label: 'Ignored', tone: 'waiting' }
   if (item.state === 'all_clear' && !status.exactBase) return { label: `Reviewed on an older ${pr.baseRefName}`, tone: 'plain' }

@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { authoredPullState, authoredPulls, chainPulls, editProjects, feedbackPull, mergedRecently, needsPulls, newSince } from '../desk.js'
 import { attentionListItems } from '../run.js'
 import { conversationCount, reviewForPull } from '../collaboration.js'
@@ -11,9 +10,8 @@ import { STATUS_LABELS } from '../domain.js'
 import { groupNote, lookAtReason } from './AttentionList.jsx'
 import { ChecksBadge, PullStateIcon, QuietLabels, TimeAgo } from './GithubParts.jsx'
 import { Icon } from './Icons.jsx'
-import { ProjectIcon } from './ProjectIcon.jsx'
-
-const PROJECT_TAGS = { platform: 'Platform', app: 'App', external: 'On GitHub' }
+import { Envelope, EmptyView } from './Envelope.jsx'
+import { ReviewsView } from './ReviewsView.jsx'
 
 const matches = (query, ...parts) => !query.trim()
   || parts.filter(Boolean).join(' ').toLowerCase().includes(query.trim().toLowerCase())
@@ -73,29 +71,6 @@ function DeskAttentionRow({ item, onSelect }) {
       </span>
     </button>
   )
-}
-
-// The card that keeps one app's work together: its icon and name on top, the
-// rows inside, and Open to the project page itself.
-function Envelope({ project, count, foldable, children, onOpenProject }) {
-  const [open, setOpen] = useState(true)
-  return (
-    <section className={'co-envelope' + (open ? '' : ' is-folded')} aria-label={project.name}>
-      <header className="co-envelope-head">
-        <ProjectIcon project={project} className="co-envelope-glyph" />
-        <strong>{project.name}</strong>
-        {PROJECT_TAGS[project.kind] ? <span className="co-source-tag">{PROJECT_TAGS[project.kind]}</span> : null}
-        {count ? <b className="co-rail-count">{count}</b> : null}
-        <button type="button" className="co-quiet-action" onClick={() => onOpenProject(project.key)}>Open<Icon name="right" size={14} /></button>
-        {foldable ? <button type="button" className="co-envelope-toggle" aria-expanded={open} aria-label={(open ? 'Collapse ' : 'Expand ') + project.name} onClick={() => setOpen(!open)}><Icon name="chevron" size={16} /></button> : null}
-      </header>
-      <div className="co-envelope-body">{children}</div>
-    </section>
-  )
-}
-
-function EmptyView({ icon = 'check', title, hint }) {
-  return <div className="co-stage-empty"><Icon name={icon} size={20} /><strong>{title}</strong>{hint ? <span>{hint}</span> : null}</div>
 }
 
 const requestChip = { label: 'Asks for your review', tone: 'you' }
@@ -188,7 +163,8 @@ const EMPTY = {
 }
 
 // The selected side view: one card per app, in the projects list's own order.
-export function DeskView({ view, projects, records, login, decisionsFor, lastLooked, query, runs = [], ignored = null, onOpenProject, onOpenPull, onOpenRecord }) {
+export function DeskView({ view, projects, records, login, decisionsFor, lastLooked, query, runs = [], ignored = null, reviews = null, onOpenProject, onOpenPull, onOpenRecord }) {
+  if (view === 'reviews' && reviews) return <ReviewsView reviews={reviews} projects={projects} query={query} onOpenProject={onOpenProject} onOpenPull={onOpenPull} />
   const context = { login, decisionsFor, lastLooked, query, runs, ignored, onOpenPull, onOpenRecord }
   const envelopes = []
   for (const project of projects) {
