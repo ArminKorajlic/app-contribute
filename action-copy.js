@@ -1,7 +1,7 @@
 // The words on an action's confirm sheet: what it does, what GitHub shows now,
 // and what it cannot undo. Pure, so the sheet states exactly what the PR's own
 // data says and the tests can hold it to that.
-import { checkSummary } from './collaboration.js'
+import { checkSummary, reviewItemProgress } from './collaboration.js'
 
 const plural = (count, one, many) => `${count} ${count === 1 ? one : many}`
 
@@ -43,5 +43,54 @@ export function openForReviewCopy(pr) {
   }
 }
 
+// How a repository lets a PR land, in the platform's own order of preference
+// (squash, then a merge commit, then rebase). Only the ways the repository
+// allows are offered; with none reported the platform picks and nothing is asked.
+const MERGE_METHODS = {
+  squash: { label: 'Squash and merge', action: 'Squash and merge', detail: base => `All commits become one commit on ${base}.` },
+  merge: { label: 'Create a merge commit', action: 'Merge', detail: () => 'Keeps every commit and adds a merge commit.' },
+  rebase: { label: 'Rebase and merge', action: 'Rebase and merge', detail: base => `Replays the commits on top of ${base}.` },
+}
+const ALLOWED = { squash: 'squashMergeAllowed', merge: 'mergeCommitAllowed', rebase: 'rebaseMergeAllowed' }
+export const allowedMergeMethods = repository => Object.keys(MERGE_METHODS).filter(key => repository?.[ALLOWED[key]] === true)
+
+// What GitHub says about approval. A review-less branch rule reads as no decision, which is not a
+// missing approval, so it says exactly that.
+function decisionFact(pr) {
+  switch (pr.reviewDecision) {
+    case 'APPROVED': return { tone: 'ok', text: 'Approved on GitHub' }
+    case 'CHANGES_REQUESTED': return { tone: 'bad', text: 'Changes are requested' }
+    case 'REVIEW_REQUIRED': return { tone: 'bad', text: 'GitHub still needs a review' }
+    default: return pr.reviewDecision === null || pr.reviewDecision === '' ? { tone: 'ok', text: 'GitHub is not asking for an approval here' } : null
+  }
+}
+
+// What the owner's own agent review of this exact version said, if there is one.
+function reviewFact(status, ignored) {
+  if (!status) return null
+  const progress = reviewItemProgress(status.run, status.item, { ignored })
+  if (status.item.state === 'all_clear') return { tone: 'ok', text: 'Your agent’s review is clear for this version' }
+  if (progress.turn === 'owner') return { tone: 'warn', text: status.item.state === 'needs_you' ? 'Your agent’s review found problems on this version' : 'Your agent’s review is waiting on you' }
+  return null
+}
+
+// Merge: lands this exact version. Contribute cannot undo it.
+export function mergeCopy(pr, { status = null, ignored = null, method = '' } = {}) {
+  const base = pr.baseRefName || 'the target branch'
+  const allowed = allowedMergeMethods(pr.repository)
+  const chosen = allowed.includes(method) ? method : allowed[0] || ''
+  return {
+    title: `Merge #${pr.number} into ${base}?`,
+    confirm: chosen ? MERGE_METHODS[chosen].action : 'Merge',
+    working: 'Merging…',
+    facts: [decisionFact(pr), checksFact(pr, { blocking: true }), conflictFact(pr), reviewFact(status, ignored)].filter(Boolean),
+    choices: allowed.length > 1 ? { label: 'How should it land?', value: chosen, options: allowed.map(key => ({ key, label: MERGE_METHODS[key].label, action: MERGE_METHODS[key].action, detail: MERGE_METHODS[key].detail(base) })) } : null,
+    footnote: `Merges the version you are looking at (${short(pr.headRefOid)}). If anyone pushes first, nothing is merged and you are told. Contribute cannot undo a merge: to take it back you would open a revert on GitHub.`,
+    done: outcome => outcome?.state === 'queued'
+      ? { title: 'Added to the merge queue', text: `GitHub merges #${pr.number} into ${base} when the queue reaches it.` }
+      : { title: 'Merged', text: `#${pr.number} is now in ${base}.` },
+  }
+}
+
 // The sheet's words for each of the owner's own actions, by menu intent.
-export const ACTION_COPY = { open_review: openForReviewCopy }
+export const ACTION_COPY = { open_review: openForReviewCopy, merge_now: mergeCopy }

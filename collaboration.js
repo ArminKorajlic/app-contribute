@@ -278,6 +278,21 @@ export function reviewRunRequest(choice) {
   }
 }
 
+// The owner's own Merge: this exact version, by the repository's allowed method.
+// Returns the outcome shape the confirm sheet already reads: { ok } | { pending }
+// (GitHub may have merged; read it back, never repeat) | { error }. The platform
+// re-checks everything at the moment of merging and refuses what GitHub refuses.
+export async function mergePull(token, appId, pr, { method = '' } = {}) {
+  try {
+    const result = await collaborationRequest(token, appId, 'pulls/merge', {
+      repo: pr.repository.nameWithOwner, number: pr.number, head_sha: pr.headRefOid, ...(method ? { method } : {}),
+    })
+    return { ok: true, state: result.state, mergeSha: result.merge_sha || '' }
+  } catch (error) {
+    return error.code === 'merge_unconfirmed' ? { pending: true, error: error.message } : { error: error.message }
+  }
+}
+
 // Assignment is additive on GitHub. Return each outcome so partial batches
 // never look like an all-or-nothing success or silently retry failed requests.
 export async function assignPulls(token, appId, pulls, login) {

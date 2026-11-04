@@ -188,7 +188,7 @@ export async function fetchContributionScreenshot(token, appId, recordId, shot) 
 export const PR_FIELDS = `id number title url headRefOid headRefName baseRefName baseRefOid baseRef { target { oid } } isDraft
   additions deletions changedFiles createdAt updatedAt
   author { login } assignees(first:100) { nodes { login } }
-  repository { nameWithOwner viewerPermission }
+  repository { nameWithOwner viewerPermission squashMergeAllowed mergeCommitAllowed rebaseMergeAllowed }
   headRepository { nameWithOwner viewerPermission isArchived }
   labels(first:20) { nodes { name color } totalCount }
   comments { totalCount }

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { awaitsGithub, earlierReviewForPull, reviewIntent, collaborationRequest, discoverPull, discoverPulls, liveSelection, loadReviewRuns, conversationCount, matchingPulls, mayAssign, mergeSelection, prKey, reviewForPull, reviewItemProgress, reviewRunRequest, reviewRunTitle, runDetailsElsewhere, notOursToObserve, assignPulls, takeoverScope } from '../collaboration.js'
+import { awaitsGithub, earlierReviewForPull, mergePull, reviewIntent, collaborationRequest, discoverPull, discoverPulls, liveSelection, loadReviewRuns, conversationCount, matchingPulls, mayAssign, mergeSelection, prKey, reviewForPull, reviewItemProgress, reviewRunRequest, reviewRunTitle, runDetailsElsewhere, notOursToObserve, assignPulls, takeoverScope } from '../collaboration.js'
 import { acknowledgeAssignment, emptyPullView, invalidatedSelection, isOpenPull, isOwnPull, observePulls, pullsInView } from '../pull-view.js'
 import { frameState, rowReview } from '../review-frame.js'
 import { ReviewFrame } from './ReviewFrame.jsx'
@@ -292,6 +292,14 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
     } catch (error) { if (current()) setRunError(`This run's latest status is unavailable: ${error.message}`) }
   }, [token, appId])
   useEffect(() => { sessionRef.current.runs = runs }, [runs])
+  // What this Möbius can do for the owner (Merge among it), asked once. An older
+  // Möbius answers 404 and keeps the menu as it was.
+  useEffect(() => {
+    if (capabilities || conn.state !== 'connected') return undefined
+    let alive = true
+    collaborationRequest(token, appId, 'review-presets').then(value => { if (alive) setCapabilities(value.capabilities || {}) }, () => {})
+    return () => { alive = false }
+  }, [conn.state, token, appId])
   useEffect(() => {
     if (conn.state !== 'connected') return
     // A repository already read this session reopens from its cache with no
@@ -488,9 +496,13 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
   const closeIgnore = () => setIgnoring(null)
   const ignoreDialog = ignoring ? <ReviewDialog onClose={closeIgnore}><IgnoreReview pr={ignoring.pr} onPick={reason => { onIgnoreReview(ignoring.item, reason); closeIgnore() }} onClose={closeIgnore} /></ReviewDialog> : null
   // Each of your own actions runs the app's one guarded handler for it.
-  const actionHandlers = { open_review: record => onOpenForReview ? onOpenForReview(record) : { error: 'Opening for review is not available here.' } }
+  const actionHandlers = {
+    open_review: ({ record }) => onOpenForReview ? onOpenForReview(record) : { error: 'Opening for review is not available here.' },
+    merge_now: ({ pr, choice }) => mergePull(token, appId, pr, { method: choice }),
+  }
   const closeAction = () => setActing(null)
-  const actionDialog = acting ? <ReviewDialog onClose={closeAction}><ActionConfirm pr={acting.pr} copy={ACTION_COPY[acting.intent](acting.pr)} onConfirm={() => actionHandlers[acting.intent](acting.record)} onClose={closeAction} /></ReviewDialog> : null
+  // A merge changes the list (the PR leaves it), so it reads again once done.
+  const actionDialog = acting ? <ReviewDialog onClose={closeAction}><ActionConfirm pr={acting.pr} copy={ACTION_COPY[acting.intent](acting.pr, { status: statusFor(acting.pr), ignored: ignoredReviews })} onConfirm={({ choice }) => actionHandlers[acting.intent]({ ...acting, choice })} onDone={() => { if (acting.intent === 'merge_now') { void load(); void onChanged?.() } }} onClose={closeAction} /></ReviewDialog> : null
   const assignPane = <TaskPane id="task:assign" dock={false}>{assigning ? <AssigneePicker key={assigning.map(prKey).join(',')} pulls={assigning} appId={appId} token={token} ownLogin={conn.login} onClose={() => { setAssigning(null); task?.close() }} onAssigned={(login, keys) => {
       viewRef.current = acknowledgeAssignment(viewRef.current, keys, login, ++generation.current)
       setView(viewRef.current)

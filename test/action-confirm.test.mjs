@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { ACTION_COPY, openForReviewCopy } from '../action-copy.js'
+import { ACTION_COPY, allowedMergeMethods, mergeCopy, openForReviewCopy } from '../action-copy.js'
 import { isPersonalDraft } from '../domain.js'
 import { frontendModules, renderModule } from './render-harness.mjs'
 
@@ -52,4 +52,78 @@ test('the confirm sheet has one close affordance and one button that names the r
   assert.match(html, /aria-label="Close"/)
   assert.doesNotMatch(html, />Cancel</, 'the X is the only way out')
   assert.match(html, /Contribute cannot turn it back into a draft yet/)
+})
+
+import { mergePull } from '../collaboration.js'
+
+const landable = { squashMergeAllowed: true, mergeCommitAllowed: true, rebaseMergeAllowed: true }
+const approved = (extra = {}) => pr({ reviewDecision: 'APPROVED', repository: { nameWithOwner: 'team/repo', ...landable }, ...extra })
+
+test('Merge names what it lands, what GitHub shows now, and that Contribute cannot undo it', () => {
+  const copy = mergeCopy(approved())
+  assert.equal(copy.title, 'Merge #9 into main?')
+  assert.equal(copy.confirm, 'Squash and merge', 'squash is the platform\'s first choice when the repository allows it')
+  assert.deepEqual(copy.facts.map(fact => `${fact.tone}:${fact.text}`), ['ok:Approved on GitHub', 'ok:21 checks passed', 'ok:No conflicts with main'])
+  assert.match(copy.footnote, /abcdef0/)
+  assert.match(copy.footnote, /nothing is merged and you are told/)
+  assert.match(copy.footnote, /cannot undo a merge/)
+  assert.equal(ACTION_COPY.merge_now, mergeCopy)
+})
+
+test('the ways to land are the ones the repository allows, in the platform\'s order, asked only when there is a choice', () => {
+  assert.deepEqual(allowedMergeMethods(landable), ['squash', 'merge', 'rebase'])
+  assert.deepEqual(allowedMergeMethods({ mergeCommitAllowed: true }), ['merge'])
+  assert.deepEqual(allowedMergeMethods({}), [])
+  const many = mergeCopy(approved())
+  assert.deepEqual(many.choices.options.map(option => option.key), ['squash', 'merge', 'rebase'])
+  assert.equal(many.choices.value, 'squash')
+  assert.match(many.choices.options[0].detail, /one commit on main/)
+  assert.equal(mergeCopy(approved(), { method: 'rebase' }).confirm, 'Rebase and merge')
+  assert.equal(mergeCopy(approved(), { method: 'nonsense' }).choices.value, 'squash', 'a method the repository does not allow is not honored')
+  const one = mergeCopy(approved({ repository: { nameWithOwner: 'team/repo', mergeCommitAllowed: true } }))
+  assert.equal(one.choices, null)
+  assert.equal(one.confirm, 'Merge')
+  assert.equal(mergeCopy(pr()).choices, null, 'unknown settings ask nothing; the platform picks')
+})
+
+test('a missing approval, failing checks or a conflict show as blockers, and your own review is named for this version', () => {
+  const tones = extra => mergeCopy(approved(extra)).facts.filter(fact => fact.tone !== 'ok').map(fact => `${fact.tone}:${fact.text}`)
+  assert.deepEqual(tones({ reviewDecision: 'REVIEW_REQUIRED' }), ['bad:GitHub still needs a review'])
+  assert.deepEqual(tones({ reviewDecision: 'CHANGES_REQUESTED' }), ['bad:Changes are requested'])
+  assert.deepEqual(tones({ ...rollup('FAILURE', 2) }), ['bad:2 checks are failing'])
+  assert.deepEqual(tones({ mergeable: 'CONFLICTING' }), ['bad:It conflicts with main'])
+  assert.equal(mergeCopy(approved({ reviewDecision: '' })).facts[0].text, 'GitHub is not asking for an approval here')
+  const status = (state, extra = {}) => ({ run: { state: 'complete', execution_state: 'completed' }, item: { state, ...extra } })
+  const reviewLine = value => mergeCopy(approved(), { status: value }).facts.at(-1)
+  assert.deepEqual(reviewLine(status('all_clear')), { tone: 'ok', text: 'Your agent’s review is clear for this version' })
+  assert.deepEqual(reviewLine(status('needs_you', { summary: 'P1' })), { tone: 'warn', text: 'Your agent’s review found problems on this version' })
+  const ignored = { 'o/r#1@x': { reason: 'Not a problem' } }
+  const setAside = mergeCopy(approved(), { status: status('needs_you', { repo: 'o/r', number: 1, head_sha: 'x' }), ignored })
+  assert.equal(setAside.facts.at(-1).text, 'No conflicts with main', 'a finding you set aside is not a warning')
+})
+
+test('the finished sheet says merged or queued, from what the platform answered', () => {
+  const done = mergeCopy(approved()).done
+  assert.deepEqual(done({ state: 'merged' }), { title: 'Merged', text: '#9 is now in main.' })
+  assert.deepEqual(done({ state: 'queued' }), { title: 'Added to the merge queue', text: 'GitHub merges #9 into main when the queue reaches it.' })
+})
+
+test('Merge goes to the platform for this exact version and returns the outcome shapes the sheet reads', async () => {
+  const sent = []
+  const previous = globalThis.fetch
+  const reply = (status, body) => async (url, options) => { sent.push({ url, body: JSON.parse(options.body) }); return { ok: status < 400, status, json: async () => body } }
+  try {
+    globalThis.fetch = reply(200, { state: 'merged', merge_sha: 'c0ffee' })
+    assert.deepEqual(await mergePull('t', 10, approved(), { method: 'squash' }), { ok: true, state: 'merged', mergeSha: 'c0ffee' })
+    assert.equal(sent[0].url, '/api/github/contributions/10/pulls/merge')
+    assert.deepEqual(sent[0].body, { repo: 'team/repo', number: 9, head_sha: 'abcdef0123456789', method: 'squash' })
+    await mergePull('t', 10, approved())
+    assert.equal('method' in sent[1].body, false, 'no choice, no method: the platform picks')
+    globalThis.fetch = reply(409, { detail: 'GitHub still requires a review or has requested changes.' })
+    assert.deepEqual(await mergePull('t', 10, approved()), { error: 'GitHub still requires a review or has requested changes.' })
+    globalThis.fetch = reply(502, { detail: { code: 'merge_unconfirmed', message: 'GitHub may have merged it. Check the pull request before trying again.' } })
+    assert.deepEqual(await mergePull('t', 10, approved()), { pending: true, error: 'GitHub may have merged it. Check the pull request before trying again.' })
+    globalThis.fetch = reply(404, {})
+    assert.match((await mergePull('t', 10, approved())).error, /companion Möbius update/)
+  } finally { globalThis.fetch = previous }
 })
