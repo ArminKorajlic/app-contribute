@@ -907,7 +907,7 @@ a.co-related-row:hover { border-color:color-mix(in srgb,var(--accent) 36%,var(--
  .co-pr-detail .co-pr-sub-num { display:inline; }
  .co-pull-page .co-gh-pr-title { margin-top:8px; font-size:18px; font-weight:600; line-height:1.32; letter-spacing:-.01em; }
  .co-pr-detail .co-gh-labels { margin-top:8px; }
- .co-pr-detail-actions { margin:12px 0 10px; }
+ .co-pr-detail-actions { flex-wrap:wrap; margin:12px 0 10px; }
  .co-pr-detail .co-markdown { font-size:15px; line-height:1.5; }
  .co-gh-comment > .co-markdown, .co-gh-comment > div { padding:10px 12px; }
  .co-gh-comment > header { padding:6px 8px 6px 12px; }
