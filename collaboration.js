@@ -172,11 +172,27 @@ export const REVIEW_STATE_NAMES = { reviewing: 'Reviewing', repairing:'Fixing re
 const SETTLED_ITEMS = new Set(['all_clear', 'merged', 'queued', 'complete'])
 const HALTED_RUNS = new Set(['stopped', 'failed', 'interrupted'])
 export const reviewRunStateLabel = run => REVIEW_STATE_NAMES[run.execution_state] || REVIEW_STATE_NAMES[run.state] || run.state
-export function reviewItemProgress(run, item) {
-  const settled = SETTLED_ITEMS.has(item.state)
+// `turn` says whose move the review leaves on its PR: 'agent' while it works,
+// 'owner' while a decision, an answer or a fix waits on you, 'author' once your
+// review is out and the PR's author is next, 'none' once it is settled. The
+// saved word needs_you is what the review FOUND; the verdict receipts say what
+// you already did about it, and only they can hand the move to the author.
+// GitHub refuses "request changes" on your own PR, so a posted one is always on
+// someone else's. A posted plain review hands a PR over only when `own` is
+// known to be false; null (unknown) never does.
+export function reviewItemProgress(run, item, { own = null } = {}) {
+  const found = item.state === 'needs_you'
+  const verdict = item.verdict_proposal
+  const requested = found && verdict?.state === 'posted' && verdict.event === 'REQUEST_CHANGES'
+  const handedOver = requested || (found && own === false && !verdict && item.public_review?.state === 'posted')
+  const dropped = found && verdict?.state === 'discarded'
+  const settled = SETTLED_ITEMS.has(item.state) || handedOver || dropped
   const halted = !settled && HALTED_RUNS.has(run.execution_state)
   const waiting = !settled && run.execution_state === 'awaiting_owner'
-  return { label: halted ? 'Not finished' : REVIEW_STATE_NAMES[item.state] || item.state, halted, waiting, settled }
+  const label = requested ? 'Changes requested' : handedOver ? 'Review posted' : dropped ? 'Verdict discarded'
+    : halted ? 'Not finished' : REVIEW_STATE_NAMES[item.state] || item.state
+  const turn = handedOver ? 'author' : settled ? 'none' : halted || waiting || OWNER_ITEM_STATES.has(item.state) ? 'owner' : 'agent'
+  return { label, halted, waiting, settled, turn }
 }
 export const reviewRunHalted = run => run.state !== 'complete' && HALTED_RUNS.has(run.execution_state)
 

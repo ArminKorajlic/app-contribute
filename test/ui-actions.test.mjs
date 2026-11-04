@@ -453,10 +453,10 @@ test('a review chip opens the PR on its Review tab, and a started review no long
   const pullsSource = readFileSync(new URL('../ui/PullRequests.jsx', import.meta.url), 'utf8')
   assert.match(pullsSource, /onOpenPage \? onOpenPage\(pr, 'review'\)/)
   // The title opens Comments, or the Review tab while a review is running.
-  assert.match(pullsSource, /onOpenPage\(pr, frameState\(statusFor\(pr\)\) === 'reviewing' \? 'review' : 'conversation'\)/)
+  assert.match(pullsSource, /onOpenPage\(pr, frameState\(statusFor\(pr\), \{ own: isOwnPull\(pr, conn\.login\) \}\) === 'reviewing' \? 'review' : 'conversation'\)/)
   assert.doesNotMatch(pullsSource, /setChoice\(null\); setSelected\(new Set\(\)\)\n\s*task\?\.open\(`task:run:\$\{result\.run\.id\}`\)/)
   // The row wears the comet frame while an agent works; the Review tab knows your own PRs.
-  assert.match(pullsSource, /<ReviewFrame key=\{key\} state=\{framed\}/)
+  assert.match(pullsSource, /<ReviewFrame key=\{key\} state=\{review\.frame\}/)
   assert.match(pullsSource, /own: isOwnPull\(pr, conn\.login\)/)
   assert.match(appSource, /setPullPage\(\{ key: project\?\.key \|\| '', repo, number: pr\.number, tab,/)
 })
@@ -465,7 +465,7 @@ test('the desk reads review runs once, wraps its rows in the frame, and opens a 
   const deskSource = readFileSync(new URL('../ui/DeskViews.jsx', import.meta.url), 'utf8')
   assert.match(deskSource, /<ReviewFrame state=\{framed\} inset=\{3\}/)
   assert.match(deskSource, /onOpenPull\(project, pr, framed === 'idle' \? 'conversation' : 'review'\)/)
-  assert.match(deskSource, /frameState\(reviewForRecord\(runs, item\.record\)\)/)
+  assert.match(deskSource, /frameState\(reviewForRecord\(runs, item\.record\), \{ own: true \}\)/)
   assert.match(appSource, /const reviewActive = hasActiveReview\(reviewRuns\)/)
   assert.match(appSource, /runs: reviewRuns,/)
   // Refresh renews the runs with everything else; nothing polls unless a review is working.
@@ -480,7 +480,7 @@ test('a running review is shown by the frame and the Review tab only: no Reviewi
   const menuSource = readFileSync(new URL('../ui/AgentMenu.jsx', import.meta.url), 'utf8')
   const detailSource = readFileSync(new URL('../ui/PullRequestDetail.jsx', import.meta.url), 'utf8')
   // Tags for finished or waiting reviews stay; the one for a running review goes.
-  assert.match(pullsSource, /\{status && framed !== 'reviewing' \? <button className=\{'co-pr-agent-state'/)
+  assert.match(pullsSource, /\{review\.chip \? <button className=\{'co-pr-agent-state'/)
   assert.match(deskSource, /\{framed === 'verdict' \? <span className="co-desk-chip is-waiting">/)
   assert.doesNotMatch(deskSource, /is-review/)
   assert.doesNotMatch(menuSource, /co-arc|is-active|active =/)

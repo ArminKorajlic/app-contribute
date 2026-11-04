@@ -24,13 +24,15 @@ export const formatElapsed = seconds => `${Math.floor(seconds / 60)}:${String(se
 
 // How a review reads on the PR: one title and tone per state, chosen from the
 // platform's own run state. `changes` is a proposal to request changes.
-export function reviewStateTone(status) {
+export function reviewStateTone(status, ctx) {
   if (!status) return { key: 'none', title: 'No review yet' }
   const { run, item } = status
-  const progress = reviewItemProgress(run, item)
+  const progress = reviewItemProgress(run, item, ctx)
   if (progress.halted || item.state === 'failed') return { key: 'halted', title: progress.label, box: 'changes' }
-  if (frameState(status) === 'reviewing') return { key: 'running', title: progress.label }
+  if (frameState(status, ctx) === 'reviewing') return { key: 'running', title: progress.label }
   if (item.state === 'verdict_pending') return { key: 'verdict', title: 'Verdict waiting for you', box: 'verdict' }
+  // Your review is out and the author is next: nothing here waits on you.
+  if (progress.turn === 'author') return { key: 'waiting', title: progress.label }
   if (item.state === 'needs_you' && item.verdict_proposal?.event === 'REQUEST_CHANGES') return { key: 'changes', title: 'Changes found', box: 'changes' }
   if (OWNER_ITEM_STATES.has(item.state)) return { key: 'needs', title: progress.label, box: 'verdict' }
   if (item.state === 'all_clear') return { key: 'clear', title: 'Review clear', box: 'clear' }
@@ -39,8 +41,8 @@ export function reviewStateTone(status) {
 
 // The Review tab of a PR: nothing yet, a running review, or what the last review
 // found. It reuses the run's own verdict and conversation actions.
-export function ReviewTab({ pr, status, earlier = null, own = false, readOnly = false, busy = false, error = '', onStart, onStop, onRetry, onVerdict, pulls = [], listState = {} }) {
-  const tone = reviewStateTone(status)
+export function ReviewTab({ pr, status, earlier = null, own = null, readOnly = false, busy = false, error = '', onStart, onStop, onRetry, onVerdict, pulls = [], listState = {} }) {
+  const tone = reviewStateTone(status, { own })
   const running = tone.key === 'running'
   const elapsed = useElapsed(status?.run?.created_at, running)
   if (!status && earlier) return <EarlierReview earlier={earlier} readOnly={readOnly} onStart={onStart} />
@@ -80,7 +82,7 @@ export function ReviewTab({ pr, status, earlier = null, own = false, readOnly = 
       {halted && onRetry ? <button type="button" className="co-btn" disabled={busy} onClick={onRetry}>Start again</button> : null}
     </div>
   </div>
-  return <ReviewFrame state={frameState(status)} radius={12}>{body}</ReviewFrame>
+  return <ReviewFrame state={frameState(status, { own })} radius={12}>{body}</ReviewFrame>
 }
 
 // The PR changed after its last review, so that review is of an earlier version:

@@ -1,4 +1,4 @@
-import { baseTip, OWNER_ITEM_STATES, prKey, reviewItemProgress, reviewRunHalted, reviewRunStateLabel, reviewRunTitle, runDetailsElsewhere } from '../collaboration.js'
+import { baseTip, prKey, reviewItemProgress, reviewRunHalted, reviewRunStateLabel, reviewRunTitle, runDetailsElsewhere } from '../collaboration.js'
 import { verdictCopy } from '../review-copy.js'
 import { openAgentConversation } from './BatchAction.jsx'
 import { Icon } from './Icons.jsx'
@@ -38,11 +38,16 @@ export function VerdictProposal({ proposal, mode, busy, onDecide, own = false })
   </div>
 }
 
+// Outcomes only the review conversation can settle (reconcile, retry); a plain
+// finding (needs_you) is not one, and a pending verdict has its own buttons.
+const NEEDS_CONVERSATION = new Set(['failed', 'merge_unknown', 'ready_unknown', 'verdict_unknown'])
+
 // The one presentation of a review run, wherever it is opened from: a PR row,
 // the project's review history, or a chat link to the run.
 export function RunDetail({ run, pulls, listState, busy = false, error = '', onStop, retryPulls = [], onRetry, onVerdict, updater = null }) {
   const halted = reviewRunHalted(run)
-  const needsAnswer = run.execution_state === 'awaiting_owner' || run.items?.some(item => item.state !== 'verdict_pending' && OWNER_ITEM_STATES.has(item.state))
+  // "Answer" only when the conversation really asks something or must reconcile an outcome; findings alone are not a question.
+  const needsAnswer = run.items?.some(item => reviewItemProgress(run, item).waiting || NEEDS_CONVERSATION.has(item.state))
   const stoppable = run.can_stop && run.state !== 'complete' && !halted
   const retryable = halted && retryPulls.length > 0 && onRetry
   const elsewhere = runDetailsElsewhere(run)

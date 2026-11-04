@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { awaitsGithub, earlierReviewForPull, reviewIntent, OWNER_ITEM_STATES, collaborationRequest, discoverPull, discoverPulls, liveSelection, loadReviewRuns, conversationCount, matchingPulls, mayAssign, mergeSelection, prKey, reviewForPull, reviewItemProgress, reviewRunRequest, reviewRunTitle, runDetailsElsewhere, notOursToObserve, assignPulls, takeoverScope } from '../collaboration.js'
+import { awaitsGithub, earlierReviewForPull, reviewIntent, collaborationRequest, discoverPull, discoverPulls, liveSelection, loadReviewRuns, conversationCount, matchingPulls, mayAssign, mergeSelection, prKey, reviewForPull, reviewItemProgress, reviewRunRequest, reviewRunTitle, runDetailsElsewhere, notOursToObserve, assignPulls, takeoverScope } from '../collaboration.js'
 import { acknowledgeAssignment, emptyPullView, invalidatedSelection, isOpenPull, isOwnPull, observePulls, pullsInView } from '../pull-view.js'
-import { frameState } from '../review-frame.js'
+import { frameState, rowReview } from '../review-frame.js'
 import { ReviewFrame } from './ReviewFrame.jsx'
 import { pullConversations, recordsForPull } from '../provenance.js'
 import { RunDetail, savedVersion } from './RunDetail.jsx'
@@ -18,6 +18,9 @@ import { projectUpdater } from '../updates.js'
 
 // One draft-scope decision for the chooser, its copy and the start body.
 const scopeFor = (mode, pulls) => mode === 'review_fix_merge' ? { confirmation_scope: takeoverScope(pulls) } : {}
+
+// The review chip's look by who holds the next move (see rowReview).
+const CHIP_TONE_CLASS = { owner: ' needs-you', waiting: ' is-waiting', plain: '' }
 
 const FILTERS = [['all', 'All'], ['authored', 'Opened by me'], ['drafts', 'Drafts'], ['failing', 'Failing checks'], ['bots', 'Bots'], ['unassigned', 'Unassigned'], ['assigned', 'Assigned to me']]
 
@@ -381,7 +384,7 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
   const detailPr = pulls.find(pr => prKey(pr) === opened)
   function inspect(pr) {
     // While a review runs, the frame on the row is the signal; opening it lands on the Review tab.
-    if (onOpenPage) { onOpenPage(pr, frameState(statusFor(pr)) === 'reviewing' ? 'review' : 'conversation'); return }
+    if (onOpenPage) { onOpenPage(pr, frameState(statusFor(pr), { own: isOwnPull(pr, conn.login) }) === 'reviewing' ? 'review' : 'conversation'); return }
     setOpened(prKey(pr))
     task?.open('task:detail')
   }
@@ -526,15 +529,11 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
     <div className="co-pr-list">{visible.map(pr => {
       const key = prKey(pr)
       const status = statusFor(pr)
-      // A run whose conversation stopped or failed is not still reviewing.
-      const progress = status ? reviewItemProgress(status.run, status.item) : null
-      const halted = progress?.halted
-      const attention = halted || progress?.waiting || (status?.run.chat_id && OWNER_ITEM_STATES.has(status.item.state))
+      const review = rowReview({ status, earlier: status ? null : earlierReviewForPull(relevantRuns, pr), pr, own: isOwnPull(pr, conn.login) })
       const assignees = pr.assignees?.nodes || []
       const comments = conversationCount(pr)
       const open = isOpenPull(pr)
-      const framed = frameState(status)
-      return <ReviewFrame key={key} state={framed} inset={4} radius={10}><article className={'co-pr-row' + (selected.has(key) ? ' is-selected' : '') + (focusKey === key ? ' is-highlighted' : '') + (assignAnchor === key && task?.activeId === 'task:assign' ? ' is-assigning' : '')} data-pr={key}>
+      return <ReviewFrame key={key} state={review.frame} inset={4} radius={10}><article className={'co-pr-row' + (selected.has(key) ? ' is-selected' : '') + (focusKey === key ? ' is-highlighted' : '') + (assignAnchor === key && task?.activeId === 'task:assign' ? ' is-assigning' : '')} data-pr={key}>
         <label className="co-pr-select"><input type="checkbox" checked={open && selected.has(key)} disabled={!open} onChange={() => toggle(pr)} aria-label={`Select ${pr.repository.nameWithOwner} #${pr.number}`} /></label>
         <PullStateIcon pr={pr} />
         <div className="co-pr-content">
@@ -552,7 +551,7 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
             <ChecksBadge pr={pr} />
             {Number.isInteger(pr.additions) ? <span className="co-change-total"><b>+{pr.additions}</b><em>−{pr.deletions}</em></span> : null}
             {requestedKeys.has(key) ? <span className="co-pr-requested">Your review requested</span> : null}
-            {status && framed !== 'reviewing' ? <button className={'co-pr-agent-state' + (attention ? ' needs-you' : '')} onClick={() => onOpenPage ? onOpenPage(pr, 'review') : task?.open(`task:run:${status.run.id}`)}><Icon name="prepare" size={13} />{halted ? 'Run stopped' : attention ? (['merge_unknown','ready_unknown'].includes(status.item.state) ? 'Check outcome' : 'Needs you') : status.item.state === 'all_clear' && !status.exactBase ? `Reviewed on an older ${pr.baseRefName}` : progress.label}</button> : null}
+            {review.chip ? <button className={'co-pr-agent-state' + CHIP_TONE_CLASS[review.chip.tone]} onClick={() => status && !onOpenPage ? task?.open(`task:run:${status.run.id}`) : onOpenPage ? onOpenPage(pr, 'review') : inspect(pr)}><Icon name="prepare" size={13} />{review.chip.label}</button> : null}
           </div>
           <div className="co-pr-labels"><QuietLabels pr={pr} /></div>
         </div>

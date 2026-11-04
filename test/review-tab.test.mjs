@@ -95,3 +95,16 @@ test('a PR that changed after its review says so, shows the old findings and off
   const closed = await render(t, 'ReviewTab', { pr, status: null, earlier, readOnly: true })
   assert.doesNotMatch(closed, />Review this version</)
 })
+
+test('a review whose request-changes verdict is posted reads as handed to the author, not as waiting on you', async t => {
+  const posted = status('needs_you', { summary: 'P1 problem', verdict_proposal: { state: 'posted', event: 'REQUEST_CHANGES', url: 'https://github.com/team/repo/pull/9#pullrequestreview-1' } }, { state: 'complete', execution_state: 'completed' })
+  const html = await render(t, 'ReviewTab', { pr, status: posted, onVerdict: () => {} })
+  if (!html) return
+  assert.match(html, /<h4>Changes requested<\/h4>/)
+  assert.doesNotMatch(html, /Answer in review conversation|is-verdict|data-frame="verdict"/, 'nothing here waits on you')
+  assert.match(html, /Open review conversation/)
+  // The run page says the same: a finding is not a question for the conversation.
+  const answering = status('needs_you', {}, { state: 'running', execution_state: 'awaiting_owner' })
+  const asked = await render(t, 'ReviewTab', { pr, status: answering })
+  assert.match(asked, /Answer in review conversation/, 'a conversation that asked something still needs the answer')
+})

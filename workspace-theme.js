@@ -385,6 +385,7 @@ export const WORKSPACE_CSS = `
 .co-pr-meta > span { white-space:nowrap; }
 .co-pr-agent-state { display:inline-flex; align-items:center; gap:4px; min-height:28px; padding:0 8px; border:1px solid color-mix(in srgb,var(--accent) 35%,var(--border)); border-radius:999px; background:var(--accent-dim); color:var(--text); font:500 14px var(--font); cursor:pointer; }
 .co-pr-agent-state.needs-you { border-color:#cf9526; background:color-mix(in srgb,#cf9526 16%,transparent); }
+.co-pr-agent-state.is-waiting { border-color:var(--border); background:transparent; color:var(--muted); }
 .co-pr-aside { display:flex; align-items:center; gap:2px; padding-top:2px; }
 .co-pr-comments { display:inline-flex; align-items:center; gap:4px; padding:0 8px; color:var(--muted); font-size:14px; font-variant-numeric:tabular-nums; }
 .co-pr-requested { display:inline-flex; align-items:center; min-height:24px; padding:0 8px; border:1px solid color-mix(in srgb,var(--accent) 35%,var(--border)); border-radius:999px; background:var(--accent-dim); color:var(--text); font:500 13px var(--font); }

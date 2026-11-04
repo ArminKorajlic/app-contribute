@@ -24,10 +24,44 @@ test('halted unfinished items are not active; saved settled and queued evidence 
       assert.equal(value.label, execution_state === 'awaiting_owner' ? collaboration.REVIEW_STATE_NAMES[state] : 'Not finished')
     }
     for (const [state,label] of Object.entries(facts)) {
-      assert.deepEqual(progress({execution_state},{state}), {label,halted:false,waiting:false,settled:true})
+      assert.deepEqual(progress({execution_state},{state}), {label,halted:false,waiting:false,settled:true,turn:'none'})
     }
   }
-  assert.deepEqual(progress({state:'reviewing'},{state:'future_state'}),{label:'future_state',halted:false,waiting:false,settled:false})
+  assert.deepEqual(progress({state:'reviewing'},{state:'future_state'}),{label:'future_state',halted:false,waiting:false,settled:false,turn:'agent'})
+})
+
+const run = (extra = {}) => ({ state: 'complete', execution_state: 'completed', ...extra })
+const found = (extra = {}) => ({ state: 'needs_you', ...extra })
+
+test('once you have requested changes the move is the author\'s, and nothing is left to answer', () => {
+  const requested = found({ verdict_proposal: { state: 'posted', event: 'REQUEST_CHANGES' } })
+  for (const own of [null, false]) {
+    const value = collaboration.reviewItemProgress(run(), requested, { own })
+    assert.deepEqual(value, { label: 'Changes requested', halted: false, waiting: false, settled: true, turn: 'author' })
+  }
+  // A finished chat that is still "awaiting you" is not a question after the verdict is out.
+  const waiting = collaboration.reviewItemProgress(run({ execution_state: 'awaiting_owner' }), requested)
+  assert.equal(waiting.turn, 'author')
+  assert.equal(waiting.waiting, false)
+  // A review run that stopped after the verdict is still settled, never "Not finished".
+  assert.equal(collaboration.reviewItemProgress(run({ state: 'running', execution_state: 'stopped' }), requested).halted, false)
+})
+
+test('a finding you have not acted on stays yours: private, proposed, or on your own PR', () => {
+  const progress = (item, ctx) => collaboration.reviewItemProgress(run(), item, ctx)
+  assert.equal(progress(found()).turn, 'owner', 'private findings wait for your decision')
+  assert.equal(progress({ state: 'verdict_pending', verdict_proposal: { state: 'proposed', event: 'APPROVE' } }).turn, 'owner')
+  // The review comment is already on GitHub, but on your own PR the fixing is yours.
+  const posted = found({ public_review: { state: 'posted', url: 'https://github.com/o/r/pull/1#x' } })
+  assert.equal(progress(posted, { own: true }).turn, 'owner')
+  assert.equal(progress(posted, { own: null }).turn, 'owner', 'an unknown author never hands the PR over')
+  assert.deepEqual(progress(posted, { own: false }), { label: 'Review posted', halted: false, waiting: false, settled: true, turn: 'author' })
+  assert.equal(collaboration.reviewItemProgress(run({ execution_state: 'awaiting_owner' }), found()).turn, 'owner', 'a real question waits on you')
+})
+
+test('a discarded verdict is settled: you decided not to post it', () => {
+  const value = collaboration.reviewItemProgress(run(), found({ verdict_proposal: { state: 'discarded', event: 'REQUEST_CHANGES' } }))
+  assert.deepEqual(value, { label: 'Verdict discarded', halted: false, waiting: false, settled: true, turn: 'none' })
 })
 
 test('one shared run detail keeps recorded versions, posted reviews and the owning conversation', async t => {
