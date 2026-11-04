@@ -13,9 +13,11 @@ const REVIEW_STATE = { APPROVE: 'APPROVED', REQUEST_CHANGES: 'CHANGES_REQUESTED'
 
 const samePr = (item, pr) => item.repo?.toLowerCase() === pr.repository?.nameWithOwner?.toLowerCase() && item.number === pr.number
 const lower = value => String(value || '').toLowerCase()
+const isBot = author => author?.__typename === 'Bot' || isBotAuthor(author?.login)
 
+// A PR whose state GitHub did not return is unknown, never assumed open.
 function lifecycleOf(pr) {
-  if (!pr?.headRefOid) return 'unknown'
+  if (!pr?.headRefOid || !['OPEN', 'CLOSED', 'MERGED'].includes(pr.state)) return 'unknown'
   return LIFECYCLE[pr.state] || (pr.isDraft ? 'draft' : 'open')
 }
 
@@ -27,21 +29,26 @@ function checksOf(pr) {
   return CHECKS[checkSummary(pr)?.state] || 'unknown'
 }
 
+// Every opinion GitHub lists. A deleted account reads as "ghost" and a review whose
+// commit is gone (a force-push) keeps an empty commit: it still blocks as a change
+// request and never counts as an approval of this version.
 function reviewsOf(pr) {
   const nodes = pr?.latestOpinionatedReviews?.nodes
   if (!Array.isArray(nodes)) return null
-  return nodes.filter(node => node?.author?.login && node.commit?.oid).map(node => ({
-    by: lower(node.author.login), state: node.state, commit: node.commit.oid,
-    bot: node.author.__typename === 'Bot' || isBotAuthor(node.author.login),
+  return nodes.filter(node => node?.state).map(node => ({
+    by: node.author?.login || 'ghost', state: node.state, commit: node.commit?.oid || '', bot: isBot(node.author),
   }))
 }
 
-// Threads someone else spoke last in. A thread you answered counts as answered.
+// Threads a person other than you spoke last in (a bot's thread is input, never
+// waiting on you). Null when the threads were not read.
 function openThreadsOf(pr, login) {
   const nodes = pr?.reviewThreads?.nodes
-  if (!Array.isArray(nodes)) return 0
-  return nodes.filter(thread => thread && thread.isResolved === false
-    && lower(thread.comments?.nodes?.at(-1)?.author?.login) !== lower(login)).length
+  if (!Array.isArray(nodes)) return null
+  return nodes.filter(thread => {
+    const last = thread?.comments?.nodes?.at(-1)?.author
+    return thread && thread.isResolved === false && !isBot(last) && lower(last?.login) !== lower(login)
+  }).length
 }
 
 // The newest Contribute review of this PR (any version), with its run.
@@ -95,8 +102,14 @@ function sentReview(item) {
   return null
 }
 
-function myReviewOf(pr, sent) {
-  const github = pr?.viewerLatestReview?.commit?.oid ? { state: pr.viewerLatestReview.state, commit: pr.viewerLatestReview.commit.oid } : null
+// Your review that counts: a plain comment never hides an opinion of yours (a change
+// request you still owe a re-review on), and a pending review is not one yet.
+function myReviewOf(pr, sent, reviews, login) {
+  const latest = pr?.viewerLatestReview
+  const opinion = (reviews || []).find(review => lower(review.by) === lower(login))
+  const github = latest?.commit?.oid && latest.state !== 'PENDING'
+    ? (latest.state === 'COMMENTED' && opinion ? opinion : { state: latest.state, commit: latest.commit.oid })
+    : opinion || null
   if (!sent || github?.commit === pr.headRefOid) return github
   return sent.commit === pr.headRefOid ? sent : github || sent
 }
@@ -105,8 +118,8 @@ function myReviewOf(pr, sent) {
 // this version but its list does not show yet (a newer opinion replaces the older).
 function withSentVerdict(reviews, sent, pr, login) {
   if (!sent || sent.state === 'COMMENTED' || sent.commit !== pr.headRefOid) return reviews
-  if (reviews.some(review => review.by === lower(login) && review.commit === sent.commit)) return reviews
-  return [...reviews.filter(review => review.by !== lower(login)), { by: lower(login), state: sent.state, commit: sent.commit, bot: false }]
+  if (reviews.some(review => lower(review.by) === lower(login) && review.commit === sent.commit)) return reviews
+  return [...reviews.filter(review => lower(review.by) !== lower(login)), { by: login, state: sent.state, commit: sent.commit, bot: false }]
 }
 
 function runFacts(review, pr, own, ignored) {
@@ -129,10 +142,11 @@ export function prFacts({ pr, login, runs = [], ignored = null }) {
   const own = isOwnPull(pr, login)
   const reviews = reviewsOf(pr)
   const fromRuns = runFacts(newestReviewOf(runs, pr), pr, own, ignored)
-  const myReview = own ? null : myReviewOf(pr, fromRuns.sent)
+  const myReview = own ? null : myReviewOf(pr, fromRuns.sent, reviews, login)
+  const threads = own ? openThreadsOf(pr, login) : 0
   return {
     role: own ? 'author' : 'reviewer',
-    author: lower(pr?.author?.login),
+    author: pr?.author?.login || '',
     head: pr?.headRefOid || '',
     lifecycle: lifecycleOf(pr),
     checks: checksOf(pr),
@@ -140,10 +154,10 @@ export function prFacts({ pr, login, runs = [], ignored = null }) {
     permission: pr?.repository?.viewerPermission || 'unknown',
     reviews: own ? reviews || [] : withSentVerdict(reviews || [], fromRuns.sent, pr, login),
     myReview,
-    openThreads: own ? openThreadsOf(pr, login) : 0,
+    openThreads: threads || 0,
     job: fromRuns.job,
     result: fromRuns.result,
     outbox: fromRuns.outbox,
-    readComplete: reviews !== null,
+    readComplete: reviews !== null && threads !== null,
   }
 }

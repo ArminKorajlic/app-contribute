@@ -51,7 +51,7 @@ function TakeoverReason({ value, disabled, onChange }) {
     <span className="co-rw-label">Why are you taking it over?</span>
     <textarea value={value} maxLength={500} rows={3} disabled={disabled} placeholder="For example: the author is away and this blocks the release."
       onChange={event => onChange(event.target.value)} />
-    <small>Posted on the PR as a comment from your account, so its author knows.</small>
+    <small>Posted on the PR as a comment from your account, so its author knows{value.trim() ? <>: “Taking this PR over: {value.trim()}”</> : '.'}</small>
   </label>
 }
 

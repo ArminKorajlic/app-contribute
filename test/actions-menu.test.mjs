@@ -40,7 +40,8 @@ test('the highlighted choice is the machine’s next step, first in its group', 
   assert.equal(feedback.agent[0].rec, true)
   assert.match(feedback.headline, /feedback is waiting/)
   const approved = menu(mine({ latestOpinionatedReviews: { nodes: [{ state: 'APPROVED', author: { login: 'sam' }, commit: { oid: HEAD } }] } }))
-  assert.equal(approved.you.find(entry => entry.rec)?.intent, 'merge')
+  assert.equal(approved.you[0].intent, 'merge', 'the highlighted choice of your own comes first')
+  assert.equal(approved.you[0].rec, true)
 })
 
 test('Merge on your PR stays dimmed with the machine’s reason until someone else approves this version', () => {
@@ -73,6 +74,6 @@ test('a batch offers one review of each, off when any PR cannot take it', () => 
 
 test('every menu intent is a machine action, and the header says what GitHub shows', () => {
   for (const intent of [...AGENT_INTENTS, ...YOUR_INTENTS]) assert.ok(standingFor({ pr: mine(), login: 'alex' }).actions.some(action => action.id === intent) || standingFor({ pr: pull(), login: 'alex' }).actions.some(action => action.id === intent), intent)
-  assert.deepEqual(pullHeader(pull({ isDraft: true, reviewDecision: 'CHANGES_REQUESTED', ...checks('FAILURE', 1), mergeable: 'CONFLICTING' })),
-    { label: '#7', text: 'draft · changes requested · 1 failing check · conflicts with main' })
+  assert.deepEqual(pullHeader(pull({ isDraft: true, reviewDecision: 'APPROVED', ...checks('FAILURE', 1), mergeable: 'CONFLICTING' })),
+    { label: '#7', text: 'draft · no reviews · 1 failing check · conflicts with main' }, 'GitHub’s approval summary is not repeated: the headline says who approved which version')
 })

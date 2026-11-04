@@ -317,4 +317,6 @@ test('drafts, failing checks and bots are filters of their own', () => {
   assert.deepEqual(matchingPulls(rows, 'failing', 'owner').map(pr => pr.number), [2])
   assert.deepEqual(matchingPulls(rows, 'bots', 'owner').map(pr => pr.number), [2, 3])
   assert.equal(isBotAuthor('ArminKorajlic'), false)
+  for (const person of ['abbot', 'talbot', 'robot']) assert.equal(isBotAuthor(person), false, person)
+  for (const bot of ['qa-bot', 'review_bot', 'copilot[bot]']) assert.equal(isBotAuthor(bot), true, bot)
 })

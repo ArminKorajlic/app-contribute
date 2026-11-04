@@ -21,7 +21,7 @@ const decideFor = (pr, runs = [], ignored = null) => decide(prFacts({ pr, login:
 test('your PR after you pushed fixes waits on the reviewer, not on you (bug 1)', () => {
   const decision = decideFor(mine({ reviewDecision: 'CHANGES_REQUESTED', latestOpinionatedReviews: { nodes: [opinion('Sam', 'CHANGES_REQUESTED', OLD)] } }))
   assert.equal(decision.state, 'author.waiting_rereview')
-  assert.match(decision.headline, /Waiting on sam to re-review/)
+  assert.match(decision.headline, /Waiting on Sam to re-review/, 'names keep their own case')
 })
 
 test('missing check data is never green; no checks at all is (bug 2)', () => {
@@ -76,7 +76,7 @@ test('a verdict GitHub confirmed to this app counts before GitHub’s list catch
 test('your own older change request still blocks Merge after a later plain comment', () => {
   const pr = pull({ viewerLatestReview: { state: 'COMMENTED', commit: { oid: HEAD } },
     latestOpinionatedReviews: { nodes: [opinion('Alex', 'CHANGES_REQUESTED', OLD), opinion('Bob', 'APPROVED')] } })
-  assert.match(decideFor(pr).actions.find(action => action.id === 'merge').reason, /alex asked for changes/)
+  assert.match(decideFor(pr).actions.find(action => action.id === 'merge').reason, /Alex asked for changes/)
 })
 
 test('a bot approval never counts, and an unread review list is unknown', () => {
@@ -104,4 +104,35 @@ test('findings of an older version of your PR no longer wait on you', () => {
 test('findings you set aside for this version stop waiting on you', () => {
   const ignored = { [`o/r#7@${HEAD}`]: { reason: 'Not a problem', at: '2026-11-04T10:00:00Z' } }
   assert.equal(decideFor(mine(), [run({ state: 'needs_you' })], ignored).state, 'author.waiting_review')
+})
+
+test('a plain comment after your change request leaves the re-review yours', () => {
+  const pr = pull({ viewerLatestReview: { state: 'COMMENTED', commit: { oid: HEAD } },
+    latestOpinionatedReviews: { nodes: [opinion('Alex', 'CHANGES_REQUESTED', OLD)] } })
+  assert.equal(decideFor(pr).state, 'reviewer.re_review')
+  assert.equal(decideFor(pull({ viewerLatestReview: { state: 'PENDING', commit: { oid: HEAD } } })).state, 'reviewer.to_review', 'a pending review is not one yet')
+})
+
+test('a review from a deleted account, or of a commit that is gone, still blocks and never approves', () => {
+  const pr = mine({ latestOpinionatedReviews: { nodes: [opinion('Bob', 'APPROVED'), { state: 'CHANGES_REQUESTED', author: null, commit: null }] } })
+  assert.match(decideFor(pr).actions.find(action => action.id === 'merge').reason, /ghost asked for changes/)
+  const gone = mine({ latestOpinionatedReviews: { nodes: [{ state: 'APPROVED', author: { login: 'Bob', __typename: 'User' }, commit: null }] } })
+  assert.equal(decideFor(gone).state, 'author.approval_stale')
+})
+
+test('a person whose login ends in "bot" is a person; a bot thread is never feedback waiting on you', () => {
+  assert.equal(decideFor(mine({ latestOpinionatedReviews: { nodes: [opinion('Talbot', 'APPROVED')] } })).state, 'author.approved')
+  const botThread = { isResolved: false, comments: { nodes: [{ author: { login: 'copilot', __typename: 'Bot' } }] } }
+  const approved = { latestOpinionatedReviews: { nodes: [opinion('Sam', 'APPROVED')] } }
+  assert.equal(decideFor(mine({ ...approved, reviewThreads: { nodes: [botThread] } })).state, 'author.approved')
+})
+
+test('a PR without its state, or your PR without its threads, is unknown', () => {
+  assert.equal(decideFor(pull({ state: undefined })).state, 'unknown')
+  assert.equal(decideFor(mine({ reviewThreads: undefined })).state, 'unknown')
+})
+
+test('no checks at all reads as no checks, never green', () => {
+  const pr = mine({ latestOpinionatedReviews: { nodes: [opinion('Sam', 'APPROVED')] }, ...rollup(null) })
+  assert.match(decideFor(pr).headline, /no checks\. Merge it/)
 })

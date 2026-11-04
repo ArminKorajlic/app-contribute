@@ -30,6 +30,8 @@ const INVARIANTS = {
   'merge waits while anyone (but a bot) still asks for changes': (decision, facts) => !action(decision, 'merge')?.enabled
     || !facts.reviews.some(review => review.state === 'CHANGES_REQUESTED' && !review.bot && review.by !== facts.author),
   'no agent job starts while one is running on the PR': (decision, facts) => !facts.job || facts.job.state === 'stalled' || decision.actions.filter(item => item.by === 'agent').every(item => !item.enabled),
+  'no agent job starts while something sent to GitHub is unconfirmed': (decision, facts) => !(facts.outbox?.head === facts.head && ['sending', 'unconfirmed'].includes(facts.outbox?.state))
+    || decision.actions.filter(item => item.by === 'agent').every(item => !item.enabled),
   'unknown facts never enable merge': (decision, facts) => !(facts.checks === 'unknown' || facts.mergeable === 'unknown' || facts.readComplete === false || facts.lifecycle === 'unknown') || !action(decision, 'merge')?.enabled,
   'take over is for maintainers only': (decision, facts) => !action(decision, 'take_over')?.enabled || ['MAINTAIN', 'ADMIN'].includes(facts.permission),
   'at most one action is highlighted': decision => decision.actions.filter(item => item.highlighted).length <= 1,

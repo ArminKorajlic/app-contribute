@@ -21,10 +21,12 @@ const MAINTAINER = ['MAINTAIN', 'ADMIN']
 export const mayWrite = permission => WRITE.includes(permission)
 
 // The few values every rule below is written in.
+const same = (a, b) => String(a || '').toLowerCase() === String(b || '').toLowerCase()
+
 function derive(facts) {
-  const people = (facts.reviews || []).filter(review => !review.bot && review.by !== facts.author)
+  const people = (facts.reviews || []).filter(review => !review.bot && !same(review.by, facts.author))
   const atHead = review => review.commit === facts.head
-  const names = test => [...new Set(people.filter(test).map(review => review.by))]
+  const names = test => [...new Map(people.filter(test).map(review => [String(review.by).toLowerCase(), review.by])).values()]
   const result = facts.result?.head === facts.head ? facts.result : null
   const outbox = facts.outbox?.head === facts.head ? facts.outbox : null
   return {
@@ -47,7 +49,7 @@ export const STATES = {
   merged: { turn: 'none', label: 'Merged', headline: 'Merged' },
   closed: { turn: 'none', label: 'Closed', headline: 'Closed' },
   unknown: { turn: 'you', label: 'Couldn’t read', headline: 'Couldn’t read this PR from GitHub. Try again', next: 'retry' },
-  unconfirmed: { turn: 'you', label: 'Not confirmed', headline: 'GitHub didn’t confirm what was sent. Check GitHub, or dismiss it', next: 'check_github' },
+  unconfirmed: { turn: 'you', label: 'Not confirmed', headline: 'GitHub didn’t confirm what was sent. Check GitHub before trying again', next: 'check_github' },
   sending: { turn: 'agent', label: 'Sending', headline: 'Sending to GitHub…' },
   to_confirm: { turn: 'you', label: 'Draft to send', headline: 'A draft is ready. Read it, then send it or throw it away', next: 'send_draft' },
   working: { turn: 'agent', label: 'Agent working', headline: 'An agent is working on it' },
@@ -63,8 +65,8 @@ export const STATES = {
   'author.approval_stale': { turn: 'other', label: 'Approval is old', headline: 'Your PR · approved on an older version. Waiting on {who} to look again' },
   'author.waiting_review': { turn: 'other', label: 'Waiting on reviewers', headline: 'Your PR · waiting on reviewers' },
   'author.approved_checks': { turn: 'other', label: 'Approved', headline: 'Your PR · approved. {checks}' },
-  'author.approved': { turn: 'you', label: 'Ready to merge', headline: 'Your PR · approved by {who} at this version, checks green. Merge it', next: 'merge' },
-  'author.approved_no_rights': { turn: 'other', label: 'Approved', headline: 'Your PR · approved and green. Waiting on someone who can merge' },
+  'author.approved': { turn: 'you', label: 'Ready to merge', headline: 'Your PR · approved by {who} at this version, {green}. Merge it', next: 'merge' },
+  'author.approved_no_rights': { turn: 'other', label: 'Approved', headline: 'Your PR · approved, {green}. Waiting on someone who can merge' },
 
   'reviewer.draft': { turn: 'other', label: 'Draft', headline: 'Their PR · still a draft' },
   'reviewer.to_review': { turn: 'you', label: 'To review', headline: 'Their PR · your turn: review it', next: 'review' },
@@ -73,7 +75,7 @@ export const STATES = {
   'reviewer.re_review': { turn: 'you', label: 'New commits · review again', headline: 'Their PR · new commits since your review. Re-review', next: 'review' },
   'reviewer.reviewed': { turn: 'none', label: 'Reviewed', headline: 'Their PR · you reviewed this version' },
   'reviewer.kept_private': { turn: 'none', label: 'Kept private', headline: 'Their PR · you kept your review of this version private' },
-  'reviewer.mergeable': { turn: 'you', label: 'Ready to merge', headline: 'Their PR · approved at this version, checks green. Merge it', next: 'merge' },
+  'reviewer.mergeable': { turn: 'you', label: 'Ready to merge', headline: 'Their PR · approved at this version, {green}. Merge it', next: 'merge' },
 }
 
 // The state, by a fixed priority: the first match wins.
@@ -102,12 +104,13 @@ function approvedStanding(facts) {
   return mayWrite(facts.permission) ? 'author.approved' : 'author.approved_no_rights'
 }
 
+// Your verdict on this version comes first, then a finished review of this version
+// (a re-review that is done is no longer "new commits"), then an older review of yours.
 function reviewerStanding(facts, d) {
-  if (d.mine && !d.mineAtHead) return 'reviewer.re_review'
   if (d.mineAtHead && d.mine.state === 'CHANGES_REQUESTED') return 'reviewer.waiting_author'
   if (d.mineAtHead) return mergeBlocker(facts, d) ? 'reviewer.reviewed' : 'reviewer.mergeable'
-  if (d.result && !d.result.setAside) return 'reviewer.result_ready'
-  if (d.result) return 'reviewer.kept_private'
+  if (d.result) return d.result.setAside ? 'reviewer.kept_private' : 'reviewer.result_ready'
+  if (d.mine) return 'reviewer.re_review'
   return facts.lifecycle === 'draft' ? 'reviewer.draft' : 'reviewer.to_review'
 }
 
@@ -116,6 +119,8 @@ const CONFLICT_WORDS = { yes: '', conflict: 'It has merge conflicts.', unknown: 
 const firstReason = (...reasons) => reasons.find(Boolean) || ''
 // A stalled job holds nothing: starting again (or another job) is the way out of it.
 const jobIdle = facts => (facts.job && facts.job.state !== 'stalled' ? 'An agent is already working on this PR.' : '')
+// Something sent to GitHub but not yet confirmed: no new agent job may race it.
+const nothingInFlight = d => (d.outbox && d.outbox.state !== 'drafted' ? 'Something sent to GitHub is not confirmed yet.' : '')
 const stillOpen = facts => (['open', 'draft'].includes(facts.lifecycle) ? '' : 'This PR is no longer open.')
 const readable = facts => (facts.lifecycle === 'unknown' || facts.readComplete === false ? 'This PR could not be read. Try again.' : '')
 
@@ -130,7 +135,7 @@ export function mergeBlocker(facts, d = derive(facts)) {
     standing.length ? `${standing.join(', ')} asked for changes and hasn’t approved since.` : '',
     CHECK_WORDS[facts.checks] ?? CHECK_WORDS.unknown,
     CONFLICT_WORDS[facts.mergeable] ?? CONFLICT_WORDS.unknown,
-    d.outbox && d.outbox.state !== 'drafted' ? 'Something sent to GitHub is not confirmed yet.' : '',
+    nothingInFlight(d),
     jobIdle(facts),
   )
 }
@@ -143,39 +148,43 @@ const outboxIs = (d, state) => (d.outbox?.state === state ? '' : 'Nothing like t
 // confirm sheet). `when` returns '' when allowed, otherwise the reason it is not.
 export const ACTIONS = [
   { id: 'check_my_pr', by: 'agent', roles: ['author'], title: 'Check my PR', detail: 'Private. Nothing is posted.',
-    when: facts => firstReason(readable(facts), stillOpen(facts), jobIdle(facts)) },
+    when: (facts, d) => firstReason(readable(facts), stillOpen(facts), jobIdle(facts), nothingInFlight(d)) },
   { id: 'respond', by: 'agent', roles: ['author'], title: 'Respond to feedback', detail: 'Answers every point, then one approval sheet for the pushes and replies.',
-    when: (facts, d) => firstReason(readable(facts), stillOpen(facts), jobIdle(facts), somethingToAnswer(facts, d) ? '' : 'Nothing to respond to.') },
+    when: (facts, d) => firstReason(readable(facts), stillOpen(facts), jobIdle(facts), nothingInFlight(d), somethingToAnswer(facts, d) ? '' : 'Nothing to respond to.') },
   { id: 'finish_it', by: 'agent', roles: ['author'], title: 'Finish it for me', detail: 'Responds, checks and fixes. Stops for your approval before each push.',
-    when: facts => firstReason(readable(facts), stillOpen(facts), jobIdle(facts)) },
+    when: (facts, d) => firstReason(readable(facts), stillOpen(facts), mayWrite(facts.permission) ? '' : 'Needs write access to this repository.', jobIdle(facts), nothingInFlight(d)) },
   { id: 'review', by: 'agent', roles: ['reviewer'], title: d => (d.mine || d.result ? 'Re-review' : 'Review'), detail: 'Private, drafted for you, or posted by the agent if you allow it.',
-    when: facts => firstReason(readable(facts), stillOpen(facts), jobIdle(facts)) },
+    when: (facts, d) => firstReason(readable(facts), stillOpen(facts), jobIdle(facts), nothingInFlight(d)) },
   { id: 'take_over', by: 'agent', roles: ['reviewer'], title: 'Take over', detail: 'Maintainers only. Needs a reason, and says so on the PR. Each push needs your approval.',
-    when: facts => firstReason(readable(facts), stillOpen(facts), MAINTAINER.includes(facts.permission) ? '' : 'Only maintainers can take over someone else’s PR.', jobIdle(facts)) },
+    when: (facts, d) => firstReason(readable(facts), stillOpen(facts), MAINTAINER.includes(facts.permission) ? '' : 'Only maintainers can take over someone else’s PR.', jobIdle(facts), nothingInFlight(d)) },
 
   { id: 'send_draft', by: 'you', roles: ['author', 'reviewer'], title: 'Send…', when: (facts, d) => outboxIs(d, 'drafted') },
   { id: 'check_github', by: 'you', roles: ['author', 'reviewer'], title: 'Check GitHub', when: (facts, d) => outboxIs(d, 'unconfirmed') },
-  { id: 'dismiss', by: 'you', roles: ['author', 'reviewer'], title: 'Dismiss', when: (facts, d) => outboxIs(d, 'unconfirmed') },
+  // Only an unconfirmed verdict can be set aside here; other outcomes settle by checking GitHub.
+  { id: 'dismiss', by: 'you', roles: ['author', 'reviewer'], title: 'Dismiss', when: (facts, d) => outboxIs(d, 'unconfirmed') || (d.outbox.kind === 'verdict' ? '' : 'Only a verdict can be dismissed.') },
   { id: 'draft_verdict', by: 'you', roles: ['reviewer'], title: 'Approve, request changes or comment…',
-    when: (facts, d) => (d.result && !d.mineAtHead && !d.outbox ? '' : 'Review this version first.') },
+    when: (facts, d) => firstReason(readable(facts), d.result && !d.mineAtHead && !d.outbox ? '' : 'Review this version first.') },
   { id: 'set_aside', by: 'you', roles: ['author', 'reviewer'], title: 'Set aside…',
-    when: (facts, d) => (d.result && !d.result.setAside && (facts.role === 'reviewer' || d.openFindings) ? '' : 'Nothing to set aside.') },
-  { id: 'open_for_review', by: 'you', roles: ['author'], title: 'Open for review', when: facts => (facts.lifecycle === 'draft' ? jobIdle(facts) : 'It is already open for review.') },
-  { id: 'back_to_draft', by: 'you', roles: ['author'], title: 'Back to draft', when: facts => (facts.lifecycle === 'open' ? jobIdle(facts) : 'It is not open for review.') },
+    when: (facts, d) => firstReason(readable(facts), d.result && !d.result.setAside && (facts.role === 'reviewer' || d.openFindings) ? '' : 'Nothing to set aside.') },
+  { id: 'open_for_review', by: 'you', roles: ['author'], title: 'Open for review', when: facts => firstReason(readable(facts), facts.lifecycle === 'draft' ? jobIdle(facts) : 'It is already open for review.') },
+  { id: 'back_to_draft', by: 'you', roles: ['author'], title: 'Back to draft', when: facts => firstReason(readable(facts), facts.lifecycle === 'open' ? jobIdle(facts) : 'It is not open for review.') },
   { id: 'ask_rereview', by: 'you', roles: ['author'], title: 'Ask for re-review',
     when: (facts, d) => (d.changesOlder.length || d.approvedOlder.length ? firstReason(readable(facts), stillOpen(facts)) : 'Nobody reviewed an older version.') },
   { id: 'merge', by: 'you', roles: ['author', 'reviewer'], title: 'Merge', when: (facts, d) => mergeBlocker(facts, d) },
   { id: 'close', by: 'you', roles: ['author', 'reviewer'], title: 'Close',
-    when: facts => firstReason(stillOpen(facts), facts.role === 'author' || mayWrite(facts.permission) ? '' : 'Needs write access.', jobIdle(facts)) },
+    when: facts => firstReason(readable(facts), stillOpen(facts), facts.role === 'author' || mayWrite(facts.permission) ? '' : 'Needs write access.', jobIdle(facts)) },
   { id: 'retry', by: 'you', roles: ['author', 'reviewer'], title: 'Try again', when: facts => (readable(facts) ? '' : 'Already up to date.') },
   { id: 'open_job', by: 'you', roles: ['author', 'reviewer'], title: 'Answer the agent', when: facts => (facts.job?.state === 'needs_answer' ? '' : 'No question is waiting.') },
   { id: 'rerun_job', by: 'you', roles: ['author', 'reviewer'], title: 'Run it again', when: facts => (facts.job?.state === 'stalled' ? '' : 'Nothing has stalled.') },
 ]
 
+// The people a headline names: who approved this version, or whose review is of an older one.
+const headlineWho = (key, d) => ({ 'author.waiting_rereview': d.changesOlder, 'author.approval_stale': d.approvedOlder, 'author.approved': d.approvedAtHead }[key] || [])
+
 function headlineFor(key, facts, d) {
-  const who = { 'author.waiting_rereview': d.changesOlder, 'author.approval_stale': d.approvedOlder, 'author.approved': d.approvedAtHead }[key] || []
   const checks = facts.mergeable === 'yes' ? CHECK_WORDS[facts.checks] || 'Checks are still running.' : CONFLICT_WORDS[facts.mergeable] || CONFLICT_WORDS.unknown
-  return STATES[key].headline.replace('{who}', who.join(', ') || 'reviewers').replace('{author}', facts.author || 'the author').replace('{checks}', checks)
+  return STATES[key].headline.replace('{who}', headlineWho(key, d).join(', ') || 'reviewers').replace('{author}', facts.author || 'the author')
+    .replace('{checks}', checks).replace('{green}', facts.checks === 'none' ? 'no checks' : 'checks green')
 }
 
 // The one entry point: facts in, { role, state, turn, label, headline, next, waitingOn, actions,
@@ -190,13 +199,12 @@ export function decide(facts) {
     const title = typeof action.title === 'function' ? action.title(d) : action.title
     return { id: action.id, by: action.by, title, detail: action.detail || '', enabled: !reason, reason, highlighted: action.id === state.next && !reason }
   })
-  const waitingOn = state.turn !== 'other' ? '' : facts.role === 'reviewer' ? facts.author || 'the author' : headlineWho(key, d)
+  const waitingOn = state.turn !== 'other' ? '' : facts.role === 'reviewer' ? facts.author || 'the author' : headlineWho(key, d).join(', ') || 'reviewers'
   const label = state.label.replace('{author}', facts.author || 'the author')
   return { role: facts.role, state: key, turn: state.turn, label, headline: headlineFor(key, facts, d), next: state.next || '', waitingOn, actions,
     approvedBy: d.approvedAtHead, rereviewFrom: [...new Set([...d.changesOlder, ...d.approvedOlder])] }
 }
 
-const headlineWho = (key, d) => (key === 'author.waiting_rereview' ? d.changesOlder : key === 'author.approval_stale' ? d.approvedOlder : []).join(', ') || 'reviewers'
 
 // What the platform asks before an effect: '' when allowed, otherwise the reason.
 export function actionBlocker(facts, actionId) {

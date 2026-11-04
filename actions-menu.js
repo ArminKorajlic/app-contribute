@@ -15,14 +15,13 @@ const CAPABILITY = { open_for_review: 'mark_ready_now', back_to_draft: 'back_to_
 export const YOUR_INTENTS = new Set(Object.keys(YOUR_MENU))
 export const AGENT_INTENTS = new Set(Object.keys(AGENT_MENU))
 
-const DECISION_WORDS = { CHANGES_REQUESTED: 'changes requested', APPROVED: 'approved', REVIEW_REQUIRED: 'review required' }
-
-// One line of what GitHub's own list says about a PR.
+// One line of facts about a PR: draft, checks and conflicts. Who approved what is the
+// machine's headline below it, so GitHub's own review summary is not repeated here.
 export function pullHeader(pr) {
   const checks = checkSummary(pr)
   const parts = [
     pr?.isDraft ? 'draft' : '',
-    DECISION_WORDS[pr?.reviewDecision] || (conversationCount(pr) ? '' : 'no reviews'),
+    conversationCount(pr) ? '' : 'no reviews',
     checks?.failed > 0 ? `${checks.failed} failing ${checks.failed === 1 ? 'check' : 'checks'}`
       : checks?.state === 'success' ? 'checks passing' : checks?.state === 'pending' ? 'checks running' : '',
     pr?.mergeable === 'CONFLICTING' ? `conflicts with ${pr.baseRefName || 'the target branch'}` : '',
@@ -36,6 +35,7 @@ function yourItems(decision, { record, capabilities }) {
   return decision.actions.filter(action => YOUR_MENU[action.id]
     && (capabilities?.[CAPABILITY[action.id]] === true || (action.id === 'open_for_review' && isPersonalDraft(record))))
     .map(action => asItem(action, YOUR_MENU[action.id]))
+    .sort((a, b) => Number(b.rec) - Number(a.rec))
 }
 
 function agentItems(decision) {

@@ -49,7 +49,9 @@ export const conversationCount = pr => (pr?.comments?.totalCount || 0) + (pr?.re
 export const prKey = pr => `${pr.repository.nameWithOwner.toLowerCase()}#${pr.number}`
 export const mergeSelection = (old, next) => [...new Map([...old, ...next].map(pr => [prKey(pr), pr])).values()]
 const BOT_LOGINS = new Set(['dependabot', 'renovate', 'github-actions'])
-export const isBotAuthor = login => /\[bot\]$|bot$/i.test(login || '') || BOT_LOGINS.has((login || '').toLowerCase())
+// A GitHub App login ends in [bot]; a bot account by convention in -bot or _bot. A person
+// named abbot or talbot is not one.
+export const isBotAuthor = login => /\[bot\]$|[-_]bot$/i.test(login || '') || BOT_LOGINS.has((login || '').toLowerCase())
 
 export function matchingPulls(pulls, filter, login) {
   const same = value => value?.toLowerCase() === login?.toLowerCase()

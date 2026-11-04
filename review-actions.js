@@ -39,7 +39,7 @@ export function reviewActionPlan({ tone, own = false, chat = false, asked = fals
       return [
         ...(own && can.fix ? [primary({ key: 'fix', label: 'Fix these findings' })] : []),
         // On someone else's PR the next step is saying what you found. On your own PR nothing is ever
-        // posted as a review of yourself (pr-flow.js rule 1): you fix it or set it aside.
+        // posted as a review of yourself (pr-machine.js): you fix it or set it aside.
         ...(can.post && !own ? [primary({ key: 'post', label: 'Post to GitHub' })] : []),
         ...(can.ignore ? [{ key: 'ignore', label: 'Ignore…' }] : []),
         ...(can.again ? [{ key: 'again', label: 'Review again' }] : []),
