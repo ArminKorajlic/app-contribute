@@ -110,7 +110,7 @@ function PullStickyTitle({ pr, targetRef, tone }) {
     watch.observe(target)
     return () => watch.disconnect()
   }, [targetRef, pr.number])
-  const back = () => targetRef.current?.scrollIntoView({ block: 'start', behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })
+  const back = () => targetRef.current?.closest('.co-pr-detail')?.scrollIntoView({ block: 'start', behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })
   return <div className="co-pr-sticky" data-shown={shown ? 'true' : 'false'}>
     <button type="button" tabIndex={shown ? 0 : -1} aria-hidden={shown ? undefined : 'true'} onClick={back} aria-label={`Show the full title of PR ${pr.number}`}>
       <Icon name="feedback" size={16} className={'co-icon co-sticky-mark' + (tone ? ' is-' + tone : '')} />
