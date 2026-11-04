@@ -3,9 +3,8 @@ import { attentionListItems } from '../run.js'
 import { conversationCount, prKey, reviewForPull } from '../collaboration.js'
 import { savedFindings } from '../address-feedback.js'
 import { frameState, reviewForRecord } from '../review-frame.js'
-import { isOwnPull } from '../pull-view.js'
 import { ReviewFrame } from './ReviewFrame.jsx'
-import { reviewStateTone } from './ReviewTab.jsx'
+import { chipOf, frameOf, standingFor } from '../pr-standing.js'
 import { deskEditsSentence, recordsForProject } from '../source-map.js'
 import { STATUS_LABELS } from '../domain.js'
 import { groupNote, lookAtReason } from './AttentionList.jsx'
@@ -25,10 +24,12 @@ function NewDot({ value, lastLooked }) {
 // One PR under its project's card. The whole row opens the PR on its own page;
 // a PR with a review running or waiting wears the comet frame, says so in a chip,
 // and opens on its Review tab.
-function DeskPullRow({ project, pr, chip, order, lastLooked, runs, onOpenPull, own, ignored }) {
+function DeskPullRow({ project, pr, chip, order, lastLooked, runs, onOpenPull, login, ignored }) {
   const comments = conversationCount(pr)
-  const status = reviewForPull(runs || [], pr)
-  const framed = frameState(status, { own, ignored })
+  const standing = standingFor({ pr, login, runs: runs || [], ignored })
+  const framed = frameOf(standing)
+  // While an agent works the travelling frame says it; a move of yours also gets its words.
+  const standingChip = framed === 'verdict' ? chipOf(standing) : null
   return (
     <ReviewFrame state={framed} inset={3} radius={10}>
     <button type="button" className="co-desk-row" onClick={() => onOpenPull(project, pr, framed === 'idle' ? 'conversation' : 'review')}>
@@ -42,7 +43,7 @@ function DeskPullRow({ project, pr, chip, order, lastLooked, runs, onOpenPull, o
           <ChecksBadge pr={pr} />
           {Number.isInteger(pr.additions) ? <span className="co-change-total"><b>+{pr.additions}</b><em>−{pr.deletions}</em></span> : null}
           {chip ? <span className={'co-desk-chip is-' + chip.tone}>{chip.label}</span> : null}
-          {framed === 'verdict' ? <span className="co-desk-chip is-waiting">{reviewStateTone(status, { own, ignored }).title}</span> : null}
+          {standingChip ? <span className="co-desk-chip is-waiting">{standingChip.label}</span> : null}
         </span>
         <span className="co-pr-labels"><QuietLabels pr={pr} /></span>
       </span>
@@ -83,7 +84,7 @@ const requestChip = { label: 'Asks for your review', tone: 'you' }
 function projectRows(view, project, { login, decisionsFor, lastLooked, query, runs, ignored, onOpenPull, onOpenRecord }) {
   const rows = []
   const pull = (pr, chip, order) => rows.push(
-    <DeskPullRow key={`pr:${pr.number}`} project={project} pr={pr} chip={chip} order={order} lastLooked={lastLooked} runs={runs} onOpenPull={onOpenPull} own={isOwnPull(pr, login)} ignored={ignored} />,
+    <DeskPullRow key={`pr:${pr.number}`} project={project} pr={pr} chip={chip} order={order} lastLooked={lastLooked} runs={runs} onOpenPull={onOpenPull} login={login} ignored={ignored} />,
   )
   const requests = view === 'work' ? [] : (project.reviewRequests || []).filter(pr => matches(query, pr.title, String(pr.number), pr.author?.login))
   const all = decisionsFor(project)

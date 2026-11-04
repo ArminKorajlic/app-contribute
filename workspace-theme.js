@@ -543,6 +543,13 @@ export const WORKSPACE_CSS = `
 .co-agent-menu-list .co-icon { flex:none; margin-top:2px; color:var(--muted); }
 .co-agent-menu-head { margin:0 0 4px; padding:8px 10px; border-bottom:1px solid var(--border); color:var(--muted); font-size:14px; }
 .co-agent-menu-head b { color:var(--text); font-weight:650; }
+.co-agent-menu-standing { margin:0 0 6px; padding:0 10px 8px; color:var(--text); font-size:14px; line-height:1.4; border-bottom:1px solid var(--border); }
+.co-rw-reason { display:grid; gap:6px; margin:0 0 14px; }
+.co-rw-reason textarea { font:inherit; color:var(--text); background:var(--bg); border:1px solid var(--border); border-radius:10px; padding:10px 12px; resize:vertical; min-height:72px; }
+.co-rw-reason small { color:var(--muted); font-size:14px; }
+.co-agent-menu-apart { margin-top:6px; padding-top:6px; border-top:1px solid var(--border); }
+.co-pr-standing { margin:6px 0 0; color:var(--text); font-size:14px; line-height:1.4; }
+.co-pr-standing[data-turn="you"] { color:var(--accent); font-weight:600; }
 .co-agent-menu-tile { flex:none; display:grid; place-items:center; width:32px; height:32px; border-radius:8px; background:var(--surface-2,var(--bg)); }
 .co-agent-menu-list .co-agent-menu-tile .co-icon { margin:0; }
 .co-agent-menu-list button.is-rec { background:color-mix(in srgb,var(--accent) 12%,transparent); }

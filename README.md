@@ -311,10 +311,10 @@ agent execution and settled history remain separate. Named paused work stays
 visible as unfinished; this iteration does not resume old cycles automatically.
 
 Review/Fix/Merge guidance shares one flat Settings editor. At launch choose
-**Actions ▾ → Review** (optionally **Allow posting the review on GitHub**,
-**Allow approve or request changes**, and **Merge when safe**, in any
-combination) or **Review, fix and merge**, plus model and effort, in the
-review window. There is
+**Actions ▾ → Review** (who sees the result: **Only me**, **Draft for me** or,
+where this Möbius supports it, **Agent posts**; with a draft, optionally **Merge
+after I approve**), **Check my PR** on your own PR, or **Finish it for me** /
+**Take over**, plus model and effort, in the review window. There is
 no automatic-continuation option: the platform does not support it. Each launch
 sends only the options its mode accepts: review and merge prompts always, the
 fix prompt only for Review, fix & merge (new takeovers have no repair-round

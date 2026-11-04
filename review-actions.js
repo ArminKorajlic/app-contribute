@@ -22,7 +22,7 @@ export const reviewStoppable = ({ run, tone, progress }) =>
 const primary = action => ({ ...action, primary: true })
 const quiet = action => ({ ...action, quiet: true })
 
-// `tone` is reviewStateTone's key. `can` says which actions this surface can
+// `tone` is reviewContent's key (ui/ReviewTab.jsx). `can` says which actions this surface can
 // take (a closed PR cannot start a review, an older run has no retry, ...).
 export function reviewActionPlan({ tone, own = false, chat = false, asked = false, stoppable = false, can = {} }) {
   const ask = label => (chat ? [{ key: 'ask', label }] : [])
@@ -46,7 +46,7 @@ export function reviewActionPlan({ tone, own = false, chat = false, asked = fals
         ...ask('Ask the reviewer something'),
       ]
     case 'ignored':
-      return [...(can.ignore ? [{ key: 'undo', label: 'Undo ignore' }] : []), ...ask('Ask the reviewer something')]
+      return [...(can.undo ? [{ key: 'undo', label: 'Undo ignore' }] : []), ...ask('Ask the reviewer something')]
     default: // a verdict card carries its own buttons; clear, waiting and settled reviews only offer the question
       return ask('Ask the reviewer something')
   }

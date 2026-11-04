@@ -455,11 +455,11 @@ test('a review chip opens the PR on its Review tab, and a started review no long
   const pullsSource = readFileSync(new URL('../ui/PullRequests.jsx', import.meta.url), 'utf8')
   assert.match(pullsSource, /onOpenPage \? onOpenPage\(pr, 'review'\)/)
   // The title opens Comments, or the Review tab while a review is running.
-  assert.match(pullsSource, /onOpenPage\(pr, frameState\(statusFor\(pr\), \{ own: isOwnPull\(pr, conn\.login\), ignored: ignoredReviews \}\) === 'reviewing' \? 'review' : 'conversation'\)/)
+  assert.match(pullsSource, /onOpenPage\(pr, frameOf\(standingOf\(pr\)\) === 'reviewing' \? 'review' : 'conversation'\)/)
   assert.doesNotMatch(pullsSource, /setChoice\(null\); setSelected\(new Set\(\)\)\n\s*task\?\.open\(`task:run:\$\{result\.run\.id\}`\)/)
   // The row wears the comet frame while an agent works; the Review tab knows your own PRs.
   assert.match(pullsSource, /<ReviewFrame key=\{key\} state=\{review\.frame\}/)
-  assert.match(pullsSource, /own: isOwnPull\(pr, conn\.login\)/)
+  assert.match(pullsSource, /own: isOwnPull\(pr, conn\.login\), standing: standingOf\(pr\)/)
   assert.match(appSource, /setPullPage\(\{ key: project\?\.key \|\| '', repo, number: pr\.number, tab,/)
 })
 
@@ -483,7 +483,8 @@ test('a running review is shown by the frame and the Review tab only: no Reviewi
   const detailSource = readFileSync(new URL('../ui/PullRequestDetail.jsx', import.meta.url), 'utf8')
   // Tags for finished or waiting reviews stay; the one for a running review goes.
   assert.match(pullsSource, /\{review\.chip \? <button className=\{'co-pr-agent-state'/)
-  assert.match(deskSource, /\{framed === 'verdict' \? <span className="co-desk-chip is-waiting">/)
+  assert.match(deskSource, /const standingChip = framed === 'verdict' \? chipOf\(standing\) : null/)
+  assert.match(deskSource, /\{standingChip \? <span className="co-desk-chip is-waiting">/)
   assert.doesNotMatch(deskSource, /is-review/)
   assert.doesNotMatch(menuSource, /co-arc|is-active|active =/)
   assert.doesNotMatch(pullsSource, /<AgentMenu active=/)

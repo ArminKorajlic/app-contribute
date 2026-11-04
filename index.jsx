@@ -1616,7 +1616,7 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
       incomingReviews: [],
     }) : contributionRun
   }
-  // `intent` lets a desk row open the PR straight into a window ('fix' = Address feedback).
+  // `intent` lets a desk row open the PR straight into a window ('fix' = Respond to feedback).
   function openPullPage(project, pr, tab = 'conversation', intent = '') {
     const repo = pr?.repository?.nameWithOwner || project?.canonical_repo || ''
     if (!repo || !pr?.number) return

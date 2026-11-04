@@ -1,5 +1,9 @@
 import { fetchLiveStates } from './api.js'
-import { mayMerge, requestOptions, takeoverBlocker, TAKEOVER_SCOPE, DRAFT_TAKEOVER_SCOPE } from './collaboration.js'
+import { mayMerge, requestOptions, takeoverBlocker, TAKEOVER_SCOPE } from './collaboration.js'
+
+// An older saved link may still name the draft-ready scope. It still opens, and its start
+// sends only the one repair scope (reviewRunRequest): a takeover never readies a draft now.
+const OLDER_DRAFT_SCOPE = 'named_pr_repairs_ready_and_reviewed_successors'
 import { workflowAgent } from './review-prompts.js'
 
 const ID = /^[A-Za-z0-9_-]{8,64}$/
@@ -21,7 +25,7 @@ export function selectedReviewRequest(value, id) {
   if (new Set(items.map(item => `${item.repo}#${item.number}`)).size !== items.length) throw new Error('This review link repeats a pull request.')
   const proposed = { request_id: id, mode: value.mode, items }
   if (value.confirmation_scope) {
-    if (value.mode !== 'review_fix_merge' || ![TAKEOVER_SCOPE,DRAFT_TAKEOVER_SCOPE].includes(value.confirmation_scope)) throw new Error('This review link has an invalid permission scope.')
+    if (value.mode !== 'review_fix_merge' || ![TAKEOVER_SCOPE, OLDER_DRAFT_SCOPE].includes(value.confirmation_scope)) throw new Error('This review link has an invalid permission scope.')
     proposed.confirmation_scope = value.confirmation_scope
   }
   // Only what this mode's frozen preview can carry; anything else is dropped.
@@ -54,5 +58,5 @@ export async function inspectReviewSelection(token, request) {
         || pr.state !== 'OPEN' || pr.headRefOid !== item.head_sha || pr.baseRef?.target?.oid !== item.base_sha || pr.baseRefName !== item.base_ref) throw new Error('A selected contribution changed or closed. Ask the agent for a fresh review link; nothing was approved.')
     return { ...pr, repository: { nameWithOwner: repository.nameWithOwner, viewerPermission: repository.isArchived ? null : repository.viewerPermission } }
   })
-  return { ...request, pulls, canMerge: request.mode === 'review_fix_merge' ? !takeoverBlocker(pulls, {allowDraft:request.confirmation_scope === DRAFT_TAKEOVER_SCOPE}) : pulls.every(pr => !pr.isDraft && mayMerge(pr.repository.viewerPermission)) }
+  return { ...request, pulls, canMerge: request.mode === 'review_fix_merge' ? !takeoverBlocker(pulls, { allowDraft: true }) : pulls.every(pr => !pr.isDraft && mayMerge(pr.repository.viewerPermission)) }
 }

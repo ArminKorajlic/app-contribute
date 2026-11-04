@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { inspectReviewSelection, reviewSelectionIdFromIntent, selectedReviewRequest } from '../review-selection.js'
+import { reviewRunRequest } from '../collaboration.js'
 import { followedRepositories, followRepository } from '../repositories.js'
 import { attachSourceProjects } from '../source-map.js'
 
@@ -75,12 +76,14 @@ test('following a repository preserves concurrent choices and never grants permi
   await assert.rejects(followRepository('team/new'), /Reconnect/)
 })
 
-test('saved takeover scopes survive loading without silently granting draft readiness',()=>{
+test('saved takeover scopes still load, and none of them grants draft readiness any more',()=>{
   const legacy=selectedReviewRequest({...proposal,mode:'review_fix_merge'},ID)
   assert.equal(legacy.confirmation_scope,undefined)
   for(const confirmation_scope of ['named_pr_repairs_and_reviewed_successors','named_pr_repairs_ready_and_reviewed_successors']) {
     assert.equal(selectedReviewRequest({...proposal,mode:'review_fix_merge',confirmation_scope},ID).confirmation_scope,confirmation_scope)
   }
   assert.throws(()=>selectedReviewRequest({...proposal,confirmation_scope:'named_pr_repairs_ready_and_reviewed_successors'},ID), /permission scope/)
+  const older=selectedReviewRequest({...proposal,mode:'review_fix_merge',confirmation_scope:'named_pr_repairs_ready_and_reviewed_successors'},ID)
+  assert.equal(reviewRunRequest({...older,pulls:[]}).confirmation_scope,'named_pr_repairs_and_reviewed_successors','an older draft-ready link starts with the repair scope only')
   assert.throws(()=>selectedReviewRequest({...proposal,mode:'review_fix_merge',confirmation_scope:'anything'},ID), /permission scope/)
 })

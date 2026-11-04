@@ -15,19 +15,21 @@ function Choice({ item, onPick }) {
 }
 
 // With only one group the menu is a plain list; with two, each is named.
+// Take over is set apart at the bottom of the agent group: rare and deliberate.
 function Group({ title, items, onPick, named }) {
   if (!items.length) return null
   return <div role="group" aria-label={title}>
     {named ? <p className="co-agent-menu-group">{title}</p> : null}
-    {items.map(item => <Choice key={item.intent} item={item} onPick={onPick} />)}
+    {items.map(item => <div key={item.intent} className={item.intent === 'take_over' ? 'co-agent-menu-apart' : undefined}><Choice item={item} onPick={onPick} /></div>)}
   </div>
 }
 
+// `decisions` are the PR machine's decisions for `pulls`, in the same order.
 // `defaultOpen` shows the list on first render, which is how the menu's own words are tested.
-export function ActionsMenu({ onChoose, pulls = [], record = null, capabilities = null, own = false, disabled = false, variant = 'ghost', label = 'Actions', ariaLabel, align = 'end', defaultOpen = false }) {
+export function ActionsMenu({ onChoose, pulls = [], decisions = [], record = null, capabilities = null, disabled = false, variant = 'ghost', label = 'Actions', ariaLabel, align = 'end', defaultOpen = false }) {
   const [open, setOpen] = useState(defaultOpen)
   const root = useRef(null)
-  const model = actionsMenuModel(pulls, { record, capabilities, own })
+  const model = actionsMenuModel(pulls, decisions, { record, capabilities })
   useDismissableMenu(root, open, setOpen)
   // The trigger takes focus back first, so whatever opens next returns there.
   function choose(intent) {
@@ -42,6 +44,7 @@ export function ActionsMenu({ onChoose, pulls = [], record = null, capabilities 
     </button>
     {open ? <div className="co-agent-menu-list" role="menu" aria-label="Actions">
       {model.header ? <p className="co-agent-menu-head"><b>{model.header.label}</b>{model.header.text ? ` · ${model.header.text}` : ''}</p> : null}
+      {model.headline ? <p className="co-agent-menu-standing">{model.headline}</p> : null}
       <Group title="You" items={model.you} onPick={choose} named={named} />
       <Group title="Agent" items={model.agent} onPick={choose} named={named} />
     </div> : null}
