@@ -94,7 +94,7 @@ export function PullFeedbackFlag({ record, status = null, activity = null }) {
 // the review needs from you or found.
 function ReviewMark({ tone }) {
   if (tone.key === 'running') return <span className="co-arc" role="status" aria-label="Review running" />
-  const mark = { verdict: 'waiting', needs: 'waiting', clear: 'success', changes: 'failure', halted: 'failure' }[tone.key]
+  const mark = { verdict: 'waiting', needs: 'waiting', findings: 'waiting', clear: 'success', changes: 'failure', halted: 'failure' }[tone.key]
   return mark ? <span className={'co-tab-dot is-' + mark} title={tone.title} aria-label={tone.title} /> : null
 }
 
@@ -367,7 +367,7 @@ function PullRequestDetailView({ cacheStore, pr, token, onReview, onAssign, onRe
   </div> : null
   const labels = pr.labels?.nodes || []
   const tabs = [['conversation', 'Comments'], ['files', <>Files<span className="co-tab-more"> changed</span></>], ['checks', 'Checks'], ['review', 'Review']]
-  const reviewState = reviewStateTone(status)
+  const reviewState = reviewStateTone(status, { own: review.own, ignored: review.ignored })
   // GitHub-style tab badges: one neutral count pill per tab. Comments counts
   // the loaded conversation (comments and reviews); until it loads, GitHub's
   // issue-comment total stands in. Checks add a pass/fail dot before the pill;

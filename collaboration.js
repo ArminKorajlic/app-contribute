@@ -180,20 +180,39 @@ export const reviewRunStateLabel = run => REVIEW_STATE_NAMES[run.execution_state
 // GitHub refuses "request changes" on your own PR, so a posted one is always on
 // someone else's. A posted plain review hands a PR over only when `own` is
 // known to be false; null (unknown) never does.
-export function reviewItemProgress(run, item, { own = null } = {}) {
+// `ignored` is the owner's notes of findings set aside (ignoreKey -> { reason }):
+// a finding the owner ignored for this exact version no longer waits on them.
+export function reviewItemProgress(run, item, { own = null, ignored = null } = {}) {
   const found = item.state === 'needs_you'
   const verdict = item.verdict_proposal
   const requested = found && verdict?.state === 'posted' && verdict.event === 'REQUEST_CHANGES'
   const handedOver = requested || (found && own === false && !verdict && item.public_review?.state === 'posted')
   const dropped = found && verdict?.state === 'discarded'
-  const settled = SETTLED_ITEMS.has(item.state) || handedOver || dropped
+  const waived = !handedOver && !!ignoredNote(item, ignored)
+  const settled = SETTLED_ITEMS.has(item.state) || handedOver || dropped || waived
   const halted = !settled && HALTED_RUNS.has(run.execution_state)
   const waiting = !settled && run.execution_state === 'awaiting_owner'
-  const label = requested ? 'Changes requested' : handedOver ? 'Review posted' : dropped ? 'Verdict discarded'
+  const label = requested ? 'Changes requested' : handedOver ? 'Review posted' : dropped ? 'Verdict discarded' : waived ? 'Ignored'
     : halted ? 'Not finished' : REVIEW_STATE_NAMES[item.state] || item.state
   const turn = handedOver ? 'author' : settled ? 'none' : halted || waiting || OWNER_ITEM_STATES.has(item.state) ? 'owner' : 'agent'
   return { label, halted, waiting, settled, turn }
 }
+
+// One review of one PR at one exact version: what the owner's "ignore" note is
+// filed under, so a new version of the PR is reviewed and judged afresh.
+export const ignoreKey = item => `${String(item.repo).toLowerCase()}#${item.number}@${item.head_sha}`
+// The notes are kept by exact version, so they stay few: only the newest few hundred are remembered.
+const MAX_IGNORE_NOTES = 200
+export function withIgnoreNote(notes, item, reason, now = new Date().toISOString()) {
+  const next = { ...notes, [ignoreKey(item)]: { reason, at: now } }
+  return Object.fromEntries(Object.entries(next).sort(([, a], [, b]) => String(b.at).localeCompare(String(a.at))).slice(0, MAX_IGNORE_NOTES))
+}
+export function withoutIgnoreNote(notes, item) {
+  const { [ignoreKey(item)]: removed, ...rest } = notes || {}
+  return rest
+}
+// The owner's note setting aside this review's findings, if there is one for them.
+export const ignoredNote = (item, ignored) => (item.state === 'needs_you' ? ignored?.[ignoreKey(item)] || null : null)
 export const reviewRunHalted = run => run.state !== 'complete' && HALTED_RUNS.has(run.execution_state)
 
 // Public outcomes a run saved before GitHub settled them. The server's observe

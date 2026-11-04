@@ -86,3 +86,11 @@ test('a PR pushed again after you requested changes is yours again, with no revi
   assert.deepEqual(rowReview({ status: null, earlier: approved, pr: pull, own: false }), { frame: 'idle', chip: null })
   assert.deepEqual(rowReview({ status: null, earlier: null, pr: pull, own: false }), { frame: 'idle', chip: null })
 })
+
+test('an ignored finding leaves the row quiet and says so', () => {
+  const status = { run: { state: 'complete', execution_state: 'completed', chat_id: 'c' }, item: { repo: 'team/repo', number: 7, head_sha: 'a', state: 'needs_you', summary: 'P1' }, exactBase: true }
+  const ignored = { 'team/repo#7@a': { reason: 'Out of scope', at: '2026-11-04T10:00:00Z' } }
+  assert.deepEqual(rowReview({ status, pr: pull, own: true }), { frame: 'verdict', chip: { label: 'Needs you', tone: 'owner' } })
+  assert.deepEqual(rowReview({ status, pr: pull, own: true, ignored }), { frame: 'idle', chip: { label: 'Ignored', tone: 'waiting' } })
+  assert.equal(frameState(status, { own: true, ignored }), 'idle')
+})

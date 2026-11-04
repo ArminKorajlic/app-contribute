@@ -39,7 +39,7 @@ const STEPS = [
 
 // The window behind Agent > Address feedback. It reads what the PR asks for,
 // asks how far to go, then starts an agent conversation from a written brief.
-export function AddressFeedbackWindow({ pr, token, appId, onStart, onClose }) {
+export function AddressFeedbackWindow({ pr, findings = null, token, appId, onStart, onClose }) {
   const root = useRef(null)
   const [state, setState] = useState({ phase: 'loading', items: [], partial: false })
   const [rung, setRung] = useState('show')
@@ -58,7 +58,7 @@ export function AddressFeedbackWindow({ pr, token, appId, onStart, onClose }) {
       if (activity.status === 'rejected' && threads.status === 'rejected') { setState({ phase: 'error', items: [], partial: false }); return }
       setState({
         phase: 'ready', partial: activity.status === 'rejected' || threads.status === 'rejected' || !!activity.value?.errors?.length || !!threads.value?.errors?.length,
-        items: addressItems(pr, { activity: activity.value?.items || [], threads: threads.value?.threads || [] }),
+        items: addressItems(pr, { activity: activity.value?.items || [], threads: threads.value?.threads || [], findings }),
       })
     })
     return () => controller.abort()

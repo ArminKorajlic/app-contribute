@@ -46,7 +46,7 @@ import { createRefreshCoordinator } from './refresh.js'
 import { checkUpstream } from './upstream-check.js'
 import { DESK_LAST_LOOKED_KEY, deskCounts, projectNeedsCount } from './desk.js'
 import { hasActiveReview } from './review-frame.js'
-import { loadReviewRuns } from './collaboration.js'
+import { loadReviewRuns, withIgnoreNote, withoutIgnoreNote } from './collaboration.js'
 import {
   contributionPathDecision,
   contributionStackDecision,
@@ -318,6 +318,8 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
   const [autopilotDefault, setAutopilotDefault] = useState(true)
   // How a new PR opens when the owner does not pick for that send (see publication-stage.js).
   const [newPrStage, setNewPrStage] = useState(DEFAULT_STAGE)
+  // Findings the owner set aside, by review version (see ignoreKey). Kept in the app's settings.
+  const [ignoredReviews, setIgnoredReviews] = useState({})
   const [deskView, setDeskView] = useState('needs')
   const [lastLooked, setLastLooked] = useState('')
   // The PR page the desk pane shows, over whatever view or project is behind
@@ -625,6 +627,7 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
         setAutopilotDefault(appSettings.autopilot_default)
       }
       setNewPrStage(appSettings.new_pr_stage)
+      if (appSettings.ignored_reviews && typeof appSettings.ignored_reviews === 'object') setIgnoredReviews(appSettings.ignored_reviews)
       // The previous visit's time marks what changed "since you last looked";
       // this visit becomes the next one's mark. One write per app open.
       if (typeof appSettings[DESK_LAST_LOOKED_KEY] === 'string') {
@@ -1245,6 +1248,15 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
     saveAppSettings({ ...settings, new_pr_stage: stage })
   }, [])
 
+  // Setting a review's findings aside is the owner's own note: nothing is posted anywhere.
+  const saveIgnoredReviews = useCallback(async (change) => {
+    setIgnoredReviews(change)
+    const settings = await loadAppSettings()
+    saveAppSettings({ ...settings, ignored_reviews: change(settings.ignored_reviews || {}) })
+  }, [])
+  const onIgnoreReview = useCallback((item, reason) => saveIgnoredReviews(notes => withIgnoreNote(notes, item, reason)), [saveIgnoredReviews])
+  const onUndoIgnore = useCallback(item => saveIgnoredReviews(notes => withoutIgnoreNote(notes, item)), [saveIgnoredReviews])
+
   const onToggleAutopilotDefault = useCallback(async (next) => {
     setAutopilotDefault(next)
     const settings = await loadAppSettings()
@@ -1579,6 +1591,7 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
     login: conn.login || '',
     records,
     runs: reviewRuns,
+    ignored: ignoredReviews,
     lastLooked,
     decisionsFor: project => projectRun(project).decisions,
     onOpenPull: openPullPage,
@@ -1609,7 +1622,7 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
     if (page) {
       return <PullRequests key={`page:${page.repo}#${page.number}`} appId={appId} token={token}
         project={project} conn={conn} refreshKey={refreshKey} onChanged={refreshIncomingReviews}
-        presentation="page" focusPull={page} onFocusRelease={() => {}} onStartAgent={startAgentTask} onOpenForReview={onMarkReady}
+        presentation="page" focusPull={page} onFocusRelease={() => {}} onStartAgent={startAgentTask} onOpenForReview={onMarkReady} ignoredReviews={ignoredReviews} onIgnoreReview={onIgnoreReview} onUndoIgnore={onUndoIgnore}
         records={recordsForProject(records, project)} onRecord={record => {
           setPullPage(null)
           if (project?.key) setProjectFocus({ key: project.key, nonce: crypto.randomUUID() })
@@ -1617,7 +1630,7 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
     }
     return <PullRequests key={`pulls:${project?.key || 'all'}`} appId={appId} token={token}
       project={project} conn={conn} refreshKey={refreshKey} onChanged={refreshIncomingReviews}
-      scope={view?.scope || 'all'} onScope={view?.onScope} onTotal={view?.onTotal} onStartAgent={startAgentTask} onOpenForReview={onMarkReady}
+      scope={view?.scope || 'all'} onScope={view?.onScope} onTotal={view?.onTotal} onStartAgent={startAgentTask} onOpenForReview={onMarkReady} ignoredReviews={ignoredReviews} onIgnoreReview={onIgnoreReview} onUndoIgnore={onUndoIgnore}
       onOpenPage={(pr, tab) => openPullPage(project, pr, tab)}
       focusPull={pullFocus?.number ? pullFocus : null} focusRun={pullFocus?.runId ? pullFocus : null} onFocusRelease={releasePullFocus}
       records={recordsForProject(records, project)} onRecord={record => {

@@ -102,9 +102,47 @@ test('a review whose request-changes verdict is posted reads as handed to the au
   if (!html) return
   assert.match(html, /<h4>Changes requested<\/h4>/)
   assert.doesNotMatch(html, /Answer in review conversation|is-verdict|data-frame="verdict"/, 'nothing here waits on you')
-  assert.match(html, /Open review conversation/)
+  assert.match(html, />Ask the reviewer something</, 'the conversation stays one button away, as a button')
   // The run page says the same: a finding is not a question for the conversation.
   const answering = status('needs_you', {}, { state: 'running', execution_state: 'awaiting_owner' })
   const asked = await render(t, 'ReviewTab', { pr, status: answering })
   assert.match(asked, /Answer in review conversation/, 'a conversation that asked something still needs the answer')
+})
+
+test('a finished review that found problems offers what to do about them, never "answer" or "stop"', async t => {
+  const found = status('needs_you', { summary: 'Three problems in the lost-reply path.', public_review: { state: 'posted', url: 'https://github.com/team/repo/pull/9#issuecomment-1' } }, { state: 'needs_you', execution_state: 'completed', can_stop: true })
+  const own = await render(t, 'ReviewTab', { pr, status: found, own: true, onStart: () => {}, onFix: () => {}, onIgnore: () => {} })
+  if (!own) return
+  assert.match(own, /<h4>Problems found<\/h4>/)
+  for (const label of ['Fix these findings', 'Ignore…', 'Review again', 'Ask the reviewer something']) assert.match(own, new RegExp(`>${label}<`), label)
+  assert.doesNotMatch(own, /Answer in review conversation|Stop review/)
+  assert.match(own, /co-btn co-btn-primary">Fix these findings/, 'the fix is the one next step')
+  // Someone else's PR has no fix to offer, and a closed PR offers nothing to start.
+  const privateFound = status('needs_you', { summary: 'Three problems in the lost-reply path.' }, { state: 'needs_you', execution_state: 'completed', can_stop: true })
+  const others = await render(t, 'ReviewTab', { pr, status: privateFound, own: false, onStart: () => {}, onFix: () => {}, onIgnore: () => {} })
+  assert.doesNotMatch(others, /Fix these findings/)
+  assert.match(others, />Ignore…</)
+  // Once your review is posted on someone else's PR, the move is theirs: only the question stays.
+  const handedOver = await render(t, 'ReviewTab', { pr, status: found, own: false, onStart: () => {}, onFix: () => {}, onIgnore: () => {} })
+  assert.match(handedOver, /<h4>Review posted<\/h4>/)
+  assert.doesNotMatch(handedOver, />Ignore…<|Fix these findings/)
+  const closed = await render(t, 'ReviewTab', { pr, status: found, own: true, readOnly: true, onStart: () => {}, onFix: () => {}, onIgnore: () => {} })
+  assert.doesNotMatch(closed, /Fix these findings|Ignore…|Review again/)
+  assert.match(closed, />Ask the reviewer something</)
+  // The tab dot is amber while it waits on you.
+  const detail = await render(t, 'PullRequestDetail', { pr, status: found, cacheStore: { entries: {} }, review: { own: true } })
+  assert.match(detail, /Review<span class="co-tab-dot is-waiting"/)
+})
+
+test('an ignored finding says so for this version, quietly, and can be taken back', async t => {
+  const found = status('needs_you', { summary: 'Three problems.' }, { state: 'needs_you', execution_state: 'completed' })
+  const ignored = { [`team/repo#9@${'a'.repeat(40)}`]: { reason: 'Not a problem', at: '2026-11-04T10:00:00Z' } }
+  const html = await render(t, 'ReviewTab', { pr, status: found, own: true, ignored, onStart: () => {}, onFix: () => {}, onIgnore: () => {}, onUndoIgnore: () => {} })
+  if (!html) return
+  assert.match(html, /<h4>Ignored<\/h4>/)
+  assert.match(html, /Ignored: Not a problem\. Only for this version/)
+  assert.match(html, />Undo ignore</)
+  assert.doesNotMatch(html, /Fix these findings|data-frame="verdict"/)
+  const detail = await render(t, 'PullRequestDetail', { pr, status: found, cacheStore: { entries: {} }, review: { own: true, ignored } })
+  assert.doesNotMatch(detail, /co-tab-dot is-waiting/)
 })

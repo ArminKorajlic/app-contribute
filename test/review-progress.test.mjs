@@ -88,3 +88,26 @@ test('one shared run detail keeps recorded versions, posted reviews and the owni
   assert.match(stopped, /Start again/)
   assert.doesNotMatch(stopped, /Stop workflow/, 'a halted run cannot be stopped again')
 })
+
+test('a finding you set aside stops waiting on you for that exact version, and only for it', () => {
+  const item = { repo: 'Team/Repo', number: 9, head_sha: 'a'.repeat(40), state: 'needs_you', summary: 'P1' }
+  const notes = collaboration.withIgnoreNote({}, item, 'Not a problem', '2026-11-04T10:00:00Z')
+  assert.deepEqual(Object.keys(notes), [`team/repo#9@${'a'.repeat(40)}`])
+  assert.deepEqual(collaboration.ignoredNote(item, notes), { reason: 'Not a problem', at: '2026-11-04T10:00:00Z' })
+  const ignored = collaboration.reviewItemProgress(run(), item, { ignored: notes })
+  assert.deepEqual(ignored, { label: 'Ignored', halted: false, waiting: false, settled: true, turn: 'none' })
+  // A new version of the PR is reviewed and judged afresh.
+  assert.equal(collaboration.ignoredNote({ ...item, head_sha: 'b'.repeat(40) }, notes), null)
+  // Only findings can be set aside: a clear review has none, and Undo brings it back.
+  assert.equal(collaboration.ignoredNote({ ...item, state: 'all_clear' }, notes), null)
+  assert.equal(collaboration.ignoredNote(item, collaboration.withoutIgnoreNote(notes, item)), null)
+  assert.deepEqual(collaboration.withoutIgnoreNote(null, item), {})
+})
+
+test('ignore notes stay few: the newest two hundred are remembered', () => {
+  let notes = {}
+  for (let number = 1; number <= 230; number += 1) notes = collaboration.withIgnoreNote(notes, { repo: 'o/r', number, head_sha: 'c'.repeat(40) }, 'Out of scope', new Date(Date.UTC(2026, 10, 1, 0, 0, number)).toISOString())
+  assert.equal(Object.keys(notes).length, 200)
+  assert.ok(notes[`o/r#230@${'c'.repeat(40)}`], 'the newest note is kept')
+  assert.equal(notes[`o/r#1@${'c'.repeat(40)}`], undefined, 'the oldest fell away')
+})

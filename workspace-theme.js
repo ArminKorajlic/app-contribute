@@ -631,6 +631,10 @@ input[type=checkbox].co-switch:focus-visible { outline:2px solid var(--accent); 
 .co-split-list { right:0; left:auto; }
 .co-agent-menu-group { margin:8px 0 2px; padding:4px 10px 0; color:var(--muted); font-size:14px; font-weight:650; }
 .co-agent-menu-group:first-child { margin-top:2px; }
+.co-rw-reasons { display:grid; gap:8px; }
+.co-rw-reason { display:block; width:100%; min-height:48px; padding:0 16px; border:1px solid var(--border); border-radius:12px; background:var(--bg); color:var(--text); font:600 15px var(--font); text-align:left; cursor:pointer; }
+.co-rw-reason:hover { border-color:var(--accent); background:color-mix(in srgb,var(--accent) 8%,var(--bg)); }
+.co-rw-reason:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 .co-rw-foot { display:flex; flex-direction:column; gap:12px; margin-top:14px; padding:16px 20px 20px; border-top:1px solid var(--border); }
 .co-rw-foot > p { margin:0; color:var(--muted); font-size:14px; line-height:1.45; }
 .co-rw-actions { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:10px; }

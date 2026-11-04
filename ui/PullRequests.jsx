@@ -13,8 +13,10 @@ import { Icon } from './Icons.jsx'
 import { ActionsMenu } from './ActionsMenu.jsx'
 import { ReviewDialog } from './ReviewDialog.jsx'
 import { AddressFeedbackWindow } from './AddressFeedback.jsx'
+import { savedFindings } from '../address-feedback.js'
 import { ReviewConfirmation } from './ReviewConfirmation.jsx'
 import { ActionConfirm } from './ActionConfirm.jsx'
+import { IgnoreReview } from './IgnoreReview.jsx'
 import { YOUR_INTENTS } from '../actions-menu.js'
 import { ACTION_COPY } from '../action-copy.js'
 import { projectUpdater } from '../updates.js'
@@ -153,7 +155,7 @@ const runAnchor = run => run.items?.length === 1 ? `${run.items[0].repo.toLowerC
 
 // `scope` follows the project tabs: 'all' (every open PR), 'requests' (PRs that
 // ask for the owner's review) or 'mine' (the saved agent reviews only).
-export function PullRequests({ appId, token, project, conn, onChanged, records = [], onRecord, refreshKey, focusPull, focusRun, onFocusRelease, scope = 'all', onScope, onTotal, presentation = 'list', onOpenPage = null, onStartAgent = null, onOpenForReview = null }) {
+export function PullRequests({ appId, token, project, conn, onChanged, records = [], onRecord, refreshKey, focusPull, focusRun, onFocusRelease, scope = 'all', onScope, onTotal, presentation = 'list', onOpenPage = null, onStartAgent = null, onOpenForReview = null, ignoredReviews = null, onIgnoreReview = null, onUndoIgnore = null }) {
   const repo = project?.canonical_repo || ''
   const publicRevision = records.filter(record => record.url).map(record => `${record.id}:${record.status}:${record.number}:${record.last_updated_pr_at || ''}`).sort().join('|')
   const session = sessionEntry(repo, `${refreshKey}|${publicRevision}`)
@@ -187,6 +189,8 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
   const [addressing, setAddressing] = useState(null)
   // One of the owner's own actions (Open for review, Merge) waiting on its confirm sheet.
   const [acting, setActing] = useState(null)
+  // A review's findings waiting on the owner's reason to set them aside.
+  const [ignoring, setIgnoring] = useState(null)
   const [choice, setChoice] = useState(null)
   const [resolved, setResolved] = useState(null)
   // The platform's advertised workflows, remembered across launches.
@@ -389,14 +393,14 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
   const detailPr = pulls.find(pr => prKey(pr) === opened)
   function inspect(pr) {
     // While a review runs, the frame on the row is the signal; opening it lands on the Review tab.
-    if (onOpenPage) { onOpenPage(pr, frameState(statusFor(pr), { own: isOwnPull(pr, conn.login) }) === 'reviewing' ? 'review' : 'conversation'); return }
+    if (onOpenPage) { onOpenPage(pr, frameState(statusFor(pr), { own: isOwnPull(pr, conn.login), ignored: ignoredReviews }) === 'reviewing' ? 'review' : 'conversation'); return }
     setOpened(prKey(pr))
     task?.open('task:detail')
   }
   // A launch or assignment opened from one PR stays beside that PR; a batch
   // opens under the list header. `anchor` is only placement, never scope.
   function choose(pulls, job, anchor = '') {
-    if (job === 'address') { setAssigning(null); setAddressing({ ...pulls[0], repository: { ...pulls[0].repository } }); return }
+    if (job === 'address') { setAssigning(null); setAddressing({ pr: { ...pulls[0], repository: { ...pulls[0].repository } }, findings: savedFindings(statusFor(pulls[0]), ignoredReviews) }); return }
     if (YOUR_INTENTS.has(job)) { setAssigning(null); setActing({ intent: job, pr: { ...pulls[0], repository: { ...pulls[0].repository } }, record: recordsForPull(records, pulls[0])[0] }); return }
     const { mode, intent, options } = reviewIntent(job)
     setResolved(null)
@@ -463,7 +467,11 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
     const run = statusFor(pr)?.run
     return {
       own: isOwnPull(pr, conn.login), earlier: run ? null : earlierReviewForPull(relevantRuns, pr), busy, error: runError, pulls, listState: data,
+      ignored: ignoredReviews, canPost: capabilities?.post_review_now === true,
       onStart: job => choose([pr], job, prKey(pr)),
+      onFix: onStartAgent ? () => choose([pr], 'address', prKey(pr)) : undefined,
+      onIgnore: onIgnoreReview ? item => setIgnoring({ pr, item }) : undefined,
+      onUndoIgnore: onUndoIgnore || undefined,
       onStop: run ? () => stopRun(run) : undefined,
       onRetry: run ? () => choose(retryPulls(run), run.mode === 'review_merge' ? 'review' : run.mode, runAnchor(run)) : undefined,
       onVerdict: run ? (item, proposal, decision) => decideVerdict(run, item, proposal, decision) : undefined,
@@ -476,7 +484,9 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
     </TaskPane>
   const closeReview = () => { setChoice(null); task?.close() }
   const reviewDialog = task?.activeId === 'task:review' && choice ? <ReviewDialog onClose={closeReview}><ReviewConfirmation appId={appId} token={token} bindCurrentTarget onResolved={value => { setResolved(value); if (value?.capabilities) setCapabilities(value.capabilities) }} disabled={!resolved} onOptionsChange={options => { setResolved(null); setChoice(old => ({ ...old, options, request_id:crypto.randomUUID() })) }} onAgentChange={agent => { setResolved(null); setChoice(old => ({ ...old, agent, request_id:crypto.randomUUID() })) }} choice={choice} busy={busy} error={error} onConfirm={start} onCancel={closeReview} onModeChange={mode => { setError(''); setResolved(null); setChoice(old => ({ ...old, mode, confirmation_scope: undefined, ...scopeFor(mode, old.pulls), request_id: crypto.randomUUID() })) }} capabilities={capabilities} /></ReviewDialog> : null
-  const addressDialog = addressing && onStartAgent ? <ReviewDialog onClose={() => setAddressing(null)}><AddressFeedbackWindow pr={addressing} token={token} appId={appId} onStart={onStartAgent} onClose={() => setAddressing(null)} /></ReviewDialog> : null
+  const addressDialog = addressing && onStartAgent ? <ReviewDialog onClose={() => setAddressing(null)}><AddressFeedbackWindow pr={addressing.pr} findings={addressing.findings} token={token} appId={appId} onStart={onStartAgent} onClose={() => setAddressing(null)} /></ReviewDialog> : null
+  const closeIgnore = () => setIgnoring(null)
+  const ignoreDialog = ignoring ? <ReviewDialog onClose={closeIgnore}><IgnoreReview pr={ignoring.pr} onPick={reason => { onIgnoreReview(ignoring.item, reason); closeIgnore() }} onClose={closeIgnore} /></ReviewDialog> : null
   // Each of your own actions runs the app's one guarded handler for it.
   const actionHandlers = { open_review: record => onOpenForReview ? onOpenForReview(record) : { error: 'Opening for review is not available here.' } }
   const closeAction = () => setActing(null)
@@ -500,6 +510,7 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
     {reviewDialog}
     {addressDialog}
     {actionDialog}
+    {ignoreDialog}
     <AgentReviewHistory runs={relevantRuns} pulls={pulls} listState={data} onOpen={openRun} />
   </section>
   if (presentation === 'page') {
@@ -518,6 +529,7 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
       {reviewDialog}
     {addressDialog}
     {actionDialog}
+    {ignoreDialog}
     </section>
   }
   const assignAnchor = assigning?.anchor && visibleKeys.has(assigning.anchor) ? assigning.anchor : ''
@@ -541,7 +553,7 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
     <div className="co-pr-list">{visible.map(pr => {
       const key = prKey(pr)
       const status = statusFor(pr)
-      const review = rowReview({ status, earlier: status ? null : earlierReviewForPull(relevantRuns, pr), pr, own: isOwnPull(pr, conn.login) })
+      const review = rowReview({ status, earlier: status ? null : earlierReviewForPull(relevantRuns, pr), pr, own: isOwnPull(pr, conn.login), ignored: ignoredReviews })
       const assignees = pr.assignees?.nodes || []
       const comments = conversationCount(pr)
       const open = isOpenPull(pr)
@@ -584,5 +596,6 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
     {reviewDialog}
     {addressDialog}
     {actionDialog}
+    {ignoreDialog}
   </section>
 }

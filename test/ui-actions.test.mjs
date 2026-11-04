@@ -455,7 +455,7 @@ test('a review chip opens the PR on its Review tab, and a started review no long
   const pullsSource = readFileSync(new URL('../ui/PullRequests.jsx', import.meta.url), 'utf8')
   assert.match(pullsSource, /onOpenPage \? onOpenPage\(pr, 'review'\)/)
   // The title opens Comments, or the Review tab while a review is running.
-  assert.match(pullsSource, /onOpenPage\(pr, frameState\(statusFor\(pr\), \{ own: isOwnPull\(pr, conn\.login\) \}\) === 'reviewing' \? 'review' : 'conversation'\)/)
+  assert.match(pullsSource, /onOpenPage\(pr, frameState\(statusFor\(pr\), \{ own: isOwnPull\(pr, conn\.login\), ignored: ignoredReviews \}\) === 'reviewing' \? 'review' : 'conversation'\)/)
   assert.doesNotMatch(pullsSource, /setChoice\(null\); setSelected\(new Set\(\)\)\n\s*task\?\.open\(`task:run:\$\{result\.run\.id\}`\)/)
   // The row wears the comet frame while an agent works; the Review tab knows your own PRs.
   assert.match(pullsSource, /<ReviewFrame key=\{key\} state=\{review\.frame\}/)

@@ -1,6 +1,6 @@
 // The comet frame around a PR under review: pure geometry and state mapping,
 // so it is testable without a DOM. ui/ReviewFrame.jsx draws it.
-import { reviewItemProgress, reviewRunHalted } from './collaboration.js'
+import { ignoredNote, reviewItemProgress, reviewRunHalted } from './collaboration.js'
 
 export const COMET_SPEED = 160 // pixels per second: a slow, steady lap
 export const COMET_LAYERS = 36
@@ -47,13 +47,14 @@ const OWNER_CHIP_WORDS = { merge_unknown: 'Check outcome', ready_unknown: 'Check
 
 // The chip beside a PR row's meta line for its current review. Only the owner's
 // own move is amber; a review that waits on the PR's author reads quietly.
-function currentReviewChip(status, pr, own, frame) {
+function currentReviewChip(status, pr, own, ignored, frame) {
   const { run, item } = status
-  const progress = reviewItemProgress(run, item, { own })
+  const progress = reviewItemProgress(run, item, { own, ignored })
   if (frame === 'reviewing') return null // the travelling frame says it
   if (progress.halted) return { label: 'Run stopped', tone: 'owner' }
   if (progress.turn === 'owner' && (progress.waiting || run.chat_id)) return { label: OWNER_CHIP_WORDS[item.state] || 'Needs you', tone: 'owner' }
   if (progress.turn === 'author') return { label: `Waiting on ${pr.author?.login || 'the author'}`, tone: 'waiting' }
+  if (ignoredNote(item, ignored)) return { label: 'Ignored', tone: 'waiting' }
   if (item.state === 'all_clear' && !status.exactBase) return { label: `Reviewed on an older ${pr.baseRefName}`, tone: 'plain' }
   return { label: progress.label, tone: 'plain' }
 }
@@ -67,10 +68,10 @@ const changesSinceYourReview = (earlier, own) => !own
 // What a PR row shows for its review: the frame around it and the chip beside
 // its meta line. `status` is the review of the PR's current version, `earlier`
 // the newest review of another version (used only when the PR has moved on).
-export function rowReview({ status, earlier = null, pr, own }) {
+export function rowReview({ status, earlier = null, pr, own, ignored = null }) {
   if (status) {
-    const frame = frameState(status, { own })
-    return { frame, chip: currentReviewChip(status, pr, own, frame) }
+    const frame = frameState(status, { own, ignored })
+    return { frame, chip: currentReviewChip(status, pr, own, ignored, frame) }
   }
   if (earlier && changesSinceYourReview(earlier, own)) return { frame: 'verdict', chip: { label: 'New commits · review again', tone: 'owner' } }
   return { frame: 'idle', chip: null }
