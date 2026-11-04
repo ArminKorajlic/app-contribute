@@ -7,10 +7,10 @@ const FACT_ICON = { ok: 'check', warn: 'info', bad: 'close' }
 // The confirm sheet for one of the owner's own actions on a PR (Open for review,
 // Merge): what it does, what GitHub shows right now, and one button. The X is
 // the only way out, so there is no Cancel; a finished action swaps it for Done.
-// `copy` is the words (see action-copy.js); `onConfirm` runs the action and
+// `copy` is the words and the icon (see action-copy.js); `onConfirm` runs the action and
 // returns the outcome the app's handlers already use ({ ok } | { alreadyHandled }
 // | { pending, error } | { error }). Opened inside a ReviewDialog.
-export function ActionConfirm({ pr, copy, icon = 'send', onConfirm, onClose, onDone }) {
+export function ActionConfirm({ pr, copy, onConfirm, onClose, onDone }) {
   const region = useRef(null)
   const titleId = useId()
   const [phase, setPhase] = useState('confirm')
@@ -34,7 +34,7 @@ export function ActionConfirm({ pr, copy, icon = 'send', onConfirm, onClose, onD
   const selected = copy.choices?.options.find(option => option.key === picked)
   return <section ref={region} tabIndex={-1} className="co-review-window" aria-labelledby={titleId}>
     <header className={'co-rw-head' + (done ? ' is-done' : '')}>
-      <span className="co-rw-icon"><Icon name={done ? 'check' : icon} size={22} /></span>
+      <span className="co-rw-icon"><Icon name={done ? 'check' : copy.icon} size={22} /></span>
       <div>
         <h3 id={titleId}>{done ? finished.title : copy.title}</h3>
         <p className="co-rw-pr"><strong>#{pr.number} {pr.title}</strong><span>{pr.repository.nameWithOwner}</span></p>

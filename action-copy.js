@@ -29,6 +29,7 @@ const short = sha => String(sha || '').slice(0, 7)
 // it back to a draft. The exact version is pinned by the platform's action.
 export function openForReviewCopy(pr) {
   return {
+    icon: 'send',
     title: `Open #${pr.number} for review?`,
     confirm: 'Open for review',
     working: 'Opening…',
@@ -83,6 +84,7 @@ export function mergeCopy(pr, { status = null, ignored = null, method = '' } = {
   const allowed = allowedMergeMethods(pr.repository)
   const chosen = allowed.includes(method) ? method : allowed[0] || ''
   return {
+    icon: 'merge',
     title: `Merge #${pr.number} into ${base}?`,
     confirm: chosen ? MERGE_METHODS[chosen].action : 'Merge',
     working: 'Merging…',

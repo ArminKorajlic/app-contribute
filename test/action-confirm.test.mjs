@@ -39,11 +39,13 @@ test('only a draft the owner opened with their own GitHub account can be opened 
 
 test('the confirm sheet has one close affordance and one button that names the result', async t => {
   if (!frontendModules) return t.skip('MOBIUS_FRONTEND_NODE_MODULES is required for real React SSR')
-  const { render } = await renderModule(`
+  const { render, icon } = await renderModule(`
     import React from 'react'
     import { renderToStaticMarkup } from 'react-dom/server'
     import { ActionConfirm } from './ui/ActionConfirm.jsx'
+    import { Icon } from './ui/Icons.jsx'
     export const render = props => renderToStaticMarkup(React.createElement(ActionConfirm, props))
+    export const icon = name => renderToStaticMarkup(React.createElement(Icon, { name, size: 22 }))
   `)
   const html = render({ pr: pr(), copy: openForReviewCopy(pr()), onConfirm: () => {}, onClose: () => {} })
   assert.match(html, /<h3[^>]*>Open #9 for review\?<\/h3>/)
@@ -52,6 +54,11 @@ test('the confirm sheet has one close affordance and one button that names the r
   assert.match(html, /aria-label="Close"/)
   assert.doesNotMatch(html, />Cancel</, 'the X is the only way out')
   assert.match(html, /Contribute cannot turn it back into a draft yet/)
+  // Each action's words name their own icon, so no caller can show Merge with the arrow of Open for review.
+  assert.ok(html.includes(icon('send')), 'open for review wears the send arrow')
+  const merge = render({ pr: approved(), copy: mergeCopy(approved()), onConfirm: () => {}, onClose: () => {} })
+  assert.ok(merge.includes(icon('merge')), 'merge wears the merge icon')
+  assert.ok(!merge.includes(icon('send')), 'and not the arrow of another action')
 })
 
 import { mergePull } from '../collaboration.js'
