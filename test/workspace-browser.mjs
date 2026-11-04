@@ -316,6 +316,8 @@ const text = node => node?.textContent?.replace(/\s+/g, ' ').trim() || ''
 const query = selector => document.querySelector(selector)
 const button = (name, root = document) => [...root.querySelectorAll('button')].find(node => text(node) === name)
 const review = () => query('.co-review-window')
+// The window's one way out is the X in its header; it has no Cancel.
+const closeReview = () => click(review().querySelector('[aria-label="Close"]'))
 const checkButton = () => query('.co-workspace .co-check-github .co-btn')
 const batchAction = () => [...document.querySelectorAll('.co-public-work .co-work-progress-row')].find(node => text(node).includes('Review or assign'))
 const ensure = (condition, message) => { if (!condition) throw new Error(message) }
@@ -518,7 +520,7 @@ window.runWorkspaceChecks = async () => {
       ensure(text(review()).includes('Contribution 7') && text(review()).includes('Contribution 8'),'Hidden selected identity omitted from confirmation')
       await until(()=>text(review()).includes('Needs a newer Möbius'),'A missing review-presets route kept checking')
       ensure(!text(review()).includes('Checking what this Möbius supports'),'Unsupported workflows still read as a pending check')
-      await click(button('Cancel',review()))
+      await closeReview()
       window.presetsMissing=false
       const trigger=query('.co-pr-open'), listBefore=query('.co-pr-list')
       trigger.focus(); await click(trigger)
@@ -569,7 +571,7 @@ window.runWorkspaceChecks = async () => {
       // The review window is modal: filters behind it cannot change its scope.
       ensure(review().closest('[role=dialog]')?.getAttribute('aria-modal')==='true','Review window is not a modal dialog')
       ensure(text(review()).includes('Contribution 8') && !text(review()).includes('Contribution 7'),'Individual review changed PR scope')
-      await click(button('Cancel',review())); await setFilter('all')
+      await closeReview(); await setFilter('all')
       ensure(mutationRequests().length===before,'Filtering an existing confirmation approved work')
       firstCheckbox=query('input[aria-label="Select owner/project #7"]')
       secondCheckbox=query('input[aria-label="Select owner/project #8"]')
@@ -577,9 +579,9 @@ window.runWorkspaceChecks = async () => {
     await check('closing batch actions restores their original keyboard trigger', async () => {
       const agent=query('.co-pr-box-head .co-agent-menu-button'); agent.focus()
       await chooseAgent(query('.co-pr-box-head'))
-      await click(button('Cancel',review()))
+      await closeReview()
       await until(() => !review(),'Review window did not close')
-      ensure(agent.isConnected && document.activeElement===agent,'Cancel lost keyboard focus instead of returning to the Agent action')
+      ensure(agent.isConnected && document.activeElement===agent,'Closing the window lost keyboard focus instead of returning to the Agent action')
       const trigger=button('Assign',query('.co-pr-box-head')); trigger.focus(); await click(trigger)
       await until(() => query('.co-task-content'),'Inline action did not open')
       await click(query('.co-task-content [aria-label="Close action"]'))
@@ -624,7 +626,7 @@ window.runWorkspaceChecks = async () => {
       await click(mergeOption)
       ensure(button('Start review, merge when safe'),'Individual merge choice did not require guarded approval')
       ensure(mutationRequests().length===0,'Changing individual review mode mutated GitHub')
-      await click(button('Cancel',review()))
+      await closeReview()
       await until(() => !review() && !query('.co-task-content'),'Individual review did not close')
       ensure(document.activeElement===title,'Closing individual review did not return focus to its row trigger (focused '+(document.activeElement?.className || document.activeElement?.tagName)+': '+text(document.activeElement)+')')
     })
@@ -679,7 +681,7 @@ window.runWorkspaceChecks = async () => {
       await enabled('Start private review')
       await until(() => text(review()).includes('Fixture review error'),'No workflow error')
       ensure(firstCheckbox.checked && reviewRuns.length===1,'Failed review lost selection or started work')
-      window.failReview=false; await click(button('Cancel',review())); await click(query('[aria-label="Clear selection"]'))
+      window.failReview=false; await closeReview(); await click(query('[aria-label="Clear selection"]'))
     })
     await check('changed exact code blocks an inline review instead of approving a refreshed head', async () => {
       const before=mutationRequests().length
@@ -689,7 +691,7 @@ window.runWorkspaceChecks = async () => {
       await until(()=>text(review()).includes('changed since this list loaded'),'Changed code did not stop exact launch')
       ensure(mutationRequests().length===before && reviewRuns.length===1,'Changed code was approved')
       window.exactHeadChanged=false
-      await click(button('Cancel',review())); await click(query('[aria-label="Clear selection"]'))
+      await closeReview(); await click(query('[aria-label="Clear selection"]'))
     })
     await check('explicit send joins the same public inventory without implying merge', async () => {
       await inventory(); await click(button('Review and send'))
@@ -1133,7 +1135,7 @@ window.runWorkspaceChecks = async () => {
       await frame(); await frame()
       ensure(prRow(8) && review() && text(review()).includes('Contribution 8'), 'The linked row or its review window disappeared')
       ensure(!calls.releases.includes('later-action'), 'Opening the review window released the link')
-      await click(button('Cancel', review()))
+      await closeReview()
       await until(() => !prRow(8), 'Closing the pane kept the linked row pinned')
       ensure(calls.releases.includes('later-action'), 'Closing the pane did not release the link')
       window.focusPullFixture({ repo: 'owner/project', number: 8, nonce: 'later-assign' })

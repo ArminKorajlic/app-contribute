@@ -122,7 +122,6 @@ export function AddressFeedbackWindow({ pr, findings = null, token, appId, onSta
     <footer className="co-rw-foot">
       <p>It reads the PR as it is now. If the PR changes while the agent works, it stops and tells you.</p>
       <div className="co-rw-actions">
-        <button type="button" className="co-btn" disabled={busy} onClick={onClose}>Cancel</button>
         <button type="button" className="co-btn co-btn-primary" disabled={busy || state.phase !== 'ready' || !ticked} onClick={start}>{busy ? 'Starting…' : RUNGS.find(item => item.key === rung).start}</button>
       </div>
       {error ? <p className="co-run-error" role="alert">{error}</p> : null}

@@ -195,7 +195,6 @@ export function ReviewConfirmation({ choice, busy, disabled, error, onConfirm, o
     <footer className="co-rw-foot">
       <p>{copy.footnote}</p>
       <div className="co-rw-actions">
-        {onCancel ? <button type="button" className="co-btn" disabled={busy} onClick={onCancel}>Cancel</button> : null}
         <button type="button" className="co-btn co-btn-primary" disabled={busy || disabled || startBlocked} onClick={onConfirm}>{busy ? 'Starting…' : copy.startLabel}</button>
       </div>
       {error ? <p className="co-run-error" role="alert">{error}</p> : null}

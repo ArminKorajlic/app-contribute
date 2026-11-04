@@ -155,8 +155,9 @@ the owner, and folds apps with nothing to do.
 - Each of the owner's own actions ends in a **confirm sheet**: it states what
   happens, what GitHub shows right now (approval, checks, conflicts, what the
   owner's own agent review said about this exact version) and what Contribute
-  cannot undo. The X is its only way out, so there is no Cancel; a finished
-  action swaps it for Done. Merge asks how it lands only when the repository
+  cannot undo. The X is its only way out, so there is no Cancel (the Review and
+  Address feedback windows work the same way); a finished action swaps it for
+  Done. Merge asks how it lands only when the repository
   allows more than one way, merges exactly the version shown, and is never
   repeated after an unconfirmed answer.
 - **Open as draft / Open for review** is one split button on the prepared-PR
