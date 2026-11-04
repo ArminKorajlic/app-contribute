@@ -629,6 +629,9 @@ input[type=checkbox].co-switch:focus-visible { outline:2px solid var(--accent); 
 .co-split .co-split-more > .co-icon { transition:transform .15s; }
 .co-split .co-split-more[aria-expanded=true] > .co-icon { transform:rotate(180deg); }
 .co-split-list { right:0; left:auto; }
+.co-split .co-split-main { white-space:nowrap; min-height:42px; }
+.co-run-primary > .co-split { min-width:112px; }
+@media(max-width:680px) { .co-run-primary > .co-split { grid-column:1 / -1; width:100%; margin-top:2px; } .co-run-primary > .co-split .co-split-main { flex:1; } .co-split-list { left:0; right:0; width:auto; } }
 .co-agent-menu-group { margin:8px 0 2px; padding:4px 10px 0; color:var(--muted); font-size:14px; font-weight:650; }
 .co-agent-menu-group:first-child { margin-top:2px; }
 .co-rw-reasons { display:grid; gap:8px; }
