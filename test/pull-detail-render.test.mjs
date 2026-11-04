@@ -127,20 +127,23 @@ const loadedConversation = (items = []) => ({ entries: {
   related: { data: { items: [] }, loading: false },
 } })
 
-test('the description starts folded and unanswered feedback stays visible under it with its review id', async t => {
+test('the description starts folded and unanswered feedback stays visible under it, its review id copyable from the review itself', async t => {
   const pr = { number: 9, repository: { nameWithOwner: 'team/repo' }, headRefOid: 'a'.repeat(40), baseRefOid: 'b'.repeat(40), baseRefName: 'main', url: 'https://github.com/team/repo/pull/9' }
-  const html = await render(t, 'PullRequestDetail', { pr, cacheStore: loadedConversation(),
+  const requested = [{ kind: 'review', id: 777, state: 'CHANGES_REQUESTED', user: { login: 'miljanm' }, date: '2026-11-01T10:00:00Z', body: 'Please fix' }]
+  const html = await render(t, 'PullRequestDetail', { pr, cacheStore: loadedConversation(requested),
     record: { attention: { type: 'changes_requested', url: 'https://github.com/team/repo/pull/9#pullrequestreview-777' } } })
   if (!html) return
   assert.doesNotMatch(html, /<details class="co-gh-description" open/)
   assert.match(html, /class="co-desc-content"><p class="co-branch-flow" aria-label="Branches"><code>main<\/code>/)
   assert.match(html, /class="co-pr-feedback-flag is-blocker"/)
   assert.match(html, /Changes requested/)
-  assert.match(html, /not addressed yet/)
+  assert.match(html, /Not addressed yet\. Read the review under Comments/)
+  // The banner stays one calm sentence; the id lives on the review it names.
+  assert.doesNotMatch(html.slice(html.indexOf('co-pr-feedback-flag'), html.indexOf('</p>', html.indexOf('co-pr-feedback-flag'))), /co-copy-id/)
   assert.match(html, /Copy review id 777/)
 })
 
-test('an approving review or a recorded all-clear turns the flag green with the review id', async t => {
+test('an approving review or a recorded all-clear turns the flag green', async t => {
   const pr = { number: 9, repository: { nameWithOwner: 'team/repo' }, headRefOid: 'a'.repeat(40), baseRefOid: 'b'.repeat(40), baseRefName: 'main', url: 'https://github.com/team/repo/pull/9' }
   const approving = [{ kind: 'review', id: 555, state: 'APPROVED', user: { login: 'irfan' }, date: '2026-11-01T10:00:00Z', body: 'LGTM' }]
   const viaReview = await render(t, 'PullRequestDetail', { pr, cacheStore: loadedConversation(approving),
@@ -153,7 +156,6 @@ test('an approving review or a recorded all-clear turns the flag green with the 
     record: { attention: { type: 'github_activity', url: 'https://github.com/team/repo/pull/9#pullrequestreview-888' } },
     status: { item: { state: 'all_clear', public_review: { state: 'posted', url: 'https://github.com/team/repo/pull/9#pullrequestreview-888' } } } })
   assert.match(viaRun, /is-clear/)
-  assert.match(viaRun, /Copy review id 888/)
 })
 
 test('a PR without your tracked record, or with answered feedback, carries no feedback flag', async t => {

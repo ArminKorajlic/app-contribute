@@ -64,8 +64,8 @@ function threadLocation(thread) {
 // An approving review or a recorded all-clear agent review is good news, not
 // a task: it gets the green box, naming the posted review's copyable id.
 const FEEDBACK_FLAGS = {
-  changes_requested: { label: 'Changes requested', tone: 'blocker', note: '— not addressed yet. The review text is under Comments.' },
-  github_activity: { label: 'New feedback', tone: 'news', note: '— the text is under Comments.' },
+  changes_requested: { label: 'Changes requested', tone: 'blocker', note: 'Not addressed yet. Read the review under Comments.' },
+  github_activity: { label: 'New feedback', tone: 'news', note: 'The text is under Comments.' },
 }
 export function PullFeedbackFlag({ record, status = null, activity = null }) {
   const attention = record?.attention
@@ -76,18 +76,14 @@ export function PullFeedbackFlag({ record, status = null, activity = null }) {
     && (flagged?.state === 'APPROVED' || status?.item?.state === 'all_clear')
   if (clear) {
     return <p className="co-pr-feedback-flag is-clear" role="status">
-      <Icon name="check" size={15} />
-      <b>Review clear</b>
-      <span>— this review found no blocking problems. Review</span>
-      <CopyId id={reference || commentReference(status?.item?.public_review?.url)} label="review id" />
+      <Icon name="check" size={16} />
+      <span className="co-flag-text"><b>Review clear</b><span>This review found no blocking problems.</span></span>
     </p>
   }
   if (!flag) return null
   return <p className={'co-pr-feedback-flag is-' + flag.tone} role="status">
-    <Icon name="feedback" size={15} />
-    <b>{flag.label}</b>
-    <span>{flag.note}</span>
-    <CopyId id={reference} label={attention?.type === 'changes_requested' ? 'review id' : 'comment id'} />
+    <Icon name="feedback" size={16} />
+    <span className="co-flag-text"><b>{flag.label}</b><span>{flag.note}</span></span>
   </p>
 }
 
@@ -100,6 +96,28 @@ function ReviewMark({ tone }) {
   if (tone.key === 'running') return <span className="co-arc" role="status" aria-label="Review running" />
   const mark = { verdict: 'waiting', needs: 'waiting', clear: 'success', changes: 'failure', halted: 'failure' }[tone.key]
   return mark ? <span className={'co-tab-dot is-' + mark} title={tone.title} aria-label={tone.title} /> : null
+}
+
+// Phone only (the bar is hidden above 680px): once the full title has
+// scrolled off, a one-line bar keeps the number, the state colour and the start
+// of the title in view, and a tap brings the whole title back.
+function PullStickyTitle({ pr, targetRef, tone }) {
+  const [shown, setShown] = useState(false)
+  useEffect(() => {
+    const target = targetRef.current
+    if (!target || typeof IntersectionObserver !== 'function') return undefined
+    const watch = new IntersectionObserver(([entry]) => setShown(!entry.isIntersecting && entry.boundingClientRect.top < 0))
+    watch.observe(target)
+    return () => watch.disconnect()
+  }, [targetRef, pr.number])
+  const back = () => targetRef.current?.scrollIntoView({ block: 'start', behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })
+  return <div className="co-pr-sticky" data-shown={shown ? 'true' : 'false'}>
+    <button type="button" tabIndex={shown ? 0 : -1} aria-hidden={shown ? undefined : 'true'} onClick={back} aria-label={`Show the full title of PR ${pr.number}`}>
+      <Icon name="feedback" size={16} className={'co-icon co-sticky-mark' + (tone ? ' is-' + tone : '')} />
+      <span className="co-sticky-text"><i>#{pr.number}</i>{pr.title}</span>
+      <Icon name="chevron" size={16} />
+    </button>
+  </div>
 }
 
 const COMMENT_PREVIEW = 4
@@ -236,6 +254,7 @@ function PullRequestDetailView({ cacheStore, pr, token, onReview, onAssign, onRe
   const [tab, setTab] = useState(initialTab)
   // On a phone the four tabs can overflow; the open one is always brought into view.
   const tabStrip = useRef(null)
+  const titleRef = useRef(null)
   useEffect(() => { tabStrip.current?.querySelector('[aria-pressed="true"]')?.scrollIntoView?.({ inline: 'nearest', block: 'nearest' }) }, [tab])
   // A review that starts while this page is open takes you to its tab.
   const hadStatus = useRef(!!status)
@@ -374,8 +393,9 @@ function PullRequestDetailView({ cacheStore, pr, token, onReview, onAssign, onRe
     </div>
   }
   return <div className="co-pr-detail" aria-label={`Details for PR ${pr.number}`}>
+    <PullStickyTitle pr={pr} targetRef={titleRef} tone={FEEDBACK_FLAGS[record?.attention?.type]?.tone} />
     <header className="co-gh-pr-head">
-      <h3 className="co-gh-pr-title">{pr.title} <span>#{pr.number}</span></h3>
+      <h3 className="co-gh-pr-title" ref={titleRef}>{pr.title} <span className="co-pr-title-num">#{pr.number}</span></h3>
       {labels.length ? <div className="co-gh-labels">{labels.map(label => <GithubLabel key={label.name} name={label.name} color={label.color} />)}</div> : null}
     </header>
     <div className="co-pr-detail-actions">
@@ -385,7 +405,7 @@ function PullRequestDetailView({ cacheStore, pr, token, onReview, onAssign, onRe
       {githubUrl ? <a className="co-btn" href={githubUrl} target="_blank" rel="noopener noreferrer" aria-label={`View on GitHub: PR ${pr.number}`} title="View on GitHub"><Icon name="github" /><span className="co-btn-label">View on GitHub</span></a> : null}
       <PullProvenance record={record} onRecord={onRecord} conversations={provenance} />
     </div>
-    <div className="co-gh-pr-sub"><PullStateBadge pr={pr} />
+    <div className="co-gh-pr-sub"><PullStateBadge pr={pr} /><span className="co-pr-sub-num">#{pr.number}</span>
       <span>by <b>{pr.author?.login || 'Someone'}</b></span></div>
     {conversationLoading ? null : <>
     <details className="co-gh-description">
@@ -394,7 +414,7 @@ function PullRequestDetailView({ cacheStore, pr, token, onReview, onAssign, onRe
         <small>{openedLine(description.data?.user?.login || pr.author?.login, pr.createdAt)}</small>
       </summary>
       <div className="co-desc-content">
-        <p className="co-branch-flow" aria-label="Branches">{pr.headRefName ? <><code>{pr.headRefName}</code><Icon name="arrow-right" size={15} /></> : null}<code>{pr.baseRefName}</code></p>
+        <p className="co-branch-flow" aria-label="Branches">{pr.headRefName ? <><code>{pr.headRefName}</code><span className="co-branch-to"><Icon name="arrow-right" size={15} /><code>{pr.baseRefName}</code></span></> : <code>{pr.baseRefName}</code>}</p>
         {readState(description, 'description')}
         {ready(description) ? <ClampedMarkdown markdown={description.data?.body || '_No description provided._'} /> : null}
       </div>
