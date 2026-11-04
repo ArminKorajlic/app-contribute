@@ -137,7 +137,9 @@ export async function collaborationRequest(token, appId, path, body) {
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   })
   const data = await response.json().catch(() => ({}))
-  if (!response.ok) throw Object.assign(new Error(response.status === 404
+  // A route that does not exist answers a bare 404; a 404 that explains itself (a PR GitHub cannot show) is the platform's own word.
+  const routeMissing = response.status === 404 && (!data.detail || data.detail === 'Not Found')
+  if (!response.ok) throw Object.assign(new Error(routeMissing
     ? 'These controls need the companion Möbius update to be activated.'
     : typeof data.detail === 'string' ? data.detail : data.detail?.message || 'Could not complete this action. Refresh before retrying.'),
   { status: response.status, ...(typeof data.detail?.code === 'string' ? { code: data.detail.code } : {}) })

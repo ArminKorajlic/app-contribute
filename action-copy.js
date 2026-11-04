@@ -53,6 +53,9 @@ const MERGE_METHODS = {
 }
 const ALLOWED = { squash: 'squashMergeAllowed', merge: 'mergeCommitAllowed', rebase: 'rebaseMergeAllowed' }
 export const allowedMergeMethods = repository => Object.keys(MERGE_METHODS).filter(key => repository?.[ALLOWED[key]] === true)
+// The method to name in the merge call: none while the owner stays on the first allowed one, which is
+// also what the platform picks. A repository that merges through a queue chooses for itself and refuses a named method.
+export const methodToSend = (repository, choice) => (choice && choice !== allowedMergeMethods(repository)[0] ? choice : '')
 
 // What GitHub says about approval. A review-less branch rule reads as no decision, which is not a
 // missing approval, so it says exactly that.

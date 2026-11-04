@@ -19,7 +19,7 @@ import { ActionConfirm } from './ActionConfirm.jsx'
 import { IgnoreReview } from './IgnoreReview.jsx'
 import { RunOnce } from './RunOnce.jsx'
 import { YOUR_INTENTS } from '../actions-menu.js'
-import { ACTION_COPY } from '../action-copy.js'
+import { ACTION_COPY, methodToSend } from '../action-copy.js'
 import { projectUpdater } from '../updates.js'
 
 // One draft-scope decision for the chooser, its copy and the start body.
@@ -499,7 +499,7 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
   // Each of your own actions runs the app's one guarded handler for it.
   const actionHandlers = {
     open_review: ({ record }) => onOpenForReview ? onOpenForReview(record) : { error: 'Opening for review is not available here.' },
-    merge_now: ({ pr, choice }) => mergePull(token, appId, pr, { method: choice }),
+    merge_now: ({ pr, choice }) => mergePull(token, appId, pr, { method: methodToSend(pr.repository, choice) }),
   }
   const closeAction = () => setActing(null)
   // A merge changes the list (the PR leaves it), so it reads again once done.

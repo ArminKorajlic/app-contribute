@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { ACTION_COPY, allowedMergeMethods, mergeCopy, openForReviewCopy } from '../action-copy.js'
+import { ACTION_COPY, allowedMergeMethods, mergeCopy, openForReviewCopy, methodToSend } from '../action-copy.js'
 import { isPersonalDraft } from '../domain.js'
 import { frontendModules, renderModule } from './render-harness.mjs'
 
@@ -125,6 +125,10 @@ test('Merge goes to the platform for this exact version and returns the outcome 
     assert.deepEqual(await mergePull('t', 10, approved()), { pending: true, error: 'GitHub may have merged it. Check the pull request before trying again.' })
     globalThis.fetch = reply(404, {})
     assert.match((await mergePull('t', 10, approved())).error, /companion Möbius update/)
+    globalThis.fetch = reply(404, { detail: 'Not Found' })
+    assert.match((await mergePull('t', 10, approved())).error, /companion Möbius update/, 'a missing route is still the update hint')
+    globalThis.fetch = reply(404, { detail: 'This pull request could not be read from GitHub. Check that GitHub is connected and that the pull request still exists.' })
+    assert.deepEqual(await mergePull('t', 10, approved()), { error: 'This pull request could not be read from GitHub. Check that GitHub is connected and that the pull request still exists.' }, 'the platform’s own 404 reason is shown as it is')
   } finally { globalThis.fetch = previous }
 })
 
@@ -149,4 +153,12 @@ test('the open Actions menu names its two groups only when there is something of
   const plain = render({ pulls: [pr()] })
   assert.doesNotMatch(plain, /aria-label="You"|co-agent-menu-group/, 'with nothing of your own the menu is the plain agent list')
   assert.match(plain, /Address feedback/)
+})
+
+test('Merge names a method only when the owner moved off the first allowed one', () => {
+  const repo = { squashMergeAllowed: true, mergeCommitAllowed: true, rebaseMergeAllowed: false }
+  assert.equal(methodToSend(repo, 'squash'), '', 'the default is left to the platform, so a merge queue is never given a method')
+  assert.equal(methodToSend(repo, ''), '')
+  assert.equal(methodToSend(repo, 'merge'), 'merge')
+  assert.equal(methodToSend({ squashMergeAllowed: false, mergeCommitAllowed: true, rebaseMergeAllowed: true }, 'merge'), '', 'the first allowed method is the default whichever it is')
 })
