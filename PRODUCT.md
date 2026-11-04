@@ -51,7 +51,9 @@ position. Agent work progresses in place; only actual questions need the owner.
 - Deterministic status refresh, accepted-work recognition, duplicate detection, and lost-response reconciliation run automatically; they never summon an agent merely to repeat the ledger.
 - One changed-work conversation owns the remaining private judgment. Repeated actions reuse it until the represented source or contribution head changes.
 - The normal personal-GitHub publication opens reviewed pull requests ready for
-  review. Draft is an intentional exception, not a mandatory extra stage.
+  review. Draft is an intentional exception, not a mandatory extra stage: the
+  owner who works draft-first sets it once in Settings (New pull requests start
+  as) or picks it for a single send from the arrow on the button.
 - Publication never implies merge. Queueing or merging is a later, separate,
   exact approval against the current public head.
 - Source chats remain the durable home of their work. Background workers may
@@ -132,7 +134,7 @@ fixed run brief and mandatory instructions.
 Every control says what it does for someone who has never used Contribute:
 "Make PRs from my edits" rather than "Prepare changes", **Sync with GitHub** with
 its last time written beside it rather than a silent refresh icon, "Mark ready for review" for
-an own draft, and labelled **Assign** and **Agent ▾** actions on PR rows. An
+an own draft, and labelled **Assign** and **Actions ▾** buttons on PR rows. An
 action shows feedback when used. Sync with GitHub asks GitHub read-only whether a
 repository moved past the compared commit; a quiet project reads "Up to date at
 the last check" until a fresh check says more. The agent review window states
@@ -140,3 +142,41 @@ its steps, what GitHub will see and which model runs it before anything starts.
 A project opens on To look at (blockers before news, each with its reason, PR
 and detection time), then its status, then All PRs, Review requests and My work; the projects list tags Platform and App projects, says what waits on
 the owner, and folds apps with nothing to do.
+
+## Act where you are looking (owner direction, 2026-11-04)
+
+- **Actions ▾** (it was Agent ▾) holds what the owner can do and what an agent
+  can do for a PR. A **You** group comes first: **Open for review** on a draft
+  this app sent, and **Merge** where the platform can merge for the owner (the
+  menu offers it only when the platform advertises it). The **Agent** group keeps
+  the four agent jobs. The best next step is first and highlighted; a choice that
+  cannot run stays in place, dimmed, with its reason. A batch selection offers
+  only agent jobs.
+- Each of the owner's own actions ends in a **confirm sheet**: it states what
+  happens, what GitHub shows right now (approval, checks, conflicts, what the
+  owner's own agent review said about this exact version) and what Contribute
+  cannot undo. The X is its only way out, so there is no Cancel; a finished
+  action swaps it for Done. Merge asks how it lands only when the repository
+  allows more than one way, merges exactly the version shown, and is never
+  repeated after an unconfirmed answer.
+- **Open as draft / Open for review** is one split button on the prepared-PR
+  card; the arrow offers the other stage for that send. The stage is part of the
+  exact approval, the confirmation text and the chat Send card (which freezes it
+  at Confirm), so what is confirmed is what opens.
+- **Whose turn it is** is derived from what the owner already did, not from the
+  review's saved word alone (needs_you says what the review *found*). After
+  Request changes the PR waits on its author and the row reads **Waiting on
+  <author>**; if the author pushes again it reads **New commits · review again**.
+  A finding on the owner's own PR stays theirs until they fix it or set it aside.
+- **The Review tab answers instead of asking for a conversation.** A finished
+  review that found problems offers **Fix these findings** (Address feedback with
+  the saved findings ticked), **Ignore…** (one reason, for this exact version,
+  kept in Contribute, nothing posted, with Undo), **Review again** and **Ask the
+  reviewer something** as a plain button. "Answer in review conversation" is
+  only for a conversation that really asked something, and "Stop review" only
+  while work is in progress.
+- **PR reviews** (side menu) lists the reviews the owner started, by project, in
+  two tabs: **In progress** (waiting on the owner first, then agents at work, then
+  anything stuck) and **Done**. The PRs a review could still wait on are read
+  live once, so a closed PR is history, a pushed PR comes back as new commits,
+  and a stale finding is never counted as waiting on the owner.
