@@ -12,7 +12,7 @@ export function IgnoreReview({ pr, onPick, onClose }) {
   useEffect(() => { focusActionRegion(region.current) }, [])
   return <section ref={region} tabIndex={-1} className="co-review-window" aria-labelledby={titleId}>
     <header className="co-rw-head">
-      <span className="co-rw-icon"><Icon name="close" size={22} /></span>
+      <span className="co-rw-icon"><Icon name="review" size={22} /></span>
       <div>
         <h3 id={titleId}>Ignore this review?</h3>
         <p className="co-rw-pr"><strong>#{pr.number} {pr.title}</strong><span>{pr.repository.nameWithOwner}</span></p>

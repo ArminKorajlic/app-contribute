@@ -47,3 +47,19 @@ test('there are four reasons to set a finding aside, each short enough to tap', 
   assert.equal(IGNORE_REASONS.length, 4)
   for (const reason of IGNORE_REASONS) assert.ok(reason.length <= 20, reason)
 })
+
+test('the ignore sheet has one close control: its header tile is not another X', async t => {
+  const { frontendModules, renderModule } = await import('./render-harness.mjs')
+  if (!frontendModules) return t.skip('MOBIUS_FRONTEND_NODE_MODULES is required for real React SSR')
+  const { render } = await renderModule(`
+    import React from 'react'
+    import { renderToStaticMarkup } from 'react-dom/server'
+    import { IgnoreReview } from './ui/IgnoreReview.jsx'
+    export const render = props => renderToStaticMarkup(React.createElement(IgnoreReview, props))
+  `)
+  const html = render({ pr: { number: 2005, title: 'Follow a lost update', repository: { nameWithOwner: 'o/r' } }, onPick() {}, onClose() {} })
+  assert.equal((html.match(/aria-label="Close"/g) || []).length, 1)
+  assert.doesNotMatch(html, /co-rw-icon"><svg[^>]*><path[^>]*d="M[^"]*18 6[^"]*"/, 'the tile must not draw a cross')
+  for (const reason of IGNORE_REASONS) assert.match(html, new RegExp(`>${reason}<`))
+  assert.doesNotMatch(html, />Cancel</)
+})
