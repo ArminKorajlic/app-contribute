@@ -3,19 +3,18 @@ import test from 'node:test'
 import { IGNORE_REASONS, reviewActionPlan } from '../review-actions.js'
 
 const keys = plan => plan.map(action => action.key)
-const everything = { retry: true, fix: true, post: true, ignore: true, again: true }
+const everything = { retry: true, fix: true, ignore: true, again: true }
 
 test('a review that found problems on your own PR offers the fix first, then setting aside, a fresh look and the question', () => {
-  const plan = reviewActionPlan({ tone: 'findings', own: true, chat: true, can: { ...everything, post: false } })
+  const plan = reviewActionPlan({ tone: 'findings', own: true, chat: true, can: everything })
   assert.deepEqual(keys(plan), ['fix', 'ignore', 'again', 'ask'])
   assert.equal(plan[0].primary, true)
   assert.deepEqual(plan.at(-1), { key: 'ask', label: 'Ask the reviewer something' }, 'the conversation is a plain button, not a link')
 })
 
-test('on someone else\'s PR the next step is posting the review, which needs the platform; without it there is no fix to offer', () => {
-  assert.deepEqual(keys(reviewActionPlan({ tone: 'findings', own: false, chat: true, can: everything })), ['post', 'ignore', 'again', 'ask'])
-  assert.deepEqual(keys(reviewActionPlan({ tone: 'findings', own: false, chat: true, can: { ...everything, post: false } })), ['ignore', 'again', 'ask'])
-  assert.deepEqual(keys(reviewActionPlan({ tone: 'changes', own: false, chat: true, can: { ...everything, post: false } })), ['ignore', 'again', 'ask'], 'a discarded verdict leaves the same findings')
+test('on someone else\'s PR there is no fix to offer, and posting stays with the reviewer and its verdict card', () => {
+  assert.deepEqual(keys(reviewActionPlan({ tone: 'findings', own: false, chat: true, can: everything })), ['ignore', 'again', 'ask'])
+  assert.deepEqual(keys(reviewActionPlan({ tone: 'changes', own: false, chat: true, can: everything })), ['ignore', 'again', 'ask'], 'a discarded verdict leaves the same findings')
 })
 
 test('a closed PR or a surface without handlers offers only what it can do', () => {

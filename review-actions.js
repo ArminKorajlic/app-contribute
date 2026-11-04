@@ -27,7 +27,6 @@ export function reviewActionPlan({ tone, own = false, chat = false, asked = fals
     case 'changes':
       return [
         ...(own && can.fix ? [primary({ key: 'fix', label: 'Fix these findings' })] : []),
-        ...(!own && can.post ? [primary({ key: 'post', label: 'Post to GitHub' })] : []),
         ...(can.ignore ? [{ key: 'ignore', label: 'Ignore…' }] : []),
         ...(can.again ? [{ key: 'again', label: 'Review again' }] : []),
         ...ask('Ask the reviewer something'),

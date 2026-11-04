@@ -476,7 +476,7 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
     const run = statusFor(pr)?.run
     return {
       own: isOwnPull(pr, conn.login), earlier: run ? null : earlierReviewForPull(relevantRuns, pr), busy, error: runError, pulls, listState: data,
-      ignored: ignoredReviews, canPost: capabilities?.post_review_now === true,
+      ignored: ignoredReviews,
       onStart: job => choose([pr], job, prKey(pr)),
       onFix: onStartAgent ? () => choose([pr], 'address', prKey(pr)) : undefined,
       onIgnore: onIgnoreReview ? item => setIgnoring({ pr, item }) : undefined,

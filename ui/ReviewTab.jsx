@@ -45,7 +45,7 @@ export function reviewStateTone(status, ctx) {
 
 // The Review tab of a PR: nothing yet, a running review, or what the last review
 // found. It reuses the run's own verdict and conversation actions.
-export function ReviewTab({ pr, status, earlier = null, own = null, ignored = null, canPost = false, readOnly = false, busy = false, error = '', onStart, onStop, onRetry, onVerdict, onFix, onIgnore, onUndoIgnore, pulls = [], listState = {} }) {
+export function ReviewTab({ pr, status, earlier = null, own = null, ignored = null, readOnly = false, busy = false, error = '', onStart, onStop, onRetry, onVerdict, onFix, onIgnore, onUndoIgnore, pulls = [], listState = {} }) {
   const tone = reviewStateTone(status, { own, ignored })
   const running = tone.key === 'running'
   const elapsed = useElapsed(status?.run?.created_at, running)
@@ -64,7 +64,7 @@ export function ReviewTab({ pr, status, earlier = null, own = null, ignored = nu
   const stoppable = run.can_stop && run.state !== 'complete' && !halted && run.execution_state !== 'completed' && !reviewItemProgress(run, item, { own, ignored }).settled
   const note = ignoredNote(item, ignored)
   const asked = reviewItemProgress(run, item, { own, ignored }).waiting
-  const plan = reviewActionPlan({ tone: tone.key, own: own === true, chat: !!run.chat_id, asked, stoppable: stoppable && !!onStop, can: { retry: halted && !!onRetry, fix: !readOnly && !!onFix, post: !readOnly && canPost, ignore: !readOnly && !!onIgnore, again: !readOnly && !!onStart } })
+  const plan = reviewActionPlan({ tone: tone.key, own: own === true, chat: !!run.chat_id, asked, stoppable: stoppable && !!onStop, can: { retry: halted && !!onRetry, fix: !readOnly && !!onFix, ignore: !readOnly && !!onIgnore, again: !readOnly && !!onStart } })
   const handlers = { ask: () => openAgentConversation(run.chat_id), stop: onStop, retry: onRetry, fix: () => onFix(item), ignore: () => onIgnore(item), undo: () => onUndoIgnore?.(item), again: () => onStart('review') }
   const version = `${item.head_sha?.slice(0, 7) || '…'} → ${item.base_ref || 'main'}`
   const reviewId = item.verdict_proposal?.review_id || commentReference(item.public_review?.url)
