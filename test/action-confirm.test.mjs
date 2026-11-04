@@ -127,3 +127,26 @@ test('Merge goes to the platform for this exact version and returns the outcome 
     assert.match((await mergePull('t', 10, approved())).error, /companion Möbius update/)
   } finally { globalThis.fetch = previous }
 })
+
+test('the open Actions menu names its two groups only when there is something of your own to do', async t => {
+  if (!frontendModules) return t.skip('MOBIUS_FRONTEND_NODE_MODULES is required for real React SSR')
+  const { render } = await renderModule(`
+    import React from 'react'
+    import { renderToStaticMarkup } from 'react-dom/server'
+    import { ActionsMenu } from './ui/ActionsMenu.jsx'
+    export const render = props => renderToStaticMarkup(React.createElement(ActionsMenu, { defaultOpen: true, onChoose() {}, ...props }))
+  `)
+  const draft = pr({ isDraft: true, number: 122 })
+  const withYou = render({ pulls: [draft], record: { status: 'draft', submission_mode: 'github' }, capabilities: { merge_now: true } })
+  assert.match(withYou, /role="group" aria-label="You"/)
+  assert.match(withYou, /role="group" aria-label="Agent"/)
+  assert.ok(withYou.indexOf('Open for review') < withYou.indexOf('>Review<'), 'your own actions come first')
+  assert.match(withYou, /Open it for review first\./, 'Merge stays in place, dimmed, with its reason')
+  // An unapproved draft's best step is still a review; an approved one's is to open it.
+  assert.ok(withYou.indexOf('is-rec') > withYou.indexOf('aria-label="Agent"'))
+  const approvedDraft = render({ pulls: [pr({ isDraft: true, reviewDecision: 'APPROVED', number: 122 })], record: { status: 'draft', submission_mode: 'github' } })
+  assert.ok(approvedDraft.indexOf('is-rec') > 0 && approvedDraft.indexOf('is-rec') < approvedDraft.indexOf('aria-label="Agent"'), 'the recommended step is in the You group')
+  const plain = render({ pulls: [pr()] })
+  assert.doesNotMatch(plain, /aria-label="You"|co-agent-menu-group/, 'with nothing of your own the menu is the plain agent list')
+  assert.match(plain, /Address feedback/)
+})

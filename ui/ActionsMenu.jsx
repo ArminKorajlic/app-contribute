@@ -23,8 +23,9 @@ function Group({ title, items, onPick, named }) {
   </div>
 }
 
-export function ActionsMenu({ onChoose, pulls = [], record = null, capabilities = null, disabled = false, variant = 'ghost', label = 'Actions', ariaLabel, align = 'end' }) {
-  const [open, setOpen] = useState(false)
+// `defaultOpen` shows the list on first render, which is how the menu's own words are tested.
+export function ActionsMenu({ onChoose, pulls = [], record = null, capabilities = null, disabled = false, variant = 'ghost', label = 'Actions', ariaLabel, align = 'end', defaultOpen = false }) {
+  const [open, setOpen] = useState(defaultOpen)
   const root = useRef(null)
   const model = actionsMenuModel(pulls, { record, capabilities })
   useDismissableMenu(root, open, setOpen)
