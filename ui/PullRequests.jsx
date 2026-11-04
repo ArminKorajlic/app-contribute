@@ -10,10 +10,13 @@ import { Avatar, ChecksBadge, PullStateChips, PullStateIcon, QuietLabels, TimeAg
 import { TaskPane, useProjectTask, focusActionRegion } from './TaskPane.jsx'
 import { useFocusLease } from './useFocusLease.js'
 import { Icon } from './Icons.jsx'
-import { AgentMenu } from './AgentMenu.jsx'
+import { ActionsMenu } from './ActionsMenu.jsx'
 import { ReviewDialog } from './ReviewDialog.jsx'
 import { AddressFeedbackWindow } from './AddressFeedback.jsx'
 import { ReviewConfirmation } from './ReviewConfirmation.jsx'
+import { ActionConfirm } from './ActionConfirm.jsx'
+import { YOUR_INTENTS } from '../actions-menu.js'
+import { ACTION_COPY } from '../action-copy.js'
 import { projectUpdater } from '../updates.js'
 
 // One draft-scope decision for the chooser, its copy and the start body.
@@ -62,7 +65,7 @@ function SelectionTray({ selection, busy, onClear, onReview, onAssign, visible, 
     <strong className="co-pr-box-count">{selected ? `${selected} selected` : <><Icon name="pull" size={16} />{loading && !shown ? 'Open pull requests' : `${shown} open`}</>}</strong>
     {selected ? <div className="co-pr-box-actions">
       <button className="co-btn" disabled={busy || selected > 20 || !selection.every(pr => mayAssign(pr.repository.viewerPermission))} onClick={onAssign} aria-label="Assign selected PRs to a person"><Icon name="person" size={16} /><span>Assign</span></button>
-      <AgentMenu variant="button" pulls={selection} disabled={selected > 20 || busy} onChoose={mode => onReview(selection, mode)} ariaLabel="Choose what an agent does with the selected PRs" />
+      <ActionsMenu variant="button" pulls={selection} disabled={selected > 20 || busy} onChoose={mode => onReview(selection, mode)} ariaLabel="Choose an action for the selected PRs" />
       <button className="co-quiet-action" aria-label="Clear selection" onClick={onClear}><Icon name="close" size={16} /></button>
     </div> : null}
     {selected > 20 ? <p role="status">Choose up to 20 PRs per run.</p> : null}
@@ -150,7 +153,7 @@ const runAnchor = run => run.items?.length === 1 ? `${run.items[0].repo.toLowerC
 
 // `scope` follows the project tabs: 'all' (every open PR), 'requests' (PRs that
 // ask for the owner's review) or 'mine' (the saved agent reviews only).
-export function PullRequests({ appId, token, project, conn, onChanged, records = [], onRecord, refreshKey, focusPull, focusRun, onFocusRelease, scope = 'all', onScope, onTotal, presentation = 'list', onOpenPage = null, onStartAgent = null }) {
+export function PullRequests({ appId, token, project, conn, onChanged, records = [], onRecord, refreshKey, focusPull, focusRun, onFocusRelease, scope = 'all', onScope, onTotal, presentation = 'list', onOpenPage = null, onStartAgent = null, onOpenForReview = null }) {
   const repo = project?.canonical_repo || ''
   const publicRevision = records.filter(record => record.url).map(record => `${record.id}:${record.status}:${record.number}:${record.last_updated_pr_at || ''}`).sort().join('|')
   const session = sessionEntry(repo, `${refreshKey}|${publicRevision}`)
@@ -182,6 +185,8 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
   const [assigning, setAssigning] = useState(null)
   // Address feedback has its own window: it starts an agent conversation, not a review run.
   const [addressing, setAddressing] = useState(null)
+  // One of the owner's own actions (Open for review, Merge) waiting on its confirm sheet.
+  const [acting, setActing] = useState(null)
   const [choice, setChoice] = useState(null)
   const [resolved, setResolved] = useState(null)
   // The platform's advertised workflows, remembered across launches.
@@ -392,6 +397,7 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
   // opens under the list header. `anchor` is only placement, never scope.
   function choose(pulls, job, anchor = '') {
     if (job === 'address') { setAssigning(null); setAddressing({ ...pulls[0], repository: { ...pulls[0].repository } }); return }
+    if (YOUR_INTENTS.has(job)) { setAssigning(null); setActing({ intent: job, pr: { ...pulls[0], repository: { ...pulls[0].repository } }, record: recordsForPull(records, pulls[0])[0] }); return }
     const { mode, intent, options } = reviewIntent(job)
     setResolved(null)
     task?.open('task:review')
@@ -471,6 +477,10 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
   const closeReview = () => { setChoice(null); task?.close() }
   const reviewDialog = task?.activeId === 'task:review' && choice ? <ReviewDialog onClose={closeReview}><ReviewConfirmation appId={appId} token={token} bindCurrentTarget onResolved={value => { setResolved(value); if (value?.capabilities) setCapabilities(value.capabilities) }} disabled={!resolved} onOptionsChange={options => { setResolved(null); setChoice(old => ({ ...old, options, request_id:crypto.randomUUID() })) }} onAgentChange={agent => { setResolved(null); setChoice(old => ({ ...old, agent, request_id:crypto.randomUUID() })) }} choice={choice} busy={busy} error={error} onConfirm={start} onCancel={closeReview} onModeChange={mode => { setError(''); setResolved(null); setChoice(old => ({ ...old, mode, confirmation_scope: undefined, ...scopeFor(mode, old.pulls), request_id: crypto.randomUUID() })) }} capabilities={capabilities} /></ReviewDialog> : null
   const addressDialog = addressing && onStartAgent ? <ReviewDialog onClose={() => setAddressing(null)}><AddressFeedbackWindow pr={addressing} token={token} appId={appId} onStart={onStartAgent} onClose={() => setAddressing(null)} /></ReviewDialog> : null
+  // Each of your own actions runs the app's one guarded handler for it.
+  const actionHandlers = { open_review: record => onOpenForReview ? onOpenForReview(record) : { error: 'Opening for review is not available here.' } }
+  const closeAction = () => setActing(null)
+  const actionDialog = acting ? <ReviewDialog onClose={closeAction}><ActionConfirm pr={acting.pr} copy={ACTION_COPY[acting.intent](acting.pr)} onConfirm={() => actionHandlers[acting.intent](acting.record)} onClose={closeAction} /></ReviewDialog> : null
   const assignPane = <TaskPane id="task:assign" dock={false}>{assigning ? <AssigneePicker key={assigning.map(prKey).join(',')} pulls={assigning} appId={appId} token={token} ownLogin={conn.login} onClose={() => { setAssigning(null); task?.close() }} onAssigned={(login, keys) => {
       viewRef.current = acknowledgeAssignment(viewRef.current, keys, login, ++generation.current)
       setView(viewRef.current)
@@ -489,6 +499,7 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
     {relevantRuns.map(runPane)}
     {reviewDialog}
     {addressDialog}
+    {actionDialog}
     <AgentReviewHistory runs={relevantRuns} pulls={pulls} listState={data} onOpen={openRun} />
   </section>
   if (presentation === 'page') {
@@ -502,10 +513,11 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
       {detailPr ? (
         // The detail is the page itself, not a swappable pane: the review
         // window overlays it and the assignment pane opens above it.
-        <PullRequestDetail key={`${prKey(detailPr)}:${detailPr.headRefOid}:${detailPr.baseRefOid}:${detailRevision}`} cacheStore={detailSnapshot(detailPr)} pr={detailPr} token={token} initialTab={focusPull?.tab === 'review' ? 'review' : 'conversation'} review={reviewProps(detailPr)} onReview={mode => choose([detailPr], mode, opened || prKey(detailPr))} onAssign={() => assignSelection([detailPr], opened || prKey(detailPr))} onRefresh={() => load()} readOnly={!isOpenPull(detailPr)} canAssign={mayAssign(detailPr.repository.viewerPermission)} status={statusFor(detailPr)} onProgress={null} record={recordsForPull(records, detailPr)[0]} onRecord={onRecord} provenance={pullConversations(records, relevantRuns, detailPr)} holdUntilLoaded />
+        <PullRequestDetail key={`${prKey(detailPr)}:${detailPr.headRefOid}:${detailPr.baseRefOid}:${detailRevision}`} cacheStore={detailSnapshot(detailPr)} pr={detailPr} token={token} initialTab={focusPull?.tab === 'review' ? 'review' : 'conversation'} review={reviewProps(detailPr)} onReview={mode => choose([detailPr], mode, opened || prKey(detailPr))} onAssign={() => assignSelection([detailPr], opened || prKey(detailPr))} onRefresh={() => load()} readOnly={!isOpenPull(detailPr)} canAssign={mayAssign(detailPr.repository.viewerPermission)} status={statusFor(detailPr)} onProgress={null} record={recordsForPull(records, detailPr)[0]} capabilities={capabilities} onRecord={onRecord} provenance={pullConversations(records, relevantRuns, detailPr)} holdUntilLoaded />
       ) : data.loading || data.error || focusKey ? <Skeleton lines={8} label="Loading the pull request" /> : <p className="co-pr-note" role="status">This pull request is not in the open list. It may be closed; refresh to check.</p>}
       {reviewDialog}
     {addressDialog}
+    {actionDialog}
     </section>
   }
   const assignAnchor = assigning?.anchor && visibleKeys.has(assigning.anchor) ? assigning.anchor : ''
@@ -560,18 +572,17 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
           {open && mayAssign(pr.repository.viewerPermission)
             ? <button className={'co-pr-assign' + (assignees.length ? '' : ' is-quiet')} onClick={() => assignSelection([pr], key)} aria-label={assignees.length ? `Assigned to ${assignees.map(user => user.login).join(', ')}. Change assignment for PR ${pr.number}` : `Assign PR ${pr.number}`} title={assignees.length ? assignees.map(user => user.login).join(', ') : undefined}>{assignees.length ? <span className="co-gh-avatars">{assignees.slice(0, 3).map(user => <Avatar key={user.login} login={user.login} />)}</span> : <><Icon name="person" size={15} /><span>Assign</span></>}</button>
             : assignees.length ? <span className="co-gh-avatars" title={assignees.map(user => user.login).join(', ')}>{assignees.slice(0, 3).map(user => <Avatar key={user.login} login={user.login} />)}</span> : null}
-          {open ? <AgentMenu pulls={[pr]} disabled={busy} onChoose={mode => choose([pr], mode, key)} ariaLabel={`Choose what an agent does with PR ${pr.number}`} /> : null}
+          {open ? <ActionsMenu pulls={[pr]} record={recordsForPull(records, pr)[0]} capabilities={capabilities} disabled={busy} onChoose={mode => choose([pr], mode, key)} ariaLabel={`Choose an action for PR ${pr.number}`} /> : null}
         </div>
         {assignAnchor === key ? assignPane : null}
         {relevantRuns.filter(run => runAnchor(run) === key).map(runPane)}
-        {opened === key ? <TaskPane id="task:detail" dock={false}>{detailPr ? <PullRequestDetail key={`${prKey(detailPr)}:${detailPr.headRefOid}:${detailPr.baseRefOid}:${detailRevision}`} cacheStore={detailSnapshot(detailPr)} pr={detailPr} token={token} review={reviewProps(detailPr)} onReview={mode => choose([detailPr], mode, key)} onAssign={() => assignSelection([detailPr], key)} onRefresh={() => load()} readOnly={!isOpenPull(detailPr)} canAssign={mayAssign(detailPr.repository.viewerPermission)} status={statusFor(detailPr)} onProgress={() => task?.open(`task:run:${statusFor(detailPr)?.run.id}`)} record={recordsForPull(records, detailPr)[0]} onRecord={onRecord} provenance={pullConversations(records, relevantRuns, detailPr)} /> : <p>This pull request is no longer in the current list. Refresh to see its latest status.</p>}</TaskPane> : null}
+        {opened === key ? <TaskPane id="task:detail" dock={false}>{detailPr ? <PullRequestDetail key={`${prKey(detailPr)}:${detailPr.headRefOid}:${detailPr.baseRefOid}:${detailRevision}`} cacheStore={detailSnapshot(detailPr)} pr={detailPr} token={token} review={reviewProps(detailPr)} onReview={mode => choose([detailPr], mode, key)} onAssign={() => assignSelection([detailPr], key)} onRefresh={() => load()} readOnly={!isOpenPull(detailPr)} canAssign={mayAssign(detailPr.repository.viewerPermission)} status={statusFor(detailPr)} onProgress={() => task?.open(`task:run:${statusFor(detailPr)?.run.id}`)} record={recordsForPull(records, detailPr)[0]} capabilities={capabilities} onRecord={onRecord} provenance={pullConversations(records, relevantRuns, detailPr)} /> : <p>This pull request is no longer in the current list. Refresh to see its latest status.</p>}</TaskPane> : null}
       </article></ReviewFrame>
     })}</div>
     </div>
     {data.hasNextPage ? <button className="co-btn" disabled={data.loading} onClick={() => load(data.endCursor)}>Load more PRs</button> : null}
     {reviewDialog}
     {addressDialog}
-
-
+    {actionDialog}
   </section>
 }

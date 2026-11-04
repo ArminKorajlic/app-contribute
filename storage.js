@@ -1,3 +1,5 @@
+import { DEFAULT_STAGE, stageOf } from './publication-stage.js'
+
 // Ledger storage layer. contributions/<id>.json is written by the agent
 // (from chat turns) and by job.sh (the daily refresh); this app has TWO
 // writers of its own — the read-side feed cache (feed-cache.json, there
@@ -504,6 +506,7 @@ const SETTINGS_FILE = 'settings.json'
 const DEFAULT_APP_SETTINGS = Object.freeze({
   autopilot_default: true,
   submission_method: 'github',
+  new_pr_stage: DEFAULT_STAGE,
 })
 // Older builds kept one app-wide agent model here. Each launch now carries its
 // own model choice (none means the chat default), so these keys are retired.
@@ -513,7 +516,7 @@ export function normalizeAppSettings(raw) {
   const kept = raw && typeof raw === 'object'
     ? Object.fromEntries(Object.entries(raw).filter(([key]) => !RETIRED_SETTINGS.includes(key)))
     : {}
-  return { ...DEFAULT_APP_SETTINGS, ...kept, submission_method: 'github' }
+  return { ...DEFAULT_APP_SETTINGS, ...kept, submission_method: 'github', new_pr_stage: stageOf(kept.new_pr_stage) }
 }
 
 // App-level preferences (not per-contribution): publication and Autopilot.

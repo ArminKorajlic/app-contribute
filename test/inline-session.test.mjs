@@ -43,8 +43,8 @@ function harness({ actions, items = defaultItems(actions), records, checkpoint =
     loadExact: loadExact ? id => loadExact(id, store) : async id => store.has(id) ? structuredClone(store.get(id)) : null, onNeedRuntime: () => needs.push(true) })
   const runtime = () => ({ records: [...store.values()], ledgerReady: true, connection: 'connected', frozenBinding: true,
     reviewStatus: serverReviewStatus(address || reviewAddressFor(cardRecordIds(actions.map(item => item.key), items), [...store.values()]), store),
-    send: async rec => { sends.push({ kind: 'single', ids: [rec.id], records: [structuredClone(rec)] }); return send ? send(rec) : { ok: true } },
-    sendStack: async recs => { sends.push({ kind: 'stack', ids: recs.map(rec => rec.id), records: structuredClone(recs) }); return sendStack ? sendStack(recs) : { ok: true } },
+    send: async (rec, options) => { sends.push({ kind: 'single', ids: [rec.id], records: [structuredClone(rec)], options }); return send ? send(rec) : { ok: true } },
+    sendStack: async (recs, options) => { sends.push({ kind: 'stack', ids: recs.map(rec => rec.id), records: structuredClone(recs), options }); return sendStack ? sendStack(recs) : { ok: true } },
     refresh() {}, ...extra })
   let nonce = 0
   const fire = (key, event) => session.handleEvent({ sessionId: 'session-1', key, event, nonce: `n${++nonce}` })
@@ -888,4 +888,19 @@ test('the B2 host accepts a confirmation that names screenshots', async t => {
   assert.equal(parsed[0].facts.find(fact => fact.label === 'Change').value, '1 file · +2 −0 · 2 screenshots')
   assert.equal(parsed[0].facts.find(fact => fact.label === 'Description').value, 'Fix.')
   assert.match(parsed[1].facts.find(fact => fact.label === 'Change').value, /1 screenshot$/)
+})
+
+test('Confirm names how the pull request will open, and sends exactly that even if the setting changes first', async () => {
+  const ready = harness({ actions: [{ key: 'chat-send:one', label: 'Contribute' }], records: [prepared('one')] })
+  await openConfirm(ready, 'chat-send:one')
+  const action = item => item.facts.find(fact => fact.label === 'Action').value
+  assert.equal(action(ready.action('chat-send:one').confirmation[0]), 'Open a new pull request', 'the shipped default opens ready for review')
+
+  const draft = harness({ actions: [{ key: 'chat-send:one', label: 'Contribute' }], records: [prepared('one')], runtime: { stage: 'draft' } })
+  await openConfirm(draft, 'chat-send:one')
+  assert.equal(action(draft.action('chat-send:one').confirmation[0]), 'Open a new pull request as a draft')
+  // The stage shown at Confirm is the one sent, whatever the setting says by then.
+  draft.session.updateRuntime({ ...draft.runtime(), stage: 'ready' })
+  draft.fire('chat-send:one', 'confirm'); await tick(); await tick()
+  assert.deepEqual(draft.sends.map(sent => sent.options), [{ stage: 'draft' }])
 })

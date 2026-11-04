@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
+import { stageWords } from '../publication-stage.js'
 
 import {
   addressAllAction,
@@ -198,7 +199,9 @@ test('the Run owns one exact grouped action across standalone and stacked work',
   assert.match(feedSource, /Review and send \$\{count\}/)
   assert.match(feedSource, /Send \$\{count\} to GitHub/)
   assert.doesNotMatch(feedSource, /Send all|Prepare latest/)
-  assert.match(feedSource, /New pull requests use your connected GitHub account and open ready for review/)
+  // Ready is the documented normal; the sentence lives with the stage words the confirmation uses.
+  assert.match(stageWords('ready').description, /New pull requests use your connected GitHub account and open ready for review/)
+  assert.match(feedSource, /stageWords\(stage\)\.description/)
   assert.match(feedSource, /Nothing merges\./)
   assert.doesNotMatch(feedSource, /unit\.type !== 'stack'/)
   assert.match(runSource, /decisions\.push\(decision\('publish'/)
@@ -422,7 +425,7 @@ test('sending a pull request stays concise instead of repeating publication narr
   assert.match(cardSource, /setAccepted\(true\)[\s\S]*await onSend\(rec\)/)
   assert.match(cardSource, /if \(accepted\) return null/)
   assert.match(cardSource, /await onReview\?\.\(recoveryReviewAction\(rec\)\)/)
-  assert.match(feedSource, /await onSend\?\.\(runPrimaryRecord\(item\)\)/)
+  assert.match(feedSource, /await onSend\?\.\(runPrimaryRecord\(item\), \{ stage \}\)/)
   assert.match(feedSource, /outcome\?\.pending/)
   assert.match(batchSource, /collapseOnStart = true/)
   assert.match(batchSource, /if \(collapseOnStart\) return null/)
@@ -634,7 +637,7 @@ function preflightFixture(name, read, conn = {state:'connected'}) {
     plan:{action:'pr',repo:'team/repo',branch:'fix/preflight',head_sha:head},quality_review:{state:'all_clear',reviewed_head_sha:head}}
   const writes=[]
   const write=async()=>{writes.push(name);return {error:'Unconfirmed server response',failure:{owner:'automatic'}}}
-  const dependencies={appId:'fixture',token:'fixture',autopilotDefault:false,submissionMethod:'github',connRef:{current:conn},writeBindingRefusal,
+  const dependencies={appId:'fixture',token:'fixture',autopilotDefault:false,newPrStage:'ready',submissionMethod:'github',connRef:{current:conn},writeBindingRefusal,
     applyRecordUpdates:()=>{},refreshReviewStatus:()=>{},contributionApprovalIsCurrent,contributionPhaseApprovalIsCurrent,qualityReviewFor,stackPublicationRecords,
     contributionPathDecision,contributionStackDecision,
     loadFreshContributionRecord:async()=>read(approved),loadFreshContributionRecords:async()=>{const value=await read(approved);return value?[value]:[]},

@@ -8,6 +8,7 @@
 // Only attempts whose outcome is unknown cross a reload, and they lock their
 // unit until a read-only observation proves the result.
 import { sendTarget } from './chat-blocks.js'
+import { stageOf } from './publication-stage.js'
 import { planScreenshots, screenshotCountText } from './domain.js'
 import { isPublished, publicationUnits, publishedPull } from './send-readiness.js'
 import { stackMeta } from './stack.js'
@@ -111,7 +112,7 @@ export function descriptionExcerpt(body, max = 160) {
 }
 
 // ---- The app-sourced identity Confirm shows for each frozen record.
-export function confirmationItem(record) {
+export function confirmationItem(record, stage) {
   const plan = record.plan || {}
   const meta = stackMeta(record)
   // The card's own per-contribution facts (Project, Change) come first, with
@@ -120,7 +121,7 @@ export function confirmationItem(record) {
     ['Project', plan.repo || record.repo],
     ...(changeSize(plan) ? [['Change', changeSize(plan)]] : []),
     ...(meta ? [['Stack', `Layer ${meta.position} of ${meta.total} · ${meta.name}`]] : []),
-    ['Action', plan.action === 'pr_update' ? `Update pull request #${record.number}` : 'Open a new pull request'],
+    ['Action', plan.action === 'pr_update' ? `Update pull request #${record.number}` : stageOf(stage) === 'draft' ? 'Open a new pull request as a draft' : 'Open a new pull request'],
     ['Branch', meta ? `${plan.branch || record.branch} → ${meta.baseBranch}` : plan.branch || record.branch],
     ['Version', String(plan.head_sha || '').slice(0, 12)],
     ['Reviewed diff', String(plan.diff_sha256 || '').slice(0, 12)],
@@ -185,7 +186,7 @@ export function createInlineSession({ sessionId, actions, items = null, checkpoi
   // reach Confirm, whatever a late response later reports.
   let refreshNote = ''
   const awaitingCheck = () => awaitLegacy || (awaitDone >= 0 && !(Number(runtime?.refreshDone) >= awaitDone))
-  let frozen = null // { key, units } — the exact snapshot the owner confirms
+  let frozen = null // { key, units, stage } — the exact snapshot the owner confirms, and how it will open
   let ackNonce = null
   let alive = true
 
@@ -265,7 +266,7 @@ export function createInlineSession({ sessionId, actions, items = null, checkpoi
         || Boolean(reason) && !retry && !unknown,
       busy,
       confirming,
-      confirmation: confirming ? frozen.units.flatMap(unit => unit.ready.map(confirmationItem)) : null,
+      confirmation: confirming ? frozen.units.flatMap(unit => unit.ready.map(record => confirmationItem(record, frozen.stage))) : null,
       hidden: published && !busy && !confirming,
       note: text(fault || (unknown ? UNKNOWN_NOTE : '') || failure?.note || (activating === key ? '' : refreshNote) || reason),
       tone, status, statusTone: tone,
@@ -326,7 +327,7 @@ export function createInlineSession({ sessionId, actions, items = null, checkpoi
     const key = activating
     activating = ''
     const ready = blockedReason(key) ? [] : readyUnits(key)
-    frozen = ready.length ? { key, units: copy(ready) } : null
+    frozen = ready.length ? { key, units: copy(ready), stage: stageOf(runtime?.stage) } : null
   }
 
   // Newest-issued exact read wins per record; reads never send.
@@ -379,7 +380,7 @@ export function createInlineSession({ sessionId, actions, items = null, checkpoi
     await Promise.all(approval.units.map(async (unit, index) => {
       let outcome
       if ([...unit.records, ...unit.ready].some(relayed)) outcome = { notAttempted: true, error: RELAY_NOTE }
-      else try { outcome = (unit.stack ? await sendStack(unit.records) : await send(unit.ready[0])) || {} } catch { outcome = { uncertain: true } }
+      else try { outcome = (unit.stack ? await sendStack(unit.records, { stage: approval.stage }) : await send(unit.ready[0], { stage: approval.stage })) || {} } catch { outcome = { uncertain: true } }
       if (!alive) return
       attempts = attempts.map(attempt => attempt.id === started[index].id ? { ...attempt, ...attemptOutcome(outcome) } : attempt)
       await read(started[index].ids) // each unit settles independently of slower siblings

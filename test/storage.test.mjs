@@ -118,12 +118,12 @@ function versionedSettings(initial, { beforeWrite } = {}) {
 
 test('the retired app-wide agent model keys are dropped and cleared once', async (t) => {
   assert.deepEqual(normalizeAppSettings({ autopilot_default: false, agent_provider: 'codex', agent_model: 'm', agent_effort: 'high' }),
-    { autopilot_default: false, submission_method: 'github' })
+    { autopilot_default: false, submission_method: 'github', new_pr_stage: 'ready' })
   const previousWindow = globalThis.window
   t.after(() => { globalThis.window = previousWindow })
   const store = versionedSettings({ autopilot_default: false, agent_provider: 'codex', agent_model: 'm' })
   globalThis.window = { mobius: { storage: store.storage } }
-  assert.deepEqual(await loadAppSettings(), { autopilot_default: false, submission_method: 'github' })
+  assert.deepEqual(await loadAppSettings(), { autopilot_default: false, submission_method: 'github', new_pr_stage: 'ready' })
   assert.deepEqual(store.current(), { autopilot_default: false }, 'only the retired keys were removed')
   await loadAppSettings()
   assert.equal(store.writes.length, 1, 'a clean copy is not rewritten')
@@ -143,7 +143,7 @@ test('clearing the retired keys never overwrites a settings save that lands in b
   // Without a conditional write path, nothing is written blindly.
   const blind = []
   globalThis.window = { mobius: { storage: { get: async () => ({ autopilot_default: false, agent_model: 'm' }), set: async (...args) => blind.push(args) } } }
-  assert.deepEqual(await loadAppSettings(), { autopilot_default: false, submission_method: 'github' })
+  assert.deepEqual(await loadAppSettings(), { autopilot_default: false, submission_method: 'github', new_pr_stage: 'ready' })
   assert.deepEqual(blind, [], 'no unconditional write')
 })
 

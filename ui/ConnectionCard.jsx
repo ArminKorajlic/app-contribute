@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { openGithubSettings } from '../github-connection.js'
 import { Icon } from './Icons.jsx'
+import { DEFAULT_STAGE, stageWords } from '../publication-stage.js'
 import { ReviewPromptSettings } from './ReviewPromptSettings.jsx'
 // Component-local settings layout. The app shell keeps its existing theme tokens.
 export const SETTINGS_CSS = `
@@ -88,6 +89,8 @@ export function ConnectionCard({
   onRetry,
   autopilotDefault = true,
   onToggleAutopilotDefault,
+  newPrStage = DEFAULT_STAGE,
+  onChangeNewPrStage,
 }) {
   const [statusRetrying, setStatusRetrying] = useState(false)
 
@@ -135,6 +138,19 @@ export function ConnectionCard({
             <div className="co-set-text"><strong>{conn.login}</strong><small>This account is shared across Möbius apps.</small></div>
             <button type="button" className="co-btn" onClick={openGithubSettings}><Icon name="settings" size={15} />Manage account</button>
           </div>
+          {typeof onChangeNewPrStage === 'function' && (
+            <div className="co-set-row">
+              <span className="co-set-tile" aria-hidden="true"><Icon name={stageWords(newPrStage).icon} size={18} /></span>
+              <div className="co-set-text" id="co-new-pr-stage">
+                <strong>New pull requests start as</strong>
+                <small>{newPrStage === 'draft' ? 'Nobody is asked to review a PR until you open it for review.' : 'Reviewers are asked as soon as a PR opens.'} Pick the other one for a single send from its arrow.</small>
+              </div>
+              <div className="co-seg" role="radiogroup" aria-labelledby="co-new-pr-stage">
+                {['draft', 'ready'].map(stage => <button key={stage} type="button" role="radio" aria-checked={newPrStage === stage}
+                  className={newPrStage === stage ? 'is-on' : ''} onClick={() => onChangeNewPrStage(stage)}>{stage === 'draft' ? 'Draft' : 'Ready'}</button>)}
+              </div>
+            </div>
+          )}
           {conn.autopilotAvailable && typeof onToggleAutopilotDefault === 'function' && (
             <div className="co-set-row">
               <span className="co-set-tile" aria-hidden="true"><Icon name="cycle" size={18} /></span>

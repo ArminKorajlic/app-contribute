@@ -53,6 +53,6 @@ test('a chat send is refused at write time when the binding is gone or the relay
     assert.ok(at > 0, String(write))
     assert.match(app.slice(Math.max(0, at - 220), at), /const unbound = writeBindingRefusal\(\{ requireBinding, frozenBinding: connRef\.current\.frozenBinding[^)]*\}\)\s+if \(unbound\) return unbound\s+$/, 'checked right before ' + write)
   }
-  assert.match(app, /onSend\(rec, \{ requireBinding: true \}\)/)
-  assert.match(app, /onSendStack\(stack, \{ requireBinding: true \}\)/)
+  assert.match(app, /onSend\(rec, \{ \.\.\.options, requireBinding: true \}\)/)
+  assert.match(app, /onSendStack\(stack, \{ \.\.\.options, requireBinding: true \}\)/)
 })

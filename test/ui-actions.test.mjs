@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { existsSync, readFileSync } from 'node:fs'
 import test from 'node:test'
+import { stageWords } from '../publication-stage.js'
 
 const cardSource = readFileSync(new URL('../ui/ContributionCard.jsx', import.meta.url), 'utf8')
 const appSource = readFileSync(new URL('../index.jsx', import.meta.url), 'utf8')
@@ -41,7 +42,8 @@ test('disconnected projects offer a prominent GitHub connection action', () => {
 
 test('publication copy describes automatic GitHub identity without picker language', () => {
   assert.doesNotMatch(feedSource, /Choose Personal GitHub|Möbius relay supports standalone drafts/)
-  assert.match(feedSource, /your connected GitHub account/)
+  assert.match(feedSource, /stageWords\(stage\)\.description/)
+  assert.match(stageWords('draft').description + stageWords('ready').description, /your connected GitHub account/)
   assert.match(sourceMapSource, /\['local', 'With your edits'\]/)
   assert.match(sourceMapSource, /\['updates', 'Behind GitHub'\]/)
 })
@@ -91,7 +93,7 @@ test('single and grouped sends leave the active action from durable results', ()
   assert.match(cardSource, /setAccepted\(true\)/)
   assert.match(cardSource, /if \(accepted\) return null/)
   assert.doesNotMatch(cardSource, /sendElapsed/)
-  assert.match(feedSource, /outcome = await onSendStack\?\.\(runUnitRecords\(item\)\)/)
+  assert.match(feedSource, /outcome = await onSendStack\?\.\(runUnitRecords\(item\), \{ stage \}\)/)
   assert.match(appSource, /if \(updates\.length > 0\) \{\s*applyRecordUpdates\(updates\)/)
 })
 
@@ -194,9 +196,9 @@ test('preparation runs as one cycle while every public send stays explicit', () 
   assert.match(feedSource, /Nothing merges\./)
   assert.match(appSource, /provider: chosenAgent\.provider/)
   assert.match(appSource, /\.\.\.\(chosenAgent\.effort \? \{ effort: chosenAgent\.effort \} : \{\}\)/)
-  assert.match(feedSource, /New pull requests use your connected GitHub account and open ready for review/)
+  assert.match(stageWords('ready').description, /New pull requests use your connected GitHub account and open ready for review/)
   assert.match(feedSource, /item\?\.unit\?\.type === 'stack'/)
-  assert.match(feedSource, /outcome = await onSendStack\?\.\(runUnitRecords\(item\)\)/)
+  assert.match(feedSource, /outcome = await onSendStack\?\.\(runUnitRecords\(item\), \{ stage \}\)/)
   assert.doesNotMatch(batchActionSource, /role="alertdialog"/)
   assert.doesNotMatch(batchActionSource, /Keep private/)
   assert.match(batchActionSource, /className="co-agent-handoff"/)
@@ -477,7 +479,7 @@ test('the desk reads review runs once, wraps its rows in the frame, and opens a 
 test('a running review is shown by the frame and the Review tab only: no Reviewing tag, no Agent spinner or highlight', () => {
   const pullsSource = readFileSync(new URL('../ui/PullRequests.jsx', import.meta.url), 'utf8')
   const deskSource = readFileSync(new URL('../ui/DeskViews.jsx', import.meta.url), 'utf8')
-  const menuSource = readFileSync(new URL('../ui/AgentMenu.jsx', import.meta.url), 'utf8')
+  const menuSource = readFileSync(new URL('../ui/ActionsMenu.jsx', import.meta.url), 'utf8')
   const detailSource = readFileSync(new URL('../ui/PullRequestDetail.jsx', import.meta.url), 'utf8')
   // Tags for finished or waiting reviews stay; the one for a running review goes.
   assert.match(pullsSource, /\{review\.chip \? <button className=\{'co-pr-agent-state'/)

@@ -79,7 +79,7 @@ test('the checklist and the two rungs render as real controls', async t => {
 
 test('Address feedback is a job the menu can open, and it starts an agent conversation, not a review run', async () => {
   const { readFileSync } = await import('node:fs')
-  const { OPENABLE_JOBS } = await import('../agent-menu.js')
+  const { OPENABLE_JOBS } = await import('../actions-menu.js')
   assert.ok(OPENABLE_JOBS.includes('address'))
   const list = readFileSync(new URL('../ui/PullRequests.jsx', import.meta.url), 'utf8')
   assert.match(list, /if \(job === 'address'\) \{ setAssigning\(null\); setAddressing\(/)

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
-import { OPENABLE_JOBS } from '../agent-menu.js'
+import { OPENABLE_JOBS } from '../actions-menu.js'
 import { baseTip, DRAFT_TAKEOVER_SCOPE, mayMerge, prKey, takeoverBlocker } from '../collaboration.js'
 import { mergeWhenSafeBlocker, reviewSwitchHints, reviewWindowCopy } from '../review-copy.js'
 import { focusActionRegion } from './TaskPane.jsx'

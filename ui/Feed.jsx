@@ -26,6 +26,8 @@ import {
 import { openAgentConversation } from './BatchAction.jsx'
 import { ContributionCard, ContributionDecision } from './ContributionCard.jsx'
 import { Icon } from './Icons.jsx'
+import { OpenSplitButton } from './OpenSplitButton.jsx'
+import { DEFAULT_STAGE, stageApplies, stageWords } from '../publication-stage.js'
 import { ProjectIcon } from './ProjectIcon.jsx'
 import { ProjectTabs } from './ProjectTabs.jsx'
 import { AttentionList } from './AttentionList.jsx'
@@ -58,7 +60,7 @@ function readyCount(items) {
     .filter(record => record?.status === 'draft' && record?.submission_mode !== 'mobius-bot').length, 0)
 }
 
-export function batchFingerprint(items, mode, publicationPreference, githubState) {
+export function batchFingerprint(items, mode, publicationPreference, githubState, stage = DEFAULT_STAGE) {
   const rows = (items || []).flatMap(item => runUnitRecords(item).map(record => [
     item?.kind,
     runUnitKey(item),
@@ -75,7 +77,7 @@ export function batchFingerprint(items, mode, publicationPreference, githubState
     record?.last_ready_error_code,
   ].map(value => String(value || '')).join('\u0001')))
   return JSON.stringify([
-    mode, publicationPreference, githubState, ...rows.sort(),
+    mode, publicationPreference, githubState, mode === 'send' ? stage : '', ...rows.sort(),
   ])
 }
 
@@ -101,11 +103,11 @@ function captureBatchItems(items) {
   })
 }
 
-function publicationLine(record, publicationPreference, githubState) {
+function publicationLine(record, publicationPreference, githubState, stage) {
   if (record?.plan?.action === 'pr_update') return 'Update the existing pull request'
   return contributionPath(record, publicationPreference, githubState) === 'mobius'
     ? 'Open as a legacy draft'
-    : 'Open ready for review'
+    : stageWords(stage).line
 }
 
 export function publicationRouteProblem(item, publicationPreference, githubState) {
@@ -250,6 +252,7 @@ function ExactActionList({
   mode,
   publicationPreference,
   githubState,
+  stage,
   onSelect,
   progress = {},
 }) {
@@ -278,7 +281,7 @@ function ExactActionList({
                 </span>
                 <em className={progress[record.id]?.error ? 'is-failed' : progress[record.id] === 'done' ? 'is-done' : ''}>{progress[record.id]?.notAttempted ? `${PROGRESS_TEXT[mode]['not-attempted']}: ` : ''}{progress[record.id]?.error
                   || PROGRESS_TEXT[mode]?.[progress[record.id]]
-                  || (mode === 'ready' ? 'Request review' : publicationLine(record, publicationPreference, githubState))}</em>
+                  || (mode === 'ready' ? 'Request review' : publicationLine(record, publicationPreference, githubState, stage))}</em>
                 {meta ? <code>{meta.baseBranch} → {record?.plan?.branch || record?.branch}</code> : null}
                 {typeof onSelect === 'function' ? (
                   <button type="button" onClick={() => onSelect(item)}>Details</button>
@@ -298,6 +301,7 @@ function ExactBatchAction({
   mode,
   publicationPreference,
   githubState,
+  newPrStage = DEFAULT_STAGE,
   onSend,
   onSendStack,
   onMarkReady,
@@ -305,13 +309,16 @@ function ExactBatchAction({
 }) {
   const task = useProjectTask()
   const [approval, setApproval] = useState(null)
+  // The stage picked from the arrow for this send; the setting applies otherwise.
+  const [pickedStage, setPickedStage] = useState(null)
+  const stage = pickedStage || newPrStage
   const [busy, setBusy] = useState(false)
   const [note, setNote] = useState('')
   const safeRef = useRef(null)
   const descriptionId = useId()
   const fingerprint = useMemo(() => batchFingerprint(
-    items, mode, publicationPreference, githubState,
-  ), [items, mode, publicationPreference, githubState])
+    items, mode, publicationPreference, githubState, stage,
+  ), [items, mode, publicationPreference, githubState, stage])
   // A confirmed batch stays on screen while it runs and until the owner closes
   // its results; each handled item changes the live set, which must not close it.
   const confirming = !!approval && (approval.locked || approval.fingerprint === fingerprint)
@@ -324,6 +331,8 @@ function ExactBatchAction({
   const activeItems = confirming ? approval.items : items
   const count = mode === 'ready' ? readyCount(activeItems) : actionCount(activeItems)
   const singleRecord = count === 1 ? runPrimaryRecord(activeItems[0]) : null
+  // One stage describes the whole batch only when every action opens a new PR on the personal path.
+  const staged = mode === 'send' && stageApplies(activeItems.flatMap(itemPublicationRecords), publicationPreference, githubState)
 
   useEffect(() => {
     if (confirming) safeRef.current?.focus()
@@ -355,6 +364,14 @@ function ExactBatchAction({
   }, [approval, records, mode])
 
   if (count < 1 && !approval?.locked) return null
+
+  // Open the exact confirmation with the stage chosen for this send (the setting unless the arrow picked the other).
+  function openConfirm(nextStage = stage) {
+    setNote('')
+    setPickedStage(nextStage === newPrStage ? null : nextStage)
+    task?.open(`task:${mode}`)
+    setApproval({ fingerprint: batchFingerprint(items, mode, publicationPreference, githubState, nextStage), items: captureBatchItems(items) })
+  }
 
   function outcomeFor(record, outcome) {
     const current = currentRecords.current.find(value => value.id === record.id)
@@ -390,8 +407,8 @@ function ExactBatchAction({
     setProgress(old => ({ ...old, ...Object.fromEntries(records.map(record => [record.id, 'working'])) }))
     let outcome
     try {
-      if (item?.unit?.type === 'stack') outcome = await onSendStack?.(runUnitRecords(item))
-      else outcome = await onSend?.(runPrimaryRecord(item))
+      if (item?.unit?.type === 'stack') outcome = await onSendStack?.(runUnitRecords(item), { stage })
+      else outcome = await onSend?.(runPrimaryRecord(item), { stage })
     } catch { outcome = { uncertain: true } }
     const values = records.map(record => [record.id, outcomeFor(record, outcome)])
     setProgress(old => ({ ...old, ...Object.fromEntries(values) }))
@@ -427,7 +444,7 @@ function ExactBatchAction({
   function closeResults() {
     if (checking || busy) return
     admitted.current = false
-    setApproval(null); setFinished(false); setProgress({}); setNote('')
+    setApproval(null); setFinished(false); setProgress({}); setNote(''); setPickedStage(null)
     task?.close()
   }
 
@@ -444,17 +461,11 @@ function ExactBatchAction({
           <span className="co-visually-hidden">{mode === 'ready' ? 'Marking it ready for review does not merge it.' : 'Privately reviewed. Nothing shared yet.'}</span>
           {note ? <p className="co-run-error" role="status">{note}</p> : null}
         </div>
-        <button
-          type="button"
-          className="co-btn co-btn-primary"
-          onClick={() => {
-            setNote('')
-            task?.open(`task:${mode}`)
-            setApproval({ fingerprint, items: captureBatchItems(items) })
-          }}
-        >
-          {mode === 'ready' ? 'Mark ready for review' : count === 1 ? 'Review and send' : `Review and send ${count}`}
-        </button>
+        {staged
+          ? <OpenSplitButton stage={stage} count={count} onOpen={openConfirm} />
+          : <button type="button" className="co-btn co-btn-primary" onClick={() => openConfirm()}>
+            {mode === 'ready' ? 'Mark ready for review' : count === 1 ? 'Review and send' : `Review and send ${count}`}
+          </button>}
       </section>
     )
   }
@@ -472,16 +483,17 @@ function ExactBatchAction({
       <header>
         <h3>{mode === 'ready'
           ? `Mark ${count === 1 ? 'this draft' : `${count} drafts`} ready for review?`
-          : `Send ${count} reviewed ${count === 1 ? 'pull request' : 'pull requests'}?`}</h3>
+          : staged ? stageWords(stage).heading(count) : `Send ${count} reviewed ${count === 1 ? 'pull request' : 'pull requests'}?`}</h3>
         <p id={descriptionId}>{mode === 'ready'
           ? 'GitHub takes it out of draft and tells the reviewers. Nothing merges.'
-          : 'New pull requests use your connected GitHub account and open ready for review. Each line shows exactly where its change goes. Nothing merges.'}</p>
+          : stageWords(stage).description}</p>
       </header>
       <ExactActionList
         items={activeItems}
         mode={mode}
         publicationPreference={publicationPreference}
         githubState={githubState}
+        stage={stage}
         progress={progress}
         onSelect={busy ? undefined : onSelect}
       />
@@ -490,13 +502,13 @@ function ExactBatchAction({
       {finished ? <div className="co-run-approval-actions">
         <button type="button" className="co-btn co-btn-primary" disabled={checking} onClick={closeResults}>{checking ? 'Checking result…' : 'Done'}</button>
       </div> : <div className="co-run-approval-actions">
-        <button ref={safeRef} type="button" className="co-btn" disabled={busy} onClick={() => setApproval(null)}>
+        <button ref={safeRef} type="button" className="co-btn" disabled={busy} onClick={() => { setApproval(null); setPickedStage(null) }}>
           {mode === 'ready' ? (count === 1 ? 'Keep as draft' : 'Keep as drafts') : 'Keep private'}
         </button>
         <button type="button" className="co-btn co-btn-primary" disabled={busy} aria-busy={busy} onClick={applyAll}>
           {busy ? 'Working…' : mode === 'ready'
             ? (count === 1 ? 'Mark ready on GitHub' : `Mark ${count} ready on GitHub`)
-            : (count === 1 ? 'Send to GitHub' : `Send ${count} to GitHub`)}
+            : staged ? stageWords(stage).onGithub(count) : (count === 1 ? 'Send to GitHub' : `Send ${count} to GitHub`)}
         </button>
       </div>}
     </section>
@@ -845,6 +857,7 @@ export function ContributionRun({
   omittedCount = 0,
   publicationPreference = 'mobius',
   githubState = 'unknown',
+  newPrStage = DEFAULT_STAGE,
   reviewStatus,
   onSend,
   onSendStack,
@@ -1016,6 +1029,7 @@ export function ContributionRun({
         mode="send"
         publicationPreference={publicationPreference}
         githubState={githubState}
+        newPrStage={newPrStage}
         onSend={onSend}
         onSendStack={onSendStack}
         onSelect={selectRunItem}

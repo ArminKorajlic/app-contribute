@@ -23,7 +23,7 @@ test('detail opens on the GitHub-style Comments tab with Files changed and Check
   assert.doesNotMatch(html, /co-branch-flow/)
   assert.match(html, /by <b>/)
   assert.match(html, /Loading the conversation/)
-  assert.match(html, /aria-label="Choose what an agent does with PR \d+"/)
+  assert.match(html, /aria-label="Choose an action for PR \d+"/)
 })
 for (const items of [[], [{ __typename: 'Issue', number: 2, title: 'Usable issue', url: 'https://github.com/team/repo/issues/2', repository: { nameWithOwner: 'team/repo' }, relationships: ['May close'] }]]) {
   test(`partial related context warns and retries with ${items.length} usable items`, async t => {
