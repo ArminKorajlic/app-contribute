@@ -122,6 +122,16 @@ function withSentVerdict(reviews, sent, pr, login) {
   return [...reviews.filter(review => lower(review.by) !== lower(login)), { by: login, state: sent.state, commit: sent.commit, bot: false }]
 }
 
+// A Respond-to-feedback conversation is no review run, yet while it can still move it is
+// the PR's one agent job. The platform lists those chats beside the runs.
+const respondJobOf = (chats, pr) => {
+  const chat = (chats || []).find(candidate => samePr(candidate, pr))
+  return chat ? { kind: 'respond', state: chat.state } : null
+}
+
+// A stalled run holds nothing, so a live Respond conversation takes the PR before it.
+const jobFor = (runJob, chats, pr) => (runJob && runJob.state !== 'stalled' ? runJob : respondJobOf(chats, pr) || runJob)
+
 function runFacts(review, pr, own, ignored) {
   if (!review) return { job: null, result: null, outbox: null, sent: null }
   const { run, item } = review
@@ -136,9 +146,10 @@ function runFacts(review, pr, own, ignored) {
   }
 }
 
-// Facts for one PR. `runs` are Contribute's review runs; `ignored` the owner's
-// set-aside notes; `login` the connected GitHub account.
-export function prFacts({ pr, login, runs = [], ignored = null }) {
+// Facts for one PR. `runs` are Contribute's review runs and `chats` its live
+// Respond-to-feedback conversations ({ repo, number, state }); `ignored` the
+// owner's set-aside notes; `login` the connected GitHub account.
+export function prFacts({ pr, login, runs = [], ignored = null, chats = [] }) {
   const own = isOwnPull(pr, login)
   const reviews = reviewsOf(pr)
   const fromRuns = runFacts(newestReviewOf(runs, pr), pr, own, ignored)
@@ -155,7 +166,7 @@ export function prFacts({ pr, login, runs = [], ignored = null }) {
     reviews: own ? reviews || [] : withSentVerdict(reviews || [], fromRuns.sent, pr, login),
     myReview,
     openThreads: threads || 0,
-    job: fromRuns.job,
+    job: jobFor(fromRuns.job, chats, pr),
     result: fromRuns.result,
     outbox: fromRuns.outbox,
     readComplete: reviews !== null && threads !== null,

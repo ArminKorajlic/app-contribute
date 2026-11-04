@@ -16,7 +16,7 @@ const pull = (extra = {}) => ({
 const mine = extra => pull({ author: { login: 'Alex' }, ...extra })
 const run = (item, extra = {}) => ({ id: 'r1', created_at: '2026-11-04T10:00:00Z', execution_state: 'completed', state: 'complete', mode: 'review',
   items: [{ repo: 'o/r', number: 7, head_sha: HEAD, base_ref: 'main', ...item }], ...extra })
-const decideFor = (pr, runs = [], ignored = null) => decide(prFacts({ pr, login: 'alex', runs, ignored }))
+const decideFor = (pr, runs = [], ignored = null, chats = []) => decide(prFacts({ pr, login: 'alex', runs, ignored, chats }))
 
 test('your PR after you pushed fixes waits on the reviewer, not on you (bug 1)', () => {
   const decision = decideFor(mine({ reviewDecision: 'CHANGES_REQUESTED', latestOpinionatedReviews: { nodes: [opinion('Sam', 'CHANGES_REQUESTED', OLD)] } }))
@@ -94,6 +94,40 @@ test('a running review on an older version is still the one job on the PR', () =
   const decision = decideFor(pull(), [run({ state: 'reviewing', head_sha: OLD }, { state: 'running', execution_state: 'running' })])
   assert.equal(decision.state, 'working')
   assert.equal(decision.actions.find(action => action.id === 'review').enabled, false)
+})
+
+// "Respond to feedback" is an ordinary conversation, not a review run: the platform lists it beside the runs.
+const BUSY = 'An agent is already working on this PR.'
+const respond = (extra = {}) => ({ repo: 'o/r', number: 7, state: 'running', chat_id: 'c1', ...extra })
+const actionOf = (decision, id) => decision.actions.find(action => action.id === id)
+
+test('a live Respond conversation is the one agent job on its PR', () => {
+  const theirs = decideFor(pull(), [], null, [respond({ repo: 'O/R' })])
+  assert.equal(theirs.state, 'working')
+  assert.deepEqual([actionOf(theirs, 'review').enabled, actionOf(theirs, 'review').reason], [false, BUSY])
+  const yours = decideFor(mine(), [], null, [respond()])
+  assert.equal(yours.state, 'working')
+  for (const id of ['check_my_pr', 'finish_it']) assert.deepEqual([actionOf(yours, id).enabled, actionOf(yours, id).reason], [false, BUSY], id)
+})
+
+test('a Respond conversation that waits on you says so, and still holds the PR', () => {
+  const decision = decideFor(mine(), [], null, [respond({ state: 'needs_answer' })])
+  assert.equal(decision.state, 'needs_answer')
+  assert.equal(actionOf(decision, 'finish_it').reason, BUSY)
+})
+
+test('a Respond conversation on another PR changes nothing here', () => {
+  const others = [respond({ number: 8 }), respond({ repo: 'o/other' })]
+  assert.deepEqual(prFacts({ pr: mine(), login: 'alex', chats: others }), prFacts({ pr: mine(), login: 'alex' }))
+  assert.equal(decideFor(mine(), [], null, others).state, 'author.waiting_review')
+})
+
+test('a run that is working still names the job before a Respond conversation does; a stalled one yields to it', () => {
+  const working = run({ state: 'reviewing' }, { state: 'running', execution_state: 'running' })
+  const stalled = run({ state: 'reviewing' }, { state: 'running', execution_state: 'failed' })
+  assert.deepEqual(prFacts({ pr: pull(), login: 'alex', runs: [working], chats: [respond()] }).job, { kind: 'review', state: 'running' })
+  assert.deepEqual(prFacts({ pr: pull(), login: 'alex', runs: [stalled], chats: [respond()] }).job, { kind: 'respond', state: 'running' })
+  assert.equal(prFacts({ pr: pull(), login: 'alex', runs: [stalled] }).job.state, 'stalled')
 })
 
 test('findings of an older version of your PR no longer wait on you', () => {

@@ -211,7 +211,8 @@ checked over every case and every combination of the facts that matter):
    that pass or do not exist, no conflicts, nothing unconfirmed on its way to GitHub,
    and no agent job running. GitHub asking for no review is not an approval.
 3. Only new commits bring their PR back for re-review; a reply or a thank-you never does.
-4. One agent job per PR at a time. A job that stalled holds nothing.
+4. One agent job per PR at a time. A job that stalled holds nothing. A Respond to
+   feedback conversation counts as the PR's job for as long as it can still move.
 5. Take over is for maintainers only, and needs a reason.
 6. Unknown stays unknown: missing checks are never green, and a PR that could not be
    read enables nothing that depends on it.

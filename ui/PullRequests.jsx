@@ -145,7 +145,7 @@ const sessionCache = new Map()
 function sessionEntry(repo, key) {
   const id = repo.toLowerCase()
   if (sessionCache.get(id)?.key !== key) {
-    sessionCache.set(id, { key, view: null, data: null, runs: null, details: new Map(), generation: 0 })
+    sessionCache.set(id, { key, view: null, data: null, runs: null, respondChats: null, details: new Map(), generation: 0 })
   }
   return sessionCache.get(id)
 }
@@ -175,6 +175,8 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
   focusRef.current = focusKey ? { key: focusKey, nonce: focusPull.nonce, repo: focusPull.repo, number: focusPull.number } : null
   const [focusError, setFocusError] = useState(null)
   const [runs, setRuns] = useState(session.runs || [])
+  // Live Respond-to-feedback conversations come with the runs: they hold a PR as an agent job too.
+  const [respondChats, setRespondChats] = useState(session.respondChats || [])
   const [runError, setRunError] = useState('')
   const [filter, setFilter] = useState('all')
   const [query, setQuery] = useState('')
@@ -278,7 +280,7 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
     const current = () => alive.current && runsEpoch.current === epoch
     let list
     try {
-      const show = next => { if (current()) { setRuns(next.runs || []); setRunError('') } }
+      const show = next => { if (current()) { setRuns(next.runs || []); setRespondChats(next.respond_chats || []); setRunError('') } }
       list = await loadReviewRuns(token, appId, { onList: show })
       show(list)
     } catch (error) { if (current()) setRunError(error.message); return }
@@ -295,7 +297,7 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
       if (current() && runFocusRef.current?.nonce === focus.nonce && exact) setLinked(exact)
     } catch (error) { if (current()) setRunError(`This run's latest status is unavailable: ${error.message}`) }
   }, [token, appId])
-  useEffect(() => { sessionRef.current.runs = runs }, [runs])
+  useEffect(() => { sessionRef.current.runs = runs; sessionRef.current.respondChats = respondChats }, [runs, respondChats])
   // What this Möbius can do for the owner (Merge among it), asked once. An older
   // Möbius answers 404 and keeps the menu as it was.
   useEffect(() => {
@@ -403,7 +405,7 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
   const relevantRuns = [...linkedRun, ...runs].filter(run => !repo || run.items?.some(item => item.repo.toLowerCase() === repo.toLowerCase()))
   const statusFor = pr => reviewForPull(relevantRuns, pr)
   // Where each PR stands and what may happen next: the PR machine's decision.
-  const standingOf = pr => standingFor({ pr, login: conn.login, runs: relevantRuns, ignored: ignoredReviews })
+  const standingOf = pr => standingFor({ pr, login: conn.login, runs: relevantRuns, chats: respondChats, ignored: ignoredReviews })
   const detailPr = pulls.find(pr => prKey(pr) === opened)
   function inspect(pr) {
     // While a review runs, the frame on the row is the signal; opening it lands on the Review tab.
@@ -508,7 +510,7 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
   const closeIgnore = () => setIgnoring(null)
   // A posted review changes what the run shows (a link to it, and whose turn it is), so the runs are read again.
   async function refreshRuns() {
-    try { const list = await collaborationRequest(token, appId, 'review-runs'); runsEpoch.current++; setRuns(list.runs || []); setRunError('') } catch (error) { setRunError(error.message) }
+    try { const list = await collaborationRequest(token, appId, 'review-runs'); runsEpoch.current++; setRuns(list.runs || []); setRespondChats(list.respond_chats || []); setRunError('') } catch (error) { setRunError(error.message) }
   }
   const closePost = () => setPosting(null)
   const postDialog = posting ? <ReviewDialog onClose={closePost}><PostFindings pr={posting.pr} run={posting.run} item={posting.item} own={posting.own} token={token} appId={appId} onDone={refreshRuns} onClose={closePost} /></ReviewDialog> : null

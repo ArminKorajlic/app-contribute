@@ -5,7 +5,7 @@ import { classifyReview, loadReviewPulls, reviewCounts, reviewEntries } from '..
 // read live once per change of the set (and again on retry); until that read
 // has answered they are "checking", and a PR GitHub did not return is unknown,
 // so a stale finding never shows up as waiting on you.
-export function useReviewList({ token, runs, ignored, login }) {
+export function useReviewList({ token, runs, chats = [], ignored, login }) {
   const raw = useMemo(() => reviewEntries(runs), [runs])
   const refs = useMemo(() => raw.map(entry => ({ repo: entry.item.repo, number: entry.item.number })), [raw])
   const refsKey = refs.map(ref => `${ref.repo}#${ref.number}`.toLowerCase()).sort().join('|')
@@ -25,8 +25,8 @@ export function useReviewList({ token, runs, ignored, login }) {
   return useMemo(() => {
     const done = live.answered === `${refsKey}@${attempt}`
     const entries = raw.map(entry => (done
-      ? { ...entry, ...classifyReview(entry, { login, ignored, runs, live: live.pulls.get(entry.id) }) }
+      ? { ...entry, ...classifyReview(entry, { login, ignored, runs, chats, live: live.pulls.get(entry.id) }) }
       : { ...entry, bucket: 'checking', chips: [] }))
     return { entries, counts: reviewCounts(entries), checking: entries.some(entry => entry.bucket === 'checking'), retry }
-  }, [raw, live, refsKey, attempt, login, ignored, runs, retry])
+  }, [raw, live, refsKey, attempt, login, ignored, runs, chats, retry])
 }

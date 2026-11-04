@@ -39,10 +39,11 @@ function bucketOf(decision) {
 }
 
 // Where one review's PR stands. `live` is that PR as GitHub returns it now
-// (PR_FIELDS); without it the PR is unknown. `runs` are all review runs.
-export function classifyReview(entry, { login = '', ignored = null, live = null, runs = [] } = {}) {
+// (PR_FIELDS); without it the PR is unknown. `runs` are all review runs and
+// `chats` the live Respond-to-feedback conversations.
+export function classifyReview(entry, { login = '', ignored = null, live = null, runs = [], chats = [] } = {}) {
   if (!live) return { bucket: 'unknown', confirm: false, chips: [chip('Couldn’t read', 'quiet')] }
-  const decision = standingFor({ pr: live, login, runs, ignored })
+  const decision = standingFor({ pr: live, login, runs, ignored, chats })
   const tone = GOOD.has(decision.state) ? 'good' : TONE[decision.turn]
   return { bucket: bucketOf(decision), confirm: ['to_confirm', 'unconfirmed'].includes(decision.state), chips: [chip(decision.label, tone)], decision }
 }

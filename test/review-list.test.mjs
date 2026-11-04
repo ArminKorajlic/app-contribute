@@ -17,6 +17,13 @@ const read = (review, pr = live(), login = 'owner') => {
 }
 const labels = result => result.chips.map(chip => chip.label)
 
+test('a live Respond conversation on a reviewed PR reads as an agent working on it', () => {
+  const entry = { run: run({ items: [item('all_clear')] }), item: item('all_clear') }
+  const chats = [{ repo: 'Mobius-OS/Mobius', number: 2019, state: 'running', chat_id: 'c2' }]
+  assert.equal(classifyReview(entry, { login: 'owner', live: live(), runs: [entry.run], chats }).bucket, 'running')
+  assert.notEqual(classifyReview(entry, { login: 'owner', live: live(), runs: [entry.run] }).bucket, 'running')
+})
+
 test('each PR appears once, with its newest review, newest first', () => {
   const runs = [
     run({ id: 'old', created_at: '2026-11-01T10:00:00Z', items: [item('all_clear'), item('all_clear', { number: 7 })] }),

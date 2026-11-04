@@ -3,7 +3,7 @@
 import { prFacts } from './pr-facts.js'
 import { decide } from './pr-machine.js'
 
-export const standingFor = ({ pr, login, runs = [], ignored = null }) => decide(prFacts({ pr, login, runs, ignored }))
+export const standingFor = ({ pr, login, runs = [], ignored = null, chats = [] }) => decide(prFacts({ pr, login, runs, ignored, chats }))
 
 // States that exist because of a Contribute review: they hold the amber frame.
 const REVIEW_MOVES = new Set(['to_confirm', 'unconfirmed', 'needs_answer', 'stalled', 'author.findings', 'reviewer.result_ready', 'reviewer.re_review'])
