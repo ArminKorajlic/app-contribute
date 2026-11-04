@@ -7,7 +7,7 @@ const review = (login, state, extra = {}) => ({ kind: 'review', user: { login },
 const failing = { commits: { nodes: [{ commit: { statusCheckRollup: { contexts: { totalCount: 2, checkRunCountsByState: [{ state: 'FAILURE', count: 1 }, { state: 'SUCCESS', count: 1 }], statusContextCountsByState: [] } } } }] } }
 
 test('a reviewer’s latest verdict decides whether changes are still requested', () => {
-  const asked = addressItems(pr, { activity: [review('miljanm', 'CHANGES_REQUESTED'), review('irfan', 'CHANGES_REQUESTED'), review('irfan', 'APPROVED')] })
+  const asked = addressItems(pr, { activity: [review('miljanm', 'CHANGES_REQUESTED'), review('sam', 'CHANGES_REQUESTED'), review('sam', 'APPROVED')] })
   assert.equal(asked.length, 1)
   assert.equal(asked[0].label, 'Changes requested by miljanm')
   assert.equal(asked[0].checked, true)
