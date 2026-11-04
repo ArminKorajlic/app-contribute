@@ -6,6 +6,7 @@
 import { fetchLiveStates } from './api.js'
 import { ignoredNote, reviewItemProgress } from './collaboration.js'
 import { ownerChipLabel } from './review-frame.js'
+import { prFlow } from './pr-flow.js'
 
 const FINISHED_EXECUTION = new Set(['completed', 'stopped', 'failed', 'interrupted'])
 const MAX_LIVE_READS = 40
@@ -55,7 +56,11 @@ export function classifyReview({ run, item }, { login = '', ignored = null, live
   }
   if (progress.turn === 'owner') {
     // Findings on a version the PR has left behind are old news.
-    return moved ? done(chip('Older version', 'quiet')) : { bucket: 'waiting', chips: [chip(ownerChipLabel(item), 'owner')] }
+    if (moved) return done(chip('Older version', 'quiet'))
+    // A draft only you can send is told apart from a review that simply waits on you. Only a PR
+    // known to be someone else's can wait for a confirmation (see pr-flow.js).
+    const flow = prFlow({ pr: { state: live?.state, author: { login: live?.author } }, own: own !== false, status: { run, item }, ignored })
+    return { bucket: 'waiting', confirm: flow.confirm, chips: [chip(flow.confirm ? flow.label : ownerChipLabel(item), 'owner')] }
   }
   if (progress.turn === 'author') {
     const requested = item.verdict_proposal?.state === 'posted' && item.verdict_proposal.event === 'REQUEST_CHANGES'
@@ -67,7 +72,7 @@ export function classifyReview({ run, item }, { login = '', ignored = null, live
 
 export function reviewCounts(entries) {
   const count = bucket => entries.filter(entry => entry.bucket === bucket).length
-  return { waiting: count('waiting'), running: count('running'), stalled: count('stalled'), done: count('done') }
+  return { waiting: count('waiting'), confirm: entries.filter(entry => entry.confirm).length, running: count('running'), stalled: count('stalled'), done: count('done') }
 }
 
 // One read of the live state of the PRs a review could still be waiting on.

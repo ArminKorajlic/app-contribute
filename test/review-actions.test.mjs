@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { IGNORE_REASONS, postableFindings, reviewActionPlan } from '../review-actions.js'
+import { IGNORE_REASONS, postableFindings, reviewActionPlan, reviewStoppable } from '../review-actions.js'
+import { reviewItemProgress } from '../collaboration.js'
 
 const keys = plan => plan.map(action => action.key)
 const everything = { retry: true, fix: true, ignore: true, again: true }
@@ -29,6 +30,24 @@ test('only a review that is working or waiting on an answer can be stopped', () 
   for (const tone of ['findings', 'clear', 'waiting', 'ignored', 'settled', 'verdict']) {
     assert.ok(!keys(reviewActionPlan({ tone, own: true, chat: true, stoppable: false, can: everything })).includes('stop'), tone)
   }
+})
+
+const stoppable = (item, run, tone) => reviewStoppable({ run, tone, progress: reviewItemProgress(run, item) })
+const live = { state: 'running', can_stop: true, execution_state: 'running' }
+
+test('a running review stays stoppable after its own turn ends, because a helper may be the one that hung', () => {
+  const reviewing = { state: 'reviewing' }
+  assert.equal(stoppable(reviewing, live, 'running'), true)
+  assert.equal(stoppable(reviewing, { ...live, execution_state: 'completed' }, 'running'), true, 'the turn handed the work to a helper and ended')
+})
+
+test('a finished review has nothing to stop, and neither does one that already halted or cannot be stopped from here', () => {
+  const done = { ...live, execution_state: 'completed' }
+  assert.equal(stoppable({ state: 'needs_you' }, done, 'findings'), false, 'findings are an outcome, not work in progress')
+  assert.equal(stoppable({ state: 'all_clear' }, { ...done, state: 'complete' }, 'clear'), false)
+  assert.equal(stoppable({ state: 'reviewing' }, { ...live, execution_state: 'stopped' }, 'halted'), false)
+  assert.equal(stoppable({ state: 'reviewing' }, { ...live, can_stop: false }, 'running'), false)
+  assert.equal(stoppable({ state: 'needs_you' }, { ...live, execution_state: 'awaiting_owner' }, 'needs'), true, 'a question the conversation is waiting on can still be stopped')
 })
 
 test('"answer" is for a conversation that really asked something', () => {
@@ -63,12 +82,11 @@ test('the ignore sheet has one close control: its header tile is not another X',
   assert.doesNotMatch(html, />Cancel</)
 })
 
-test('findings can be posted: first on someone else\'s PR, after the fix on your own', () => {
+test('findings can be posted on someone else\'s PR, never on your own: there you fix them or set them aside', () => {
   const can = { ...everything, post: true }
   const own = reviewActionPlan({ tone: 'findings', own: true, chat: true, can })
-  assert.deepEqual(keys(own), ['fix', 'post', 'ignore', 'again', 'ask'])
+  assert.deepEqual(keys(own), ['fix', 'ignore', 'again', 'ask'], 'no review of your own PR is ever posted')
   assert.equal(own.find(action => action.key === 'fix').primary, true)
-  assert.equal(own.find(action => action.key === 'post').primary, undefined, 'on your own PR the fix stays the one next step')
   const others = reviewActionPlan({ tone: 'findings', own: false, chat: true, can })
   assert.deepEqual(keys(others), ['post', 'ignore', 'again', 'ask'])
   assert.equal(others[0].primary, true)

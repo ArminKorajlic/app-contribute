@@ -54,6 +54,25 @@ function groupByProject(entries, projects) {
     .filter(group => group.rows.length)
 }
 
+// Reviews an agent has drafted and only the owner can send. Agents never post, approve
+// or ask for changes by themselves, so this is the one place they all wait.
+const CONFIRM_EMPTY = { title: 'Nothing is waiting for your confirmation', hint: 'When an agent drafts a review for you to post, it waits here. Agents never post on their own: nothing reaches GitHub until you confirm it.' }
+
+export function ConfirmView({ reviews, projects, query, onOpenProject, onOpenPull }) {
+  const shown = reviews.entries.filter(entry => entry.confirm && matches(query, entry.item.title, String(entry.item.number), entry.item.repo))
+  const groups = groupByProject(shown, projects)
+  if (!groups.length) return reviews.checking
+    ? <p className="co-pr-note" role="status">Checking which of these pull requests are still open…</p>
+    : <EmptyView icon="send" title={query.trim() ? 'Nothing matches your search' : CONFIRM_EMPTY.title} hint={query.trim() ? 'Try a PR number, a title word or a repository.' : CONFIRM_EMPTY.hint} />
+  return <>
+    <p className="co-pr-note">Each one is drafted and ready. Open it to read exactly what would be posted, then confirm or discard it.</p>
+    <div className="co-desk-envelopes">{groups.map(({ project, rows }) => (
+      <Envelope key={project.key} project={project} count={rows.length} foldable={rows.length > 1} onOpenProject={onOpenProject}>
+        <ProjectRows rows={rows} project={project} onOpenPull={onOpenPull} />
+      </Envelope>))}</div>
+  </>
+}
+
 // PR reviews: the reviews the owner started, by project, in two tabs. A review
 // waiting on the owner stays in In progress until it is dealt with.
 export function ReviewsView({ reviews, projects, query, onOpenProject, onOpenPull }) {

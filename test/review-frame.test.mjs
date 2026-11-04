@@ -57,12 +57,12 @@ test('the desk polls only while a review is working, and finds a saved record\'s
   assert.equal(reviewForRecord([working], {}), null)
 })
 
-const pull = { number: 7, author: { login: 'IrfanCodecta' }, baseRefName: 'main' }
+const pull = { number: 7, author: { login: 'someone-else' }, baseRefName: 'main' }
 const requestedChanges = { run: { state: 'complete', execution_state: 'completed', chat_id: 'c' }, item: { state: 'needs_you', head_sha: 'a', verdict_proposal: { state: 'posted', event: 'REQUEST_CHANGES' } }, exactBase: true }
 
 test('after you request changes the row goes quiet and names who holds the move', () => {
   assert.equal(frameState(requestedChanges), 'idle', 'no amber frame once your verdict is out')
-  assert.deepEqual(rowReview({ status: requestedChanges, pr: pull, own: false }), { frame: 'idle', chip: { label: 'Waiting on IrfanCodecta', tone: 'waiting' } })
+  assert.deepEqual(rowReview({ status: requestedChanges, pr: pull, own: false }), { frame: 'idle', chip: { label: 'Waiting on someone-else', tone: 'waiting' } })
   assert.equal(rowReview({ status: requestedChanges, pr: { ...pull, author: null }, own: false }).chip.label, 'Waiting on the author')
 })
 

@@ -113,7 +113,9 @@ export function ReviewPromptPreview({ token, appId, choice, onResolved, onUnsupp
       if(!choice.preview_sha256) {
         const caps=data.capabilities||{}
         if(caps.post_review !== true || (choice.mode==='review_merge' && caps.post_review_merge !== true)) { delete options.post_review; delete options.propose_verdict }
+        // Posting is always a drafted verdict you confirm, never a comment on its own.
         if(caps.propose_verdict !== true) delete options.propose_verdict
+        if(options.propose_verdict !== true) delete options.post_review
       }
       const agent=workflowAgent(choice.agent)
       const preview=await previewWorkflow(token,appId,options,agent,choice.mode)

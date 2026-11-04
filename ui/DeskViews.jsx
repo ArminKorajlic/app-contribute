@@ -12,7 +12,7 @@ import { groupNote, lookAtReason } from './AttentionList.jsx'
 import { ChecksBadge, PullStateIcon, QuietLabels, TimeAgo } from './GithubParts.jsx'
 import { Icon } from './Icons.jsx'
 import { Envelope, EmptyView } from './Envelope.jsx'
-import { ReviewsView } from './ReviewsView.jsx'
+import { ConfirmView, ReviewsView } from './ReviewsView.jsx'
 
 const matches = (query, ...parts) => !query.trim()
   || parts.filter(Boolean).join(' ').toLowerCase().includes(query.trim().toLowerCase())
@@ -175,6 +175,7 @@ const EMPTY = {
 
 // The selected side view: one card per app, in the projects list's own order.
 export function DeskView({ view, projects, records, login, decisionsFor, lastLooked, query, runs = [], ignored = null, reviews = null, onOpenProject, onOpenPull, onOpenRecord }) {
+  if (view === 'confirm' && reviews) return <ConfirmView reviews={reviews} projects={projects} query={query} onOpenProject={onOpenProject} onOpenPull={onOpenPull} />
   if (view === 'reviews' && reviews) return <ReviewsView reviews={reviews} projects={projects} query={query} onOpenProject={onOpenProject} onOpenPull={onOpenPull} />
   const context = { login, decisionsFor, lastLooked, query, runs, ignored, onOpenPull, onOpenRecord }
   const envelopes = []

@@ -11,7 +11,7 @@ export function projectRailCount(project, attention) {
 
 // Only these views are things waiting on the owner; the rest are information
 // and show a quiet number, so a badge always means "do something".
-const WAITING_ON_YOU = ['needs', 'requests', 'work', 'reviews']
+const WAITING_ON_YOU = ['needs', 'confirm', 'requests', 'work', 'reviews']
 
 function RailViewButton({ view, current, counts, onView }) {
   const badge = railBadge(view.key, counts)

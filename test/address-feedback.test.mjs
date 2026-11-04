@@ -107,7 +107,7 @@ test('the findings your own review saved are what you fix on your own PR, even t
   assert.equal(items[0].detail, 'Saved at abcdef1 · posted on GitHub')
   assert.equal(items[0].checked, true)
   // On someone else's PR the owner's posted copy would list twice; the url match removes it.
-  const elsewhere = addressItems({ ...pr, author: { login: 'irfan' } }, { activity: [{ ...posted, user: { login: 'owner' } }], findings })
+  const elsewhere = addressItems({ ...pr, author: { login: 'someone-else' } }, { activity: [{ ...posted, user: { login: 'owner' } }], findings })
   assert.deepEqual(elsewhere.map(item => item.key), ['findings'])
 })
 

@@ -8,7 +8,7 @@ const item = (state, extra = {}) => ({ repo: 'mobius-os/mobius', number: 2019, h
 const asked = { state: 'posted', event: 'REQUEST_CHANGES' }
 const read = (review, options) => classifyReview({ run: review.run || run(), item: review.item || review }, options)
 const labels = result => result.chips.map(chip => chip.label)
-const open = (extra = {}) => ({ state: 'OPEN', head: 'a'.repeat(40), author: 'IrfanCodecta', ...extra })
+const open = (extra = {}) => ({ state: 'OPEN', head: 'a'.repeat(40), author: 'someone-else', ...extra })
 
 test('each PR appears once, with its newest review, newest first', () => {
   const runs = [
@@ -23,18 +23,18 @@ test('each PR appears once, with its newest review, newest first', () => {
 
 test('a request for changes is the author\'s move, until the PR is pushed again', () => {
   const requested = item('needs_you', { verdict_proposal: asked })
-  const waiting = read(requested, { login: 'ArminKorajlic', live: open() })
+  const waiting = read(requested, { login: 'owner-login', live: open() })
   assert.equal(waiting.bucket, 'done')
-  assert.deepEqual(labels(waiting), ['Changes requested', 'Waiting on IrfanCodecta'])
-  const pushed = read(requested, { login: 'ArminKorajlic', live: open({ head: 'b'.repeat(40) }) })
+  assert.deepEqual(labels(waiting), ['Changes requested', 'Waiting on someone-else'])
+  const pushed = read(requested, { login: 'owner-login', live: open({ head: 'b'.repeat(40) }) })
   assert.deepEqual([pushed.bucket, labels(pushed)], ['waiting', ['New commits · review again']])
 })
 
 test('what waits on you stays in progress: a verdict, a finding on your own PR, a question', () => {
   assert.deepEqual([read(item('verdict_pending')).bucket, labels(read(item('verdict_pending')))], ['waiting', ['Verdict waiting']])
   const posted = item('needs_you', { public_review: { state: 'posted' } })
-  assert.deepEqual(labels(read(posted, { login: 'armin', live: open({ author: 'Armin' }) })), ['Needs you'], 'your own PR: the fixing is yours')
-  assert.equal(read(posted, { login: 'armin', live: open({ author: 'Irfan' }) }).bucket, 'done', 'someone else\'s PR: your posted review is out')
+  assert.deepEqual(labels(read(posted, { login: 'owner', live: open({ author: 'Owner' }) })), ['Needs you'], 'your own PR: the fixing is yours')
+  assert.equal(read(posted, { login: 'owner', live: open({ author: 'Someone-else' }) }).bucket, 'done', 'someone else\'s PR: your posted review is out')
   const question = read({ run: run({ state: 'running', execution_state: 'awaiting_owner' }), item: item('needs_you') })
   assert.equal(question.bucket, 'waiting')
 })
@@ -68,19 +68,19 @@ test('only reviews that could still wait on someone need the PR read live; count
   assert.equal(needsLiveRead({ item: item('all_clear') }), false)
   assert.equal(needsLiveRead({ item: item('merged') }), false)
   assert.equal(needsLiveRead({ item: item('needs_you') }), true)
-  assert.deepEqual(reviewCounts([{ bucket: 'waiting' }, { bucket: 'waiting' }, { bucket: 'running' }, { bucket: 'done' }, { bucket: 'checking' }]), { waiting: 2, running: 1, stalled: 0, done: 1 })
+  assert.deepEqual(reviewCounts([{ bucket: 'waiting' }, { bucket: 'waiting' }, { bucket: 'running' }, { bucket: 'done' }, { bucket: 'checking' }]), { waiting: 2, confirm: 0, running: 1, stalled: 0, done: 1 })
 })
 
 test('the live read is one query for valid PRs only, and answers by PR', async () => {
   const sent = []
   const previous = globalThis.fetch
-  globalThis.fetch = async (url, options) => { sent.push(JSON.parse(options.body).query); return { ok: true, json: async () => ({ data: { p0: { pullRequest: { state: 'OPEN', headRefOid: 'a1', author: { login: 'IrfanCodecta' } } }, p1: { pullRequest: null } } }) } }
+  globalThis.fetch = async (url, options) => { sent.push(JSON.parse(options.body).query); return { ok: true, json: async () => ({ data: { p0: { pullRequest: { state: 'OPEN', headRefOid: 'a1', author: { login: 'someone-else' } } }, p1: { pullRequest: null } } }) } }
   try {
     const live = await loadReviewPulls('token', [{ repo: 'mobius-os/mobius', number: 2019 }, { repo: 'o/gone', number: 4 }, { repo: 'not a repo', number: 1 }, { repo: 'o/r', number: -3 }])
     assert.equal(sent.length, 1, 'one request for the whole set')
     assert.match(sent[0], /p0:repository\(owner:"mobius-os",name:"mobius"\)/)
     assert.doesNotMatch(sent[0], /not a repo|number:-3/)
-    assert.deepEqual([...live], [['mobius-os/mobius#2019', { state: 'OPEN', head: 'a1', author: 'IrfanCodecta' }]])
+    assert.deepEqual([...live], [['mobius-os/mobius#2019', { state: 'OPEN', head: 'a1', author: 'someone-else' }]])
     assert.equal((await loadReviewPulls('token', [])).size, 0)
     globalThis.fetch = async () => ({ ok: false })
     await assert.rejects(() => loadReviewPulls('token', [{ repo: 'o/r', number: 1 }]), /Could not read/)
@@ -114,7 +114,7 @@ const projects = [
 ]
 const row = (number, repo, bucket, chips, extra = {}) => ({ id: reviewKey(repo, number), at: 1, bucket, chips, run: { created_at: '2026-11-03T22:00:00Z' }, item: { repo, number, title: `Review of ${number}`, ...extra } })
 const reviews = (entries, checking = false) => ({ entries, checking, counts: reviewCounts(entries) })
-const base = { view: 'reviews', projects, records: [], login: 'armin', decisionsFor: () => [], lastLooked: '', query: '', runs: [], onOpenProject() {}, onOpenPull() {} }
+const base = { view: 'reviews', projects, records: [], login: 'owner', decisionsFor: () => [], lastLooked: '', query: '', runs: [], onOpenProject() {}, onOpenPull() {} }
 
 test('PR reviews groups what is still going by project, with what waits on you first, and keeps Done on its own tab', async t => {
   if (!frontendModules) return t.skip('MOBIUS_FRONTEND_NODE_MODULES is required')

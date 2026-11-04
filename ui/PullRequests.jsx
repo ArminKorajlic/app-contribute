@@ -435,33 +435,29 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
     }
     finally { setBusy(false) }
   }
-  async function stopRun(run) {
-    if (busy) return
+  // One owner action on a run: ask the platform, then show the run it returns
+  // instead of any older read. Null when it failed (the error is shown).
+  async function runAction(run, action, body = {}) {
+    if (busy) return null
     setBusy(true); setRunError('')
-    runsEpoch.current++ // reads issued before Stop cannot land after it
+    runsEpoch.current++ // reads issued before the action cannot land after it
     try {
-      const result=await collaborationRequest(token,appId,`review-runs/${encodeURIComponent(run.id)}/stop`,{})
+      const result = await collaborationRequest(token, appId, `review-runs/${encodeURIComponent(run.id)}/${action}`, body)
       runsEpoch.current++
       if (linkedRef.current?.id === run.id) setLinked(result.run)
-      setRuns(old=>old.map(item=>item.id===run.id ? result.run : item))
-    } catch(error) {setRunError(error.message)}
-    finally {setBusy(false)}
+      setRuns(old => old.map(item => item.id === run.id ? result.run : item))
+      return result
+    } catch (error) { setRunError(error.message); return null }
+    finally { setBusy(false) }
   }
+  const stopRun = run => runAction(run, 'stop')
+  // Read-only: asks GitHub again whether a public action it never confirmed is there.
+  const checkRun = run => runAction(run, 'observe')
   // The owner's own submit or discard of one proposed verdict. The server
   // posts exactly the saved proposal, once; an agent can never do this.
   async function decideVerdict(run, item, proposal, decision) {
-    if (busy) return
-    setBusy(true); setRunError('')
-    runsEpoch.current++
-    try {
-      const result = await collaborationRequest(token, appId, `review-runs/${encodeURIComponent(run.id)}/verdict`,
-        { repo: item.repo, number: item.number, head_sha: item.head_sha, proposal_id: proposal.id, decision })
-      runsEpoch.current++
-      if (linkedRef.current?.id === run.id) setLinked(result.run)
-      setRuns(old => old.map(entry => entry.id === run.id ? result.run : entry))
-      if (result.merge_resumed === false) setRunError('Approved on GitHub. Open the review conversation and ask it to continue to the merge.')
-    } catch (error) { setRunError(error.message) }
-    finally { setBusy(false) }
+    const result = await runAction(run, 'verdict', { repo: item.repo, number: item.number, head_sha: item.head_sha, proposal_id: proposal.id, decision })
+    if (result?.merge_resumed === false) setRunError('Approved on GitHub. Open the review conversation and ask it to continue to the merge.')
   }
   function toggle(pr) {
     setSelected(old => { const next = new Set(old); const key = prKey(pr); next.has(key) ? next.delete(key) : next.add(key); return next })
@@ -489,15 +485,16 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
       onStop: run ? () => stopRun(run) : undefined,
       onRetry: run ? () => choose(retryPulls(run), run.mode === 'review_merge' ? 'review' : run.mode, runAnchor(run)) : undefined,
       onVerdict: run ? (item, proposal, decision) => decideVerdict(run, item, proposal, decision) : undefined,
+      onCheck: run && !runDetailsElsewhere(run) ? () => checkRun(run) : undefined,
     }
   }
   const runPane = run => <TaskPane key={run.id} dock={false} id={`task:run:${run.id}`}>
       <RunDetail run={run} pulls={pulls} listState={data} busy={busy} error={runError}
-        onStop={() => stopRun(run)} onVerdict={(item, proposal, decision) => decideVerdict(run, item, proposal, decision)} retryPulls={retryPulls(run)} onRetry={retry => choose(retry, run.mode === 'review_merge' ? 'review' : run.mode, runAnchor(run))}
+        onStop={() => stopRun(run)} onVerdict={(item, proposal, decision) => decideVerdict(run, item, proposal, decision)} onCheck={() => checkRun(run)} retryPulls={retryPulls(run)} onRetry={retry => choose(retry, run.mode === 'review_merge' ? 'review' : run.mode, runAnchor(run))}
         updater={projectUpdater(project)} />
     </TaskPane>
   const closeReview = () => { setChoice(null); task?.close() }
-  const reviewDialog = task?.activeId === 'task:review' && choice ? <ReviewDialog onClose={closeReview}><ReviewConfirmation appId={appId} token={token} bindCurrentTarget onResolved={value => { setResolved(value); if (value?.capabilities) setCapabilities(value.capabilities) }} disabled={!resolved} onOptionsChange={options => { setResolved(null); setChoice(old => ({ ...old, options, request_id:crypto.randomUUID() })) }} onAgentChange={agent => { setResolved(null); setChoice(old => ({ ...old, agent, request_id:crypto.randomUUID() })) }} choice={choice} busy={busy} error={error} onConfirm={start} onCancel={closeReview} onModeChange={mode => { setError(''); setResolved(null); setChoice(old => ({ ...old, mode, confirmation_scope: undefined, ...scopeFor(mode, old.pulls), request_id: crypto.randomUUID() })) }} capabilities={capabilities} /></ReviewDialog> : null
+  const reviewDialog = task?.activeId === 'task:review' && choice ? <ReviewDialog onClose={closeReview}><ReviewConfirmation appId={appId} token={token} ownLogin={conn.login} bindCurrentTarget onResolved={value => { setResolved(value); if (value?.capabilities) setCapabilities(value.capabilities) }} disabled={!resolved} onOptionsChange={options => { setResolved(null); setChoice(old => ({ ...old, options, request_id:crypto.randomUUID() })) }} onAgentChange={agent => { setResolved(null); setChoice(old => ({ ...old, agent, request_id:crypto.randomUUID() })) }} choice={choice} busy={busy} error={error} onConfirm={start} onCancel={closeReview} onModeChange={mode => { setError(''); setResolved(null); setChoice(old => ({ ...old, mode, confirmation_scope: undefined, ...scopeFor(mode, old.pulls), request_id: crypto.randomUUID() })) }} capabilities={capabilities} /></ReviewDialog> : null
   const addressDialog = addressing && onStartAgent ? <ReviewDialog onClose={() => setAddressing(null)}><AddressFeedbackWindow pr={addressing.pr} findings={addressing.findings} token={token} appId={appId} onStart={onStartAgent} onClose={() => setAddressing(null)} /></ReviewDialog> : null
   const closeIgnore = () => setIgnoring(null)
   // A posted review changes what the run shows (a link to it, and whose turn it is), so the runs are read again.

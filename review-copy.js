@@ -102,18 +102,11 @@ export function reviewWindowCopy({ mode, intent = '', posting = false, verdict =
   }
 }
 
-// The hints under the Review only switches, per selected PR for a batch.
+// The hint under the Merge when safe switch, per selected PR for a batch.
 export function reviewSwitchHints(count = 1) {
-  if (count === 1) return {
-    posting: 'One comment from your account, only for a verdict the agent is sure about. Questions to you stay private.',
-    verdict: 'Instead of a comment, it proposes approve or request changes with its wording. You submit or discard it here. On your own PR it comments instead.',
-    merge: 'Merges or queues the PR after a clean review and passing checks. It does not change any code.',
-  }
-  return {
-    posting: 'Up to one comment per PR from your account, only for a verdict the agent is sure about. Questions to you stay private.',
-    verdict: 'Instead of comments, it proposes approve or request changes for each PR with its wording. You submit or discard each one here. On your own PRs it comments instead.',
-    merge: 'Merges or queues each PR after a clean review and passing checks. It does not change any code.',
-  }
+  return { merge: count === 1
+    ? 'Merges or queues the PR after a clean review and passing checks. It does not change any code.'
+    : 'Merges or queues each PR after a clean review and passing checks. It does not change any code.' }
 }
 
 // Why "Merge when safe" cannot be switched on right now, or '' when it can.
@@ -133,7 +126,7 @@ export function verdictCopy(proposal, mode) {
     proposed: `Proposed verdict: ${action}. Nothing is on GitHub yet.`,
     posting: `Submitting ${action.toLowerCase()} on GitHub…`,
     posted: `${action} submitted on GitHub.`,
-    unknown: 'GitHub did not confirm the verdict. Check the PR on GitHub; nothing will be sent again.',
+    unknown: 'GitHub did not confirm the verdict. Contribute keeps checking, and nothing will be sent again. If GitHub shows nothing an hour after you submitted, it is dropped.',
     not_dispatched: proposal?.summary || 'The verdict was not sent.',
     discarded: mode === 'review_merge' ? 'You discarded the verdict. Nothing was posted or merged.' : 'You discarded the verdict. Nothing was posted.',
   }

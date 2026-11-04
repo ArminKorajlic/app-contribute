@@ -11,6 +11,14 @@ export const IGNORE_REASONS = ['Not a problem', 'I’ll do it later', 'Already f
 // Findings can be posted while nothing of theirs is on GitHub (or an attempt certainly did not go out).
 export const postableFindings = item => !item?.public_review || item.public_review.state === 'not_dispatched'
 
+// Stop is for a review that is still going or waiting on an answer. A running
+// review keeps its Stop after its own turn has ended: it hands the work to a
+// helper and sleeps until the helper reports, so a helper that hangs leaves it
+// running with no open turn to read. `progress` is reviewItemProgress's answer.
+export const reviewStoppable = ({ run, tone, progress }) =>
+  !!run.can_stop && run.state !== 'complete' && !progress.halted && !progress.settled &&
+  (tone === 'running' || run.execution_state !== 'completed')
+
 const primary = action => ({ ...action, primary: true })
 const quiet = action => ({ ...action, quiet: true })
 
@@ -30,8 +38,9 @@ export function reviewActionPlan({ tone, own = false, chat = false, asked = fals
     case 'changes':
       return [
         ...(own && can.fix ? [primary({ key: 'fix', label: 'Fix these findings' })] : []),
-        // On someone else's PR the next step is saying what you found; on your own it comes after the fix.
-        ...(can.post ? [own ? { key: 'post', label: 'Post to GitHub' } : primary({ key: 'post', label: 'Post to GitHub' })] : []),
+        // On someone else's PR the next step is saying what you found. On your own PR nothing is ever
+        // posted as a review of yourself (pr-flow.js rule 1): you fix it or set it aside.
+        ...(can.post && !own ? [primary({ key: 'post', label: 'Post to GitHub' })] : []),
         ...(can.ignore ? [{ key: 'ignore', label: 'Ignore…' }] : []),
         ...(can.again ? [{ key: 'again', label: 'Review again' }] : []),
         ...ask('Ask the reviewer something'),

@@ -220,7 +220,7 @@ export const reviewRunHalted = run => run.state !== 'complete' && HALTED_RUNS.ha
 // Public outcomes a run saved before GitHub settled them. The server's observe
 // step is read-only reconciliation, so the view settles them itself: a queued
 // PR reads as merged even while its conversation waits on the owner or stopped.
-const UNSETTLED = new Set(['queued', 'merging', 'merge_unknown', 'pushing', 'push_unknown', 'marking_ready', 'ready_unknown'])
+const UNSETTLED = new Set(['queued', 'merging', 'merge_unknown', 'pushing', 'push_unknown', 'marking_ready', 'ready_unknown', 'verdict_posting', 'verdict_unknown'])
 export const awaitsGithub = run => run.state !== 'complete' && (run.items || []).some(item => UNSETTLED.has(item.state))
 export const OBSERVE_EVERY_MS = 60000
 const observedAt = new Map()

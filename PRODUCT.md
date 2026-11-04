@@ -181,3 +181,47 @@ the owner, and folds apps with nothing to do.
   anything stuck) and **Done**. The PRs a review could still wait on are read
   live once, so a closed PR is history, a pushed PR comes back as new commits,
   and a stale finding is never counted as waiting on the owner.
+
+## The PR flow: roles, turns and hard rules (owner direction, 2026-11-04)
+
+`pr-flow.js` is the single source for who you are on a PR, where it stands, whose
+move it is and what you may do. Screens ask it; they do not work it out again.
+`test/pr-flow.test.mjs` walks every role and state and fails if a rule breaks.
+
+**Two roles.** *Author*: you wrote the PR (or an agent of yours opened it). *Reviewer*:
+someone else wrote it.
+
+**Hard rules.**
+
+1. You never review your own PR in public. No approve, no request changes, no
+   suggestions addressed to yourself. An agent's check of your PR is private. The
+   server enforces this too: a run on your own PR keeps its result private whatever
+   the grant says (`routes/contribution_reviews.py`, `own_pull`).
+2. On your own PR you check it, fix it, update the PR and its description, explain why
+   you did something, answer every reviewer (fixed, not valid with the reason and an
+   @mention, or out of scope) and merge it once someone else approved at the current
+   version with green checks.
+3. On someone else's PR you review it, request changes or approve, and review again
+   after they respond. You do not change their branch unless you deliberately take it over.
+4. An agent never posts, approves, requests changes or merges by itself. It drafts;
+   only your tap sends it. Everything drafted waits under **To confirm** in the side
+   menu (its page reads **Waiting for your confirmation**), with the exact words it
+   would post.
+5. A verdict belongs to one exact version. A new push makes it old, and the PR is back
+   on your list as "Changed since your review".
+6. Whose move it is comes from what already happened, never from a guess.
+
+**States (turn in brackets).** Your PR: Draft (you) · Checking (agent) · Findings to deal
+with (you) · Check did not finish (you) · Feedback to answer (you) · Waiting on reviewers
+(others) · Approved (you: merge). Their PR: To review (you) · Reviewing (agent) · Review
+ready (you: send or set aside) · Waiting for your confirmation (you: confirm or discard)
+· Waiting on the author (author) · Changed since your review (you) · Reviewed (nobody).
+Merged and Closed end every flow.
+
+**What an agent can be asked.** Review: both roles (private on your own PR). Address
+feedback: your own PR only. Review and merge: someone else's PR only. Hand it over (fix
+and merge): both, and on someone else's PR it is a deliberate takeover.
+
+Not wired to `pr-flow.js` yet, by design of the staging: the PR row chips, the Review tab
+words and the menu's visibility of the owner's own actions still use their older
+derivations; they move onto it when the menus are sorted.

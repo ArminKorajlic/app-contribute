@@ -5,6 +5,7 @@
 // saying why.
 import { checkSummary, conversationCount, mayMerge, takeoverBlocker } from './collaboration.js'
 import { isPersonalDraft } from './domain.js'
+import { intentBlocker } from './pr-flow.js'
 
 // The agent jobs in their fixed order. `intent` is what the review window opens
 // with (reviewIntent in collaboration.js).
@@ -14,6 +15,9 @@ export const AGENT_JOBS = [
   { intent: 'merge', icon: 'merge', title: 'Review and merge', detail: 'Reviews it, then merges if approved and green.' },
   { intent: 'review_fix_merge', icon: 'fix', title: 'Hand it over', detail: 'Reviews, fixes what it finds, merges when clean.' },
 ]
+
+// On your own PR an agent's review is a private check of your work: it never posts anything.
+const OWN_DETAILS = { review: 'Checks your PR privately. Nothing is posted.' }
 
 // The agent jobs this build can open. Address feedback joins when its window exists.
 export const OPENABLE_JOBS = ['review', 'address', 'merge', 'review_fix_merge']
@@ -123,9 +127,13 @@ export function actionsMenuModel(pulls, { offered = OPENABLE_JOBS, record = null
     // which the window checks; the menu only knows rights and a deleted fork.
     review_fix_merge: () => (list.length ? takeoverBlocker(list, { allowDraft: true }) : ''),
   }
+  // Who you are on the PR decides what an agent may do for you (pr-flow.js). A batch mixes
+  // roles, so only a single PR is judged here; the server keeps your own PRs private either way.
+  const role = own ? 'author' : 'reviewer'
   const agent = AGENT_JOBS.filter(job => offered.includes(job.intent)).map(job => {
-    const reason = reasonFor[job.intent]?.() || ''
-    return { ...job, rec: job.intent === recommended && !reason, off: !!reason, reason }
+    const reason = (one ? intentBlocker(role, job.intent) : '') || reasonFor[job.intent]?.() || ''
+    const detail = one && own ? OWN_DETAILS[job.intent] || job.detail : job.detail
+    return { ...job, detail, rec: job.intent === recommended && !reason, off: !!reason, reason }
   })
   const marked = you.map(item => ({ ...item, rec: item.intent === recommended && !item.off }))
   // The choice a PR needs comes first inside its group.

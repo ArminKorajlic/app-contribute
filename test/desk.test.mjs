@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  DESK_VIEWS,
   authoredPullState,
   authoredPulls,
   chainPulls,
@@ -158,4 +159,12 @@ test('a project number is what its Needs you card lists: requests, feedback card
   // 1 request + 1 feedback card (#1) + #2 (needs a fix); #1 is covered and #3 is just waiting.
   assert.equal(projectNeedsCount(project, decisions, 'owner'), 3)
   assert.equal(projectNeedsCount({ incomingReviews: [] }, [], 'owner'), 0)
+})
+
+test('To confirm is on the rail, and its page says Waiting for your confirmation', () => {
+  const view = DESK_VIEWS.find(item => item.key === 'confirm')
+  assert.equal(view.label, 'To confirm')
+  assert.equal(view.heading, 'Waiting for your confirmation')
+  assert.equal(railBadge('confirm', { reviewsConfirm: 2 }), 2)
+  assert.equal(railBadge('confirm', {}), 0)
 })

@@ -12,6 +12,8 @@ import {
 
 export const DESK_VIEWS = [
   { key: 'needs', label: 'Needs you', icon: 'review' },
+  // The rail is narrow, so it says To confirm; the page says the whole thing.
+  { key: 'confirm', label: 'To confirm', heading: 'Waiting for your confirmation', icon: 'send' },
   { key: 'requests', label: 'Review requests', icon: 'feedback' },
   { key: 'mine', label: 'My PRs', icon: 'github' },
   { key: 'work', label: 'My work', icon: 'prepare' },
@@ -130,6 +132,7 @@ export function deskCounts({ projects = [], decisions = [], incoming = [], recor
     // Reviews you started: waiting on you (the badge) and agents still at work (a spinner).
     reviewsWaiting: reviews?.waiting || 0,
     reviewsRunning: reviews?.running || 0,
+    reviewsConfirm: reviews?.confirm || 0,
   }
 }
 
@@ -142,6 +145,7 @@ export function railBadge(view, counts) {
     case 'mine': return counts.mine
     case 'work': return counts.work
     case 'reviews': return counts.reviewsWaiting || 0
+    case 'confirm': return counts.reviewsConfirm || 0
     case 'edits': return counts.editedFiles
     case 'merged': return counts.merged
     default: return 0

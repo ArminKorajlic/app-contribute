@@ -17,9 +17,11 @@ test('the menu names the jobs and offers only those this build can open', () => 
 
 test('changes requested puts Address feedback first and dims Review and merge with the reason', () => {
   const all = ['review', 'address', 'merge', 'review_fix_merge']
-  const model = actionsMenuModel([pull({ reviewDecision: 'CHANGES_REQUESTED', comments: { totalCount: 1 }, reviews: { totalCount: 2 } })], { offered: all })
+  const model = actionsMenuModel([pull({ reviewDecision: 'CHANGES_REQUESTED', comments: { totalCount: 1 }, reviews: { totalCount: 2 } })], { offered: all, own: true })
   assert.deepEqual(summary(model), ['address:rec', 'review:ok', 'merge:off', 'review_fix_merge:ok'])
-  assert.equal(model.agent.find(item => item.intent === 'merge').reason, 'Changes are requested.')
+  assert.match(model.agent.find(item => item.intent === 'merge').reason, /cannot approve your own PR/)
+  const theirs = actionsMenuModel([pull({ reviewDecision: 'CHANGES_REQUESTED', comments: { totalCount: 1 }, reviews: { totalCount: 2 } })], { offered: all })
+  assert.equal(theirs.agent.find(item => item.intent === 'merge').reason, 'Changes are requested.')
   assert.deepEqual(model.header, { label: '#120', text: 'changes requested' })
 })
 
@@ -32,18 +34,18 @@ test('approved and green puts Review and merge first', () => {
 
 test('a draft with no reviews starts with Review and cannot be merged yet', () => {
   const all = ['review', 'address', 'merge', 'review_fix_merge']
-  const model = actionsMenuModel([pull({ isDraft: true })], { offered: all })
+  const model = actionsMenuModel([pull({ isDraft: true })], { offered: all, own: true })
   assert.deepEqual(summary(model), ['review:rec', 'address:off', 'merge:off', 'review_fix_merge:ok'])
+  assert.equal(model.agent.find(item => item.intent === 'merge').reason, 'You cannot approve your own PR. Someone else approves it, then you merge it.')
   assert.equal(model.agent.find(item => item.intent === 'address').reason, 'No feedback yet.')
-  assert.equal(model.agent.find(item => item.intent === 'merge').reason, 'Mark it ready for review first.')
   assert.equal(model.header.text, 'draft · no reviews')
 })
 
 test('failing checks and conflicts count as feedback, and block a merge', () => {
-  const failing = actionsMenuModel([pull({ ...checks('FAILURE', 1) })], { offered: ['review', 'address', 'merge'] })
+  const failing = actionsMenuModel([pull({ ...checks('FAILURE', 1) })], { offered: ['review', 'address', 'merge'], own: true })
   assert.equal(failing.agent[0].intent, 'address')
-  assert.equal(failing.agent.find(item => item.intent === 'merge').reason, 'Checks are failing.')
   assert.match(failing.header.text, /1 failing check/)
+  assert.equal(actionsMenuModel([pull({ ...checks('FAILURE', 1) })], { offered: ['merge'] }).agent[0].reason, 'Checks are failing.')
   const conflict = actionsMenuModel([pull({ mergeable: 'CONFLICTING' })], { offered: ['review', 'address', 'merge'] })
   assert.equal(conflict.agent.find(item => item.intent === 'merge').reason, 'It conflicts with main.')
   assert.match(conflict.header.text, /conflicts with main/)
@@ -118,4 +120,17 @@ test('a draft you wrote can be opened for review when this Möbius can mark it r
   assert.deepEqual(actionsMenuModel([draft, pull({ number: 121, isDraft: true })], { capabilities: ready, own: true }).you, [], 'never for a batch')
   const approved = actionsMenuModel([pull({ isDraft: true, reviewDecision: 'APPROVED' })], { capabilities: ready, own: true })
   assert.equal(approved.you.find(item => item.intent === 'open_review').rec, true, 'an approved draft of yours has opening as its next step')
+})
+
+test('who you are on the PR decides what an agent may do: fixing is for the author, approving for the reviewer', () => {
+  const all = ['review', 'address', 'merge', 'review_fix_merge']
+  const feedback = pull({ reviewDecision: 'CHANGES_REQUESTED', comments: { totalCount: 1 }, reviews: { totalCount: 1 } })
+  const theirs = actionsMenuModel([feedback], { offered: all })
+  assert.equal(theirs.agent.find(item => item.intent === 'address').off, true)
+  assert.match(theirs.agent.find(item => item.intent === 'address').reason, /someone else’s branch/)
+  assert.equal(theirs.agent.find(item => item.intent === 'review').off, false)
+  const mine = actionsMenuModel([pull({ reviewDecision: 'APPROVED', reviews: { totalCount: 1 }, ...checks('SUCCESS') })], { offered: all, own: true })
+  assert.match(mine.agent.find(item => item.intent === 'merge').reason, /cannot approve your own PR/)
+  assert.equal(mine.agent.find(item => item.intent === 'review').detail, 'Checks your PR privately. Nothing is posted.')
+  assert.equal(theirs.agent.find(item => item.intent === 'review').detail, 'Private notes, or a review on GitHub.')
 })

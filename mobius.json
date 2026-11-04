@@ -147,6 +147,7 @@
     "ui/PullRequestDetail.jsx",
     "chat-blocks.js",
     "provenance.js",
+    "pr-flow.js",
     "pull-view.js",
     "review-frame.js",
     "pr_block.py",
