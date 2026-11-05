@@ -193,7 +193,7 @@ export const PR_FIELDS = `id number title url state headRefOid headRefName baseR
   labels(first:20) { nodes { name color } totalCount }
   comments { totalCount }
   reviews { totalCount }
-  commits(last:1) { nodes { commit { statusCheckRollup { state contexts {
+  commits(last:1) { totalCount nodes { commit { statusCheckRollup { state contexts {
     totalCount checkRunCountsByState { state count } statusContextCountsByState { state count }
   } } } } }
   reviewDecision mergeable

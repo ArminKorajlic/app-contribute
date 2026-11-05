@@ -542,8 +542,39 @@ export const WORKSPACE_CSS = `
 .co-rw-reason textarea { font:inherit; color:var(--text); background:var(--bg); border:1px solid var(--border); border-radius:var(--co-radius-control); padding:10px 12px; resize:vertical; min-height:72px; }
 .co-rw-reason small { color:var(--muted); font-size:var(--co-text-meta); }
 .co-agent-menu-apart { margin-top:6px; padding-top:6px; border-top:1px solid var(--border); }
-.co-pr-standing { margin:6px 0 0; color:var(--text); font-size:var(--co-text-meta); line-height:1.4; }
-.co-pr-standing[data-turn="you"] { color:var(--accent); font-weight:600; }
+/* The Commits tab: GitHub's list, plus where the last review stopped. */
+.co-commits-banner { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px 12px; margin:0 0 14px; padding:10px 14px; border:1px solid color-mix(in srgb,var(--co-warn,#b38235) 45%,var(--border)); border-radius:var(--co-radius-panel); background:color-mix(in srgb,var(--co-warn,#b38235) 10%,var(--surface)); font-size:var(--co-text-meta); }
+.co-commit-day h4 { margin:18px 0 8px; color:var(--muted); font-size:var(--co-text-meta); font-weight:600; }
+.co-commit-day ul { margin:0; padding:0; list-style:none; border:1px solid var(--border); border-radius:var(--co-radius-panel); background:var(--surface); overflow:hidden; }
+.co-commit { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px 16px; padding:12px 14px; }
+.co-commit + .co-commit, .co-commit-seen + .co-commit { border-top:1px solid var(--border); }
+.co-commit-main { flex:1 1 320px; min-width:0; }
+.co-commit-title { display:inline; overflow-wrap:anywhere; font-size:var(--co-text-body); font-weight:600; }
+.co-commit-body { display:inline-block; margin-left:6px; vertical-align:middle; }
+.co-commit-body > summary { display:inline-grid; place-items:center; width:32px; height:24px; border-radius:var(--co-radius-pill); background:var(--surface-2); color:var(--muted); cursor:pointer; list-style:none; }
+.co-commit-body > summary::-webkit-details-marker { display:none; }
+.co-commit-body > div { margin-top:8px; padding:10px 12px; border-radius:var(--co-radius-field); background:var(--bg); color:var(--muted); font-size:var(--co-text-meta); white-space:pre-wrap; overflow-wrap:anywhere; }
+.co-commit-meta { display:flex; flex-wrap:wrap; align-items:center; gap:2px 10px; margin:4px 0 0; color:var(--muted); font-size:var(--co-text-meta); }
+.co-commit-agent { display:inline-flex; align-items:center; gap:4px; padding:0 8px; border-radius:var(--co-radius-pill); background:var(--accent-dim,var(--surface-2)); color:var(--co-you-text); font-weight:600; }
+.co-commit-checks.is-ok { color:var(--green,#10b981); }
+.co-commit-checks.is-bad { color:var(--danger,#f87171); }
+.co-commit-checks.is-warn { color:var(--co-warn,#b38235); }
+.co-commit-side { display:flex; flex-wrap:wrap; align-items:center; gap:4px 8px; }
+.co-commit-side code { color:var(--muted); font:var(--co-text-meta) var(--mono,monospace); }
+.co-commit-seen { display:flex; align-items:center; gap:10px; padding:6px 14px; border-top:1px dashed var(--accent); color:var(--co-you-text); font-size:var(--co-text-meta); font-weight:600; background:var(--accent-dim,var(--surface-2)); }
+@media(max-width:680px) { .co-commits-banner { position:sticky; bottom:0; z-index:2; margin-bottom:0; padding-bottom:calc(10px + env(safe-area-inset-bottom)); } .co-commit-side .co-btn span { display:inline; } .co-commit-side { width:100%; } }
+.co-state-line { display:flex; flex-wrap:wrap; gap:6px 4px; margin:12px 0 0; padding:0; list-style:none; font-size:var(--co-text-meta); color:var(--muted); }
+.co-state-line li { display:inline-flex; align-items:center; gap:4px; }
+.co-state-line li + li::before { content:'→'; margin-right:4px; color:var(--border); }
+.co-state-line li.is-done { color:var(--text); }
+.co-state-line li.is-current { color:var(--text); font-weight:700; }
+.co-state-line li.is-current::after { content:''; width:6px; height:6px; border-radius:50%; background:var(--accent); }
+/* The next step: pill, the machine's sentence, then the one filled button. */
+.co-next-step { display:flex; flex-wrap:wrap; align-items:center; gap:8px 12px; margin:12px 0 4px; padding:12px 14px; border:1px solid var(--border); border-radius:var(--co-radius-panel); background:var(--surface); }
+.co-next-step .co-desk-chip { flex:0 0 auto; }
+.co-next-hint { flex:1 1 220px; margin:0; color:var(--text); font-size:var(--co-text-meta); line-height:1.45; }
+.co-next-step .co-btn { flex:0 0 auto; }
+@media(max-width:680px) { .co-next-step .co-btn { flex:1 1 100%; } }
 .co-agent-menu-tile { flex:none; display:grid; place-items:center; width:32px; height:32px; border-radius:var(--co-radius-field); background:var(--surface-2,var(--bg)); }
 .co-agent-menu-list .co-agent-menu-tile .co-icon { margin:0; }
 .co-agent-menu-list button.is-rec { background:color-mix(in srgb,var(--accent) 12%,transparent); }

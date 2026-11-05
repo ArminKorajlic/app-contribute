@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { loadPullActivity, loadPullChecks, loadPullDescription, loadPullFiles, loadPullRelated, loadPullThreads, pullFileDiff, safeDetailLink } from '../pull-details.js'
+import { loadPullActivity, loadPullChecks, loadPullCommits, loadPullDescription, loadPullFiles, loadPullRelated, loadPullThreads, pullFileDiff, safeDetailLink } from '../pull-details.js'
 import { MarkdownView } from './MarkdownView.jsx'
 import { ClampedMarkdown } from './ClampedMarkdown.jsx'
 import { CopyId, commentReference } from './CopyId.jsx'
@@ -14,6 +14,8 @@ import { ReviewTab, reviewContent } from './ReviewTab.jsx'
 import { frameOf } from '../pr-standing.js'
 import { ROLE_TITLES } from '../provenance.js'
 import { NAMES } from '../names.js'
+import { NextStep, StateLine } from './NextStep.jsx'
+import { PullCommits } from './PullCommits.jsx'
 
 export function DateLabel({ value, prefix = '', time = false }) {
   if (!value || !Number.isFinite(Date.parse(value))) return null
@@ -301,6 +303,7 @@ function PullRequestDetailView({ cacheStore, pr, token, onReview, onAssign, onRe
   const commentsOpen = items => allComments || (items?.length || 0) <= COMMENT_PREVIEW
   const shownComments = items => commentsOpen(items) ? (items || []) : items.slice(0, COMMENT_PREVIEW)
   const [threadCursors, setThreadCursors] = useState([null])
+  const [commitCursors, setCommitCursors] = useState([null])
   const [versionStale, setVersionStale] = useState(cacheStore?.stale === true)
   useEffect(() => {
     if (!cacheStore) return
@@ -310,6 +313,7 @@ function PullRequestDetailView({ cacheStore, pr, token, onReview, onAssign, onRe
     cacheStore.stale = versionStale
   }, [cache, cacheStore, versionStale])
   const threadCursor = threadCursors[threadCursors.length - 1]
+  const commitCursor = commitCursors[commitCursors.length - 1]
   const number = page[tab] || 1
   // Conversation is GitHub's first tab: the description plus its comments,
   // reviews, inline discussions and links. Each is an independent read so one
@@ -318,7 +322,7 @@ function PullRequestDetailView({ cacheStore, pr, token, onReview, onAssign, onRe
     description: 'description:1',
     ...(tab === 'conversation'
       ? { activity: `activity:${number}`, threads: `threads:${threadCursor || ''}`, related: 'related' }
-      : tab === 'review' ? {} : { view: `${tab}:${number}` }),
+      : tab === 'review' ? {} : tab === 'commits' ? { view: `commits:${commitCursor || ''}` } : { view: `${tab}:${number}` }),
   }
   const keySignature = Object.values(keys).join('|')
   useEffect(() => {
@@ -355,7 +359,7 @@ function PullRequestDetailView({ cacheStore, pr, token, onReview, onAssign, onRe
       read(keys.threads, signal => loadPullThreads(token, pr, threadCursor, signal))
       read(keys.related, signal => loadPullRelated(token, pr, signal))
     } else if (tab !== 'review') {
-      read(keys.view, signal => tab === 'files' ? loadPullFiles(token, pr, number, signal) : loadPullChecks(token, pr, number, signal))
+      read(keys.view, signal => tab === 'files' ? loadPullFiles(token, pr, number, signal) : tab === 'commits' ? loadPullCommits(token, pr, commitCursor, signal) : loadPullChecks(token, pr, number, signal))
     }
   }, [keySignature, cache, writeCache, token, pr.number, pr.repository?.nameWithOwner, pr.headRefOid, pr.baseRefOid, pr.baseRefName])
   const entry = key => cache[key] || { loading: true }
@@ -381,7 +385,7 @@ function PullRequestDetailView({ cacheStore, pr, token, onReview, onAssign, onRe
     {hasMore ? <button className="co-btn" onClick={() => set(current + 1)}>{unknown ? 'Check next page' : 'Next page'}</button> : null}
   </div> : null
   const labels = pr.labels?.nodes || []
-  const tabs = [['conversation', 'Comments'], ['files', <>Files<span className="co-tab-more"> changed</span></>], ['checks', 'Checks'], ['review', 'Review']]
+  const tabs = [['conversation', 'Comments'], ['commits', 'Commits'], ['files', <>Files<span className="co-tab-more"> changed</span></>], ['checks', 'Checks'], ['review', 'Review']]
   // GitHub-style tab badges: one neutral count pill per tab. Comments counts
   // the loaded conversation (comments and reviews); until it loads, GitHub's
   // issue-comment total stands in. Checks add a pass/fail dot before the pill;
@@ -393,9 +397,12 @@ function PullRequestDetailView({ cacheStore, pr, token, onReview, onAssign, onRe
   const tabCounts = {
     conversation: !loadedConversation?.loading && loadedConversation?.data?.items
       ? loadedConversation.data.items.length : (pr.comments?.totalCount == null ? null : conversationCount(pr)),
+    commits: Number.isInteger(pr.commits?.totalCount) ? pr.commits.totalCount : null,
     files: Number.isInteger(pr.changedFiles) ? pr.changedFiles : null,
   }
   const githubUrl = safeDetailLink(pr.url)
+  // The machine's own review action, offered again on the Commits tab when the PR has commits the last review did not see.
+  const againAction = readOnly ? null : review?.standing?.actions?.find(action => ['review', 'check_my_pr'].includes(action.id) && action.enabled) || null
   // The conversation loads as one unit: a single skeleton stands in for the
   // description, the flag and the comments, and everything appears together.
   // A PR page holds the whole detail back instead of revealing it in parts.
@@ -421,7 +428,8 @@ function PullRequestDetailView({ cacheStore, pr, token, onReview, onAssign, onRe
     </div>
     <div className="co-gh-pr-sub"><PullStateBadge pr={pr} /><span className="co-pr-sub-num">#{pr.number}</span>
       <span>by <b>{pr.author?.login || 'Someone'}</b></span></div>
-    {review?.standing ? <p className="co-pr-standing" data-turn={review.standing.turn}>{review.standing.headline}</p> : null}
+    <StateLine pr={pr} decision={review?.standing} />
+    {review?.standing ? <NextStep decision={review.standing} record={record} capabilities={capabilities} disabled={stale || readOnly} onChoose={mode => onReview?.(mode)} onReviewTab={() => setTab('review')} onSync={onRefresh} /> : null}
     {conversationLoading ? null : <>
     <details className="co-gh-description">
       <summary>
@@ -458,7 +466,14 @@ function PullRequestDetailView({ cacheStore, pr, token, onReview, onAssign, onRe
       <p className="co-gh-merge-state">{[REVIEW_DECISION[pr.reviewDecision], pr.mergeable === 'CONFLICTING' ? 'Has merge conflicts' : pr.mergeable === 'MERGEABLE' ? 'No conflicts with base branch' : null].filter(Boolean).join(' · ')}</p>
     </> : null}
     {tab === 'review' ? <ReviewTab pr={pr} status={status} readOnly={readOnly} {...review} /> : null}
-    {tab === 'files' || tab === 'checks' ? readState(view, tab === 'files' ? 'files' : 'checks') : null}
+    {tab === 'files' || tab === 'checks' || tab === 'commits' ? readState(view, tab) : null}
+    {tab === 'commits' && ready(view) ? <>
+      <PullCommits data={view.data} reviewedHead={status?.item?.head_sha || review?.earlier?.item?.head_sha || ''} again={againAction} onAgain={intent => onReview?.(intent)} />
+      {commitCursors.length > 1 || view.data?.hasMore ? <div className="co-board-actions">
+        {commitCursors.length > 1 ? <button className="co-btn" onClick={() => setCommitCursors(old => old.slice(0, -1))}>Previous commits</button> : null}
+        {view.data?.hasMore && view.data.nextCursor ? <button className="co-btn" onClick={() => setCommitCursors(old => [...old, view.data.nextCursor])}>Show more commits</button> : null}
+      </div> : null}
+    </> : null}
     {tab === 'files' && ready(view) ? <PullFiles data={view.data} /> : null}
     {tab === 'checks' && ready(view) ? <PullChecks data={view.data} /> : null}
     {(tab === 'files' || tab === 'checks') && ready(view) ? pager(number, view.data?.hasMore, view.data?.paginationUnknown, value => setPage(old => ({ ...old, [tab]: value }))) : null}

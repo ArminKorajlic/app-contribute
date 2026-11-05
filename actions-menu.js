@@ -31,9 +31,12 @@ export function pullHeader(pr) {
 
 const asItem = (action, icon) => ({ intent: action.id, icon, title: action.title, detail: action.detail, rec: action.highlighted, off: !action.enabled, reason: action.reason })
 
+// Whether this Möbius can run one of your own actions for you (the menu lists it, the next-step button offers it).
+export const mayRunYourAction = (id, { record, capabilities }) => !!YOUR_MENU[id]
+  && (capabilities?.[CAPABILITY[id]] === true || (id === 'open_for_review' && isPersonalDraft(record)))
+
 function yourItems(decision, { record, capabilities }) {
-  return decision.actions.filter(action => YOUR_MENU[action.id]
-    && (capabilities?.[CAPABILITY[action.id]] === true || (action.id === 'open_for_review' && isPersonalDraft(record))))
+  return decision.actions.filter(action => mayRunYourAction(action.id, { record, capabilities }))
     .map(action => asItem(action, YOUR_MENU[action.id]))
     .sort((a, b) => Number(b.rec) - Number(a.rec))
 }

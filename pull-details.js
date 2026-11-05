@@ -173,3 +173,22 @@ export async function loadPullRelated(token, pr, signal) {
   return { items: [...related.values()], errors,
     truncated: data.closingIssuesReferences?.pageInfo?.hasNextPage === true || data.timelineItems?.pageInfo?.hasNextPage === true }
 }
+
+// One page of the PR's commits, oldest first, as GitHub lists them. Each carries what the Commits
+// tab shows: headline, message, time, authors (co-authors included) and the checks' overall result.
+// Like the other graph reads it is checked against the selected head and base, so a list from a
+// branch that moved is flagged stale instead of shown.
+export async function loadPullCommits(token, pr, after = null, signal) {
+  if (after !== null && (typeof after !== 'string' || after.length > 1024)) throw new Error('Invalid commit cursor.')
+  const { data, errors } = await pullGraphRead(token, pr, `commits(first:50, after:$after) {
+    totalCount pageInfo { hasNextPage endCursor } nodes { commit {
+      oid abbreviatedOid url messageHeadline messageBody committedDate
+      authors(first:5) { nodes { name user { login } } }
+      statusCheckRollup { state }
+    } }
+  }`, { after }, signal)
+  const connection = data.commits
+  if (!connection) errors.push('The commit list is unavailable.')
+  return { commits: (connection?.nodes || []).map(node => node?.commit).filter(Boolean), total: count(connection?.totalCount),
+    hasMore: connection?.pageInfo?.hasNextPage === true, nextCursor: connection?.pageInfo?.endCursor || null, head: pr.headRefOid, errors }
+}

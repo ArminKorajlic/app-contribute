@@ -1685,7 +1685,7 @@ window.runReviewHelperWaitChecks = async () => {
   const helperRun = execution => reviewingRun(execution)
   const openPull = async () => {
     await click([...document.querySelectorAll('.co-desk-row')].find(node => text(node).includes('Contribution 7')))
-    await until(() => query('.co-desk-back') && query('.co-pr-standing'), 'The PR page did not open')
+    await until(() => query('.co-desk-back') && query('.co-next-hint'), 'The PR page did not open')
   }
   try {
     reviewRuns.length = 0
@@ -1695,7 +1695,7 @@ window.runReviewHelperWaitChecks = async () => {
     ensure(deskFrame('Contribution 7') === 'reviewing', 'The Desk row of a review waiting on its helper did not wear the moving frame: ' + deskFrame('Contribution 7'))
     await openPull()
     ensure(query('.co-frame[data-frame="reviewing"]') && !query('.co-tab-dot.is-waiting'), 'The PR page did not frame a review waiting on its helper as at work')
-    ensure(text(query('.co-pr-standing')) === 'An agent is working on it', 'The PR page said: ' + text(query('.co-pr-standing')))
+    ensure(text(query('.co-next-hint')) === 'An agent is working on it', 'The PR page said: ' + text(query('.co-next-hint')))
     checks.push({ name: 'a review whose own turn ended while its helper works is shown as at work', status: 'pass' })
     // The platform reports "interrupted" once nothing can wake the review: now it is the owner's move.
     await click(query('.co-desk-back'))
@@ -1704,7 +1704,7 @@ window.runReviewHelperWaitChecks = async () => {
     shownAgain()
     await until(() => deskFrame('Contribution 7') === 'verdict', 'The Desk row of an interrupted review did not hold the amber frame: ' + deskFrame('Contribution 7'))
     await openPull()
-    ensure(text(query('.co-pr-standing')) === 'The agent stopped before it finished. Run it again', 'The PR page said: ' + text(query('.co-pr-standing')))
+    ensure(text(query('.co-next-hint')) === 'The agent stopped before it finished. Run it again', 'The PR page said: ' + text(query('.co-next-hint')))
     checks.push({ name: 'a review the platform reports interrupted is shown as stopped', status: 'pass' })
     ensure(calls.forbidden.length === 0, 'Unexpected runtime/transport: ' + JSON.stringify(calls.forbidden))
     return { status: 'pass', checks, forbidden: calls.forbidden }
