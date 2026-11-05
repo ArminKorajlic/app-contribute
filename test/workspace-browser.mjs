@@ -42,6 +42,7 @@ import { fetchContributionScreenshot } from './api.js'
 import { organizePrivateWorkAction } from './review.js'
 import { batchHandle } from './chat-blocks.js'
 import { CSS } from './theme.js'
+import { NAMES } from './names.js'
 import { createSyncHub } from './refresh.js'
 import { SyncHubContext, useDeskReviewRuns } from './ui/useReviewList.js'
 import ContributeApp, { GithubPullsUnavailable } from './index.jsx'
@@ -398,6 +399,8 @@ const query = selector => document.querySelector(selector)
 // An icon-only button has no text, so its accessible name counts too.
 const button = (name, root = document) => [...root.querySelectorAll('button')].find(node => text(node) === name || node.getAttribute('aria-label') === name)
 const review = () => query('.co-review-window')
+// A PR page tab reads its name, then a count pill ("Comments2", "Files changed1"), so match on the name without the count.
+const detailTab = (name, root = query('.co-detail-tabs')) => [...root.querySelectorAll('button')].find(node => text(node).replace(/\d+$/, '') === name)
 // The window's one way out is the X in its header; it has no Cancel.
 const closeReview = () => click(review().querySelector('[aria-label="Close"]'))
 // One Sync button for the whole app (the toolbar's), which re-reads GitHub for every project.
@@ -434,8 +437,8 @@ async function fill(node, value) {
   await frame(); await frame()
 }
 // A launch resolves its frozen prompts/model before its approval is enabled.
-// Agent ▾ → one job. Choosing only opens the review window.
-async function chooseAgent(root, choice = 'Private review') {
+// Actions ▾ → one job (Review by default). Choosing only opens the review window.
+async function chooseAgent(root, choice = NAMES.review) {
   await click(root.querySelector('.co-agent-menu-button'))
   await until(() => root.querySelector('[role=menuitem]'), 'Agent menu did not open')
   await click([...root.querySelectorAll('[role=menuitem]')].find(node => text(node).startsWith(choice)))
@@ -673,44 +676,51 @@ window.runWorkspaceChecks = async () => {
       ensure(trigger.isConnected && document.activeElement===trigger,'Closing lost keyboard focus instead of returning to the batch action')
       ensure(mutationRequests().length===0,'Closing submitted a workflow')
     })
-    await check('individual PR detail leads with Conversation and retains guarded review and merge choices', async () => {
+    await check('individual PR detail leads with Comments and retains guarded review and merge choices', async () => {
       const title=document.querySelectorAll('.co-pr-open')[1]
       title.focus(); await click(title)
       await until(() => text(query('.co-pr-detail')).includes('Fixture PR description 8'),'Description did not load')
       ensure(firstCheckbox.checked && secondCheckbox.checked,'Opening detail replaced batch selection')
       ensure(!query('.co-file-disclosure') && !calls.requests.some(call => call.url.includes('/files?')),'Diff loaded by default')
       const tabs=query('.co-detail-tabs')
-      ensure(button('Conversation',tabs).getAttribute('aria-pressed')==='true' && [...tabs.querySelectorAll('button')].some(node=>text(node).startsWith('Files changed1')) && button('Checks',tabs),'Conversation, Files changed, and Checks tabs were not maintained')
+      ensure(detailTab('Comments',tabs).getAttribute('aria-pressed')==='true' && [...tabs.querySelectorAll('button')].some(node=>text(node).startsWith('Files changed1')) && detailTab('Checks',tabs),'Comments, Files changed, and Checks tabs were not maintained')
       ensure(query('.co-task-content .co-agent-menu-button'),'Individual review choices were lost')
       ensure(mutationRequests().length === 0 && navigation.length === inventoryNavigationDepth,'Opening PR changed work or screens')
     })
-    await check('files load only on demand and remain collapsed while discussion stays in Conversation', async () => {
-      await click([...query('.co-detail-tabs').querySelectorAll('button')].find(node=>text(node).startsWith('Files changed')))
+    await check('files load only on demand and remain collapsed while discussion stays in Comments', async () => {
+      await click(detailTab('Files changed'))
       await until(() => query('.co-file-disclosure'),'Files did not load')
       ensure(!query('.co-file-disclosure').open,'Patch opened by default')
       await click(query('.co-file-disclosure summary'))
       ensure(query('.co-file-disclosure').open && text(query('.co-file-disclosure .diff-view')).includes('safe change'),'Patch disclosure failed')
       window.failChecks=true
-      await click(button('Checks',query('.co-pr-detail')))
+      await click(detailTab('Checks'))
       await until(()=>text(query('.co-pr-detail')).includes('Check runs: Could not load this information'),'Partial check failure missing')
       ensure(text(query('.co-pr-detail')).includes('Build') && text(query('.co-pr-detail')).includes('not an all-clear review'),'Successful sibling or check limitation disappeared')
       window.failChecks=false
       await click(button('Retry',query('.co-pr-detail')))
       await until(()=>text(query('.co-pr-detail')).includes('Unit tests') && !text(query('.co-pr-detail')).includes('Check runs: Could not load this information'),'Check retry did not settle')
       ensure(calls.requests.filter(call=>call.url.includes('/commits/')).every(call=>call.url.includes(SECOND_HEAD)),'Checks used another PR head')
-      await click(button('Conversation',query('.co-pr-detail')))
+      await click(detailTab('Comments'))
       await until(() => text(query('.co-pr-detail')).includes('Please check this edge case'),'Activity did not load')
       ensure(!query('.co-file-disclosure'),'Files leaked into activity')
       const title=document.querySelectorAll('.co-pr-open')[1]
-      await chooseAgent(query('.co-task-content'))
+      // The viewer owns these fixture PRs, and an agent only checks the viewer's own PRs. A different viewer gets the review
+      // window's full choices, on a Möbius that can post a verdict and merge after it.
+      window.setConnectionFixture({state:'connected',login:'another-viewer'}); await frame(); await frame()
+      window.fixtureCapabilities={review_fix_merge:false,post_review:true,propose_verdict:true,post_review_merge:true}
+      await chooseAgent(query('.co-task-content'), 'Review')
       ensure(text(review()).includes('Contribution 8') && text(review()).includes('ccccccc') && !text(review()).includes('Contribution 7'),'Individual review changed PR scope or version')
-      const optionInput=name=>[...review().querySelectorAll('label')].find(node=>text(node).includes(name))?.querySelector('input')
-      const mergeOption=optionInput('Merge when safe')
-      ensure(mergeOption && !mergeOption.checked && button('Start private review'),'Individual review granted merge by default')
-      await click(mergeOption)
-      ensure(button('Start review, merge when safe'),'Individual merge choice did not require guarded approval')
+      await until(()=>button('Draft for me',review()),'Who sees the result did not load')
+      ensure(button('Start private review') && !review().querySelector('[role=switch]'),'Individual review granted merge by default')
+      ensure(text(review()).includes('Merging follows your own approval'),'The merge choice did not say why it is not offered yet')
+      await click(button('Draft for me',review()))
+      const mergeSwitch=review().querySelector('[role=switch]')
+      ensure(mergeSwitch && !mergeSwitch.checked && button('Start review, draft a verdict for me'),'Drafting a verdict granted merge or lost its start label')
+      await click(mergeSwitch)
+      ensure(button('Start review, merge after your approval'),'Individual merge choice did not require guarded approval')
       ensure(mutationRequests().length===0,'Changing individual review mode mutated GitHub')
-      await closeReview()
+      await closeReview(); window.fixtureCapabilities=undefined; window.setConnectionFixture({state:'connected',login:'owner'})
       await until(() => !review() && !query('.co-task-content'),'Individual review did not close')
       ensure(document.activeElement===title,'Closing individual review did not return focus to its row trigger (focused '+(document.activeElement?.className || document.activeElement?.tagName)+': '+text(document.activeElement)+')')
     })
@@ -1103,7 +1113,8 @@ window.runWorkspaceChecks = async () => {
       const provenance = query('.co-gh-provenance')
       const links = [...provenance.querySelectorAll('.co-gh-chat-link')]
       const names = links.map(link => link.getAttribute('aria-label'))
-      ensure(names.join('|') === 'Saved work|Open source chat|Open review chat' && links.every(link => !text(link)), 'Provenance is not one combined section of icon buttons: ' + names)
+      // The prepared PR, then one Open chat button per kind of conversation (where it started, the review).
+      ensure(names.join('|') === ['Open prepared ' + NAMES.pr, NAMES.openChat + ' · where it started', NAMES.openChat + ' · review'].join('|') && links.every(link => !text(link)), 'Provenance is not one combined section of icon buttons: ' + names)
       ensure(document.querySelectorAll('.co-gh-provenance').length === 1, 'Provenance repeated')
       for (const link of links) {
         const box = link.getBoundingClientRect()
