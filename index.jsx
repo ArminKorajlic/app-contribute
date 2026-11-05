@@ -44,7 +44,7 @@ import { DEFAULT_STAGE, stageOf } from './publication-stage.js'
 import { abandonPrepared, cacheFeed, cacheSourceSnapshot, loadAppSettings, loadCachedFeed, loadCachedSourceSnapshot, loadContributionRecord, loadFreshContributionRecord, loadFreshContributionRecords, loadCycleState, loadFullDiff, loadLedger, restoreAbandoned, saveAppSettings } from './storage.js'
 import { createRefreshCoordinator } from './refresh.js'
 import { checkUpstream } from './upstream-check.js'
-import { DESK_LAST_LOOKED_KEY, deskCounts, projectNeedsCount } from './desk.js'
+import { DESK_LAST_LOOKED_KEY, deskCounts, projectNeedsCount, settleReviewRequest } from './desk.js'
 import { withIgnoreNote, withoutIgnoreNote } from './collaboration.js'
 import {
   contributionPathDecision,
@@ -89,6 +89,9 @@ import { cardRecordIds, chatBlockTarget } from './chat-blocks.js'
 import { InlineBlockSession } from './ui/InlineBlockSession.jsx'
 import { reviewAddressFor, writeBindingRefusal } from './send-readiness.js'
 import { readBlockSession } from './block-protocol.js'
+
+// The shortest gap between two reads of the review requests triggered by the window regaining focus.
+const INCOMING_REREAD_MS = 30000
 
 // The app's own icon, with a lettered fallback for installs whose icon route
 // 404s. Mirrors the App Store header pattern.
@@ -552,6 +555,7 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
   const refreshConnectionRef = useRef(null)
   refreshConnectionRef.current = refreshConnection
 
+  const incomingReadAtRef = useRef(0)
   const refreshIncomingReviews = useCallback(async () => {
     const requestId = incomingReviewsRequestRef.current + 1
     incomingReviewsRequestRef.current = requestId
@@ -559,14 +563,37 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
       setIncomingReviews([])
       return []
     }
+    incomingReadAtRef.current = Date.now()
     const rows = await fetchIncomingReviews(token)
     if (
       requestId !== incomingReviewsRequestRef.current
       || connRef.current.state !== 'connected'
     ) return []
-    setIncomingReviews(rows)
-    return rows
+    // A read that failed leaves the list as it was; an empty one would clear every request.
+    if (rows) setIncomingReviews(rows)
+    return rows || []
   }, [token])
+
+  // A review submitted from a PR page answers its request: the row leaves
+  // Review requests now. The request id moves on so a read already in flight
+  // cannot put it back.
+  const settleIncomingReview = useCallback((repo, number) => {
+    incomingReviewsRequestRef.current += 1
+    setIncomingReviews(current => settleReviewRequest(current, repo, number))
+  }, [])
+
+  // A review can also be submitted outside this app (on GitHub, in a review
+  // chat), so coming back to the window reads the requests again, at most every
+  // half minute: each read is a few seconds of GitHub work.
+  useEffect(() => {
+    if (sendOnly) return undefined
+    const onFocus = () => {
+      if (document.hidden || Date.now() - incomingReadAtRef.current < INCOMING_REREAD_MS) return
+      void refreshIncomingReviews()
+    }
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [refreshIncomingReviews, sendOnly])
 
   // Review runs for the whole desk: its rows show which PRs are under review.
   const { runs: reviewRuns, respondChats, ready: runsReady, refresh: refreshReviewRuns } = useDeskReviewRuns({
@@ -1613,7 +1640,7 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
   function renderPullRequests(project, navigation, view = null, page = null) {
     if (page) {
       return <PullRequests key={`page:${page.repo}#${page.number}`} appId={appId} token={token}
-        project={project} conn={conn} refreshKey={refreshKey} onChanged={refreshIncomingReviews} onRunsChanged={refreshReviewRuns}
+        project={project} conn={conn} refreshKey={refreshKey} onChanged={refreshIncomingReviews} onReviewPosted={settleIncomingReview} onRunsChanged={refreshReviewRuns}
         presentation="page" focusPull={page} onFocusRelease={() => {}} onStartAgent={startAgentTask} onOpenForReview={onMarkReady} ignoredReviews={ignoredReviews} onIgnoreReview={onIgnoreReview} onUndoIgnore={onUndoIgnore}
         records={recordsForProject(records, project)} onRecord={record => {
           setPullPage(null)
@@ -1621,7 +1648,7 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
         }} />
     }
     return <PullRequests key={`pulls:${project?.key || 'all'}`} appId={appId} token={token}
-      project={project} conn={conn} refreshKey={refreshKey} onChanged={refreshIncomingReviews} onRunsChanged={refreshReviewRuns}
+      project={project} conn={conn} refreshKey={refreshKey} onChanged={refreshIncomingReviews} onReviewPosted={settleIncomingReview} onRunsChanged={refreshReviewRuns}
       scope={view?.scope || 'all'} onScope={view?.onScope} onTotal={view?.onTotal} onStartAgent={startAgentTask} onOpenForReview={onMarkReady} ignoredReviews={ignoredReviews} onIgnoreReview={onIgnoreReview} onUndoIgnore={onUndoIgnore}
       onOpenPage={(pr, tab) => openPullPage(project, pr, tab)}
       focusPull={pullFocus?.number ? pullFocus : null} focusRun={pullFocus?.runId ? pullFocus : null} onFocusRelease={releasePullFocus}

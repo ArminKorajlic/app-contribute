@@ -1,7 +1,7 @@
 // The Desk home: pure logic for the side views, their counts, and the
 // per-project grouping the envelopes render. UI stays in ui/Desk.jsx and
 // ui/DeskViews.jsx; everything here is testable without a DOM.
-import { checkSummary } from './collaboration.js'
+import { checkSummary, prKey } from './collaboration.js'
 import { attentionListItems } from './run.js'
 import {
   localChangeSummary,
@@ -43,6 +43,13 @@ export function authoredPullState(pr) {
 // PRs the owner authored, out of everything GitHub says involves them.
 export function authoredPulls(incoming, login) {
   return (incoming || []).filter(pr => !pr.reviewRequested && sameLogin(pr?.author?.login, login))
+}
+
+// Submitting a review answers its request on GitHub, which then stops listing
+// the PR as waiting on the owner. Say so at once instead of at the next read.
+export function settleReviewRequest(incoming, repo, number) {
+  const key = `${repo.toLowerCase()}#${number}`
+  return incoming.map(pr => (pr.reviewRequested && prKey(pr) === key ? { ...pr, reviewRequested: false } : pr))
 }
 
 // Group one repository's PRs into base→head chains (a stack) so related work

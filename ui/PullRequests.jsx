@@ -160,7 +160,9 @@ const runAnchor = run => run.items?.length === 1 ? `${run.items[0].repo.toLowerC
 // ask for the owner's review) or 'mine' (the saved agent reviews only).
 // `onRunsChanged` tells the Desk (its reviewRuns in index.jsx) that a review was
 // started, stopped or re-read here, so its rows show the frame without a Sync.
-export function PullRequests({ appId, token, project, conn, onChanged, onRunsChanged, records = [], onRecord, refreshKey, focusPull, focusRun, onFocusRelease, scope = 'all', onScope, onTotal, presentation = 'list', onOpenPage = null, onStartAgent = null, onOpenForReview = null, ignoredReviews = null, onIgnoreReview = null, onUndoIgnore = null }) {
+// `onReviewPosted(repo, number)` tells it the owner's review of a PR reached GitHub,
+// so the row leaves Review requests without waiting for the next read.
+export function PullRequests({ appId, token, project, conn, onChanged, onReviewPosted, onRunsChanged, records = [], onRecord, refreshKey, focusPull, focusRun, onFocusRelease, scope = 'all', onScope, onTotal, presentation = 'list', onOpenPage = null, onStartAgent = null, onOpenForReview = null, ignoredReviews = null, onIgnoreReview = null, onUndoIgnore = null }) {
   const repo = project?.canonical_repo || ''
   const publicRevision = records.filter(record => record.url).map(record => `${record.id}:${record.status}:${record.number}:${record.last_updated_pr_at || ''}`).sort().join('|')
   const session = sessionEntry(repo, `${refreshKey}|${publicRevision}`)
@@ -465,6 +467,7 @@ export function PullRequests({ appId, token, project, conn, onChanged, onRunsCha
   // posts exactly the saved proposal, once; an agent can never do this.
   async function decideVerdict(run, item, proposal, decision, extra = {}) {
     const result = await runAction(run, 'verdict', { repo: item.repo, number: item.number, head_sha: item.head_sha, proposal_id: proposal.id, decision, ...extra })
+    if (result?.verdict?.state === 'posted') onReviewPosted?.(item.repo, item.number)
     if (result?.merge_resumed === false) setRunError('Approved on GitHub. Open the review conversation and ask it to continue to the merge.')
   }
   // The owner's own Push or Don't push for fixes an agent prepared. The platform pushes exactly
@@ -524,7 +527,12 @@ export function PullRequests({ appId, token, project, conn, onChanged, onRunsCha
     } catch (error) { setRunError(error.message) }
   }
   const closePost = () => setPosting(null)
-  const postDialog = posting ? <ReviewDialog onClose={closePost}><PostFindings pr={posting.pr} run={posting.run} item={posting.item} own={posting.own} token={token} appId={appId} onDone={refreshRuns} onClose={closePost} /></ReviewDialog> : null
+  // The posted findings are a review of the PR, which answers a request for it.
+  const findingsPosted = outcome => {
+    void refreshRuns()
+    if (outcome?.ok) onReviewPosted?.(posting.pr.repository.nameWithOwner, posting.pr.number)
+  }
+  const postDialog = posting ? <ReviewDialog onClose={closePost}><PostFindings pr={posting.pr} run={posting.run} item={posting.item} own={posting.own} token={token} appId={appId} onDone={findingsPosted} onClose={closePost} /></ReviewDialog> : null
   const ignoreDialog = ignoring ? <ReviewDialog onClose={closeIgnore}><IgnoreReview pr={ignoring.pr} onPick={reason => { onIgnoreReview(ignoring.item, reason); closeIgnore() }} onClose={closeIgnore} /></ReviewDialog> : null
   // Each of your own actions runs the app's one guarded handler for it.
   const actionHandlers = {

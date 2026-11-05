@@ -1,7 +1,8 @@
 // Run: MOBIUS_FRONTEND_NODE_MODULES=/data/platform/frontend/node_modules \
 //      node test/workspace-browser.mjs
-// Two scenarios, each on a fresh page: runWorkspaceChecks (the project fixture) and
-// runDeskFrameChecks (the whole app: a review started on a PR page frames its Desk row).
+// Three scenarios, each on a fresh page: runWorkspaceChecks (the project fixture),
+// runDeskFrameChecks (the whole app: a review started on a PR page frames its Desk row) and
+// runReviewRequestChecks (the whole app: a review you submit takes its row out of Review requests).
 // Run one with WORKSPACE_BROWSER_ONLY=runDeskFrameChecks, for example while
 // runWorkspaceChecks is red, so the Desk check can still show green.
 // Actual app components, native Chromium DOM, and no live app/backend. The
@@ -70,6 +71,11 @@ let versionCounter = 0
 const pulls = [pull(7), pull(8, { headRefOid: SECOND_HEAD, assignees: { nodes: [{ login: 'teammate' }] } })]
 // Reachable only by exact read, as a closed PR is absent from open search.
 const closedPulls = [pull(11, { title: 'Closed contribution', state: 'CLOSED' })]
+// A finished review of PR 7 with the verdict in the given state; the server's own item states follow it.
+const VERDICT_ITEM_STATES = { proposed: 'verdict_pending', posted: 'all_clear', unknown: 'verdict_unknown' }
+const verdictRun = verdict => ({ id: 'review-verdict', chat_id: 'review-chat-fixture', mode: 'review', state: verdict === 'proposed' ? 'needs_you' : 'complete', can_stop: false,
+  items: [{ repo: 'owner/project', number: 7, head_sha: HEAD, base_ref: 'main', base_sha: BASE, state: VERDICT_ITEM_STATES[verdict], summary: 'Looks right.',
+    verdict_proposal: { id: 'f'.repeat(32), state: verdict, event: 'APPROVE', head_sha: HEAD, body: '**Möbius review: Approved**\n\nLooks right.' } }] })
 const response = value => new Response(JSON.stringify(value), { headers: { 'Content-Type': 'application/json' } })
 // A prompt preview resolves settings; it is a read, not a public action.
 const mutationRequests = () => calls.requests.filter(call => call.method !== 'GET' && call.url !== '/api/github/graphql' && !call.url.endsWith('/review-preview'))
@@ -99,7 +105,10 @@ window.fetch = async (url, options = {}) => {
       if (call.body.query.includes('resource(url:')) return response({data:{r0:{__typename:'PullRequest',state:'MERGED',isDraft:false}}})
       if (call.body.query.includes('ContributeRepositories')) return response({data:{viewer:{repositories:{nodes:[],pageInfo:{hasNextPage:false,endCursor:null}}}}})
       // The Desk scenario asks the fixture PRs for review; everything else it reads falls through to the project mocks below.
-      if (window.fullAppDesk && call.body.query.includes('ContributeIncomingReviews')) return response({data:{requested:{nodes:[pulls[0]]},involved:{nodes:[]}}})
+      if (window.fullAppDesk && call.body.query.includes('ContributeIncomingReviews')) {
+        if (window.failIncoming) return new Response(JSON.stringify({detail:'Fixture GitHub error'}), {status:503})
+        return response({data:{requested:{nodes:window.githubRequests || [pulls[0]]},involved:{nodes:[]}}})
+      }
       if (!window.fullAppDesk && call.body.query.includes('search(')) return response({data:{search:{nodes:[],pageInfo:{hasNextPage:false,endCursor:null}}}})
     }
     if (!window.fullAppDesk) return forbidden('full-app fetch')(call.url)
@@ -154,6 +163,11 @@ window.fetch = async (url, options = {}) => {
     const snapshot = structuredClone(window.oldRuns.get(oldRun[1]))
     if (window.holdExactRun) await new Promise(resolve => { window.releaseExactRun = resolve })
     return response({ run: snapshot })
+  }
+  if (/\/review-runs\/review-verdict\/verdict$/.test(call.url) && call.method === 'POST') {
+    const verdict = call.body.decision === 'submit' ? window.verdictOutcome : 'discarded'
+    reviewRuns[0] = verdictRun(verdict)
+    return response({ run: reviewRuns[0], ...(call.body.decision === 'submit' ? { verdict: { state: verdict, event: 'APPROVE' } } : {}), merge_resumed: null })
   }
   if (call.url === '/api/github/contributions/fixture-app/review-runs') {
     if (call.method === 'GET') return response({ runs: reviewRuns })
@@ -1557,19 +1571,22 @@ window.runWorkspaceChecks = async () => {
 
 // The whole app on a fresh page: a review the owner starts from a PR's own page
 // must show on that PR's Desk row without pressing Sync with GitHub.
+async function mountDeskApp() {
+  root.render(null)
+  await frame(); await frame()
+  window.fullAppFixture = true; window.fullAppConnected = true; window.fullAppDesk = true
+  values.set('followed-repositories.json', ['owner/project'])
+  window.mobius.storage.listWithStatus = async () => ({ complete: true, entries: [] })
+  // A PR GitHub read completely: without these facts its standing is "couldn't read" and nothing frames it.
+  Object.assign(pulls[0], { mergeable: 'MERGEABLE', reviewDecision: null, commits: { nodes: [{ commit: { statusCheckRollup: null } }] },
+    latestOpinionatedReviews: { nodes: [] }, reviewThreads: { nodes: [] } })
+  root.render(<ContributeApp appId="fixture-app" token="fixture-only" />)
+}
 window.runDeskFrameChecks = async () => {
   const checks = []
   const deskFrame = title => [...document.querySelectorAll('.co-frame')].find(node => text(node).includes(title))?.dataset.frame
   try {
-    root.render(null)
-    await frame(); await frame()
-    window.fullAppFixture = true; window.fullAppConnected = true; window.fullAppDesk = true
-    values.set('followed-repositories.json', ['owner/project'])
-    window.mobius.storage.listWithStatus = async () => ({ complete: true, entries: [] })
-    // A PR GitHub read completely: without these facts its standing is "couldn't read" and nothing frames it.
-    Object.assign(pulls[0], { mergeable: 'MERGEABLE', reviewDecision: null, commits: { nodes: [{ commit: { statusCheckRollup: null } }] },
-      latestOpinionatedReviews: { nodes: [] }, reviewThreads: { nodes: [] } })
-    root.render(<ContributeApp appId="fixture-app" token="fixture-only" />)
+    await mountDeskApp()
     await until(() => deskFrame('Contribution 7'), 'The Desk did not list the review request')
     ensure(deskFrame('Contribution 7') === 'idle', 'The row wore a frame before any review ran')
     await click([...document.querySelectorAll('.co-desk-row')].find(node => text(node).includes('Contribution 7')))
@@ -1609,6 +1626,79 @@ window.runDeskFrameChecks = async () => {
     return { status: 'pass', checks, forbidden: calls.forbidden }
   } catch (error) {
     return { status: 'fail', checks, error: error.stack, dom: text(query('main')).slice(0, 5000), calls, forbidden: calls.forbidden }
+  }
+}
+
+// The whole app on a fresh page: a review the owner submits answers its request on
+// GitHub, so the Desk row leaves Review requests when the verdict posts, not at the
+// next Sync. Reads after that (the window regaining focus) keep it honest.
+window.runReviewRequestChecks = async () => {
+  const checks = []
+  const rows = () => [...document.querySelectorAll('.co-desk-row')]
+  const askRows = () => rows().filter(node => text(node).includes('Asks for your review'))
+  const incomingReads = () => calls.requests.filter(call => call.url === '/api/github/graphql' && call.body?.query.includes('ContributeIncomingReviews')).length
+  const settle = () => new Promise(resolve => setTimeout(resolve, 150))
+  const approve = () => [...document.querySelectorAll('.co-verdict button')].find(node => text(node) === 'Approve on GitHub')
+  const reviewTab = () => [...document.querySelectorAll('.co-detail-tabs button')].find(node => text(node).startsWith('Review'))
+  const openVerdict = async () => {
+    await click(rows().find(node => text(node).includes('Contribution 7')))
+    await until(() => query('.co-desk-back') && reviewTab(), 'The PR page did not open')
+    if (!approve()) await click(reviewTab())
+    await until(approve, 'The PR page did not offer the proposed verdict')
+  }
+  const approveAndLeave = async () => {
+    await click(approve())
+    await until(() => !approve(), 'The verdict did not go out')
+    await click(query('.co-desk-back'))
+    await until(() => !query('.co-desk-back'), 'Back did not return to the Desk')
+  }
+  const realNow = Date.now
+  try {
+    reviewRuns.length = 0
+    reviewRuns.push(verdictRun('proposed'))
+    await mountDeskApp()
+    await until(() => askRows().length === 1, 'The Desk did not list the review request')
+    // GitHub did not confirm the verdict: the request may still stand, so the row stays.
+    window.verdictOutcome = 'unknown'
+    await openVerdict()
+    await approveAndLeave()
+    await settle()
+    ensure(askRows().length === 1, 'An unconfirmed verdict took the row out of Review requests')
+    checks.push({ name: 'a verdict GitHub did not confirm leaves the request in place', status: 'pass' })
+    // The verdict posted. GitHub still lists the PR for the moment (its search lags), yet the row leaves now.
+    reviewRuns[0] = verdictRun('proposed')
+    window.verdictOutcome = 'posted'
+    await openVerdict()
+    const readsBefore = incomingReads()
+    await approveAndLeave()
+    await until(() => askRows().length === 0, 'The row stayed in Review requests after the verdict posted')
+    ensure(incomingReads() === readsBefore, 'The row left only because GitHub was read again, not because the verdict landed')
+    checks.push({ name: 'a posted verdict takes the PR out of Review requests at once, before any new GitHub read', status: 'pass' })
+    // Coming back to the window: not again within half a minute, then a read that shows what GitHub says now.
+    window.githubRequests = [pulls[1]]
+    window.dispatchEvent(new Event('focus'))
+    await settle()
+    ensure(incomingReads() === readsBefore && askRows().length === 0, 'Focus read GitHub again straight after a read')
+    Date.now = () => realNow() + 60000
+    window.dispatchEvent(new Event('focus'))
+    await until(() => askRows().length === 1 && text(askRows()[0]).includes('Contribution 8'), 'The window regaining focus did not read the requests again')
+    ensure(!rows().some(node => text(node).includes('Contribution 7')), 'The reviewed PR came back after the next read')
+    checks.push({ name: 'the window regaining focus reads the requests again, at most every half minute', status: 'pass' })
+    // A read that fails is not "nothing asks for your review".
+    window.failIncoming = true
+    const failedFrom = incomingReads()
+    Date.now = () => realNow() + 120000
+    window.dispatchEvent(new Event('focus'))
+    await until(() => incomingReads() === failedFrom + 1, 'The failing read was never attempted')
+    await settle()
+    ensure(askRows().length === 1 && text(askRows()[0]).includes('Contribution 8'), 'A failed read emptied Review requests')
+    checks.push({ name: 'a failed read keeps the requests that were listed', status: 'pass' })
+    ensure(calls.forbidden.length === 0, 'Unexpected runtime/transport: ' + JSON.stringify(calls.forbidden))
+    return { status: 'pass', checks, forbidden: calls.forbidden }
+  } catch (error) {
+    return { status: 'fail', checks, error: error.stack, dom: text(query('main')).slice(0, 5000), calls, forbidden: calls.forbidden }
+  } finally {
+    Date.now = realNow
   }
 }
 `
@@ -1682,7 +1772,7 @@ async function main() {
     const protocol = cdp(browser), reports = []
     // Each scenario gets a fresh page, so the whole-app Desk scenario never inherits the project fixture's state.
     // WORKSPACE_BROWSER_ONLY=runDeskFrameChecks runs one scenario.
-    const scenarios = process.env.WORKSPACE_BROWSER_ONLY ? [process.env.WORKSPACE_BROWSER_ONLY] : ['runWorkspaceChecks', 'runDeskFrameChecks']
+    const scenarios = process.env.WORKSPACE_BROWSER_ONLY ? [process.env.WORKSPACE_BROWSER_ONLY] : ['runWorkspaceChecks', 'runDeskFrameChecks', 'runReviewRequestChecks']
     const viewports = [{ name: 'desktop', width: 1280, height: 900 }, { name: 'phone', width: 390, height: 844 }]
     for (const [viewport, scenario] of viewports.flatMap(size => scenarios.map(name => [size, name]))) {
       const { targetId } = await protocol.send('Target.createTarget', { url: 'about:blank' })

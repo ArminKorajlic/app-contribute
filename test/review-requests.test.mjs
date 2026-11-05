@@ -26,3 +26,23 @@ test('only pull requests that ask for the viewer\'s review are flagged as review
     globalThis.fetch = original
   }
 })
+
+test('a read GitHub did not fully answer is null, never an empty list of requests', async () => {
+  const original = globalThis.fetch
+  const answers = [
+    { ok: false, json: async () => ({}) },
+    { ok: true, json: async () => ({ data: null }) },
+    { ok: true, json: async () => ({ data: { involved: { nodes: [pr(1)] }, requested: null } }) },
+    { ok: true, json: async () => ({ data: { involved: { nodes: [] }, requested: { nodes: [] } } }) },
+  ]
+  try {
+    const rows = []
+    for (const answer of answers) {
+      globalThis.fetch = async () => answer
+      rows.push(await fetchIncomingReviews('token'))
+    }
+    assert.deepEqual(rows, [null, null, null, []])
+  } finally {
+    globalThis.fetch = original
+  }
+})

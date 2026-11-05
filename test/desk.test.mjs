@@ -12,6 +12,7 @@ import {
   needsCount,
   newSince,
   railBadge,
+  settleReviewRequest,
   splitProjects,
 } from '../desk.js'
 
@@ -167,4 +168,15 @@ test('To confirm is on the rail, and its page says Waiting for your confirmation
   assert.equal(view.heading, 'Waiting for your confirmation')
   assert.equal(railBadge('confirm', { reviewsConfirm: 2 }), 2)
   assert.equal(railBadge('confirm', {}), 0)
+})
+
+test('a submitted review takes only its own PR out of the review requests', () => {
+  const asks = number => pr(number, { reviewRequested: true })
+  const other = { ...asks(9), repository: { nameWithOwner: 'o/other' } }
+  const rows = [asks(7), asks(8), other]
+  const settled = settleReviewRequest(rows, 'O/R', 7)
+  assert.deepEqual(settled.map(row => row.reviewRequested), [false, true, true])
+  assert.equal(settled[0].title, 'PR 7', 'the PR stays listed, as GitHub still counts it as involving the owner')
+  assert.equal(settled[1], rows[1], 'other rows are untouched')
+  assert.equal(rows[0].reviewRequested, true, 'the list it was given is not changed')
 })

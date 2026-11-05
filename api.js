@@ -219,16 +219,19 @@ export async function fetchLiveStates(token, query) {
 // Open pull requests that involve the viewer (the source of "On GitHub" projects),
 // each flagged when it actually asks for the viewer's review. GitHub's
 // "involves" search does not cover review requests, so both are read at once.
+// Null when either search did not answer: callers keep the list they had rather
+// than treat a failed read as "nothing asks for your review".
 export async function fetchIncomingReviews(token) {
   const query = `query ContributeIncomingReviews {
     involved: search(query: "is:pr is:open involves:@me", type: ISSUE, first: 50) { nodes { ... on PullRequest { ${PR_FIELDS} } } }
     requested: search(query: "is:pr is:open review-requested:@me", type: ISSUE, first: 50) { nodes { ... on PullRequest { ${PR_FIELDS} } } }
   }`
   const data = await fetchLiveStates(token, query)
+  if (!data?.requested || !data?.involved) return null
   const valid = nodes => (Array.isArray(nodes) ? nodes : []).filter((item) => item?.repository?.nameWithOwner && item?.number && item?.url)
-  const requested = valid(data?.requested?.nodes)
+  const requested = valid(data.requested.nodes)
   const requestedUrls = new Set(requested.map(item => item.url))
-  const involved = valid(data?.involved?.nodes).filter(item => !requestedUrls.has(item.url))
+  const involved = valid(data.involved.nodes).filter(item => !requestedUrls.has(item.url))
   return [...requested.map(item => ({ ...item, reviewRequested: true })), ...involved]
 }
 
