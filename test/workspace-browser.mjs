@@ -60,7 +60,10 @@ const pull = (number, extra = {}) => ({
   baseRefName: 'main', baseRef: { target: { oid: BASE } }, state: 'OPEN', isDraft: false, url: 'https://github.com/owner/project/pull/' + number,
   repository: { nameWithOwner: 'owner/project', viewerPermission: 'WRITE' },
   changedFiles: 1, additions: 1, deletions: 0, createdAt: '2026-09-07T12:00:00Z', updatedAt: '2026-09-07T13:00:00Z',
-  author: { login: 'owner' }, assignees: { nodes: [] }, ...extra,
+  author: { login: 'owner' }, assignees: { nodes: [] },
+  // A PR GitHub read completely: the PR machine reads a PR without these facts as "could not be read" and disables its actions.
+  mergeable: 'MERGEABLE', reviewDecision: null, commits: { nodes: [{ commit: { statusCheckRollup: null } }] },
+  latestOpinionatedReviews: { nodes: [] }, reviewThreads: { nodes: [] }, ...extra,
 })
 const prepared = {
   id: 'fixture-prepared', type: 'pr', status: 'prepared', repo: 'owner/project',
@@ -364,9 +367,17 @@ function Fixture() {
     if(window.lostStart) return {ok:false,error:'Response lost'}
     return { ok: true, ...started }
   }
+  // The app's header Refresh, which replaced the per-project Check GitHub button: it runs the page's retry and stays busy until that settles.
+  const [syncing, setSyncing] = useState(false)
+  const retryAll = async () => { setRefreshKey(old => old + 1); return { ok: true, upstream: null } }
+  async function syncFromHeader() {
+    setSyncing(true)
+    try { await retryAll() } finally { setSyncing(false) }
+  }
   return <SyncHubContext.Provider value={hub}><div className="co-root"><style>{CSS}</style><main className="co-page is-sources">
+    <button type="button" className="co-btn co-toolbar-refresh" onClick={syncFromHeader} disabled={syncing} aria-busy={syncing} aria-label="Sync with GitHub">Sync with GitHub</button>
     {selectionId ? <ReviewSelection selectionId={selectionId} token="fixture-only" appId="fixture-app" onClose={() => setSelectionId(null)} /> : <SourceMap projects={allProjects} focusKey={projectFocus} snapshot={{ generated_at: 'fixture-'+refreshKey }} conn={conn}
-      loadProjectDiff={loadProjectDiff} onRetry={async()=>{setRefreshKey(old=>old+1);return {ok:true,upstream:null}}}
+      loadProjectDiff={loadProjectDiff} onRetry={retryAll}
       repositoryPicker={<RepositoryPicker token="fixture-only" connected onAdded={repositoryAdded} />}
       renderActivity={(project, navigation) => project ? <><GithubPullsUnavailable conn={conn} onRetry={retryGithub} /><ProjectControls key={project.key} appId="fixture-app" token="fixture-only" project={project}
         run={runFor(project)} mergeRun={runFor(project)} onStart={start}>
@@ -389,7 +400,8 @@ const button = (name, root = document) => [...root.querySelectorAll('button')].f
 const review = () => query('.co-review-window')
 // The window's one way out is the X in its header; it has no Cancel.
 const closeReview = () => click(review().querySelector('[aria-label="Close"]'))
-const checkButton = () => query('.co-workspace .co-check-github .co-btn')
+// One Sync button for the whole app (the toolbar's), which re-reads GitHub for every project.
+const checkButton = () => query('.co-toolbar-refresh')
 const batchAction = () => [...document.querySelectorAll('.co-public-work .co-work-progress-row')].find(node => text(node).includes('Review or assign'))
 const ensure = (condition, message) => { if (!condition) throw new Error(message) }
 // CDP delivers the real browser key default; dispatchEvent would not toggle a
@@ -411,7 +423,7 @@ async function until(predicate, message) {
   await frame()
 }
 async function click(node, message = 'Expected enabled visible control') {
-  ensure(node && !node.disabled && node.getClientRects().length, message)
+  ensure(node && !node.disabled && node.getClientRects().length, message + (node ? ': ' + node.outerHTML.slice(0, 100) : ': no such element'))
   node.click()
   await frame(); await frame()
 }
@@ -435,11 +447,12 @@ async function openTab(name) {
   if (tab.getAttribute('aria-selected') !== 'true') await click(tab)
   await until(() => tab.getAttribute('aria-selected') === 'true', 'Tab did not open: ' + name)
 }
+// The PR filters are chips (a pressed state, a count), one per key the app filters on.
+const FILTER_LABELS = { all: 'All', authored: 'Opened by me', drafts: 'Drafts', failing: 'Failing checks', bots: 'Bots', unassigned: 'Unassigned', assigned: 'Assigned to me' }
+const filterChip = value => [...query('.co-pr-filters').querySelectorAll('button')].find(node => text(node).startsWith(FILTER_LABELS[value]))
 async function setFilter(value) {
-  const select = query('.co-pr-filter-select'); select.focus()
-  Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(select, value)
-  select.dispatchEvent(new Event('change', { bubbles: true }))
-  await frame()
+  const chip = filterChip(value); chip.focus()
+  await click(chip)
 }
 async function checkGithub(message = 'Check GitHub did not finish') {
   await click(checkButton())
@@ -493,17 +506,17 @@ window.runWorkspaceChecks = async () => {
     // mounted component, so later identity checks compare with the new list.
     const backToPrs = async () => { await openTab('All PRs'); originalList = query('.co-pr-list') }
     const inventoryNavigationDepth = navigation.length
-    await check('project tabs lead with All PRs, whose filter menu offers each view and change totals stay visible', async () => {
+    await check('project tabs lead with All PRs, whose filter chips offer each view and change totals stay visible', async () => {
       const tabs=[...document.querySelectorAll('[role=tab]')].map(node => text(node).replace(/\d+$/, ''))
       ensure(tabs.join('|')==='All PRs|Review requests|Agent runs','Project tabs drifted: '+tabs.join('|'))
       ensure([...document.querySelectorAll('[role=tab]')][0].getAttribute('aria-selected')==='true','All PRs is not the default tab')
-      const select=query('.co-pr-filter-select')
-      ensure(select && [...select.options].map(node => text(node)).join('|')==='Show: all|Show: unassigned|Show: assigned|Show: opened by me','PR filter choices drifted')
-      ensure(select.value==='all','Default filter is not all')
+      const chips=[...query('.co-pr-filters').querySelectorAll('button')].map(node => text(node).replace(/\d+$/, '').trim())
+      ensure(chips.join('|')==='All|Opened by me|Drafts|Failing checks|Bots|Unassigned|Assigned to me','PR filter choices drifted: '+chips.join('|'))
+      ensure(filterChip('all').getAttribute('aria-pressed')==='true','Default filter is not all')
       ensure([...document.querySelectorAll('.co-pr-row .co-pr-meta')].every(node => text(node).includes('+1−0')),'Change totals were not visible by default')
       ensure(!query('.co-display'), 'The retired display menu returned')
       await setFilter('authored')
-      ensure(query('.co-pr-filter-select').value==='authored','Filter state did not follow the choice')
+      ensure(filterChip('authored').getAttribute('aria-pressed')==='true','Filter state did not follow the choice')
       ensure(document.querySelectorAll('.co-pr-row').length===2,'Authored filter hid matching fixture PRs')
       await setFilter('all')
       ensure(query('.co-workspace-inventory')===originalInventory && mutationRequests().length===0,'Display-only controls replaced inventory or mutated GitHub')
@@ -553,7 +566,7 @@ window.runWorkspaceChecks = async () => {
       await click(trigger)
       await until(() => detail.querySelector('[role=menuitem]'), 'Detail Agent menu did not open')
       const menu=detail.querySelector('.co-agent-menu-list').getBoundingClientRect(), box=detail.getBoundingClientRect()
-      ensure(menu.left >= box.left - 1 && menu.right <= window.innerWidth + 1, 'The detail Agent menu ran past the pane edge')
+      ensure(menu.left >= box.left - 1 && menu.right <= window.innerWidth + 1, 'The detail Agent menu ran past the pane edge: menu ' + Math.round(menu.left) + ' to ' + Math.round(menu.right) + ', pane ' + Math.round(box.left) + ' to ' + Math.round(box.right) + ', screen ' + window.innerWidth + 'px')
       await click(trigger)
       await until(() => !detail.querySelector('[role=menuitem]'), 'Detail Agent menu did not close')
     })
@@ -587,7 +600,7 @@ window.runWorkspaceChecks = async () => {
       ensure(text(query('.co-pr-box-head')).includes('2 selected'),'Filtering discarded hidden selection')
       // A Möbius without the core review routes: optional workflows say so, never "Checking…" forever.
       window.presetsMissing=true
-      await chooseAgent(query('.co-pr-box-head'), 'Fix and merge')
+      await chooseAgent(query('.co-pr-box-head'), 'Review each')
       ensure(text(review()).includes('Contribution 7') && text(review()).includes('Contribution 8'),'Hidden selected identity omitted from confirmation')
       await until(()=>text(review()).includes('Needs a newer Möbius'),'A missing review-presets route kept checking')
       ensure(!text(review()).includes('Checking what this Möbius supports'),'Unsupported workflows still read as a pending check')
@@ -599,7 +612,7 @@ window.runWorkspaceChecks = async () => {
       const region=query('[data-task="task:detail"]')
       ensure(region.getAttribute('role')==='region' && !query('.co-task-dock'),'Detail is not an inline nonmodal region')
       ensure(query('.co-pr-detail').closest('.co-pr-row')?.dataset.pr==='owner/project#7','Detail is not anchored to its PR')
-      ensure(query('.co-pr-filter-select').value==='unassigned' && search.value==='Contribution','Opening detail cleared filter or search')
+      ensure(filterChip('unassigned').getAttribute('aria-pressed')==='true' && search.value==='Contribution','Opening detail cleared filter or search')
       ensure(query('.co-pr-list')===listBefore && text(query('.co-pr-box-head')).includes('2 selected'),'Opening detail remounted list or changed selection')
       await nativeEscape(); await until(() => !query('.co-task-content'),'Escape did not close inline detail')
       ensure(document.activeElement===trigger,'Escape did not return focus to the detail trigger')
@@ -619,7 +632,7 @@ window.runWorkspaceChecks = async () => {
       await openSecond()
       await setFilter('unassigned')
       await until(()=>!query('.co-pr-detail'),'Filter did not hide target detail')
-      ensure(document.activeElement===query('.co-pr-filter-select'),'Closing filtered detail stole focus from its filter')
+      ensure(document.activeElement===filterChip('unassigned'),'Closing filtered detail stole focus from its filter')
       await setFilter('all')
       ensure(!query('.co-pr-detail') && !query('[data-task="task:detail"]'),'Clearing filter resurrected a hidden detail task')
       await openSecond(); search.focus(); await fill(search,'Contribution')
