@@ -46,6 +46,21 @@ test('no automatic-continuation option is offered, because the platform does not
   assert.doesNotMatch(html, /Continue private review automatically|autopilot/i)
 })
 
+test('Merge after I approve is a switch only where it can be turned on; otherwise its reason is a plain line, and the versions say commit', async t => {
+  const caps = { post_review:true, propose_verdict:true }
+  const options = { post_review:true, propose_verdict:true }
+  const blocked = await render(t, 'ReviewConfirmation', { choice:{ pulls:[{...pr,isDraft:true}], mode:'review', intent:'review', options }, capabilities:caps, busy:false, onModeChange:() => {}, onOptionsChange:() => {} })
+  if (!blocked) return
+  assert.match(blocked, /class="co-rw-option is-line"><strong>Merge after I approve<\/strong><small>Not available for drafts\.<\/small>/)
+  assert.doesNotMatch(blocked, /role="switch"/, 'a switch that cannot be turned on is not drawn')
+  const open = await render(t, 'ReviewConfirmation', { choice:{ pulls:[pr], mode:'review', intent:'review', options:{ ...options, agent_submits_verdict:false } }, capabilities:{ ...caps, agent_submits_verdict:true }, busy:false, bindCurrentTarget:true, onModeChange:() => {}, onOptionsChange:() => {} })
+  assert.match(open, /<strong>Merge after I approve<\/strong>/)
+  assert.doesNotMatch(open, /is-line/)
+  assert.match(open, /Commit this review covers/)
+  assert.match(blocked, /Exact versions/, 'a pinned approval keeps its own name')
+  assert.doesNotMatch(open, /Versions it starts from/)
+})
+
 test('drafts explain unavailable choices instead of hiding them', async t => {
   const caps = { post_review:true, propose_verdict:true }
   const review = await render(t, 'ReviewConfirmation', { choice:{ pulls:[{...pr,isDraft:true}], mode:'review', intent:'review', options:{ post_review:true, propose_verdict:true } }, capabilities:caps, busy:false, onModeChange:() => {}, onOptionsChange:() => {} })

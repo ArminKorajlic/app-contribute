@@ -1638,6 +1638,11 @@ window.runDeskFrameChecks = async () => {
     await click([...document.querySelectorAll('.co-desk-row')].find(node => text(node).includes('Contribution 7')))
     await until(() => query('[aria-label="Choose an action for PR 7"]'), 'The PR page did not open')
     await click(query('[aria-label="Choose an action for PR 7"]'))
+    // Opening the menu never lands the keyboard on a destructive choice, and Close pull request sits last and apart.
+    const menuItems = [...document.querySelectorAll('[role=menuitem]')], closeItem = menuItems.find(node => text(node.querySelector('strong')) === 'Close pull request')
+    ensure(document.activeElement?.getAttribute('role') === 'menuitem' && !document.activeElement.hasAttribute('data-danger'), 'The Actions menu put its first focus on: ' + text(document.activeElement))
+    ensure(!closeItem || (menuItems.at(-1) === closeItem && closeItem.closest('.co-agent-menu-apart')), 'Close pull request is not last and apart')
+    checks.push({ name: 'the Actions menu never starts its focus on a destructive choice', status: 'pass' })
     await click([...document.querySelectorAll('[role=menuitem]')].find(node => text(node.querySelector('strong')) === 'Review'))
     await until(() => review(), 'Review window did not open')
     const start = () => [...review().querySelectorAll('button')].find(node => text(node).startsWith('Start'))

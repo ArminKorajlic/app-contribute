@@ -77,3 +77,12 @@ test('every menu intent is a machine action, and the header says what GitHub sho
   assert.deepEqual(pullHeader(pull({ isDraft: true, reviewDecision: 'APPROVED', ...checks('FAILURE', 1), mergeable: 'CONFLICTING' })),
     { label: '#7', text: 'draft · no reviews · 1 failing check · conflicts with main' }, 'GitHub’s approval summary is not repeated: the headline says who approved which version')
 })
+
+test('Close pull request is the one destructive row: red, apart, and last in You, whatever the machine highlights', () => {
+  const model = menu(mine({ latestOpinionatedReviews: { nodes: [{ state: 'APPROVED', author: { login: 'sam' }, commit: { oid: HEAD } }] } }))
+  assert.equal(model.you.at(-1).intent, 'close')
+  assert.equal(item(model, 'close').danger, true)
+  assert.equal(item(model, 'close').title, 'Close pull request')
+  assert.ok(model.you.filter(entry => entry.intent !== 'close').every(entry => !entry.danger))
+  assert.equal(model.you.at(-1).rec, false, 'closing is never the recommended step')
+})

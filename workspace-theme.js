@@ -580,7 +580,14 @@ export const WORKSPACE_CSS = `
 .co-agent-menu-list button.is-rec { background:color-mix(in srgb,var(--accent) 12%,transparent); }
 .co-agent-menu-list button.is-rec .co-agent-menu-tile { background:var(--accent); }
 .co-agent-menu-list button.is-rec .co-agent-menu-tile .co-icon { color:var(--accent-fg,#fff); }
-.co-agent-menu-list button.is-off { cursor:default; opacity:.55; }
+/* A row that cannot run dims its title and tile only: the reason below it keeps the muted text colour (4.5:1 and up). */
+.co-agent-menu-list button.is-off { cursor:default; }
+.co-agent-menu-list button.is-off strong,.co-agent-menu-list button.is-off .co-agent-menu-tile { opacity:.6; }
+.co-agent-menu-list button.is-danger strong,.co-agent-menu-list button.is-danger .co-icon { color:var(--danger); }
+.co-agent-menu-list button.is-danger:hover,.co-agent-menu-list button.is-danger:focus-visible { background:color-mix(in srgb,var(--danger) 10%,transparent); }
+.co-agent-menu-list:focus { outline:none; }
+.co-rw-option.is-line { display:block; margin:0; padding:14px 16px; cursor:default; }
+.co-rw-option.is-line small { display:block; margin-top:2px; color:var(--muted); font-size:var(--co-text-meta); line-height:1.45; }
 .co-agent-menu-list button.is-off:hover { background:none; }
 .co-agent-menu-list strong { display:block; font-size:var(--co-text-body); font-weight:600; }
 .co-agent-menu-list small { display:block; margin-top:2px; color:var(--muted); font-size:var(--co-text-meta); line-height:1.45; }

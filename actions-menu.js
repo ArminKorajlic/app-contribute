@@ -29,7 +29,9 @@ export function pullHeader(pr) {
   return { label: `#${pr.number}`, text: parts.filter(Boolean).join(' · ') }
 }
 
-const asItem = (action, icon) => ({ intent: action.id, icon, title: action.title, detail: action.detail, rec: action.highlighted, off: !action.enabled, reason: action.reason })
+// Closing is the one destructive row: it is set apart, last, and never takes the first focus.
+const DESTRUCTIVE = new Set(['close'])
+const asItem = (action, icon) => ({ intent: action.id, icon, title: action.title, detail: action.detail, rec: action.highlighted, off: !action.enabled, reason: action.reason, danger: DESTRUCTIVE.has(action.id) })
 
 // Whether this Möbius can run one of your own actions for you (the menu lists it, the next-step button offers it).
 export const mayRunYourAction = (id, { record, capabilities }) => !!YOUR_MENU[id]
@@ -38,7 +40,7 @@ export const mayRunYourAction = (id, { record, capabilities }) => !!YOUR_MENU[id
 function yourItems(decision, { record, capabilities }) {
   return decision.actions.filter(action => mayRunYourAction(action.id, { record, capabilities }))
     .map(action => asItem(action, YOUR_MENU[action.id]))
-    .sort((a, b) => Number(b.rec) - Number(a.rec))
+    .sort((a, b) => Number(a.danger) - Number(b.danger) || Number(b.rec) - Number(a.rec))
 }
 
 function agentItems(decision) {

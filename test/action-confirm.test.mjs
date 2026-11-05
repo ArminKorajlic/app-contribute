@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { ACTION_COPY, allowedMergeMethods, mergeCopy, openForReviewCopy, methodToSend, postFindingsCopy } from '../action-copy.js'
@@ -157,6 +158,10 @@ test('the open Actions menu names its two groups only when there is something of
   assert.match(withYou, /role="group" aria-label="Agent"/)
   assert.ok(withYou.indexOf('Open for review') < withYou.indexOf('aria-label="Agent"'), 'your own actions come first')
   assert.match(withYou, /Open it for review first\./, 'Merge stays in place, dimmed, with its reason')
+  // Close appears only where this Möbius can close for you; then it sits apart, red, after everything else of yours.
+  const withClose = render({ pulls: [draft], record: { status: 'draft', submission_mode: 'github' }, capabilities: { merge_now: true, close_now: true } })
+  assert.match(withClose, /co-agent-menu-apart"><button[^>]*data-danger="true"[^>]*class="[^"]*is-danger[^"]*"[^>]*><span class="co-agent-menu-tile">.*?Close pull request/, 'Close sits apart, marked destructive')
+  assert.ok(withClose.indexOf('Close pull request') > withClose.indexOf('Merge'), 'and after every other choice of yours')
   assert.ok(withYou.indexOf('is-rec') > withYou.indexOf('aria-label="Agent"'), 'an unchecked draft of yours is checked first')
   const plain = render({ pulls: [pr({ state: 'OPEN', author: { login: 'sam' }, ...reviews })] })
   assert.doesNotMatch(plain, /aria-label="You"|co-agent-menu-group/, 'with nothing of your own the menu is the plain agent list')
@@ -261,4 +266,14 @@ test('the post sheet names what it posts, keeps its button off until the words a
   assert.doesNotMatch(html, />Cancel</)
   assert.match(render({ pr: target, copy: loading, onConfirm() {}, onClose() {} }), /<button[^>]*co-btn-primary[^>]*disabled[^>]*>Post to GitHub/, 'the button waits for the words')
   assert.match(render({ pr: target, copy: refused, onConfirm() {}, onClose() {} }), /The pull request changed since you looked/)
+})
+
+test('a row that cannot run dims its title, never its reason, and the menu never starts its focus on a destructive row', () => {
+  const css = readFileSync(new URL('../workspace-theme.js', import.meta.url), 'utf8')
+  assert.match(css, /\.co-agent-menu-list button\.is-off \{ cursor:default; \}/)
+  assert.doesNotMatch(css, /button\.is-off \{[^}]*opacity/)
+  assert.match(css, /button\.is-off strong,\.co-agent-menu-list button\.is-off \.co-agent-menu-tile \{ opacity:\.6; \}/)
+  const menu = readFileSync(new URL('../ui/useDismissableMenu.js', import.meta.url), 'utf8')
+  assert.match(menu, /:not\(\[aria-disabled=true\]\):not\(\[data-danger\]\)/)
+  assert.match(menu, /querySelector\('\[role=menu\]'\)/, 'a menu with only a destructive choice focuses the menu, not the choice')
 })

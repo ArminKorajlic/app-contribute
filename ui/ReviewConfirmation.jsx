@@ -101,10 +101,12 @@ function ReviewSwitches({ choice, promptOptions, capabilities, onModeChange, onO
     onOptionsChange({ ...promptOptions, ...choice.options, ...WHO_OPTIONS[key] })
     if (key !== 'draft' && granted.merge) onModeChange?.('review')
   }
-  const mergeSwitch = onModeChange && choice.intent === 'review' ? <Switch checked={granted.merge} disabled={busy || (!granted.merge && !!mergeBlocker)}
-    label="Merge after I approve"
-    detail={!granted.merge && mergeBlocker ? mergeBlocker : hints.merge}
-    onChange={checked => onModeChange(checked ? 'review_merge' : 'review')} /> : null
+  // A switch that cannot be turned on is no switch: the reason is a plain line, so nothing looks available that is not.
+  const blocked = !granted.merge && !!mergeBlocker
+  const mergeSwitch = !onModeChange || choice.intent !== 'review' ? null : blocked
+    ? <p className="co-rw-option is-line"><strong>Merge after I approve</strong><small>{mergeBlocker}</small></p>
+    : <Switch checked={granted.merge} disabled={busy} label="Merge after I approve" detail={hints.merge}
+      onChange={checked => onModeChange(checked ? 'review_merge' : 'review')} />
   return <>
     {canDraft ? <WhoSees who={who} agentAllowed={capabilities?.agent_submits_verdict === true} disabled={busy || !promptOptions} onChange={pick} /> : null}
     {mergeSwitch && canDraft ? <div className="co-rw-options">{mergeSwitch}</div> : null}
@@ -114,7 +116,7 @@ function ReviewSwitches({ choice, promptOptions, capabilities, onModeChange, onO
 
 // The exact heads and target tips behind this approval, out of the way.
 function VersionDetails({ pulls, live }) {
-  return <details className="co-task-details co-rw-versions"><summary>{live ? 'Versions it starts from' : 'Exact versions'}</summary>
+  return <details className="co-task-details co-rw-versions"><summary>{live ? (pulls.length === 1 ? 'Commit this review covers' : 'Commits this review covers') : 'Exact versions'}</summary>
     {pulls.map(pr => <p key={prKey(pr)}>#{pr.number}: <code>{pr.headRefOid?.slice(0, 7)} → {pr.baseRefName} ({live ? 'last seen ' : ''}{baseTip(pr)?.slice(0, 7)})</code></p>)}
   </details>
 }
