@@ -40,7 +40,7 @@ function ProjectRows({ rows, project, onOpenPull }) {
   const shown = all ? rows : rows.slice(0, SHOWN_AT_FIRST)
   return <>
     {shown.map(entry => <ReviewRow key={entry.id} entry={entry} project={project} onOpenPull={onOpenPull} />)}
-    {rows.length > shown.length ? <button type="button" className="co-comments-toggle" onClick={() => setAll(true)}>{`Show ${rows.length - shown.length} earlier`}</button> : null}
+    {rows.length > shown.length ? <button type="button" className="co-btn co-comments-toggle" onClick={() => setAll(true)}>{`Show ${rows.length - shown.length} earlier`}</button> : null}
   </>
 }
 
@@ -88,7 +88,7 @@ export function ReviewsView({ reviews, projects, query, onOpenProject, onOpenPul
       {tabs.map(([key, label, count]) => <button key={key} type="button" aria-pressed={tab === key} onClick={() => setPicked(key)}>{label}<span className="co-pr-filter-count">{count}</span></button>)}
     </div>
     {reviews.checking && !shown.length ? <p className="co-pr-note" role="status">Checking which of these pull requests are still open…</p> : null}
-    {reviews.counts?.unknown && tab === 'progress' ? <p className="co-pr-note" role="status">{reviews.counts.unknown === 1 ? 'One pull request' : `${reviews.counts.unknown} pull requests`} could not be read from GitHub, so where {reviews.counts.unknown === 1 ? 'it stands' : 'they stand'} is unknown. {reviews.retry ? <button type="button" className="co-quiet-action" onClick={reviews.retry}>Try again</button> : null}</p> : null}
+    {reviews.counts?.unknown && tab === 'progress' ? <p className="co-pr-note" role="status">{reviews.counts.unknown === 1 ? 'One pull request' : `${reviews.counts.unknown} pull requests`} could not be read from GitHub, so where {reviews.counts.unknown === 1 ? 'it stands' : 'they stand'} is unknown. {reviews.retry ? <button type="button" className="co-btn co-btn-quiet" onClick={reviews.retry}>Try again</button> : null}</p> : null}
     {!groups.length && !reviews.checking
       ? <EmptyView icon="review" title={query.trim() ? 'Nothing matches your search' : EMPTY[tab].title} hint={query.trim() ? 'Try a PR number, a title word or a repository.' : EMPTY[tab].hint} />
       : <div className="co-desk-envelopes">{groups.map(({ project, rows }) => (

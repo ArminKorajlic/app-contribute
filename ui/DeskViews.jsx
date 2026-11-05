@@ -12,6 +12,7 @@ import { ChecksBadge, PullLabels, PullStateIcon, TimeAgo } from './GithubParts.j
 import { Icon } from './Icons.jsx'
 import { Envelope, EmptyView } from './Envelope.jsx'
 import { ConfirmView, ReviewsView } from './ReviewsView.jsx'
+import { NAMES } from '../names.js'
 
 const matches = (query, ...parts) => !query.trim()
   || parts.filter(Boolean).join(' ').toLowerCase().includes(query.trim().toLowerCase())
@@ -101,7 +102,7 @@ function projectRows(view, project, { login, decisionsFor, lastLooked, query, ru
     const target = feedbackPull(item)
     const pr = target && authoredPulls(project.incomingReviews, login).find(candidate => prKey(candidate) === prKey(target))
     if (!pr || !savedFindings(reviewForPull(runs, pr), ignored)) return null
-    return { label: 'Fix these findings', run: () => onOpenPull(project, target, 'review', 'fix') }
+    return { label: NAMES.fixFindings, run: () => onOpenPull(project, target, 'review', 'fix') }
   }
   const decisionRow = item => (
     <ReviewFrame key={`decision:${item.id}`} state={frameState(reviewForRecord(runs, item.record), { own: true, ignored })} inset={3} radius={10}>

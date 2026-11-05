@@ -42,7 +42,7 @@ export function TaskPane({ id, children, dock = true }) {
   if (!task) return children
   if (!visible) return null
   return <section ref={content} tabIndex={-1} className={'co-task-content' + (dock ? ' co-task-dock' : '')} data-task={id} role={dock ? "dialog" : "region"} aria-modal={dock ? "false" : undefined} aria-label="Project action" aria-labelledby={headingId} onKeyDown={event => { if (event.key === "Escape") { event.stopPropagation(); task.close() } }}>
-    <button className="co-quiet-action co-inline-close" aria-label="Close action" onClick={task.close}><Icon name="close" size={18} /></button>
+    <button className="co-btn co-btn-quiet co-btn-icon co-inline-close" aria-label="Close action" onClick={task.close}><Icon name="close" size={18} /></button>
     {children}
   </section>
 }

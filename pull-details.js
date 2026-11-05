@@ -31,7 +31,7 @@ export async function githubRead(token, path, signal) {
 }
 export function assertPullVersion(pr, detail) {
   if (detail?.head?.sha !== pr.headRefOid || detail?.base?.sha !== pr.baseRefOid || detail?.base?.ref !== pr.baseRefName) {
-    const error = new Error('This PR changed. Refresh the PR list before reviewing this version.')
+    const error = new Error('This PR changed. Sync before reviewing this version.')
     error.code = 'stale'
     throw error
   }
@@ -84,8 +84,8 @@ export async function loadPullChecks(token, pr, page = 1, signal) {
     Promise.allSettled(sources.map(async ([name, url, field]) => {
     const data = await githubRead(token, url, signal)
     if (!Array.isArray(data?.[field])) throw new Error(`GitHub did not return ${name.toLowerCase()}.`)
-    if (field === 'statuses' && data.sha !== pr.headRefOid) throw Object.assign(new Error('Status results did not match the selected head. Refresh the PR list.'), { code: 'stale' })
-    if (field === 'check_runs' && data[field].some(item => item.head_sha !== pr.headRefOid)) throw Object.assign(new Error('Check runs did not match the selected head. Refresh the PR list.'), { code: 'stale' })
+    if (field === 'statuses' && data.sha !== pr.headRefOid) throw Object.assign(new Error('Status results did not match the selected head. Sync to read them again.'), { code: 'stale' })
+    if (field === 'check_runs' && data[field].some(item => item.head_sha !== pr.headRefOid)) throw Object.assign(new Error('Check runs did not match the selected head. Sync to read them again.'), { code: 'stale' })
     const total = count(data.total_count)
     return { name, total, items: data[field], hasMore: total === null ? data[field].length === 100 : total > page * 100, paginationUnknown: total === null }
     })),

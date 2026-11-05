@@ -25,7 +25,7 @@ test('a closed PR or a surface without handlers offers only what it can do', () 
 
 test('only a review that is working or waiting on an answer can be stopped', () => {
   assert.deepEqual(keys(reviewActionPlan({ tone: 'running', chat: true, stoppable: true })), ['ask', 'stop'])
-  assert.equal(reviewActionPlan({ tone: 'running', chat: true, stoppable: true })[0].label, 'Open review conversation')
+  assert.equal(reviewActionPlan({ tone: 'running', chat: true, stoppable: true })[0].label, 'Open chat')
   assert.deepEqual(keys(reviewActionPlan({ tone: 'needs', chat: true, asked: true, stoppable: true })), ['ask', 'stop'])
   for (const tone of ['findings', 'clear', 'waiting', 'ignored', 'settled', 'verdict']) {
     assert.ok(!keys(reviewActionPlan({ tone, own: true, chat: true, stoppable: false, can: everything })).includes('stop'), tone)
@@ -51,8 +51,8 @@ test('a finished review has nothing to stop, and neither does one that already h
 })
 
 test('"answer" is for a conversation that really asked something', () => {
-  assert.equal(reviewActionPlan({ tone: 'needs', chat: true, asked: true })[0].label, 'Answer in review conversation')
-  assert.equal(reviewActionPlan({ tone: 'needs', chat: true, asked: false })[0].label, 'Open review conversation')
+  assert.equal(reviewActionPlan({ tone: 'needs', chat: true, asked: true })[0].label, 'Answer in chat')
+  assert.equal(reviewActionPlan({ tone: 'needs', chat: true, asked: false })[0].label, 'Open chat')
 })
 
 test('a stopped run can start again; an ignored finding can be taken back; the rest only ask', () => {

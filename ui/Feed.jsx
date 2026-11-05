@@ -31,6 +31,7 @@ import { DEFAULT_STAGE, stageApplies, stageWords } from '../publication-stage.js
 import { ProjectIcon } from './ProjectIcon.jsx'
 import { ProjectTabs } from './ProjectTabs.jsx'
 import { AttentionList } from './AttentionList.jsx'
+import { NAMES } from '../names.js'
 
 function itemProject(item) {
   return item?.project || { name: item?.detail || 'Contribution' }
@@ -458,13 +459,13 @@ function ExactBatchAction({
           <strong>{mode === 'ready'
             ? `${count === 1 ? 'Your draft is' : `${count} drafts are`} ready for review`
             : `${count} prepared ${count === 1 ? 'PR' : 'PRs'}`}</strong>
-          <span className="co-visually-hidden">{mode === 'ready' ? 'Marking it ready for review does not merge it.' : 'Privately reviewed. Nothing shared yet.'}</span>
+          <span className="co-visually-hidden">{mode === 'ready' ? 'Opening it for review does not merge it.' : 'Privately reviewed. Nothing shared yet.'}</span>
           {note ? <p className="co-run-error" role="status">{note}</p> : null}
         </div>
         {staged
           ? <OpenSplitButton stage={stage} count={count} onOpen={openConfirm} />
           : <button type="button" className="co-btn co-btn-primary" onClick={() => openConfirm()}>
-            {mode === 'ready' ? 'Mark ready for review' : count === 1 ? 'Review and send' : `Review and send ${count}`}
+            {mode === 'ready' ? NAMES.openForReview : count === 1 ? NAMES.sendToGitHub : `Send ${count} to GitHub`}
           </button>}
       </section>
     )
@@ -498,7 +499,7 @@ function ExactBatchAction({
         onSelect={busy ? undefined : onSelect}
       />
       {note ? <p className="co-run-error" role="status">{note}</p> : null}
-      {checking ? <p className="co-run-error" role="status">Checking the recorded result. Refresh Contribute to check it; nothing will be sent again from this confirmation.</p> : null}
+      {checking ? <p className="co-run-error" role="status">Checking the recorded result. Sync to check it; nothing will be sent again from this confirmation.</p> : null}
       {finished ? <div className="co-run-approval-actions">
         <button type="button" className="co-btn co-btn-primary" disabled={checking} onClick={closeResults}>{checking ? 'Checking result…' : 'Done'}</button>
       </div> : <div className="co-run-approval-actions">
@@ -507,7 +508,7 @@ function ExactBatchAction({
         </button>
         <button type="button" className="co-btn co-btn-primary" disabled={busy} aria-busy={busy} onClick={applyAll}>
           {busy ? 'Working…' : mode === 'ready'
-            ? (count === 1 ? 'Mark ready on GitHub' : `Mark ${count} ready on GitHub`)
+            ? (count === 1 ? NAMES.openForReview : `Open ${count} for review`)
             : staged ? stageWords(stage).onGithub(count) : (count === 1 ? 'Send to GitHub' : `Send ${count} to GitHub`)}
         </button>
       </div>}
@@ -529,7 +530,7 @@ function IncomingAction({ item, onAssign }) {
   }
   return (
     <>
-      <button type="button" className="co-run-row-action is-primary" disabled={busy} onClick={assign}>
+      <button type="button" className="co-btn co-btn-primary co-run-row-action" disabled={busy} onClick={assign}>
         {busy ? 'Assigning…' : 'Assign & review'}
       </button>
       {note ? <small className="co-run-row-error" role="status">{note}</small> : null}
@@ -579,7 +580,7 @@ function DecisionRow({
       ) : (
         <button
           type="button"
-          className="co-run-row-action"
+          className="co-btn co-run-row-action"
           onClick={() => onSelect?.(item)}
         >
           {decisionActionLabel(item)}
@@ -624,12 +625,12 @@ function SourceChatChoices({ records, onFeedback }) {
   }
   return (
     <div className="co-run-source-choices">
-      {reviewChats.map((chatId, index) => <button key={`review:${chatId}`} type="button" className="co-btn co-btn-sm" onClick={() => {
+      {reviewChats.map((chatId, index) => <button key={`review:${chatId}`} type="button" className="co-btn" onClick={() => {
         const outcome = openAgentConversation(chatId)
-        if (!outcome?.ok) setNote('Open Contribute inside Möbius to view this review conversation.')
-      }}>{reviewChats.length === 1 ? 'Open review conversation' : `Open review conversation ${index + 1}`}</button>)}
+        if (!outcome?.ok) setNote('Open Contribute inside Möbius to open this chat.')
+      }}>{reviewChats.length === 1 ? NAMES.openChat : `${NAMES.openChat} ${index + 1}`}</button>)}
       {sources.map((source, index) => (
-        <button key={source.chatId} type="button" className="co-btn co-btn-sm" onClick={() => open(source)}>
+        <button key={source.chatId} type="button" className="co-btn" onClick={() => open(source)}>
           {sources.length === 1 ? 'Open source chat' : `Open source chat ${index + 1}`}
         </button>
       ))}
@@ -701,8 +702,8 @@ function ReadyAttentionFocus({ item, onMarkReady, onFeedback }) {
           {busy
             ? 'Working…'
             : record?.last_ready_error_code === 'ready_auto_merge_enabled'
-              ? 'I turned off auto-merge. Mark ready again'
-              : 'Mark ready for review again'}
+              ? 'I turned off auto-merge. Open for review again'
+              : 'Open for review again'}
         </button>
       ) : null}
       {record?.url ? <a className="co-review-link" href={record.url} target="_blank" rel="noopener noreferrer">Open pull request ↗</a> : null}
@@ -721,7 +722,7 @@ function IncomingFocus({ item, onAssignIncomingReview }) {
       <p>{item.detail}</p>
       <div className="co-run-focus-actions">
         <IncomingAction item={pull} onAssign={onAssignIncomingReview} />
-        {pull.url ? <a className="co-btn co-btn-sm" href={pull.url} target="_blank" rel="noopener noreferrer">Open on GitHub ↗</a> : null}
+        {pull.url ? <a className="co-btn" href={pull.url} target="_blank" rel="noopener noreferrer">Open on GitHub ↗</a> : null}
       </div>
     </section>
   )
@@ -966,7 +967,7 @@ export function ContributionRun({
           <div className="co-run-empty">
             <Icon name="cycle" size={20} />
             <strong>This contribution moved</strong>
-            <span>The current run no longer contains that exact record. Refresh or return to its source chat.</span>
+            <span>The current run no longer contains that exact record. Sync, or open its source chat.</span>
           </div>
         ) : (
           <FocusedItem

@@ -15,8 +15,8 @@ export function Envelope({ project, count, foldable, children, onOpenProject }) 
         <strong>{project.name}</strong>
         {PROJECT_TAGS[project.kind] ? <span className="co-source-tag">{PROJECT_TAGS[project.kind]}</span> : null}
         {count ? <b className="co-rail-count">{count}</b> : null}
-        <button type="button" className="co-quiet-action" onClick={() => onOpenProject(project.key)}>Open<Icon name="right" size={14} /></button>
-        {foldable ? <button type="button" className="co-envelope-toggle" aria-expanded={open} aria-label={(open ? 'Collapse ' : 'Expand ') + project.name} onClick={() => setOpen(!open)}><Icon name="chevron" size={16} /></button> : null}
+        <button type="button" className="co-btn co-btn-quiet" onClick={() => onOpenProject(project.key)}>Open<Icon name="right" size={14} /></button>
+        {foldable ? <button type="button" className="co-btn co-btn-quiet co-btn-icon co-envelope-toggle" aria-expanded={open} aria-label={(open ? 'Collapse ' : 'Expand ') + project.name} onClick={() => setOpen(!open)}><Icon name="chevron" size={16} /></button> : null}
       </header>
       <div className="co-envelope-body">{children}</div>
     </section>

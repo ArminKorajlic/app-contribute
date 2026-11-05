@@ -463,10 +463,10 @@ export async function beginProjectCycle(projectKey, action = {}, observedK = 0) 
     if (previous?.chat_id && previous.title) history.unshift({ chat_id: previous.chat_id, title: previous.title, event: previous.event, started_at: previous.started_at })
     const next = { schema: 4, scope, chat_id: previous?.chat_id || '', title: frozen.title, event: frozen.event || '', started_at: cycle.started_at, k, cycle, history: history.slice(0, 50) }
     const receipt = await storage.durableWrite(key, next, version ? { ifMatch: version } : { ifNoneMatch: true })
-    if (receipt?.durability !== 'synced') return { ok: false, error: 'This start was not saved online. Refresh before trying again.' }
+    if (receipt?.durability !== 'synced') return { ok: false, error: 'This start was not saved online. Sync before trying again.' }
     return { ok: true, scope, k, cid: cycle.cid, action: frozen }
   } catch {
-    return { ok: false, error: 'Project work changed in another view or could not be saved. Refresh and try again.' }
+    return { ok: false, error: 'Project work changed in another view or could not be saved. Sync and try again.' }
   }
 }
 

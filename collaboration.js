@@ -68,7 +68,7 @@ export function matchingPulls(pulls, filter, login) {
 
 async function graph(token, query) {
   const result = await fetchLiveStates(token, query)
-  if (!result) throw new Error('Could not check GitHub. Refresh to try again.')
+  if (!result) throw new Error('Could not check GitHub. Sync to try again.')
   return result
 }
 export async function discoverRepositories(token, cursor = null) {
@@ -76,7 +76,7 @@ export async function discoverRepositories(token, cursor = null) {
     affiliations:[OWNER,COLLABORATOR,ORGANIZATION_MEMBER], orderBy:{field:UPDATED_AT,direction:DESC},
     after:${JSON.stringify(cursor)}) { nodes { nameWithOwner viewerPermission isArchived pullRequests(states:OPEN) { totalCount } }
     pageInfo { hasNextPage endCursor } } } }`)
-  if (!data.viewer?.repositories) throw new Error('GitHub did not return repository access. Refresh to try again.')
+  if (!data.viewer?.repositories) throw new Error('GitHub did not return repository access. Sync to try again.')
   const connection = data.viewer.repositories
   return { repositories: connection.nodes.filter(repo => mayAssign(repo.viewerPermission) && !repo.isArchived).map(repo => ({ ...repo, openPullRequestCount: repo.pullRequests?.totalCount || 0 })), ...connection.pageInfo }
 }
@@ -102,7 +102,7 @@ export async function discoverPulls(token, repo = '', cursor = null) {
       issueCount pageInfo { hasNextPage endCursor }
     }
   }`)
-  if (!data.search) throw new Error('GitHub did not return pull requests. Refresh to try again.')
+  if (!data.search) throw new Error('GitHub did not return pull requests. Sync to try again.')
   return { pulls: data.search.nodes.filter(pr => pr?.repository?.nameWithOwner && pr.headRefOid),
     total: data.search.issueCount, ...data.search.pageInfo }
 }
@@ -141,7 +141,7 @@ export async function collaborationRequest(token, appId, path, body) {
   const routeMissing = response.status === 404 && (!data.detail || data.detail === 'Not Found')
   if (!response.ok) throw Object.assign(new Error(routeMissing
     ? 'These controls need the companion Möbius update to be activated.'
-    : typeof data.detail === 'string' ? data.detail : data.detail?.message || 'Could not complete this action. Refresh before retrying.'),
+    : typeof data.detail === 'string' ? data.detail : data.detail?.message || 'Could not complete this action. Sync before retrying.'),
   { status: response.status, ...(typeof data.detail?.code === 'string' ? { code: data.detail.code } : {}) })
   return data
 }
@@ -167,7 +167,7 @@ export const notOursToObserve = error => error?.status === 403 && error?.code ==
 export const reviewRunTitle = run => run.mode === 'review_fix_merge' ? 'Review, fix & merge' : run.mode === 'review_merge' ? 'Review & merge'
   : runPostsReview(run) ? 'GitHub review' : run.mode === 'review' ? 'Private review' : 'Review run'
 
-export const REVIEW_STATE_NAMES = { reviewing: 'Reviewing', repairing:'Fixing review findings', pushing:'Sending scoped fix', marking_ready:'Marking ready for review', ready_unknown:'Readiness outcome needs checking', push_unknown:'Fix outcome needs checking', pending: 'Waiting to review', all_clear: 'Review clear', needs_you: 'Needs you', merged: 'Merged', queued: 'In merge queue', failed: 'Failed', starting: 'Starting', merging: 'Merging', merge_unknown: 'Outcome needs checking', verdict_pending: 'Verdict waiting for you', verdict_posting: 'Submitting verdict', verdict_unknown: 'Verdict outcome needs checking', complete: 'Complete', stopped: 'Stopped', interrupted:'Interrupted', paused: 'Paused', awaiting_owner: 'Waiting for your answer' }
+export const REVIEW_STATE_NAMES = { reviewing: 'Reviewing', repairing:'Fixing review findings', pushing:'Sending scoped fix', marking_ready:'Opening for review', ready_unknown:'Readiness outcome needs checking', push_unknown:'Fix outcome needs checking', pending: 'Waiting to review', all_clear: 'Review clear', needs_you: 'Needs you', merged: 'Merged', queued: 'In merge queue', failed: 'Failed', starting: 'Starting', merging: 'Merging', merge_unknown: 'Outcome needs checking', verdict_pending: 'Verdict waiting for you', verdict_posting: 'Submitting verdict', verdict_unknown: 'Verdict outcome needs checking', complete: 'Complete', stopped: 'Stopped', interrupted:'Interrupted', paused: 'Paused', awaiting_owner: 'Waiting for your answer' }
 
 // One derivation of run and item progress for every run view. Execution
 // belongs to the conversation; saved verdicts and public receipts survive it.
@@ -274,7 +274,7 @@ export function reviewRunRequest(choice) {
     ...(choice.preview_sha256 ? { preview_sha256:choice.preview_sha256 } : {}),
     ...(choice.agent ? { agent:choice.agent } : {}),
     items: choice.pulls.map(pr => {
-      if (!baseTip(pr)) throw new Error(`Couldn’t read the target branch of #${pr.number}. Refresh and try again.`)
+      if (!baseTip(pr)) throw new Error(`Couldn’t read the target branch of #${pr.number}. Sync and try again.`)
       return { repo: pr.repository.nameWithOwner, number: pr.number,
         head_sha: pr.headRefOid, base_ref: pr.baseRefName, base_sha: baseTip(pr) }
     }),

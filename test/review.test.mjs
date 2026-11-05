@@ -196,7 +196,7 @@ test('the Run owns one exact grouped action across standalone and stacked work',
   assert.match(feedSource, /<ExactActionList[\s\S]*?items=\{activeItems\}/)
   assert.match(feedSource, /sortStackRecords\(runUnitRecords\(item\)\)/)
   assert.match(feedSource, /item\?\.unit\?\.type === 'stack'/)
-  assert.match(feedSource, /Review and send \$\{count\}/)
+  assert.match(feedSource, /Send \$\{count\} to GitHub/)
   assert.match(feedSource, /Send \$\{count\} to GitHub/)
   assert.doesNotMatch(feedSource, /Send all|Prepare latest/)
   // Ready is the documented normal; the sentence lives with the stage words the confirmation uses.
@@ -324,7 +324,7 @@ test('prepared card actions use one small, plain-language vocabulary', () => {
   assert.doesNotMatch(cardSource, /Run the full GitHub checks on your fork/)
   assert.doesNotMatch(cardSource, /Check on fork/)
   assert.match(cardSource, /<span>Chat<\/span>/)
-  assert.match(cardSource, /<span>Dismiss<\/span>/)
+  assert.match(cardSource, /<span>\{NAMES\.discard\}<\/span>/)
   assert.match(cardSource, /can be restored from Dismissed/)
   assert.doesNotMatch(cardSource, /Move to History/)
 })

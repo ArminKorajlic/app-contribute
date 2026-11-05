@@ -18,9 +18,9 @@ const CYCLE_CSS = `
 .co-cycle-actions{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}
 .co-cycle-history{padding-left:20px}
 .co-cycle-history li{margin:4px 0}
-.co-task-progress{margin:16px 0;padding:14px 16px;border:1px solid var(--border);border-radius:10px;background:var(--bg)}
-.co-task-progress>strong{display:block;font-size:15px;font-weight:600;color:var(--text)}
-.co-task-content .co-task-progress p{margin:4px 0 0;font-size:14px}
+.co-task-progress{margin:16px 0;padding:14px 16px;border:1px solid var(--border);border-radius:var(--co-radius-control);background:var(--bg)}
+.co-task-progress>strong{display:block;font-size:var(--co-text-body);font-weight:600;color:var(--text)}
+.co-task-content .co-task-progress p{margin:4px 0 0;font-size:var(--co-text-meta)}
 .co-task-progress .co-cycle-actions{margin:12px 0 0}
 `
 
@@ -40,7 +40,7 @@ function LocalLine({ project, run, task }) {
   return <StatusLine icon="edit" title="Your edits" strong={local.strong} text={local.text} sub={local.sub || null}>
     {local.edits ? <>
       <button type="button" className="co-btn" disabled={!run?.privateAction} onClick={() => task?.open('task:prepare')}><Icon name="prepare" size={15} />Make PRs from my edits</button>
-      <button type="button" className="co-btn is-icon" onClick={() => task?.open('task:files')} aria-label="See the files" title="See the files"><Icon name="review" size={16} /></button>
+      <button type="button" className="co-btn co-btn-icon" onClick={() => task?.open('task:files')} aria-label="See the files" title="See the files"><Icon name="review" size={16} /></button>
     </> : null}
   </StatusLine>
 }
@@ -149,7 +149,7 @@ export function ProjectControls({ appId, token, project, run, onStart, loading, 
         <button type="button" className="co-btn co-btn-primary co-task-primary" disabled={!canStart} onClick={() => start(fullCycleAction, cycleAgent)}>Start fresh full merge cycle</button>
       </> : null}
       {blockedReason || cycle.error || error ? <p role="status">{blockedReason || cycle.error || error}</p> : null}
-      {cycle.history?.length ? <details><summary>Past jobs ({cycle.history.length})</summary><ul className="co-cycle-history">{cycle.history.map((item, index) => <li key={`${index}:${item.started_at || item.chat_id}`}><button type="button" className="co-quiet-action" onClick={() => workflow.open(item.chat_id)}>{item.title || 'Previous project work'}{item.started_at ? <> · <DateLabel value={item.started_at} prefix="Started " /></> : null}</button></li>)}</ul></details> : null}
+      {cycle.history?.length ? <details><summary>Past jobs ({cycle.history.length})</summary><ul className="co-cycle-history">{cycle.history.map((item, index) => <li key={`${index}:${item.started_at || item.chat_id}`}><button type="button" className="co-btn co-btn-quiet" onClick={() => workflow.open(item.chat_id)}>{item.title || 'Previous project work'}{item.started_at ? <> · <DateLabel value={item.started_at} prefix="Started " /></> : null}</button></li>)}</ul></details> : null}
     </TaskPane>
   </section> : null
   const progress = cycle.chatId && (active || waiting || ['paused', 'failed'].includes(cycle.phase))

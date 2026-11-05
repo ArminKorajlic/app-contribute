@@ -20,5 +20,5 @@ export function WindowHead({ icon, title, titleId, pulls, tools = null, done = f
 }
 
 export function CloseWindowButton({ onClick, disabled = false }) {
-  return <button type="button" className="co-quiet-action co-rw-close" aria-label="Close" disabled={disabled} onClick={onClick}><Icon name="close" size={18} /></button>
+  return <button type="button" className="co-btn co-btn-quiet co-btn-icon co-rw-close" aria-label="Close" disabled={disabled} onClick={onClick}><Icon name="close" size={18} /></button>
 }

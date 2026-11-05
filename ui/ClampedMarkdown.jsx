@@ -12,6 +12,6 @@ export function ClampedMarkdown({ markdown }) {
   }, [markdown, expanded])
   return <>
     <div ref={body} className={'co-desc-body' + (expanded ? ' is-open' : '')}><MarkdownView markdown={markdown} /></div>
-    {overflows || expanded ? <button type="button" className="co-quiet-action" onClick={() => setExpanded(value => !value)}>{expanded ? 'Show less' : 'Show more'}</button> : null}
+    {overflows || expanded ? <button type="button" className="co-btn co-btn-quiet" onClick={() => setExpanded(value => !value)}>{expanded ? 'Show less' : 'Show more'}</button> : null}
   </>
 }

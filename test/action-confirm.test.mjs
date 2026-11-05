@@ -155,7 +155,7 @@ test('the open Actions menu names its two groups only when there is something of
   const withYou = render({ pulls: [draft], record: { status: 'draft', submission_mode: 'github' }, capabilities: { merge_now: true } })
   assert.match(withYou, /role="group" aria-label="You"/)
   assert.match(withYou, /role="group" aria-label="Agent"/)
-  assert.ok(withYou.indexOf('Open for review') < withYou.indexOf('Check my PR'), 'your own actions come first')
+  assert.ok(withYou.indexOf('Open for review') < withYou.indexOf('aria-label="Agent"'), 'your own actions come first')
   assert.match(withYou, /Open it for review first\./, 'Merge stays in place, dimmed, with its reason')
   assert.ok(withYou.indexOf('is-rec') > withYou.indexOf('aria-label="Agent"'), 'an unchecked draft of yours is checked first')
   const plain = render({ pulls: [pr({ state: 'OPEN', author: { login: 'sam' }, ...reviews })] })

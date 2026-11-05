@@ -5,21 +5,21 @@ import { requestOptions } from '../collaboration.js'
 const PROMPTS = [['review_prompt','Review'],['fix_prompt','Fix'],['merge_prompt','Merge decision']]
 export const PROMPT_CSS = `
 .co-prompt-settings { margin:20px 0; padding:20px 0; border-top:1px solid var(--border); }
-.co-prompt-choices { display:inline-flex; gap:2px; padding:3px; border:1px solid var(--border); border-radius:10px; background:var(--bg); }
-.co-prompt-choices button { min-height:36px; min-width:44px; padding:0 12px; border:0; border-radius:7px; color:var(--muted); background:none; font:500 14px var(--font); cursor:pointer; }
+.co-prompt-choices { display:inline-flex; gap:2px; padding:3px; border:1px solid var(--border); border-radius:var(--co-radius-control); background:var(--bg); }
+.co-prompt-choices button { min-height:36px; min-width:44px; padding:0 12px; border:0; border-radius:var(--co-radius-field); color:var(--muted); background:none; font:500 var(--co-text-meta) var(--font); cursor:pointer; }
 .co-prompt-choices button[aria-pressed=true] { color:var(--text); background:var(--surface-2,var(--surface)); font-weight:600; }
 .co-prompt-head { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin:14px 0 8px; }
 .co-prompt-head h3 { margin:0; }
 .co-prompt-foot { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-top:10px; }
 .co-prompt-foot-left { display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
 .co-prompt-foot-left p { margin:0; }
-.co-prompt-foot-left .co-quiet-action { display:inline-flex; align-items:center; gap:6px; min-height:44px; margin:0; }
-.co-prompt-settings h3 { margin:0 0 8px; font-size:14px; }
-.co-prompt-settings p { font-size:14px; line-height:1.5; color:var(--muted); }
-.co-prompt-settings label { display:block; margin:14px 0 6px; font-size:14px; }
-.co-prompt-settings textarea { box-sizing:border-box; width:100%; min-height:120px; padding:12px; border:1px solid var(--border); border-radius:8px; background:var(--bg); color:var(--text); font:inherit; font-size:16px; line-height:1.5; resize:vertical; }
-.co-prompt-settings summary { min-height:44px; display:flex; align-items:center; cursor:pointer; font-size:14px; }
-.co-prompt-settings pre,.co-resolved-prompt { white-space:pre-wrap; overflow-wrap:anywhere; max-height:360px; overflow:auto; font:inherit; font-size:14px; line-height:1.5; background:var(--bg); padding:12px; border-radius:8px; }
+.co-prompt-foot-left .co-btn co-btn-quiet { display:inline-flex; align-items:center; gap:6px; min-height:44px; margin:0; }
+.co-prompt-settings h3 { margin:0 0 8px; font-size:var(--co-text-meta); }
+.co-prompt-settings p { font-size:var(--co-text-meta); line-height:1.5; color:var(--muted); }
+.co-prompt-settings label { display:block; margin:14px 0 6px; font-size:var(--co-text-meta); }
+.co-prompt-settings textarea { box-sizing:border-box; width:100%; min-height:120px; padding:12px; border:1px solid var(--border); border-radius:var(--co-radius-field); background:var(--bg); color:var(--text); font:inherit; font-size:var(--co-text-body); line-height:1.5; resize:vertical; }
+.co-prompt-settings summary { min-height:44px; display:flex; align-items:center; cursor:pointer; font-size:var(--co-text-meta); }
+.co-prompt-settings pre,.co-resolved-prompt { white-space:pre-wrap; overflow-wrap:anywhere; max-height:360px; overflow:auto; font:inherit; font-size:var(--co-text-meta); line-height:1.5; background:var(--bg); padding:12px; border-radius:var(--co-radius-field); }
 .co-prompt-settings textarea:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 `
 
@@ -84,14 +84,14 @@ export function ReviewPromptSettings({ token, appId }) {
         <div className="co-prompt-foot">
           <div className="co-prompt-foot-left">
             <p id={`co-${active}-size`} className={bytes > PROMPT_BYTE_LIMIT ? 'co-task-footnote is-failed' : 'co-task-footnote'}>{bytes.toLocaleString('en-US')} of {PROMPT_BYTE_LIMIT.toLocaleString('en-US')} bytes{bytes > PROMPT_BYTE_LIMIT ? ': too long to save' : ''}</p>
-            <button type="button" className="co-quiet-action" onClick={() => change(active, data.defaults[active])}><svg className="co-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 7v6h6" /><path d="M3 13a9 9 0 1 0 5-8" /></svg>Restore this prompt</button>
+            <button type="button" className="co-btn co-btn-quiet" onClick={() => change(active, data.defaults[active])}><svg className="co-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 7v6h6" /><path d="M3 13a9 9 0 1 0 5-8" /></svg>Restore this prompt</button>
           </div>
           <button type="button" className="co-btn co-btn-primary" disabled={busy || Boolean(tooLong)} onClick={save}>Save defaults</button>
         </div>
       </div>
       {tooLong ? <p role="status">The {PROMPTS.find(([key]) => key === tooLong)[1]} prompt is too long to save.</p> : null}
     </> : null}
-    {error ? <p role="alert">{error} <button className="co-quiet-action" disabled={busy} onClick={() => setRetry(x => x + 1)}>{data ? 'Reload settings' : 'Retry'}</button></p> : null}
+    {error ? <p role="alert">{error} <button className="co-btn co-btn-quiet" disabled={busy} onClick={() => setRetry(x => x + 1)}>{data ? 'Reload settings' : 'Retry'}</button></p> : null}
     {notice ? <p role="status">{notice}</p> : null}
   </section>
 }
@@ -117,5 +117,5 @@ export function ReviewPromptPreview({ token, appId, choice, onResolved, onUnsupp
     resolve().then(value=>{if(alive){setState(value);onResolved?.(value)}}).catch(error=>{if(alive){setState({error:error.message});if(error?.status===404)onUnsupported?.()}})
     return()=>{alive=false}
   },[token,appId,choice?.request_id,choice?.mode,choice?.preview_sha256,optionKey,agentKey,retry])
-  return state.error ? <p role="alert">Could not check this run: {state.error} <button className="co-quiet-action" onClick={()=>setRetry(x=>x+1)}>Retry</button></p> : null
+  return state.error ? <p role="alert">Could not check this run: {state.error} <button className="co-btn co-btn-quiet" onClick={()=>setRetry(x=>x+1)}>Retry</button></p> : null
 }

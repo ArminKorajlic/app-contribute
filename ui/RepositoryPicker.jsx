@@ -35,7 +35,7 @@ export function RepositoryPicker({ token, connected, onAdded }) {
   return <div className={'co-repository-picker' + (open ? ' is-open' : '')} ref={rootRef}>
     <button type="button" className="co-btn co-repository-trigger" aria-expanded={open} onClick={() => setOpen(value => !value)}><Icon name="plus" size={16} /><span>Add project</span></button>
     {open ? connected ? <form onSubmit={add}>
-      <header><strong>Add a GitHub repository</strong><button type="button" className="co-quiet-action" onClick={() => setOpen(false)}><Icon name="close" size={17} /> Close</button></header>
+      <header><strong>Add a GitHub repository</strong><button type="button" className="co-btn co-btn-quiet" onClick={() => setOpen(false)}><Icon name="close" size={17} /> Close</button></header>
       <label htmlFor="co-repository-name">Repository name or link</label>
       <div><input id="co-repository-name" value={value} onChange={event => setValue(event.target.value)} placeholder="owner/project or GitHub URL" disabled={busy} autoComplete="off" required />
       <button className="co-btn" disabled={busy || !value.trim()}>{busy ? 'Adding…' : 'Add'}</button></div>

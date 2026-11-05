@@ -130,7 +130,7 @@ test('each app card folds with a chevron: down means open it, up means fold it',
   if (!api) return
   const base = { view: 'requests', records: [], login: 'owner', decisionsFor: () => [], lastLooked: '', query: '', onOpenProject: () => {}, onOpenPull: () => {}, onOpenRecord: () => {} }
   const two = api.view({ ...base, projects: [projectFixture('mobius', { reviewRequests: [pullFixture(7), pullFixture(8)] })] })
-  assert.match(two, /class="co-envelope-toggle"[^>]*aria-expanded="true"[^>]*aria-label="Collapse Möbius"/)
+  assert.match(two, /class="co-btn co-btn-quiet co-btn-icon co-envelope-toggle"[^>]*aria-expanded="true"[^>]*aria-label="Collapse Möbius"/)
   assert.match(two, /Improve thing 7/)
   // One row has nothing to fold away.
   const one = api.view({ ...base, projects: [projectFixture('mobius', { reviewRequests: [pullFixture(7)] })] })
@@ -171,9 +171,9 @@ test('the new-dot legend shows only when a dot is on screen', () => {
 
 test('the project status is one panel of equal rows, with real buttons and icons, never a text link', () => {
   const css = readFileSync(new URL('../workspace-theme.js', import.meta.url), 'utf8')
-  assert.match(css, /\.co-project-position \{ margin:12px 0 16px; border:1px solid var\(--border\); border-radius:12px;/)
+  assert.match(css, /\.co-project-position \{ margin:12px 0 16px; border:1px solid var\(--border\); border-radius:var\(--co-radius-panel\);/)
   assert.match(css, /\.co-status-row \{ display:flex; align-items:center; gap:12px; min-height:56px;/)
-  assert.match(css, /\.co-status-actions \.co-btn \{ gap:8px; height:40px; min-height:40px;/)
+  assert.match(css, /\.co-status-actions \.co-btn \{ gap:8px; padding:0 12px; \}/)
   assert.doesNotMatch(css, /co-link-action/)
 })
 

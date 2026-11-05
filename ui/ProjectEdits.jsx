@@ -47,7 +47,7 @@ export function ProjectFileChanges({ project, loadProjectDiff, onRefresh }) {
       ) : (
         <button
           type="button"
-          className="co-project-files-toggle"
+          className="co-btn co-btn-quiet co-project-files-toggle"
           onClick={state.phase === 'stale' ? onRefresh : () => setRetry(value => value + 1)}
         >
           {state.phase === 'stale' ? 'Project changed · check again' : 'Could not load diffs · try again'}

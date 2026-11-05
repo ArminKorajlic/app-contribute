@@ -1296,7 +1296,7 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
     if (!started.ok) {
       return {
         ...started,
-        error: 'Assigned on GitHub, but the review conversation did not start. Try again to resume it.',
+        error: 'Assigned on GitHub, but the review chat did not start. Try again to resume it.',
       }
     }
     // The assignment settled after any earlier incoming-review request began.

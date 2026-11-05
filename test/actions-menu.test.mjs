@@ -31,7 +31,7 @@ test('their PR offers a review and, apart at the bottom, take over; never fixing
   assert.equal(item(menu(pull({ repository: { nameWithOwner: 'o/r', viewerPermission: 'MAINTAIN' } })), 'take_over').off, false)
   assert.equal(item(model, 'review').title, 'Review')
   const reviewed = pull({ viewerLatestReview: { state: 'COMMENTED', commit: { oid: OLD } } })
-  assert.equal(item(menu(reviewed), 'review').title, 'Re-review', 'once you reviewed it, the job is a re-review')
+  assert.equal(item(menu(reviewed), 'review').title, 'Review again', 'once you reviewed it, the job is Review again')
 })
 
 test('the highlighted choice is the machine’s next step, first in its group', () => {

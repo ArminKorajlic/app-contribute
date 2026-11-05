@@ -71,7 +71,7 @@ function SelectionTray({ selection, decisions, busy, onClear, onReview, onAssign
     {selected ? <div className="co-pr-box-actions">
       <button className="co-btn" disabled={busy || selected > 20 || !selection.every(pr => mayAssign(pr.repository.viewerPermission))} onClick={onAssign} aria-label="Assign selected PRs to a person"><Icon name="person" size={16} /><span>Assign</span></button>
       <ActionsMenu variant="button" pulls={selection} decisions={decisions} disabled={selected > 20 || busy} onChoose={mode => onReview(selection, mode)} ariaLabel="Choose an action for the selected PRs" />
-      <button className="co-quiet-action" aria-label="Clear selection" onClick={onClear}><Icon name="close" size={16} /></button>
+      <button className="co-btn co-btn-quiet co-btn-icon" aria-label="Clear selection" onClick={onClear}><Icon name="close" size={16} /></button>
     </div> : null}
     {selected > 20 ? <p role="status">Choose up to 20 PRs per run.</p> : null}
   </div>
@@ -467,7 +467,7 @@ export function PullRequests({ appId, token, project, conn, onChanged, onReviewP
   async function decideVerdict(run, item, proposal, decision, extra = {}) {
     const result = await runAction(run, 'verdict', { repo: item.repo, number: item.number, head_sha: item.head_sha, proposal_id: proposal.id, decision, ...extra })
     if (result?.verdict?.state === 'posted') onReviewPosted?.(item.repo, item.number)
-    if (result?.merge_resumed === false) setOwnRunError('Approved on GitHub. Open the review conversation and ask it to continue to the merge.')
+    if (result?.merge_resumed === false) setOwnRunError('Approved on GitHub. Open the review chat and ask it to continue to the merge.')
   }
   // The owner's own Push or Don't push for fixes an agent prepared. The platform pushes exactly
   // that commit, once, and only if the branch has not moved; the agent never pushes by itself.
@@ -585,7 +585,7 @@ export function PullRequests({ appId, token, project, conn, onChanged, onReviewP
   return <section className="co-public-work" aria-label="Pull requests">
     <div className={'co-pr-list-controls' + (searchOpen ? ' is-searching' : '')}>
       <label className="co-pr-search"><Icon name="search" size={16} /><input ref={searchField} type="search" aria-label="Find a pull request" placeholder="Search pull requests" value={query} onChange={event => setQuery(event.target.value)} /></label>
-      <button type="button" className="co-pr-search-toggle" aria-label={query ? `Search PRs: ${query}` : 'Search pull requests'} aria-expanded={searchOpen} onClick={() => setSearchOpen(value => !value)}><Icon name="search" size={18} /></button>
+      <button type="button" className="co-btn co-btn-quiet co-btn-icon co-pr-search-toggle" aria-label={query ? `Search PRs: ${query}` : 'Search pull requests'} aria-expanded={searchOpen} onClick={() => setSearchOpen(value => !value)}><Icon name="search" size={18} /></button>
     </div>
     {scope === 'all' ? <div className="co-pr-filters" role="group" aria-label="Filter pull requests">{FILTERS.map(([key, label]) => <button key={key} type="button" aria-pressed={filter === key} onClick={() => setFilter(key)}>{label}{key !== 'all' && !data.hasNextPage && !data.loading ? <span className="co-pr-filter-count">{matchingPulls(pulls.filter(isOpenPull), key, conn.login).length}</span> : null}</button>)}</div> : null}
     {scope === 'requests' ? <p className="co-pr-intro">PRs where someone asked for your review. Start an agent review, or open the PR yourself.</p> : null}
@@ -634,7 +634,7 @@ export function PullRequests({ appId, token, project, conn, onChanged, onReviewP
         <div className="co-pr-aside">
           {comments ? <span className="co-pr-comments" title={`${comments} in the conversation: comments and reviews`}><Icon name="comment" size={16} />{comments}</span> : null}
           {open && mayAssign(pr.repository.viewerPermission)
-            ? <button className={'co-pr-assign' + (assignees.length ? '' : ' is-quiet')} onClick={() => assignSelection([pr], key)} aria-label={assignees.length ? `Assigned to ${assignees.map(user => user.login).join(', ')}. Change assignment for PR ${pr.number}` : `Assign PR ${pr.number}`} title={assignees.length ? assignees.map(user => user.login).join(', ') : undefined}>{assignees.length ? <span className="co-gh-avatars">{assignees.slice(0, 3).map(user => <Avatar key={user.login} login={user.login} />)}</span> : <><Icon name="person" size={15} /><span>Assign</span></>}</button>
+            ? <button className={'co-btn co-btn-quiet co-pr-assign' + (assignees.length ? '' : ' is-quiet')} onClick={() => assignSelection([pr], key)} aria-label={assignees.length ? `Assigned to ${assignees.map(user => user.login).join(', ')}. Change assignment for PR ${pr.number}` : `Assign PR ${pr.number}`} title={assignees.length ? assignees.map(user => user.login).join(', ') : undefined}>{assignees.length ? <span className="co-gh-avatars">{assignees.slice(0, 3).map(user => <Avatar key={user.login} login={user.login} />)}</span> : <><Icon name="person" size={15} /><span>Assign</span></>}</button>
             : assignees.length ? <span className="co-gh-avatars" title={assignees.map(user => user.login).join(', ')}>{assignees.slice(0, 3).map(user => <Avatar key={user.login} login={user.login} />)}</span> : null}
           {open ? <ActionsMenu pulls={[pr]} decisions={[standing]} record={recordsForPull(records, pr)[0]} capabilities={capabilities} disabled={busy} onChoose={mode => choose([pr], mode, key)} ariaLabel={`Choose an action for PR ${pr.number}`} /> : null}
         </div>

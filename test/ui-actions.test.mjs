@@ -68,18 +68,19 @@ test('settings keep prompts and account management while model choice belongs to
 
 test('send actions keep a visible label instead of relying on the icon alone', () => {
   assert.match(cardSource, /<span>\{sending \? 'Sending…' : \(isUpdate \? 'Send update' : 'Send PR'\)\}<\/span>/)
-  assert.match(feedSource, /count === 1 \? 'Review and send' : `Review and send \$\{count\}`/)
+  assert.match(feedSource, /count === 1 \? NAMES\.sendToGitHub : `Send \$\{count\} to GitHub`/)
   assert.match(feedSource, /count === 1 \? 'Send to GitHub' : `Send \$\{count\} to GitHub`/)
   assert.doesNotMatch(feedSource, /Send all|Prepare latest/)
 })
 
 test('focused review actions keep one strong primary and compact phone-safe secondary controls', () => {
-  assert.match(cardSource, /className="co-icon-btn co-review-btn is-primary"/)
-  assert.match(themeSource, /\.co-icon-btn\.co-review-btn\.is-primary \{[\s\S]*?background: var\(--accent\); color: var\(--accent-fg\)/)
+  assert.match(cardSource, /className="co-btn co-btn-primary co-review-btn"/)
+  // The strong primary is the shared primary type (button-theme.js), not a per-card look.
+  assert.match(readFileSync(new URL('../button-theme.js', import.meta.url), 'utf8'), /\.co-btn-primary \{[^}]*background: var\(--accent-hover, var\(--accent\)\); color: var\(--accent-fg\)/)
   assert.match(themeSource, /\.co-focus-view \.co-review-actions \{[\s\S]*?grid-template-columns: minmax\(112px, 1fr\) auto auto/)
   assert.match(themeSource, /\.co-focus-view \.co-secondary-action \{[\s\S]*?width: auto;[\s\S]*?padding-inline: 11px/)
   assert.match(themeSource, /\.co-technical-summary \{[\s\S]*?grid-template-columns: minmax\(0, 1fr\) auto/)
-  assert.match(themeSource, /\.co-review-changes-head span \{[\s\S]*?white-space: nowrap;[\s\S]*?border-radius: 999px/)
+  assert.match(themeSource, /\.co-review-changes-head span \{[\s\S]*?white-space: nowrap;[\s\S]*?border-radius: var\(--co-radius-round\)/)
   assert.match(themeSource, /\.co-pr-metadata \{[^}]*align-self: stretch;[^}]*width: 100%/)
 })
 
@@ -230,7 +231,7 @@ test('blocked contributions have one calm recovery action', () => {
 })
 
 test('published check follow-ups use the same calm refresh treatment', () => {
-  assert.match(cardSource, /className="co-icon-btn co-refresh-btn is-primary"/)
+  assert.match(cardSource, /className="co-btn co-btn-primary co-refresh-btn"/)
   assert.match(themeSource, /\.co-attention \{[^}]*var\(--accent\)[^}]*var\(--accent\)/)
   assert.doesNotMatch(
     themeSource,
@@ -249,7 +250,7 @@ test('Möbius-bot withdrawal keeps the destructive action behind confirmation', 
   assert.match(cardSource, /ref=\{keepRef\}[\s\S]*?>\s*Keep open\s*<\/button>/)
   assert.match(
     cardSource,
-    /className="co-btn co-btn-sm co-btn-caution"[\s\S]*?onClick=\{withdraw\}/,
+    /className="co-btn co-btn-danger"[\s\S]*?onClick=\{withdraw\}/,
   )
 })
 
@@ -321,7 +322,7 @@ test('published-app handoffs finish automatically without a second owner action'
 
 test('cards use explicit links and detail buttons instead of a clickable container', () => {
   assert.doesNotMatch(cardSource, /handleCardClick|is-clickable/)
-  assert.match(cardSource, /className="co-details-toggle"/)
+  assert.match(cardSource, /className="co-btn co-btn-quiet co-details-toggle"/)
   assert.match(cardSource, /className="co-card-title"/)
 })
 
@@ -411,7 +412,7 @@ test('project chrome consolidates navigation, refresh, files, and preparation ch
   assert.doesNotMatch(sourceMapSource, /RefreshNote|refreshNote/)
   assert.doesNotMatch(sourceMapSource, /Refresh project status|Refresh projects/)
   assert.doesNotMatch(sourceMapSource, /Files, branch and versions <Icon/)
-  assert.match(controlsSource, /className="co-btn is-icon" onClick=\{\(\) => task\?\.open\('task:files'\)\} aria-label="See the files" title="See the files"><Icon name="review" size=\{16\} \/>/)
+  assert.match(controlsSource, /className="co-btn co-btn-icon" onClick=\{\(\) => task\?\.open\('task:files'\)\} aria-label="See the files" title="See the files"><Icon name="review" size=\{16\} \/>/)
 })
 
 test('private proposals have one actionable home without another merge workflow', () => {

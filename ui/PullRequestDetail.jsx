@@ -13,6 +13,7 @@ import { openAgentConversation } from './BatchAction.jsx'
 import { ReviewTab, reviewContent } from './ReviewTab.jsx'
 import { frameOf } from '../pr-standing.js'
 import { ROLE_TITLES } from '../provenance.js'
+import { NAMES } from '../names.js'
 
 export function DateLabel({ value, prefix = '', time = false }) {
   if (!value || !Number.isFinite(Date.parse(value))) return null
@@ -48,7 +49,7 @@ function openedLine(login, value) {
 
 function DetailLink({ href, children }) {
   const safe = safeDetailLink(href)
-  return safe ? <a className="co-quiet-action" href={safe} target="_blank" rel="noopener noreferrer">{children}</a> : <span>{children}</span>
+  return safe ? <a className="co-btn co-btn-quiet" href={safe} target="_blank" rel="noopener noreferrer">{children}</a> : <span>{children}</span>
 }
 function threadLocation(thread) {
   const side = thread.diffSide === 'LEFT' ? 'old' : thread.diffSide === 'RIGHT' ? 'new' : 'unknown-side'
@@ -130,10 +131,11 @@ function PullStickyTitle({ pr, targetRef, tone }) {
 
 const COMMENT_PREVIEW = 4
 
-const PROVENANCE_LABELS = { source: ['Source chat', 'Source chats'], review: ['Review chat', 'Review chats'], fix: ['Fix chat', 'Fix chats'] }
+// Which job a chat belongs to. Every chat button is Open chat; the kind tells several apart.
+const PROVENANCE_KINDS = { source: 'where it started', review: 'review', fix: 'fix' }
 
 // One icon button per kind of conversation. Several chats of the same kind fold
-// into one dropdown listing Source chat #1, #2, … with each chat's own title
+// into one dropdown listing Review #1, #2, … with each chat's own title
 // underneath. A PR with a single chat anywhere says just "Open chat".
 function ProvenanceGroup({ role, links, lone }) {
   const [open, setOpen] = useState(false)
@@ -144,9 +146,10 @@ function ProvenanceGroup({ role, links, lone }) {
     document.addEventListener('pointerdown', closeOutside)
     return () => document.removeEventListener('pointerdown', closeOutside)
   }, [open])
-  const [one, many] = PROVENANCE_LABELS[role] || ['Chat', 'Chats']
+  const kind = PROVENANCE_KINDS[role] || 'agent'
+  const many = `${NAMES.openChat} · ${links.length} ${kind}`
   if (links.length === 1) {
-    const name = lone ? 'Open chat' : `Open ${one.toLowerCase()}`
+    const name = lone ? NAMES.openChat : `${NAMES.openChat} · ${kind}`
     // The chat's own title rides in the tooltip; a role's stand-in title ("Source conversation") would only repeat the name.
     const title = links[0].title === ROLE_TITLES[role] ? '' : links[0].title
     return <button type="button" className="co-btn co-tip co-gh-chat-link" onClick={() => openAgentConversation(links[0].chat_id)} aria-label={name} data-tip={title ? `${name} · ${title}` : name}><Icon name="feedback" size={15} /></button>
@@ -155,7 +158,7 @@ function ProvenanceGroup({ role, links, lone }) {
     <button type="button" className="co-btn co-tip co-gh-chat-link" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(value => !value)} aria-label={many} data-tip={many}><Icon name="feedback" size={15} /><Icon name="chevron" size={14} /></button>
     {open ? <div className="co-chat-group-list" role="menu" aria-label={many}>
       {links.map((link, index) => <button type="button" role="menuitem" key={link.chat_id} onClick={() => { setOpen(false); openAgentConversation(link.chat_id) }}>
-        <strong>{one} #{index + 1}</strong>{link.title ? <small>{link.title}</small> : null}
+        <strong>{kind[0].toUpperCase() + kind.slice(1)} #{index + 1}</strong>{link.title ? <small>{link.title}</small> : null}
       </button>)}
     </div> : null}
   </span>
@@ -166,7 +169,7 @@ function PullProvenance({ record, onRecord, conversations }) {
   if (!local && !conversations.length) return null
   const roles = [...new Set(conversations.map(link => link.role))]
   return <span className="co-gh-provenance" role="group" aria-label="Where this PR came from">
-    {local ? <button type="button" className="co-btn co-tip co-gh-chat-link" onClick={() => onRecord(record)} aria-label="Saved work" data-tip="Saved work"><Icon name="prepare" size={15} /></button> : null}
+    {local ? <button type="button" className="co-btn co-tip co-gh-chat-link" onClick={() => onRecord(record)} aria-label="Open prepared PR" data-tip="Open prepared PR"><Icon name="prepare" size={15} /></button> : null}
     {roles.map(role => <ProvenanceGroup key={role} role={role} links={conversations.filter(link => link.role === role)} lone={conversations.length === 1} />)}
   </span>
 }
@@ -194,12 +197,12 @@ export function PullFiles({ data }) {
     {Number.isInteger(totals?.files) ? <p className="co-pr-note">Showing {totals.files} changed {totals.files === 1 ? 'file' : 'files'}{counts ? ` with ${counts}` : ''}{data?.page > 1 ? ` · page ${data.page}` : ''}. GitHub may omit or shorten large patches.</p> : null}
     {(data?.files || []).length > FILTER_AFTER ? <div className="co-file-tools">
       <input type="search" value={filter} onChange={event => setFilter(event.target.value)} placeholder="Filter files by name" aria-label="Filter files by name" />
-      <button type="button" className="co-quiet-action" aria-pressed={expanded} onClick={() => setExpanded(value => !value)}>{expanded ? 'Collapse all' : 'Expand all'}</button>
+      <button type="button" className="co-btn co-btn-quiet" aria-pressed={expanded} onClick={() => setExpanded(value => !value)}>{expanded ? 'Collapse all' : 'Expand all'}</button>
     </div> : null}
     {shownFiles.map(file => <details key={`${file.filename}:${expanded}`} className="co-file-disclosure" open={expanded}><summary><span className="co-file-name">{file.filename}</span>{file.status && file.status !== 'modified' ? <em className="co-file-status">{file.status}</em> : null}<span className="co-file-stat"><b className="co-file-add">+{file.additions}</b><b className="co-file-del">−{file.deletions}</b></span></summary>{file.previous_filename ? <p>Previously {file.previous_filename}</p> : null}{file.patch ? <DiffView file={pullFileDiff(file)} /> : <p>No text patch is available for this file; it may be binary or too large.</p>}</details>)}
     {!data?.files?.length ? <p>No changed files returned on this page.</p> : null}
     {data?.files?.length && !shownFiles.length ? <p>No file on this page matches “{filter}”.</p> : null}
-    {data?.capped ? <p>GitHub’s 3,000-file limit has been reached. More files may be omitted; use the review conversation for the full source.</p> : null}
+    {data?.capped ? <p>GitHub’s 3,000-file limit has been reached. More files may be omitted; open the review chat for the full source.</p> : null}
   </>
 }
 export function PullChecks({ data }) {
@@ -365,7 +368,7 @@ function PullRequestDetailView({ cacheStore, pr, token, onReview, onAssign, onRe
     writeCache(old => { const next = { ...old }; delete next[keys.related]; return next })
   }
   function readState(value, label, onRetry = tryAgain) {
-    return <>{value.loading ? <Skeleton label={`Loading ${label}`} /> : null}{value.error ? <div role="alert"><p>{value.error}</p><button className="co-btn" onClick={value.stale ? onRefresh : onRetry}>{value.stale ? 'Refresh PR list' : 'Try again'}</button></div> : null}<ReadErrors errors={value.data?.errors} onRetry={onRetry} /></>
+    return <>{value.loading ? <Skeleton label={`Loading ${label}`} /> : null}{value.error ? <div role="alert"><p>{value.error}</p><button className="co-btn" onClick={value.stale ? onRefresh : onRetry}>{value.stale ? NAMES.sync : 'Try again'}</button></div> : null}<ReadErrors errors={value.data?.errors} onRetry={onRetry} /></>
   }
   const ready = value => !value.loading && !value.error && !stale
   const description = entry(keys.description || '')
@@ -438,12 +441,12 @@ function PullRequestDetailView({ cacheStore, pr, token, onReview, onAssign, onRe
       {key === 'review' ? <ReviewMark standing={review?.standing} status={status} ctx={{ own: review?.own, ignored: review?.ignored }} /> : null}
       {Number.isInteger(tabCounts[key]) ? <span className="co-tab-count">{tabCounts[key]}</span> : null}</button>)}</nav>
     <div className="co-pr-detail-body" role="region" aria-label="Pull request context">
-    {stale ? <p role="alert">This PR changed since the list was loaded. <button className="co-btn" onClick={onRefresh}>Refresh PR list</button></p> : null}
+    {stale ? <p role="alert">This PR changed since the list was loaded. <button className="co-btn" onClick={onRefresh}>{NAMES.sync}</button></p> : null}
     {tab === 'conversation' && conversationLoading ? <Skeleton lines={7} label="Loading the conversation" /> : null}
     {tab === 'conversation' && !conversationLoading ? <>
       {ready(activity) && !activity.data?.items?.length && number === 1 ? <p className="co-pr-note">No comments yet.</p> : null}
       {ready(activity) ? shownComments(activity.data?.items).map(item => <article className={'co-gh-comment' + reviewTone(item)} key={`${item.kind}:${item.id}`}><header><b>{item.user?.login || 'Contributor'}</b> {item.kind === 'review' ? (item.state || 'reviewed').toLowerCase().replaceAll('_', ' ') : 'commented'} <DateLabel value={item.date} time /><CopyId id={item.id} label={item.kind === 'review' ? 'review id' : 'comment id'} /></header>{item.body ? <div className="co-comment-body"><ClampedMarkdown markdown={item.body} /></div> : null}</article>) : null}
-      {ready(activity) && (activity.data?.items?.length || 0) > COMMENT_PREVIEW ? <button type="button" className="co-comments-toggle" onClick={() => setAllComments(value => !value)}>
+      {ready(activity) && (activity.data?.items?.length || 0) > COMMENT_PREVIEW ? <button type="button" className="co-btn co-comments-toggle" onClick={() => setAllComments(value => !value)}>
         {allComments ? 'Show less' : `Show all ${activity.data.items.length} comments`}
       </button> : null}
       {readState(activity, 'comments')}
@@ -459,7 +462,7 @@ function PullRequestDetailView({ cacheStore, pr, token, onReview, onAssign, onRe
     {tab === 'files' && ready(view) ? <PullFiles data={view.data} /> : null}
     {tab === 'checks' && ready(view) ? <PullChecks data={view.data} /> : null}
     {(tab === 'files' || tab === 'checks') && ready(view) ? pager(number, view.data?.hasMore, view.data?.paginationUnknown, value => setPage(old => ({ ...old, [tab]: value }))) : null}
-    {tab === 'checks' && !view.loading ? <button className="co-quiet-action" onClick={() => { writeCache(old => { const next = { ...old }; delete next[keys.view]; return next }) }}>Refresh checks</button> : null}
+    {tab === 'checks' && !view.loading ? <button className="co-btn co-btn-quiet" onClick={() => { writeCache(old => { const next = { ...old }; delete next[keys.view]; return next }) }}>{NAMES.sync}</button> : null}
     </div>
   </div>
 }

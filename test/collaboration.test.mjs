@@ -264,7 +264,7 @@ test('a minimized run detail points to the owning conversation and offers no Sto
   const html = render(minimized({ post_review: true }, { public_review: { state: 'posted', url: 'https://github.com/team/repo/pull/7#r' } }), [pull(7)])
   assert.match(html, /<h3>GitHub review<\/h3>/)
   assert.match(html, /Its instructions and findings are in the owning conversation/)
-  assert.match(html, /Open the owning conversation for details/)
+  assert.match(html, /Open the owning chat for details/)
   assert.match(html, /Matches loaded PR version/)
   assert.match(html, /View the posted review on GitHub/)
   assert.doesNotMatch(html, /Stop workflow|prompt snapshot|Older PR version|Instructions used by this run|findings will appear here|not a new approval/)

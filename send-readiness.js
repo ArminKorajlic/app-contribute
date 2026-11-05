@@ -28,7 +28,7 @@ export function sendBlocker(record, reviewState, { requireCheck = false } = {}) 
     return record.status === 'abandoned' ? 'This contribution was dismissed.' : 'This contribution is not waiting to be sent.'
   }
   if (!['pr', 'pr_update'].includes(record.plan?.action)) return 'Only pull requests can be sent from here.'
-  if (needsSourceRefresh(reviewState)) return 'The reviewed source changed. Refresh it in Contribute.'
+  if (needsSourceRefresh(reviewState)) return 'The reviewed source changed. Sync Contribute to read it again.'
   if (sendNeedsAttention(record)) return 'The last send needs attention in Contribute.'
   if (reviewIncomplete(record)) return 'This exact version needs review first.'
   if (requireCheck && reviewState?.state !== 'ready') return 'This contribution needs a current source check in Contribute.'

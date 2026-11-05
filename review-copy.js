@@ -1,3 +1,4 @@
+import { NAMES } from './names.js'
 // The words of the agent review window, derived from the exact choice the
 // owner is about to approve. One place decides them so the steps, the "Seen on
 // GitHub" summary and the start button can never disagree with each other.
@@ -81,7 +82,7 @@ function reviewStartLabel({ merge, posting, verdict, agentPosts }) {
   return 'Start private review'
 }
 
-const INTENT_TITLES = { review: 'Review', check_my_pr: 'Check my PR' }
+const INTENT_TITLES = { review: NAMES.review, check_my_pr: NAMES.review }
 
 export function reviewWindowCopy({ mode, intent = '', posting = false, verdict = false, agentPosts = false, count = 1, bindCurrentTarget = false }) {
   if (mode === 'review_fix_merge') return takeoverCopy({ count, bindCurrentTarget, intent })

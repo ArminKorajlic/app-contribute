@@ -736,7 +736,7 @@ window.runWorkspaceChecks = async () => {
       ensure(text(review()).includes('all required checks pass'),'Review and required checks missing from approval')
       window.liveBase='d'.repeat(40)
       await enabled('Start review, merge when safe')
-      await until(() => reviewRuns.length === 1 && button('Open review conversation'),'Review did not start')
+      await until(() => reviewRuns.length === 1 && button('Open chat'),'Review did not start')
       const write=mutationRequests().at(-1)
       ensure(write.url.endsWith('/review-runs') && write.body.mode==='review_merge' && write.body.items.length===2,'Wrong workflow request')
       ensure(write.body.items[0].head_sha===HEAD && write.body.items[1].head_sha===SECOND_HEAD,'Approval lost selected heads')
@@ -764,7 +764,7 @@ window.runWorkspaceChecks = async () => {
       await closeReview(); await click(query('[aria-label="Clear selection"]'))
     })
     await check('explicit send joins the same public inventory without implying merge', async () => {
-      await inventory(); await click(button('Review and send'))
+      await inventory(); await click(button('Send to GitHub'))
       await until(() => button('Send to GitHub'),'Publication confirmation missing')
       ensure(calls.publications.length===0,'Opening publication sent work')
       await click(button('Send to GitHub'))
@@ -793,7 +793,7 @@ window.runWorkspaceChecks = async () => {
       await until(()=>calls.restores.length===1 && !query('.co-run-fold.is-recent'),'Restore did not move exact record out of history')
       ensure(calls.restores[0]==='fixture-dismissed' && calls.publications.length===publications && mutationRequests().length===before,'Restore published work or restored another record')
       await inventory()
-      ensure(button('Review and send'),'Restored record did not return to private preparation')
+      ensure(button('Send to GitHub'),'Restored record did not return to private preparation')
       await backToPrs()
     })
     await check('PR inventory distinguishes failed refresh, empty results and loading without mutations', async () => {
@@ -975,7 +975,7 @@ window.runWorkspaceChecks = async () => {
       const pane=()=>query('[data-task="task:run:'+id+'"]')
       await until(()=>pane(),'Saved run did not open: '+id)
       ensure(text(pane()).includes(expected),'Saved run lost its version context: '+text(pane()))
-      const conversation=button('Answer in review conversation',pane()) || button('Open review conversation',pane())
+      const conversation=button('Answer in chat',pane()) || button('Open chat',pane())
       // This hermetic page is top-level. Mock only the direct shell boundary,
       // retaining the component's actual opaque-frame postMessage path.
       const parentDescriptor=Object.getOwnPropertyDescriptor(window,'parent')
@@ -1127,7 +1127,7 @@ window.runWorkspaceChecks = async () => {
       await click(checkButton())
       await until(() => calls.exactRuns.length > exactBefore, 'Refresh did not reread the linked run')
       ensure(pane() && text(pane()).includes('Linked run findings'), 'A refresh evicted the linked run')
-      ensure(text(pane()).includes('Recorded version') && pane().querySelector('a[href*="pullrequestreview-1"]') && button('Open review conversation', pane()), 'Shared run detail lost its version note, posted review or owning chat')
+      ensure(text(pane()).includes('Recorded version') && pane().querySelector('a[href*="pullrequestreview-1"]') && button('Open chat', pane()), 'Shared run detail lost its version note, posted review or owning chat')
       ensure(mutationRequests().length === before && calls.starts.length === starts, 'Opening a run link started or changed work')
       pane().focus(); await nativeEscape()
       await until(() => !pane(), 'Run detail did not close')
@@ -1150,7 +1150,7 @@ window.runWorkspaceChecks = async () => {
       const shown = text(pane())
       ensure(shown.includes('Review & merge') && !shown.includes('Private review'), 'Minimized run was not titled by its mode')
       ensure(!/prompt snapshot|Older PR version|findings will appear here/.test(shown), 'Minimized run showed prompt or version warnings')
-      ensure(button('Open the owning conversation for details', pane()) && !button('Stop workflow', pane()), 'Minimized run lacks its owning-conversation link or offers Stop')
+      ensure(button('Open the owning chat for details', pane()) && !button('Stop workflow', pane()), 'Minimized run lacks its owning-conversation link or offers Stop')
       ensure(!calls.requests.some(call => call.url.includes(run.id) && call.url.endsWith('/observe')), 'A run this app does not own was observed')
       pane().focus(); await nativeEscape()
       await until(() => !pane(), 'Run detail did not close')
@@ -1266,7 +1266,7 @@ window.runWorkspaceChecks = async () => {
       await until(() => button('Start review, merge when safe') && !button('Start review, merge when safe').disabled, 'Approval did not become available')
       const confirm = button('Start review, merge when safe')
       confirm.click(); confirm.click()
-      await until(() => button('Open review conversation'), 'Approval did not open its owning conversation')
+      await until(() => button('Open chat'), 'Approval did not open its owning conversation')
       ensure(mutationRequests().length === beforeLink + 1, 'Approval did not produce exactly one request')
       const body = mutationRequests().at(-1).body
       ensure(body.request_id === 'selection-link-one' && body.items[0].head_sha === HEAD && !body.chat_approval, 'Browser forged chat authority or changed selected work')
@@ -1274,7 +1274,7 @@ window.runWorkspaceChecks = async () => {
     await check('already approved chat selection opens its owner without another approval', async () => {
       await click(button('Back to projects'))
       await showSelection('selection-link-one')
-      await until(() => button('Open review conversation'), 'Existing selection did not resolve its owner')
+      await until(() => button('Open chat'), 'Existing selection did not resolve its owner')
       ensure(!button('Start review, merge when safe') && mutationRequests().length === beforeLink + 1, 'Existing selection asked for duplicate approval')
     })
     await check('changed public version invalidates a link without silently advancing it', async () => {

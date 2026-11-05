@@ -37,7 +37,7 @@ export function ActionConfirm({ pr, copy, onConfirm, onClose, onDone }) {
   return <section ref={region} tabIndex={-1} className="co-review-window" aria-labelledby={titleId}>
     <WindowHead icon={done ? 'check' : copy.icon} title={done ? finished.title : copy.title} titleId={titleId} pulls={[pr]} done={done}
       tools={done ? null : <CloseWindowButton disabled={working} onClick={onClose} />} />
-    {done ? <div className="co-rw-body"><p className="co-rw-result" role="status">{finished.text}</p>{/^https:\/\//.test(finished.link?.href || '') ? <a className="co-quiet-action" href={finished.link.href} target="_blank" rel="noopener noreferrer">{finished.link.label}</a> : null}</div> : <div className="co-rw-body">
+    {done ? <div className="co-rw-body"><p className="co-rw-result" role="status">{finished.text}</p>{/^https:\/\//.test(finished.link?.href || '') ? <a className="co-btn co-btn-quiet" href={finished.link.href} target="_blank" rel="noopener noreferrer">{finished.link.label}</a> : null}</div> : <div className="co-rw-body">
       <ul className="co-rw-facts">{copy.facts.map(fact => <li key={fact.text} className={'is-' + fact.tone}><Icon name={FACT_ICON[fact.tone]} size={18} /><span>{fact.text}</span></li>)}</ul>
       {copy.says ? <details className="co-task-details" open><summary>{copy.says.label}</summary><MarkdownView markdown={copy.says.markdown} /></details> : null}
       {copy.choices ? <>

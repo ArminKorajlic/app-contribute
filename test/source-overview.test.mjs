@@ -113,7 +113,7 @@ test('a mixed-route publication batch stays behind one exact preflight', async (
 
   assert.match(html, /3 prepared PRs/)
   assert.match(html, /Privately reviewed. Nothing shared yet/)
-  assert.match(html, /Review and send 3/)
+  assert.match(html, /Send 3 to GitHub/)
 })
 
 test('known route failures leave the public batch before approval', async (t) => {
@@ -356,7 +356,7 @@ test('durable Ready errors stay visible with only deliberate safe recovery', asy
   })
 
   assert.match(html, /Auto-merge is enabled/)
-  assert.match(html, /I turned off auto-merge\. Mark ready again/)
+  assert.match(html, /I turned off auto-merge\. Open for review again/)
   assert.match(html, /Open pull request/)
 })
 

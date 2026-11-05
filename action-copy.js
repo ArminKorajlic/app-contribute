@@ -2,6 +2,7 @@
 // and what it cannot undo. Pure, so the sheet states exactly what the PR's own
 // data says and the tests can hold it to that.
 import { checkSummary, reviewItemProgress } from './collaboration.js'
+import { NAMES } from './names.js'
 
 const names = list => list.join(', ')
 
@@ -33,7 +34,7 @@ export function openForReviewCopy(pr) {
   return {
     icon: 'send',
     title: `Open #${pr.number} for review?`,
-    confirm: 'Open for review',
+    confirm: NAMES.openForReview,
     working: 'Opening…',
     facts: [
       { tone: 'ok', text: 'Reviewers are asked to look at it' },
@@ -44,7 +45,7 @@ export function openForReviewCopy(pr) {
     footnote: `Opens the version you are looking at (${short(pr.headRefOid)}). Nothing merges.`,
     // GitHub cannot pin a version on this write, so the platform reports the head it saw afterwards.
     done: outcome => ({
-      title: 'Open for review',
+      title: NAMES.openForReview,
       text: outcome?.observedHead && outcome.observedHead !== pr.headRefOid
         ? `Reviewers can see it now. It changed while you were looking: GitHub shows ${short(outcome.observedHead)} now, so check what they will read.`
         : 'Reviewers can see it now.',
@@ -59,7 +60,7 @@ export function postFindingsCopy(pr, { preview = null, error = '', own = false }
   const base = {
     icon: 'globe',
     title: `Post this review on #${pr.number}?`,
-    confirm: 'Post to GitHub',
+    confirm: NAMES.postToGitHub,
     working: 'Posting…',
   }
   if (error) return { ...base, disabled: true, facts: [{ tone: 'bad', text: error }], footnote: 'Nothing was posted.', done: { title: 'Posted', text: '' } }
@@ -132,10 +133,10 @@ export function mergeCopy(pr, { status = null, ignored = null, method = '', stan
 // Back to draft: reviewers stop being asked; it can be opened again later.
 export function backToDraftCopy(pr) {
   return {
-    icon: 'draft', title: `Turn #${pr.number} back into a draft?`, confirm: 'Back to draft', working: 'Turning it into a draft…',
+    icon: 'draft', title: `Turn #${pr.number} back into a draft?`, confirm: NAMES.backToDraft, working: 'Turning it into a draft…',
     facts: [{ tone: 'ok', text: 'Nothing merges, and no code changes' }, { tone: 'warn', text: 'GitHub shows it as a draft until you open it for review again' }],
     footnote: `For the version you are looking at (${short(pr.headRefOid)}).`,
-    done: () => ({ title: 'Back to draft', text: `#${pr.number} is a draft again.` }),
+    done: () => ({ title: NAMES.backToDraft, text: `#${pr.number} is a draft again.` }),
   }
 }
 
@@ -143,18 +144,18 @@ export function backToDraftCopy(pr) {
 export function askRereviewCopy(pr, { standing = null } = {}) {
   const people = standing?.rereviewFrom || []
   return {
-    icon: 'person', title: `Ask ${people.length ? names(people) : 'reviewers'} to review #${pr.number} again?`, confirm: 'Ask for re-review', working: 'Asking…',
+    icon: 'person', title: `Ask ${people.length ? names(people) : 'reviewers'} to review #${pr.number} again?`, confirm: NAMES.askRereview, working: 'Asking…',
     facts: [{ tone: 'ok', text: people.length ? `GitHub asks ${names(people)} for a review of the new version` : 'Nobody reviewed an older version' }],
     footnote: 'They get GitHub’s usual review request. Nothing is posted in the conversation.',
     disabled: !people.length,
-    done: () => ({ title: 'Re-review asked', text: `${names(people)} ${people.length === 1 ? 'is' : 'are'} asked to look again.` }),
+    done: () => ({ title: 'Asked to look again', text: `${names(people)} ${people.length === 1 ? 'is' : 'are'} asked to look again.` }),
   }
 }
 
 // Close without merging. It can be reopened on GitHub.
 export function closeCopy(pr) {
   return {
-    icon: 'close', title: `Close #${pr.number} without merging?`, confirm: 'Close PR', working: 'Closing…',
+    icon: 'close', title: `Close #${pr.number} without merging?`, confirm: NAMES.closePr, working: 'Closing…',
     facts: [{ tone: 'warn', text: 'Nothing merges. Reviewers stop being asked' }, { tone: 'ok', text: 'It can be reopened on GitHub' }],
     footnote: `For the version you are looking at (${short(pr.headRefOid)}).`,
     done: () => ({ title: 'Closed', text: `#${pr.number} is closed.` }),

@@ -217,7 +217,7 @@ export function stackReadiness(unit) {
     if (rec.status === 'prepared' && previous.status === 'merged') {
       return fail(
         'refresh',
-        'A parent PR has merged. Refresh the remaining layers on the repository’s main branch before publishing.',
+        'A parent PR has merged. Sync, then update the remaining layers on the repository’s main branch before publishing.',
       )
     }
   }
