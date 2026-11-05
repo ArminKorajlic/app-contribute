@@ -8,7 +8,7 @@ import { chipOf, frameOf, standingFor } from '../pr-standing.js'
 import { deskEditsSentence, recordsForProject } from '../source-map.js'
 import { STATUS_LABELS } from '../domain.js'
 import { groupNote, lookAtReason } from './AttentionList.jsx'
-import { ChecksBadge, PullStateIcon, QuietLabels, TimeAgo } from './GithubParts.jsx'
+import { ChecksBadge, PullLabels, PullStateIcon, TimeAgo } from './GithubParts.jsx'
 import { Icon } from './Icons.jsx'
 import { Envelope, EmptyView } from './Envelope.jsx'
 import { ConfirmView, ReviewsView } from './ReviewsView.jsx'
@@ -42,10 +42,12 @@ function DeskPullRow({ project, pr, chip, order, lastLooked, runs, chats, onOpen
           {pr.isDraft ? <span>Draft</span> : null}
           <ChecksBadge pr={pr} />
           {Number.isInteger(pr.additions) ? <span className="co-change-total"><b>+{pr.additions}</b><em>−{pr.deletions}</em></span> : null}
+        </span>
+        <span className="co-pr-labels"><PullLabels pr={pr} /></span>
+        {chip || standingChip ? <span className="co-row-pills">
           {chip ? <span className={'co-desk-chip is-' + chip.tone}>{chip.label}</span> : null}
           {standingChip ? <span className="co-desk-chip is-waiting">{standingChip.label}</span> : null}
-        </span>
-        <span className="co-pr-labels"><QuietLabels pr={pr} /></span>
+        </span> : null}
       </span>
       {comments ? <span className="co-pr-comments" title={`${comments} in the conversation: comments and reviews`}><Icon name="comment" size={15} />{comments}</span> : null}
     </button>
@@ -54,7 +56,7 @@ function DeskPullRow({ project, pr, chip, order, lastLooked, runs, chats, onOpen
 }
 
 // A saved-work card (review feedback, a decision) in the same shape as a PR
-// row: icon, title, one muted line on why it is here, and a state chip.
+// row: icon, title, one muted line on why it is here, then its state chip on a line of its own.
 function DeskAttentionRow({ item, onSelect, action = null }) {
   const reason = lookAtReason(item)
   const detectedAt = item.record?.attention?.detected_at
@@ -68,8 +70,8 @@ function DeskAttentionRow({ item, onSelect, action = null }) {
         <span className="co-desk-row-meta">
           {group ? <span>{group}</span> : null}
           {detectedAt ? <TimeAgo prefix="Detected " value={detectedAt} /> : null}
-          <span className="co-desk-chip is-tone">{reason.label}</span>
         </span>
+        <span className="co-row-pills"><span className="co-desk-chip is-tone">{reason.label}</span></span>
       </span>
     </button>
   )

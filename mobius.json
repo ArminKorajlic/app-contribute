@@ -157,6 +157,7 @@
     "ui/ReviewPromptSettings.jsx",
     "ui/DefaultAgentSettings.jsx",
     "ui/SeenOnGithub.jsx",
+    "ui/WindowHead.jsx",
     "ui/RunDetail.jsx",
     "ui/ReviewFrame.jsx",
     "ui/ReviewTab.jsx",

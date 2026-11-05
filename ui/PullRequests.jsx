@@ -6,7 +6,7 @@ import { ReviewFrame } from './ReviewFrame.jsx'
 import { pullConversations, recordsForPull } from '../provenance.js'
 import { RunDetail, savedVersion } from './RunDetail.jsx'
 import { PullRequestDetail, Skeleton } from './PullRequestDetail.jsx'
-import { Avatar, ChecksBadge, PullStateChips, PullStateIcon, QuietLabels, TimeAgo } from './GithubParts.jsx'
+import { Avatar, ChecksBadge, PullLabels, PullStateChips, PullStateIcon, TimeAgo } from './GithubParts.jsx'
 import { TaskPane, useProjectTask, focusActionRegion } from './TaskPane.jsx'
 import { useFocusLease } from './useFocusLease.js'
 import { Icon } from './Icons.jsx'
@@ -618,16 +618,18 @@ export function PullRequests({ appId, token, project, conn, onChanged, onReviewP
             }}>
               <span className="co-pr-title">{pr.title}</span>
             </button>
-            <span className="co-pr-states"><PullStateChips pr={pr} /></span>
           </div>
           <div className="co-pr-meta">
             <span>#{pr.number} · {pr.author?.login || 'Contributor'} <TimeAgo prefix="opened " value={pr.createdAt} /></span>
             <ChecksBadge pr={pr} />
             {Number.isInteger(pr.additions) ? <span className="co-change-total"><b>+{pr.additions}</b><em>−{pr.deletions}</em></span> : null}
+          </div>
+          <div className="co-pr-labels"><PullLabels pr={pr} /></div>
+          <div className="co-row-pills">
+            <PullStateChips pr={pr} />
             {requestedKeys.has(key) ? <span className="co-pr-requested">Your review requested</span> : null}
             {review.chip ? <button className={'co-pr-agent-state' + CHIP_TONE_CLASS[review.chip.tone]} onClick={() => status && !onOpenPage ? task?.open(`task:run:${status.run.id}`) : onOpenPage ? onOpenPage(pr, 'review') : inspect(pr)}><Icon name="prepare" size={13} />{review.chip.label}</button> : null}
           </div>
-          <div className="co-pr-labels"><QuietLabels pr={pr} /></div>
         </div>
         <div className="co-pr-aside">
           {comments ? <span className="co-pr-comments" title={`${comments} in the conversation: comments and reviews`}><Icon name="comment" size={16} />{comments}</span> : null}

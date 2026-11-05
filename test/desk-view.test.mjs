@@ -209,14 +209,14 @@ test('the sync note says only when it last checked, or that GitHub could not be 
   assert.match(theme, /\.co-toolbar-refresh span, \.co-sync-note \{ display: none; \}/)
 })
 
-test('list labels are a dot and plain text, two at most, and a bot says bot', async t => {
+test('list labels are filled pills like the PR page, two at most, and a bot says bot', async t => {
   const html = await (async () => {
     if (!frontendModules) { t.skip('MOBIUS_FRONTEND_NODE_MODULES is required'); return null }
     const mod = await renderModule(`
       import React from 'react'
       import { renderToStaticMarkup } from 'react-dom/server'
-      import { QuietLabels, PullStateChips } from './ui/GithubParts.jsx'
-      export const labels = pr => renderToStaticMarkup(React.createElement(QuietLabels, { pr }))
+      import { PullLabels, PullStateChips } from './ui/GithubParts.jsx'
+      export const labels = pr => renderToStaticMarkup(React.createElement(PullLabels, { pr }))
       export const chips = pr => renderToStaticMarkup(React.createElement(PullStateChips, { pr }))
     `)
     return mod
@@ -224,12 +224,12 @@ test('list labels are a dot and plain text, two at most, and a bot says bot', as
   if (!html) return
   const node = (name, color = '0075ca') => ({ name, color })
   const human = html.labels({ author: { login: 'owner' }, labels: { nodes: [node('area: ui'), node('bug', 'd73a4a'), node('maintenance')] } })
-  assert.match(human, /<i aria-hidden="true"><\/i>ui</)
+  assert.match(human, /class="co-gh-label"[^>]*--co-label-dark-bg[^>]*>ui</)
   assert.doesNotMatch(human, /area:/)
-  assert.match(human, /is-more" title="maintenance">\+1</)
-  assert.equal((human.match(/co-quiet-label"/g) || []).length, 2)
+  assert.match(human, /co-label-more" title="maintenance">\+1</)
+  assert.equal((human.match(/class="co-gh-label"/g) || []).length, 2)
   const bot = html.labels({ author: { login: 'dependabot' }, labels: { nodes: [node('dependencies'), node('javascript')] } })
-  assert.match(bot, /is-bot">bot</)
+  assert.match(bot, /co-gh-label is-plain">bot</)
   assert.doesNotMatch(bot, /dependencies/)
   const chips = html.chips({ isDraft: true, reviewDecision: 'APPROVED' })
   assert.match(chips, /co-desk-chip">Draft</)
@@ -254,11 +254,14 @@ test('state chips sit beside the title, and the hover Assign is an icon so the r
   assert.match(css, /\.co-pr-assign\.is-quiet span \{ display:inline; \}/)
 })
 
-test('labels sit on their own line under the meta line, in list rows and desk rows', () => {
+test('a row reads title, facts, labels, then pills, each on its own line, in list rows and desk rows', () => {
   const list = readFileSync(new URL('../ui/PullRequests.jsx', import.meta.url), 'utf8')
-  assert.match(list, /<div className="co-pr-meta">[\s\S]*?<\/div>\s*<div className="co-pr-labels"><QuietLabels pr=\{pr\} \/><\/div>/)
+  assert.match(list, /<div className="co-pr-meta">[\s\S]*?<\/div>\s*<div className="co-pr-labels"><PullLabels pr=\{pr\} \/><\/div>\s*<div className="co-row-pills">\s*<PullStateChips pr=\{pr\} \/>/)
   const desk = readFileSync(new URL('../ui/DeskViews.jsx', import.meta.url), 'utf8')
-  assert.match(desk, /<\/span>\s*<span className="co-pr-labels"><QuietLabels pr=\{pr\} \/><\/span>/)
+  assert.match(desk, /<\/span>\s*<span className="co-pr-labels"><PullLabels pr=\{pr\} \/><\/span>\s*\{chip \|\| standingChip \? <span className="co-row-pills">/)
+  // The facts line holds no pill: the chip that says whose turn it is lives on the pills line.
+  const factsLine = desk.slice(desk.indexOf('<span className="co-desk-row-meta">'), desk.indexOf('<span className="co-pr-labels">'))
+  assert.doesNotMatch(factsLine, /co-desk-chip/)
 })
 
 test('the attention bar does not sit inside a second border', () => {

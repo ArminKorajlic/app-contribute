@@ -7,6 +7,7 @@ import { Icon } from './Icons.jsx'
 import { ReviewPromptPreview } from './ReviewPromptSettings.jsx'
 import { AgentModelSettings } from './AgentModelSettings.jsx'
 import { SeenOnGithub } from './SeenOnGithub.jsx'
+import { CloseWindowButton, WindowHead } from './WindowHead.jsx'
 
 // A fresh launch offers only the workflows this Möbius advertises.
 export function takeoverCapabilityBlocker({ capabilities, saved }) {
@@ -56,23 +57,6 @@ function TakeoverReason({ value, disabled, onChange }) {
       onChange={event => onChange(event.target.value)} />
     <small>Posted on the PR as a comment from your account, so its author knows{value.trim() ? <>: “Taking this PR over: {value.trim()}”</> : '.'}</small>
   </label>
-}
-
-function PullHeading({ pulls, title, titleId, onCancel, takeover, seen }) {
-  const one = pulls.length === 1
-  return <header className="co-rw-head">
-    <span className="co-rw-icon"><Icon name={takeover ? 'fix' : 'review'} size={22} /></span>
-    <div>
-      <h3 id={titleId}>{title}</h3>
-      {one
-        ? <p className="co-rw-pr"><strong>#{pulls[0].number} {pulls[0].title}</strong><span>{pulls[0].repository.nameWithOwner}</span></p>
-        : <><p className="co-rw-pr"><strong>{pulls.length} PRs</strong></p><ul className="co-rw-list">{pulls.map(pr => <li key={prKey(pr)}><strong>#{pr.number}</strong> {pr.title}<span>{pr.repository.nameWithOwner}</span></li>)}</ul></>}
-    </div>
-    {seen || onCancel ? <div className="co-rw-tools">
-      {seen}
-      {onCancel ? <button type="button" className="co-quiet-action co-rw-close" aria-label="Close" onClick={onCancel}><Icon name="close" size={18} /></button> : null}
-    </div> : null}
-  </header>
 }
 
 function WhatHappens({ copy }) {
@@ -181,7 +165,8 @@ export function ReviewConfirmation({ choice, busy, disabled, error, onConfirm, o
   const postingUnavailable = choice.mode === 'review_merge' && !!capabilities && !(capabilities.post_review === true && capabilities.propose_verdict === true)
   const startBlocked = takeover && !!blocker
   return <section ref={confirmation} tabIndex={-1} className="co-review-window" aria-labelledby={titleId}>
-    <PullHeading pulls={choice.pulls} title={copy.title} titleId={titleId} onCancel={onCancel} takeover={takeover} seen={<SeenOnGithub tone={copy.publicEffect.tone} text={copy.publicEffect.text} />} />
+    <WindowHead icon={takeover ? 'fix' : 'review'} title={copy.title} titleId={titleId} pulls={choice.pulls}
+      tools={<><SeenOnGithub tone={copy.publicEffect.tone} text={copy.publicEffect.text} />{onCancel ? <CloseWindowButton onClick={onCancel} /> : null}</>} />
     <div className="co-rw-body">
       {takeover && choice.intent === 'take_over' && onReasonChange ? <TakeoverReason value={choice.takeover_reason || ''} disabled={busy} onChange={onReasonChange} /> : null}
       {takeover

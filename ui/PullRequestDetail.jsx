@@ -130,10 +130,10 @@ const COMMENT_PREVIEW = 4
 
 const PROVENANCE_LABELS = { source: ['Source chat', 'Source chats'], review: ['Review chat', 'Review chats'], fix: ['Fix chat', 'Fix chats'] }
 
-// One button per kind of conversation. Several chats of the same kind fold
-// into one dropdown — Source chats ⌄ — listing Source chat #1, #2, … with
-// each chat's own title underneath.
-function ProvenanceGroup({ role, links }) {
+// One icon button per kind of conversation. Several chats of the same kind fold
+// into one dropdown listing Source chat #1, #2, … with each chat's own title
+// underneath. A PR with a single chat anywhere says just "Open chat".
+function ProvenanceGroup({ role, links, lone }) {
   const [open, setOpen] = useState(false)
   const root = useRef(null)
   useEffect(() => {
@@ -144,10 +144,11 @@ function ProvenanceGroup({ role, links }) {
   }, [open])
   const [one, many] = PROVENANCE_LABELS[role] || ['Chat', 'Chats']
   if (links.length === 1) {
-    return <button type="button" className="co-btn co-gh-chat-link" title={links[0].title} onClick={() => openAgentConversation(links[0].chat_id)} aria-label={one}><Icon name="feedback" size={15} /><span className="co-btn-label">{one}</span></button>
+    const name = lone ? 'Open chat' : `Open ${one.toLowerCase()}`
+    return <button type="button" className="co-btn co-tip co-gh-chat-link" onClick={() => openAgentConversation(links[0].chat_id)} aria-label={name} data-tip={name}><Icon name="feedback" size={15} /></button>
   }
   return <span className="co-chat-group" ref={root} onKeyDown={event => { if (event.key === 'Escape') setOpen(false) }}>
-    <button type="button" className="co-btn co-gh-chat-link" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(value => !value)} aria-label={many}><Icon name="feedback" size={15} /><span className="co-btn-label">{many}</span><Icon name="chevron" size={14} /></button>
+    <button type="button" className="co-btn co-tip co-gh-chat-link" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(value => !value)} aria-label={many} data-tip={many}><Icon name="feedback" size={15} /><Icon name="chevron" size={14} /></button>
     {open ? <div className="co-chat-group-list" role="menu" aria-label={many}>
       {links.map((link, index) => <button type="button" role="menuitem" key={link.chat_id} onClick={() => { setOpen(false); openAgentConversation(link.chat_id) }}>
         <strong>{one} #{index + 1}</strong>{link.title ? <small>{link.title}</small> : null}
@@ -161,8 +162,8 @@ function PullProvenance({ record, onRecord, conversations }) {
   if (!local && !conversations.length) return null
   const roles = [...new Set(conversations.map(link => link.role))]
   return <span className="co-gh-provenance" role="group" aria-label="Where this PR came from">
-    {local ? <button type="button" className="co-btn co-gh-chat-link" title="The saved contribution this PR was sent from" onClick={() => onRecord(record)} aria-label="Saved work"><Icon name="prepare" size={15} /><span className="co-btn-label">Saved work</span></button> : null}
-    {roles.map(role => <ProvenanceGroup key={role} role={role} links={conversations.filter(link => link.role === role)} />)}
+    {local ? <button type="button" className="co-btn co-tip co-gh-chat-link" onClick={() => onRecord(record)} aria-label="Saved work" data-tip="Saved work"><Icon name="prepare" size={15} /></button> : null}
+    {roles.map(role => <ProvenanceGroup key={role} role={role} links={conversations.filter(link => link.role === role)} lone={conversations.length === 1} />)}
   </span>
 }
 
@@ -405,9 +406,9 @@ function PullRequestDetailView({ cacheStore, pr, token, onReview, onAssign, onRe
     </header>
     <div className="co-pr-detail-actions">
       {!readOnly ? <ActionsMenu variant="button" align="start" pulls={[pr]} decisions={review?.standing ? [review.standing] : []} record={record} capabilities={capabilities} disabled={stale} onChoose={mode => onReview?.(mode)} ariaLabel={`Choose an action for PR ${pr.number}`} /> : null}
-      {!readOnly && canAssign ? <button className="co-btn" disabled={stale} onClick={onAssign} aria-label="Assign" title="Assign"><Icon name="person" /><span className="co-btn-label">Assign</span></button> : null}
+      {!readOnly && canAssign ? <button className="co-btn co-tip" disabled={stale} onClick={onAssign} aria-label="Assign" data-tip="Assign"><Icon name="person" /></button> : null}
       {status && onProgress ? <button className="co-btn" onClick={onProgress}>Agent progress</button> : null}
-      {githubUrl ? <a className="co-btn" href={githubUrl} target="_blank" rel="noopener noreferrer" aria-label={`View on GitHub: PR ${pr.number}`} title="View on GitHub"><Icon name="github" /><span className="co-btn-label">View on GitHub</span></a> : null}
+      {githubUrl ? <a className="co-btn co-tip" href={githubUrl} target="_blank" rel="noopener noreferrer" aria-label={`View on GitHub: PR ${pr.number}`} data-tip="View on GitHub"><Icon name="github" /></a> : null}
       <PullProvenance record={record} onRecord={onRecord} conversations={provenance} />
     </div>
     <div className="co-gh-pr-sub"><PullStateBadge pr={pr} /><span className="co-pr-sub-num">#{pr.number}</span>

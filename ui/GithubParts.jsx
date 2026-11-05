@@ -1,37 +1,52 @@
 /** GitHub-style pieces shared by the PR list, detail and launch views.
- *  Colors follow GitHub's own label and state treatment so a PR reads the same
- *  here as on github.com, in both shell themes. */
+ *  Labels and state pills use GitHub's own colours, softened (see labelColors),
+ *  so a PR is recognisable here and on github.com in both shell themes. */
 import { Icon } from './Icons.jsx'
 import { checkSummary, isBotAuthor } from '../collaboration.js'
 
-function rgbToHsl(r, g, b) {
-  const [rn, gn, bn] = [r / 255, g / 255, b / 255]
-  const max = Math.max(rn, gn, bn), min = Math.min(rn, gn, bn)
-  const l = (max + min) / 2
-  if (max === min) return [0, 0, l * 100]
-  const d = max - min
-  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min)
-  const h = max === rn ? (gn - bn) / d + (gn < bn ? 6 : 0) : max === gn ? (bn - rn) / d + 2 : (rn - gn) / d + 4
-  return [h * 60, s * 100, l * 100]
+// Labels and state pills are filled with their GitHub colour, 30% less intense:
+// 70% of the colour mixed into the page surface, then black or white text,
+// whichever reads better. Dark and light get their own mix because the surface
+// differs; the shell's default surfaces are the two constants below.
+const COLOR_SHARE = 0.7
+const SURFACE = { dark: [23, 23, 23], light: [255, 255, 255] }
+// White first, then GitHub's dark ink, then pure black: for the middle shades neither of the first two reaches 4.5:1.
+const TEXT_CHOICES = [[255, 255, 255], [31, 35, 40], [0, 0, 0]]
+
+function relativeLuminance([r, g, b]) {
+  const [lr, lg, lb] = [r, g, b].map(channel => {
+    const value = channel / 255
+    return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4
+  })
+  return 0.2126 * lr + 0.7152 * lg + 0.0722 * lb
 }
 
-/** GitHub's label math: dark mode tints the label color and lightens dark
- *  text; light mode fills with the color and picks black or white text. */
+export function contrastRatio(a, b) {
+  const [light, dark] = [relativeLuminance(a), relativeLuminance(b)].sort((x, y) => y - x)
+  return (light + 0.05) / (dark + 0.05)
+}
+
+function softFill(color, theme) {
+  const fill = color.map((channel, at) => Math.round(channel * COLOR_SHARE + SURFACE[theme][at] * (1 - COLOR_SHARE)))
+  const text = TEXT_CHOICES.find(choice => contrastRatio(choice, fill) >= 4.5)
+  // A fill close to the page itself (a near-black label on dark, a near-white one on light) keeps a hairline.
+  const luminance = relativeLuminance(fill)
+  const edge = luminance < 0.02 ? 'rgba(255,255,255,0.28)' : luminance > 0.85 ? 'rgba(0,0,0,0.28)' : 'transparent'
+  return { fill, text, edge }
+}
+
+/** The CSS variables for one GitHub colour ("d73a4a"), for both shell themes. */
 export function labelColors(hex) {
   if (!/^[0-9a-f]{6}$/i.test(hex || '')) return null
-  const [r, g, b] = [0, 2, 4].map(at => parseInt(hex.slice(at, at + 2), 16))
-  const [h, s, l] = rgbToHsl(r, g, b)
-  const perceived = (r * 0.2126 + g * 0.7152 + b * 0.0722) / 255
-  const lifted = Math.min(100, l + Math.max(0, (0.6 - perceived) * 100))
-  const hsl = (light, alpha = 1) => `hsla(${h.toFixed(1)},${s.toFixed(1)}%,${light.toFixed(1)}%,${alpha})`
-  return {
-    '--co-label-dark-bg': `rgba(${r},${g},${b},0.18)`,
-    '--co-label-dark-fg': hsl(lifted),
-    '--co-label-dark-border': hsl(lifted, 0.3),
-    '--co-label-light-bg': `rgb(${r},${g},${b})`,
-    '--co-label-light-fg': perceived > 0.453 ? '#1f2328' : '#ffffff',
-    '--co-label-light-border': perceived > 0.96 ? hsl(Math.max(0, l - 25)) : 'transparent',
+  const color = [0, 2, 4].map(at => parseInt(hex.slice(at, at + 2), 16))
+  const vars = {}
+  for (const theme of ['dark', 'light']) {
+    const { fill, text, edge } = softFill(color, theme)
+    vars[`--co-label-${theme}-bg`] = `rgb(${fill.join(',')})`
+    vars[`--co-label-${theme}-fg`] = `rgb(${text.join(',')})`
+    vars[`--co-label-${theme}-edge`] = edge
   }
+  return vars
 }
 
 // What the header's sync last did, beside its button: when it finished, or that it failed.
@@ -40,18 +55,17 @@ export function SyncNote({ note }) {
   return <span className="co-sync-note" role="status">{note.outcome?.ok ? <TimeAgo prefix="Checked " value={note.at} /> : 'Couldn’t reach GitHub'}</span>
 }
 
-// Labels in a list keep their meaning and lose the loud fill: a dot in the
-// label's own colour and plain text, "area: " dropped, two at most, and a
-// bot's PR says "bot" instead (its labels say nothing a person would use).
-// The PR page keeps GitHub's exact, filled labels.
-export function QuietLabels({ pr }) {
-  if (isBotAuthor(pr?.author?.login)) return <span className="co-quiet-label is-bot">bot</span>
+// Labels in a list are the same filled pills as on the PR page, "area: " dropped,
+// two at most. A bot's PR says "bot" instead (its labels say nothing a person
+// would use). Every PR has them, so they always get their own line.
+export function PullLabels({ pr }) {
+  if (isBotAuthor(pr?.author?.login)) return <span className="co-gh-label is-plain">bot</span>
   const labels = pr?.labels?.nodes || []
   const shown = labels.slice(0, 2)
   const more = labels.length - shown.length
   return <>
-    {shown.map(label => <span key={label.name} className="co-quiet-label" style={labelColors(label.color) || undefined}><i aria-hidden="true" />{label.name.replace(/^area:\s*/i, '')}</span>)}
-    {more > 0 ? <span className="co-quiet-label is-more" title={labels.slice(2).map(label => label.name).join(', ')}>+{more}</span> : null}
+    {shown.map(label => <GithubLabel key={label.name} name={label.name.replace(/^area:\s*/i, '')} color={label.color} />)}
+    {more > 0 ? <span className="co-label-more" title={labels.slice(2).map(label => label.name).join(', ')}>+{more}</span> : null}
   </>
 }
 
@@ -84,9 +98,12 @@ export function PullStateIcon({ pr, size = 16 }) {
   </span>
 }
 
+// GitHub's own state colours: open green, draft grey, merged purple, closed red.
+const STATE_COLOR = { open: '238636', draft: '6e7781', merged: '8957e5', closed: 'da3633' }
+
 export function PullStateBadge({ pr }) {
   const state = pullState(pr)
-  return <span className={`co-gh-badge is-${state}`}><Icon name={state === 'draft' ? 'draft' : state === 'merged' ? 'merge' : 'pull'} size={14} />{STATE_TEXT[state]}</span>
+  return <span className={`co-gh-badge is-${state}`} style={labelColors(STATE_COLOR[state])}><Icon name={state === 'draft' ? 'draft' : state === 'merged' ? 'merge' : 'pull'} size={14} />{STATE_TEXT[state]}</span>
 }
 
 /** "✓ 18/18" as on GitHub's PR list. Counts are GitHub's rollup, not a review. */

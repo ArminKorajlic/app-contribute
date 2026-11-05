@@ -5,9 +5,9 @@ import { loadWorkflowOptions, previewWorkflow, reviewOptions } from '../review-p
 import { loadPullActivity, loadPullThreads } from '../pull-details.js'
 import { AgentModelSettings } from './AgentModelSettings.jsx'
 import { SeenOnGithub } from './SeenOnGithub.jsx'
+import { CloseWindowButton, WindowHead } from './WindowHead.jsx'
 import { openAgentConversation } from './BatchAction.jsx'
 import { focusActionRegion } from './TaskPane.jsx'
-import { Icon } from './Icons.jsx'
 
 // What was found, each with a tick. The owner unticks what the agent should
 // leave alone.
@@ -89,14 +89,7 @@ export function AddressFeedbackWindow({ pr, findings = null, token, appId, defau
     } catch { setError('Could not start the agent. Try again.') }
     finally { setBusy(false) }
   }
-  const heading = (seen = null) => <header className="co-rw-head">
-    <span className="co-rw-icon"><Icon name="feedback" size={22} /></span>
-    <div><h3>Respond to feedback</h3><p className="co-rw-pr"><strong>#{pr.number} {pr.title}</strong><span>{pr.repository.nameWithOwner}</span></p></div>
-    <div className="co-rw-tools">
-      {seen}
-      <button type="button" className="co-quiet-action co-rw-close" aria-label="Close" onClick={onClose}><Icon name="close" size={18} /></button>
-    </div>
-  </header>
+  const heading = (seen = null) => <WindowHead icon="feedback" title="Respond to feedback" pulls={[pr]} tools={<>{seen}<CloseWindowButton onClick={onClose} /></>} />
   if (started) return <section ref={root} tabIndex={-1} className="co-review-window" aria-label="Respond to feedback started">
     {heading()}
     <div className="co-rw-body">

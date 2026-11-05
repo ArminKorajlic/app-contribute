@@ -383,7 +383,8 @@ root.render(<Fixture />)
 const frame = () => new Promise(resolve => requestAnimationFrame(resolve))
 const text = node => node?.textContent?.replace(/\s+/g, ' ').trim() || ''
 const query = selector => document.querySelector(selector)
-const button = (name, root = document) => [...root.querySelectorAll('button')].find(node => text(node) === name)
+// An icon-only button has no text, so its accessible name counts too.
+const button = (name, root = document) => [...root.querySelectorAll('button')].find(node => text(node) === name || node.getAttribute('aria-label') === name)
 const review = () => query('.co-review-window')
 // The window's one way out is the X in its header; it has no Cancel.
 const closeReview = () => click(review().querySelector('[aria-label="Close"]'))
@@ -1087,7 +1088,8 @@ window.runWorkspaceChecks = async () => {
       ensure(exactReads() - exactBefore === 2 && listReads() === listBefore, 'Links scanned open pages instead of exact identities')
       const provenance = query('.co-gh-provenance')
       const links = [...provenance.querySelectorAll('.co-gh-chat-link')]
-      ensure(links.map(text).join('|') === 'Saved work|Source chat|Review chat', 'Provenance is not one combined section: ' + links.map(text))
+      const names = links.map(link => link.getAttribute('aria-label'))
+      ensure(names.join('|') === 'Saved work|Open source chat|Open review chat' && links.every(link => !text(link)), 'Provenance is not one combined section of icon buttons: ' + names)
       ensure(document.querySelectorAll('.co-gh-provenance').length === 1, 'Provenance repeated')
       for (const link of links) {
         const box = link.getBoundingClientRect()

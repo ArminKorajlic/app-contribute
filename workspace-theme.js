@@ -394,17 +394,15 @@ export const WORKSPACE_CSS = `
 .co-gh-avatars { display:inline-flex; align-items:center; }
 .co-gh-avatars > .co-gh-avatar + .co-gh-avatar { margin-left:-6px; }
 .co-gh-avatar { display:inline-grid; place-items:center; flex:none; border-radius:50%; background:var(--surface-2,var(--surface)); color:var(--text); font-weight:600; box-shadow:0 0 0 2px var(--bg); }
-.co-gh-label { display:inline-block; padding:0 8px; border:1px solid var(--co-label-dark-border,var(--border)); border-radius:2em; background:var(--co-label-dark-bg,var(--surface)); color:var(--co-label-dark-fg,var(--text)); font-size:14px; font-weight:500; line-height:20px; white-space:nowrap; }
-[data-theme="light"] .co-gh-label { border-color:var(--co-label-light-border,var(--border)); background:var(--co-label-light-bg,var(--surface)); color:var(--co-label-light-fg,var(--text)); }
+.co-gh-label { display:inline-block; padding:0 8px; border:1px solid var(--co-label-dark-edge,var(--border)); border-radius:2em; background:var(--co-label-dark-bg,var(--surface-2,var(--surface))); color:var(--co-label-dark-fg,var(--text)); font-size:14px; font-weight:500; line-height:20px; white-space:nowrap; }
+[data-theme="light"] .co-gh-label { border-color:var(--co-label-light-edge,var(--border)); background:var(--co-label-light-bg,var(--surface-2,var(--surface))); color:var(--co-label-light-fg,var(--text)); }
 .co-gh-labels { display:flex; flex-wrap:wrap; gap:4px; margin-top:10px; }
 .co-gh-state { display:inline-flex; color:var(--green); }
 .co-gh-state.is-draft { color:var(--muted); }
 .co-gh-state.is-merged { color:#a371f7; }
 .co-gh-state.is-closed { color:var(--danger); }
-.co-gh-badge { display:inline-flex; align-items:center; gap:4px; padding:4px 10px; border-radius:2em; background:#238636; color:#fff; font-size:14px; font-weight:500; white-space:nowrap; }
-.co-gh-badge.is-draft { background:#6e7781; }
-.co-gh-badge.is-merged { background:#8957e5; }
-.co-gh-badge.is-closed { background:#da3633; }
+.co-gh-badge { display:inline-flex; align-items:center; gap:4px; padding:3px 10px; border:1px solid var(--co-label-dark-edge,transparent); border-radius:2em; background:var(--co-label-dark-bg,var(--surface-2)); color:var(--co-label-dark-fg,var(--text)); font-size:14px; font-weight:500; white-space:nowrap; }
+[data-theme="light"] .co-gh-badge { border-color:var(--co-label-light-edge,transparent); background:var(--co-label-light-bg,var(--surface-2)); color:var(--co-label-light-fg,var(--text)); }
 .co-gh-checks { display:inline-flex; align-items:center; gap:3px; font-variant-numeric:tabular-nums; }
 .co-gh-checks.is-success .co-icon { color:var(--green); }
 .co-gh-checks.is-failure .co-icon { color:var(--danger); }
@@ -424,6 +422,14 @@ export const WORKSPACE_CSS = `
 .co-tab-dot.is-pending { background:var(--co-warn,#b38235); }
 .co-pr-detail-actions { display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin:16px 0 4px; }
 .co-pr-detail-actions .co-btn { min-height:40px; display:inline-flex; align-items:center; gap:6px; }
+.co-pr-detail-actions .co-tip { min-width:44px; min-height:44px; padding:0; justify-content:center; }
+/* An icon-only button names itself in a tooltip: after the pointer rests on it for 2 s, at once on keyboard focus, and while a finger holds it. */
+.co-tip { position:relative; }
+.co-tip::after { content:attr(data-tip); position:absolute; top:calc(100% + 6px); left:50%; z-index:40; transform:translateX(-50%); padding:5px 9px; border-radius:6px; background:var(--text); color:var(--bg); font:600 13px/1.2 var(--font); white-space:nowrap; opacity:0; pointer-events:none; transition:opacity .12s 0s; }
+.co-tip:hover::after { opacity:1; transition-delay:2s; }
+.co-tip:focus-visible::after { opacity:1; transition-delay:0s; }
+@media (hover:none) { .co-tip:hover::after { opacity:0; transition-delay:0s; } .co-tip:active::after { opacity:1; transition-delay:0s; } }
+@media (prefers-reduced-motion:reduce) { .co-tip::after { transition-duration:0s; } }
 .co-gh-provenance { display:contents; }
 .co-chat-group { position:relative; display:inline-flex; }
 .co-chat-group-list { position:absolute; z-index:30; top:calc(100% + 6px); left:0; width:min(320px,calc(100vw - 32px)); padding:6px; border:1px solid var(--border); border-radius:12px; background:var(--surface); box-shadow:0 12px 32px rgba(0,0,0,.28); }
@@ -784,6 +790,7 @@ input[type=checkbox].co-switch:focus-visible { outline:2px solid var(--accent); 
 .co-desk-row-title { font-size:15.5px; font-weight:600; line-height:1.4; overflow-wrap:anywhere; }
 .co-desk-row-title .co-newdot { margin-right:7px; vertical-align:2px; }
 .co-desk-row-labels { display:flex; flex-wrap:wrap; gap:4px; }
+.co-desk-row-main > .co-pr-labels, .co-desk-row-main > .co-row-pills { margin-top:0; }
 .co-desk-row-meta { display:flex; flex-wrap:wrap; align-items:center; gap:4px 12px; color:var(--muted); font-size:14px; }
 .co-desk-order { font-variant-numeric:tabular-nums; }
 .co-desk-chip { padding:1px 8px; border-radius:6px; font-size:14px; font-weight:600; background:var(--surface-2); color:var(--text); }
@@ -821,11 +828,8 @@ input[type=checkbox].co-switch:focus-visible { outline:2px solid var(--accent); 
 .co-pr-feedback-flag.is-clear b, .co-pr-feedback-flag.is-clear .co-icon { color:var(--green); }
 .co-copy-id { white-space:nowrap; flex:0 0 auto; border:1px solid var(--border); border-radius:6px; padding:1px 7px; background:var(--surface-2,var(--surface)); color:var(--muted); font:500 13px var(--mono,monospace); cursor:pointer; }
 .co-copy-id:hover { color:var(--text); border-color:color-mix(in srgb,var(--accent) 34%,var(--border)); }
-/* List rows at rest: labels as a dot and plain text, the checkbox and Assign only when wanted. */
-.co-quiet-label { display:inline-flex; align-items:center; gap:6px; color:var(--muted); font-size:14px; white-space:nowrap; }
-.co-quiet-label i { width:8px; height:8px; border-radius:50%; background:var(--co-label-dark-fg,var(--muted)); }
-[data-theme="light"] .co-quiet-label i { background:var(--co-label-light-bg,var(--muted)); }
-.co-quiet-label.is-bot { padding:0 8px; border-radius:6px; background:var(--surface-2,var(--surface)); font-weight:600; }
+/* List rows at rest: the checkbox and Assign only when wanted. Labels are the same filled pills as on the PR page. */
+.co-label-more { color:var(--muted); font-size:14px; white-space:nowrap; }
 .co-pr-row .co-pr-select { opacity:0; transition:opacity .12s; }
 .co-pr-row:hover .co-pr-select, html[data-input="keyboard"] .co-pr-row:has(:focus-visible) .co-pr-select, .co-pr-row.is-selected .co-pr-select, .co-pr-box.has-selection .co-pr-row .co-pr-select { opacity:1; }
 .co-pr-assign.is-quiet { opacity:0; transition:opacity .12s; }
@@ -833,10 +837,12 @@ input[type=checkbox].co-switch:focus-visible { outline:2px solid var(--accent); 
 .co-pr-aside { gap:2px; }
 .co-pr-headline { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
 .co-pr-headline .co-pr-open { flex:1; min-width:0; }
-.co-pr-states { display:flex; flex:none; gap:6px; padding-top:1px; }
 .co-pr-assign.is-quiet span { display:none; }
-.co-pr-labels { display:flex; flex-wrap:wrap; gap:2px 14px; margin-top:2px; }
+.co-pr-labels { display:flex; flex-wrap:wrap; align-items:center; gap:4px 6px; margin-top:4px; }
 .co-pr-labels:empty { display:none; }
+/* Pills (state, whose turn, agent) sit on the line after the labels, never inside the facts line. */
+.co-row-pills { display:flex; flex-wrap:wrap; align-items:center; gap:4px 6px; margin-top:4px; }
+.co-row-pills:empty { display:none; }
 @media (hover:none) { .co-pr-row .co-pr-select, .co-pr-assign.is-quiet { opacity:1; } .co-pr-assign.is-quiet span { display:inline; } }
 @media (prefers-reduced-motion:reduce) { .co-pr-row .co-pr-select, .co-pr-assign.is-quiet { transition:none; } }
 .co-edits-head { display:flex; align-items:center; justify-content:space-between; gap:10px 16px; flex-wrap:wrap; margin:0 0 12px; }
@@ -860,8 +866,7 @@ input[type=checkbox].co-switch:focus-visible { outline:2px solid var(--accent); 
 .co-file-del { color:var(--danger); }
 @media(max-width:680px) {
  .co-pr-detail-actions { flex-wrap:nowrap; }
- .co-pr-detail-actions .co-btn-label, .co-pr-detail .co-tab-more { display:none; }
- .co-pr-detail-actions .co-btn:has(.co-btn-label) { min-width:44px; padding-inline:12px; }
+ .co-pr-detail .co-tab-more { display:none; }
  .co-pr-detail .co-detail-tabs { gap:14px; }
  .co-pr-detail .co-tab-dot + .co-tab-count { display:none; }
  .co-pr-detail .co-detail-tabs button { font-size:14px; }
