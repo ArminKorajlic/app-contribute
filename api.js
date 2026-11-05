@@ -318,7 +318,7 @@ function approvalRefusal(detail) {
     ...(detail.record && typeof detail.record === 'object' ? { record: detail.record } : {}),
     ...(Array.isArray(detail.records) ? { records: detail.records } : {}),
     error: detail.not_attempted === true
-      ? 'The saved proposal changed. Review its current version and confirm again; nothing was sent.'
+      ? 'This pull request changed after this window loaded it (for example a reviewer commented or GitHub updated it), so you were looking at an older copy. Nothing was sent. The latest version is loaded now: look it over and confirm again. If it keeps happening, press Sync with GitHub to fetch the latest data first.'
       : 'The saved proposal changed after an earlier attempt. Check Contribute before trying again.',
     // Without the certificate the request may already have been attempted:
     // its outcome is unknown (owned by automatic reconciliation), never an

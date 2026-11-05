@@ -148,10 +148,12 @@ export function GithubPullsUnavailable({ conn, onRetry }) {
 
 // Preflight rejection did not enter a public write. Keep it distinct from a
 // lost response after dispatch, which must retain reconciliation ownership.
+// It goes stale whenever the item changes between this window loading it and
+// the tap: a reviewer commented, GitHub updated it, or its checks finished.
 function stalePublicApproval() {
   return {
     notAttempted: true,
-    error: 'The saved proposal changed. Review its current version and confirm again; this action made no public request.',
+    error: 'This pull request changed after this window loaded it (for example a reviewer commented or GitHub updated it), so you were looking at an older copy. Nothing was sent. The latest version is loaded now: look it over and confirm again. If it keeps happening, press Sync with GitHub to fetch the latest data first.',
     failure: { owner: 'agent', code: 'approval_changed' },
   }
 }

@@ -758,7 +758,24 @@ def _attention_update(rec, node):
 _RECORD_INTENT_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,120}")
 
 
+# A pull-request record that already has a public PR opens that PR's own page
+# (`pr:<owner>:<repo>:<number>`, the notification-safe spelling of chat's
+# `pull-request:owner/repo#N`; ":" cannot occur in a GitHub owner or repo name).
+_REPO_PART = re.compile(r"[A-Za-z0-9_.-]{1,100}")
+
+
 def _record_target(rec):
+  owner, _, name = str(rec.get("repo") or "").partition("/")
+  number = rec.get("number")
+  intent = "pr:%s:%s:%s" % (owner, name, number)
+  if (
+    rec.get("type") == "pr"
+    and _REPO_PART.fullmatch(owner) and _REPO_PART.fullmatch(name)
+    and owner.strip(".") and name.strip(".")
+    and isinstance(number, int) and not isinstance(number, bool) and number > 0
+    and len(intent) <= 128
+  ):
+    return "/shell/?app=%s&intent=%s" % (APP_ID, intent)
   record_id = str(rec.get("id") or "")
   if _RECORD_INTENT_ID.fullmatch(record_id):
     return "/shell/?app=%s&intent=review:%s" % (APP_ID, record_id)
