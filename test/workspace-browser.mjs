@@ -43,6 +43,7 @@ import { organizePrivateWorkAction } from './review.js'
 import { batchHandle } from './chat-blocks.js'
 import { CSS } from './theme.js'
 import { NAMES } from './names.js'
+import { stageWords } from './publication-stage.js'
 import { createSyncHub } from './refresh.js'
 import { SyncHubContext, useDeskReviewRuns } from './ui/useReviewList.js'
 import ContributeApp, { GithubPullsUnavailable } from './index.jsx'
@@ -399,6 +400,8 @@ const query = selector => document.querySelector(selector)
 // An icon-only button has no text, so its accessible name counts too.
 const button = (name, root = document) => [...root.querySelectorAll('button')].find(node => text(node) === name || node.getAttribute('aria-label') === name)
 const review = () => query('.co-review-window')
+// A new PR opens ready for review by default: the first button only opens the confirmation, whose own button sends.
+const opens = stageWords('ready').action(1), sends = stageWords('ready').onGithub(1)
 // A PR page tab reads its name, then a count pill ("Comments2", "Files changed1"), so match on the name without the count.
 const detailTab = (name, root = query('.co-detail-tabs')) => [...root.querySelectorAll('button')].find(node => text(node).replace(/\d+$/, '') === name)
 // The window's one way out is the X in its header; it has no Cancel.
@@ -808,15 +811,15 @@ window.runWorkspaceChecks = async () => {
       await closeReview(); await click(query('[aria-label="Clear selection"]'))
     })
     await check('explicit send joins the same public inventory without implying merge', async () => {
-      await inventory(); await click(button('Send to GitHub'))
-      await until(() => button('Send to GitHub'),'Publication confirmation missing')
+      await inventory(); await click(button(opens))
+      await until(() => button(sends),'Publication confirmation missing')
       ensure(calls.publications.length===0,'Opening publication sent work')
-      await click(button('Send to GitHub'))
+      await click(button(sends))
       await until(() => query('input[aria-label="Select owner/project #9"]'),'Published record absent')
       ensure(calls.publications.length===1 && calls.publications[0].plan.head_sha===HEAD,'Publication duplicated or lost reviewed head')
       ensure(query('.co-pr-list')===originalList,'Publication replaced inventory')
       await until(() => button('Done') && text(query('.co-task-content')).includes('Sent to GitHub'),'Publication outcome missing')
-      ensure(!button('Send to GitHub'),'Settled publication remained actionable')
+      ensure(!button(sends) && !button(opens),'Settled publication remained actionable')
       await click(button('Done'))
       ensure(query('input[aria-label="Select owner/project #9"]').getClientRects().length,'Published PR not selectable')
     })
@@ -837,7 +840,7 @@ window.runWorkspaceChecks = async () => {
       await until(()=>calls.restores.length===1 && !query('.co-run-fold.is-recent'),'Restore did not move exact record out of history')
       ensure(calls.restores[0]==='fixture-dismissed' && calls.publications.length===publications && mutationRequests().length===before,'Restore published work or restored another record')
       await inventory()
-      ensure(button('Send to GitHub'),'Restored record did not return to private preparation')
+      ensure(button(opens),'Restored record did not return to private preparation')
       await backToPrs()
     })
     await check('PR inventory distinguishes failed refresh, empty results and loading without mutations', async () => {
