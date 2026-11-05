@@ -279,9 +279,11 @@ test('a row that cannot run dims its title, never its reason, and the menu never
 })
 
 test('the lock and globe in a window head, and the files toggle, keep their own colour over the quiet button\'s', () => {
-  const css = ['workspace-theme.js', 'theme.js'].map(file => readFileSync(new URL(`../${file}`, import.meta.url), 'utf8')).join('\n')
+  const css = ['workspace-theme.js', 'theme.js', 'button-theme.js'].map(file => readFileSync(new URL(`../${file}`, import.meta.url), 'utf8')).join('\n')
   // Same specificity as `.co-btn-quiet` loses to the later sheet, so these name `.co-btn` as well.
-  assert.match(css, /\.co-btn\.co-rw-seen-btn \{[^}]*color:var\(--seen\)/)
-  assert.match(css, /\.co-btn\.co-rw-seen-btn:not\(:disabled\):hover[^{]*\{[^}]*color:var\(--seen\)/)
+  // The quiet button reads its tone from a hook, so no rule overrides its colour or fill.
+  assert.match(css, /\.co-rw-seen \{ --co-btn-tone:var\(--seen\); --co-btn-tone-fill:/)
+  assert.match(css, /\.co-btn-quiet \{[^}]*color: var\(--co-btn-tone, var\(--muted\)\)/)
+  assert.doesNotMatch(css, /\.co-rw-seen-btn[^{]*\{[^}]*(?:color|background):/)
   assert.match(css, /\.co-btn\.co-project-files-toggle \{ color: var\(--accent\); \}/)
 })

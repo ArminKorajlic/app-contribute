@@ -10,6 +10,10 @@ export const NAMES = Object.freeze({
   preparedPr: 'Prepared PR',
   localChanges: 'Local changes',
   agentRun: 'Agent run',
+  // The second card of an app on the Agent runs page: its prepared PRs and saved decisions, apart from its runs.
+  preparedWork: 'Prepared work',
+  // The pill on a prepared draft that is waiting for you to open it.
+  readyToOpen: 'Ready to open',
 
   // Views in the side menu
   needsYou: 'Needs you',

@@ -53,7 +53,7 @@ test('"send when I approve" asks for one approval covering the push, every reply
   const draft = addressBrief({ pr, items, rung: 'push' }).draft
   assert.match(draft, /ask for my approval ONCE, with one approval card that shows: the PR and branch, the commits to push/)
   assert.match(draft, /every reply exactly as it will be posted/)
-  assert.match(draft, /the description update if any, and who will be asked to re-review/)
+  assert.match(draft, /the description update if any, and who will be asked to review again/)
   assert.match(draft, /Nothing goes out before that approval\./)
   assert.doesNotMatch(draft, /Do not push, comment, reply/)
 })

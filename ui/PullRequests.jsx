@@ -23,6 +23,7 @@ import { RunOnce } from './RunOnce.jsx'
 import { YOUR_INTENTS } from '../actions-menu.js'
 import { ACTION_COPY, methodToSend } from '../action-copy.js'
 import { projectUpdater } from '../updates.js'
+import { NAMES } from '../names.js'
 
 // A takeover's one scope: repairs to the named PR, each push approved by the owner.
 const scopeFor = mode => mode === 'review_fix_merge' ? { confirmation_scope: TAKEOVER_SCOPE } : {}
@@ -571,7 +572,7 @@ export function PullRequests({ appId, token, project, conn, onChanged, onReviewP
         // The detail is the page itself, not a swappable pane: the review
         // window overlays it and the assignment pane opens above it.
         <PullRequestDetail key={`${prKey(detailPr)}:${detailPr.headRefOid}:${detailPr.baseRefOid}:${detailRevision}`} cacheStore={detailSnapshot(detailPr)} pr={detailPr} token={token} initialTab={focusPull?.tab === 'review' ? 'review' : 'conversation'} review={reviewProps(detailPr)} onReview={mode => choose([detailPr], mode, opened || prKey(detailPr))} onAssign={() => assignSelection([detailPr], opened || prKey(detailPr))} onRefresh={() => load()} readOnly={!isOpenPull(detailPr)} canAssign={mayAssign(detailPr.repository.viewerPermission)} status={statusFor(detailPr)} onProgress={null} record={recordsForPull(records, detailPr)[0]} capabilities={capabilities} onRecord={onRecord} provenance={pullConversations(records, relevantRuns, detailPr)} holdUntilLoaded />
-      ) : data.loading || data.error || focusKey ? <Skeleton lines={8} label="Loading the pull request" /> : <p className="co-pr-note" role="status">This pull request is not in the open list. It may be closed; refresh to check.</p>}
+      ) : data.loading || data.error || focusKey ? <Skeleton lines={8} label="Loading the pull request" /> : <p className="co-pr-note" role="status">This pull request is not in the open list. It may be closed. {NAMES.sync} to check.</p>}
       {/* A desk row's Fix these findings opens the PR straight into its fix window. */}
       {focusPull?.intent === 'fix' && onStartAgent ? <RunOnce ready={!!detailPr} nonce={focusPull.nonce} run={() => choose([detailPr], 'respond', prKey(detailPr))} /> : null}
       {reviewDialog}

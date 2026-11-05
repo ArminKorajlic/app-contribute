@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { runUnitRecords } from '../run.js'
 import { Icon } from './Icons.jsx'
+import { NAMES } from '../names.js'
 import { TimeAgo } from './GithubParts.jsx'
 
 // Why a contribution is in To look at. A blocker stops the PR from merging;
@@ -18,6 +19,9 @@ const ATTENTION_REASONS = {
 const KIND_REASONS = {
   ready_attention: { key: 'ready', label: 'Not marked ready', tone: 'blocker', action: 'Review' },
   route_attention: { key: 'route', label: 'Choose where to send', tone: 'blocker', action: 'Choose' },
+  // A prepared draft waiting for you to open it (to send, or to mark ready for review).
+  publish: { key: 'decision', label: NAMES.readyToOpen, tone: 'blocker', action: 'Open' },
+  mark_ready: { key: 'decision', label: NAMES.readyToOpen, tone: 'blocker', action: 'Open' },
 }
 const FEEDBACK = ATTENTION_REASONS.github_activity
 const DECISION = { key: 'decision', label: 'Needs your decision', tone: 'blocker', action: 'Open' }

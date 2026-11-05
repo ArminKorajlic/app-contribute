@@ -89,7 +89,7 @@ export function DeskChips({ view, counts, onView }) {
         const badge = railBadge(item.key, counts)
         return (
           <button key={item.key} type="button" aria-pressed={view === item.key} aria-label={badge ? `${item.label}, ${badge}` : item.label} onClick={() => onView(item.key)}>
-            <b>{badge || '·'}</b><span>{item.short}</span>
+            <b>{badge || ''}</b><span>{item.short}</span>
           </button>
         )
       })}

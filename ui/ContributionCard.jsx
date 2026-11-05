@@ -468,7 +468,7 @@ function ReconciliationHint({ hint, onDismiss }) {
         ) : null}
       </div>
       <button type="button" className="co-btn" onClick={onDismiss}>
-        Dismiss
+        {NAMES.discard}
       </button>
     </div>
   )
@@ -660,7 +660,7 @@ function ReviewActions({
           aria-describedby={confirmDescriptionId}
         >
           <p id={confirmDescriptionId} className="co-confirm-text">
-            Dismiss this {isPr ? 'prepared pull request' : 'draft'}? It will leave
+            {NAMES.discard} this {isPr ? 'prepared pull request' : 'draft'}? It will leave
             your active list and can be restored from Dismissed.
           </p>
           <div className="co-confirm-actions">

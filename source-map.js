@@ -104,7 +104,9 @@ export function activeContribution(rec) {
   return !!rec && (action === 'pr' || action === 'issue') && ACTIVE.has(rec.status)
 }
 
-export function attachSourceProjects(snapshot, records, incomingReviews = [], repositories = [], followedRepositories = []) {
+// `runRepos` are the repositories of the agent reviews the owner started: a run that waits on them needs a
+// card in Needs you, so its repository becomes a project even when nothing else involves it.
+export function attachSourceProjects(snapshot, records, incomingReviews = [], repositories = [], followedRepositories = [], runRepos = []) {
   const base = []
   if (snapshot?.platform) base.push(snapshot.platform)
   if (Array.isArray(snapshot?.apps)) {
@@ -134,6 +136,11 @@ export function attachSourceProjects(snapshot, records, incomingReviews = [], re
   }
   for (const incoming of incomingReviews) {
     const key = repoKey(incoming.repository?.nameWithOwner)
+    if (key && !byRepo.has(key)) byRepo.set(key, [])
+  }
+
+  for (const repository of runRepos) {
+    const key = repoKey(repository)
     if (key && !byRepo.has(key)) byRepo.set(key, [])
   }
 

@@ -5,6 +5,7 @@ import {
   projectStatus,
 } from './source-map.js'
 import { groupRecords, timeAgo } from './domain.js'
+import { NAMES } from './names.js'
 import {
   contributionScopeHash,
   hasAttentionSignal,
@@ -392,7 +393,7 @@ export function buildContributionRun({
       decisions.push(decision('mark_ready', unit, byRepo, {
         record: personalDrafts[0],
         label: unitTitle(unit),
-        detail: `${personalDrafts.length === 1 ? 'Draft ready to mark ready for review' : `${personalDrafts.length} drafts ready to mark ready for review`} · ${unitRepo(unit)}`,
+        detail: `${personalDrafts.length === 1 ? 'Draft' : `${personalDrafts.length} drafts`} ready to ${NAMES.openForReview.toLowerCase()} · ${unitRepo(unit)}`,
       }))
       continue
     }

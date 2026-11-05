@@ -110,7 +110,7 @@ function EarlierReview({ earlier, readOnly, onStart, role }) {
     {item.summary ? <ClampedMarkdown markdown={item.summary} /> : null}
     <div className="co-review-actions">
       {run.chat_id ? <button type="button" className="co-btn" onClick={() => openAgentConversation(run.chat_id)}>{NAMES.openChat}</button> : null}
-      {readOnly ? null : <button type="button" className="co-btn co-btn-primary" onClick={() => onStart?.(role === 'author' ? 'check_my_pr' : 'review')}>{role === 'author' ? 'Check this version' : 'Review this version'}</button>}
+      {readOnly ? null : <button type="button" className="co-btn" onClick={() => onStart?.(role === 'author' ? 'check_my_pr' : 'review')}>{NAMES.reviewAgain}</button>}
     </div>
   </div>
 }

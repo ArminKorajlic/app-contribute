@@ -46,8 +46,9 @@ function CommitRow({ commit }) {
 
 // The PR's commits, grouped by day like GitHub, plus two things only Contribute knows: where the
 // last review stopped, and a Review again banner when the PR has commits it has not seen.
-// `again` is the machine's own review action for this PR (null when it is not yours to run).
-export function PullCommits({ data, reviewedHead = '', again = null, onAgain }) {
+// `again` is the machine's own review action for this PR (null when it is not yours to run). `pinned` is true
+// when the page's one filled button already offers the same step; on a phone the banner then leaves it to the foot bar.
+export function PullCommits({ data, reviewedHead = '', again = null, pinned = false, onAgain }) {
   const commits = data?.commits || []
   if (!commits.length) return <p className="co-pr-note">No commits yet.</p>
   const marker = reviewMarker(commits, reviewedHead)
@@ -55,7 +56,7 @@ export function PullCommits({ data, reviewedHead = '', again = null, onAgain }) 
   return <section className="co-commits" aria-label="Commits">
     {fresh ? <div className="co-commits-banner" role="status">
       <span>{marker.newCount}{data.hasMore ? '+' : ''} new {marker.newCount === 1 && !data.hasMore ? 'commit' : 'commits'} since your last review</span>
-      {again ? <button type="button" className="co-btn co-btn-primary" onClick={() => onAgain?.(again.id)}>{NAMES.reviewAgain}</button> : null}
+      {again ? <button type="button" className={'co-btn co-commits-again' + (pinned ? ' is-pinned' : '')} onClick={() => onAgain?.(again.id)}>{NAMES.reviewAgain}</button> : null}
     </div> : null}
     {commitGroups(commits).map(group => <div key={group.day} className="co-commit-day">
       <h4>Commits on {group.day}</h4>

@@ -118,7 +118,7 @@ export function ChecksBadge({ pr }) {
 }
 
 export function Avatar({ login, size = 20 }) {
-  return <span className="co-gh-avatar" style={{ width: size, height: size, fontSize: Math.round(size * 0.5) }} aria-hidden="true">{(login || '?').charAt(0).toUpperCase()}</span>
+  return <span className="co-gh-avatar" style={{ width: size, height: size }} aria-hidden="true">{(login || '?').charAt(0).toUpperCase()}</span>
 }
 
 export const REVIEW_DECISION = { CHANGES_REQUESTED: 'Changes requested', APPROVED: 'Approved', REVIEW_REQUIRED: 'Review required' }

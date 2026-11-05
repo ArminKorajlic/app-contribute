@@ -31,6 +31,30 @@ test('no retired name is left in screen text, so one meaning keeps one name', ()
   assert.deepEqual(found, [])
 })
 
+// The old words, anywhere in screen text and in any case. Only "Ask for re-review" keeps its hyphen.
+const RETIRED_ANYWHERE = [/re-review/i, /open review conversation/i, /refresh to check/i, /mark ready for review/i, /dismiss this/i, /(title: *['"`]|>)dismiss\b/i, /^\s+dismiss\s*$/i]
+test('retired words are gone from screen text wherever they sit, in any case', () => {
+  const found = []
+  for (const file of sources) {
+    readFileSync(new URL(file, root), 'utf8').split('\n').forEach((line, index) => {
+      if (!screenText(line)) return
+      const text = line.split(NAMES.askRereview).join('')
+      for (const word of RETIRED_ANYWHERE) if (word.test(text)) found.push(`${file}:${index + 1} ${word}`)
+    })
+  }
+  assert.deepEqual(found, [])
+})
+
+test('the places that carried retired words now read from the standard names', () => {
+  const read = file => readFileSync(new URL(`../${file}`, import.meta.url), 'utf8')
+  assert.match(read('ui/RunDetail.jsx'), /onClick=\{onDismiss\}>\{NAMES\.discard\}</)
+  assert.match(read('ui/ReviewSelection.jsx'), />\{NAMES\.openChat\}<\/button>/)
+  assert.match(read('ui/PullRequests.jsx'), /\{NAMES\.sync\} to check/)
+  const reviewer = decide({ author: 'sam', head: 'h', lifecycle: 'open', checks: 'pass', mergeable: 'yes', permission: 'ADMIN', reviews: [],
+    openThreads: 0, myReview: { state: 'COMMENTED', commit: 'h' }, job: null, result: null, outbox: { kind: 'verdict', state: 'unconfirmed' }, readComplete: true, role: 'reviewer' })
+  assert.equal(reviewer.actions.find(action => action.id === 'dismiss').title, NAMES.discard)
+})
+
 test('a stopped review runs again as Review again, a stopped fix job as Run it again', () => {
   assert.equal(rerunName('review'), NAMES.reviewAgain)
   assert.equal(rerunName('review_merge'), NAMES.reviewAgain)

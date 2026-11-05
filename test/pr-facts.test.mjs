@@ -21,7 +21,7 @@ const decideFor = (pr, runs = [], ignored = null, chats = []) => decide(prFacts(
 test('your PR after you pushed fixes waits on the reviewer, not on you (bug 1)', () => {
   const decision = decideFor(mine({ reviewDecision: 'CHANGES_REQUESTED', latestOpinionatedReviews: { nodes: [opinion('Sam', 'CHANGES_REQUESTED', OLD)] } }))
   assert.equal(decision.state, 'author.waiting_rereview')
-  assert.match(decision.headline, /Waiting on Sam to re-review/, 'names keep their own case')
+  assert.match(decision.headline, /Waiting on Sam to review again/, 'names keep their own case')
 })
 
 test('missing check data is never green; no checks at all is (bug 2)', () => {

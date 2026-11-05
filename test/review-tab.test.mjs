@@ -84,7 +84,7 @@ test('a verdict GitHub never confirmed offers a read-only check on the card itse
   assert.match(html, /nothing will be sent again/)
   assert.match(html, /an hour after you submitted, it is dropped/)
   assert.doesNotMatch(html, /Request changes on GitHub|>Discard</, 'an unconfirmed verdict is never offered for sending again')
-  assert.match(await render(t, 'ReviewTab', { pr, status: unconfirmed, onCheck: () => {}, onVerdict: () => {} }), />Dismiss</, 'with the owner decision handler it can be dismissed')
+  assert.match(await render(t, 'ReviewTab', { pr, status: unconfirmed, onCheck: () => {}, onVerdict: () => {} }), />Discard</, 'with the owner decision handler it can be discarded')
   assert.doesNotMatch(await render(t, 'ReviewTab', { pr, status: unconfirmed }), /Check GitHub now/, 'no handler, no button')
   const posted = status('verdict_pending', { verdict_proposal: { id: 'p1', state: 'posted', event: 'REQUEST_CHANGES', url: 'https://github.com/team/repo/pull/9#pullrequestreview-5' } })
   assert.doesNotMatch(await render(t, 'ReviewTab', { pr, status: posted, onCheck: () => {} }), /Check GitHub now/)
@@ -141,10 +141,11 @@ test('a PR that changed after its review says so, shows the old findings and off
   assert.match(html, /bbbbbbb/)
   assert.match(html, /may no longer apply/)
   assert.match(html, /No blockers at the old commit/)
-  assert.match(html, />Review this version</)
+  assert.match(html, /<button type="button" class="co-btn">Review again<\/button>/, 'a secondary button, so the page keeps one filled button')
+  assert.doesNotMatch(html, /co-btn-primary/)
   assert.doesNotMatch(html, /You haven’t made a review/, 'an earlier review exists, so it was reviewed')
   const closed = await render(t, 'ReviewTab', { pr, status: null, earlier, readOnly: true })
-  assert.doesNotMatch(closed, />Review this version</)
+  assert.doesNotMatch(closed, />Review again</)
 })
 
 test('a review whose request-changes verdict is posted reads as handed to the author, not as waiting on you', async t => {

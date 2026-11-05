@@ -7,9 +7,10 @@ async function render(t, name, props) {
   renderer ||= renderModule(`
     import React from 'react'
     import { renderToStaticMarkup } from 'react-dom/server'
+    import { decide } from './pr-machine.js'
     import { PullRequestDetail, PullFiles, PullChecks, PullThreads, PullRelated, PullFileTotals } from './ui/PullRequestDetail.jsx'
-    const components = { PullRequestDetail, PullFiles, PullChecks, PullThreads, PullRelated, PullFileTotals }
-    export function render(name, props) { return renderToStaticMarkup(React.createElement(components[name], props)) }
+    const components = { decide, PullRequestDetail, PullFiles, PullChecks, PullThreads, PullRelated, PullFileTotals }
+    export function render(name, props) { return name === 'decide' ? decide(props) : renderToStaticMarkup(React.createElement(components[name], props)) }
   `)
   return (await renderer).render(name, props)
 }
@@ -227,7 +228,7 @@ test('tabs carry GitHub-style count pills: comments, files and a checks dot, no 
   assert.match(html, /Files<span class="co-tab-more"> changed<\/span><span class="co-tab-count">11<\/span>/)
   assert.match(html, /co-tab-dot is-failure/)
   // Passed over total stays readable beside the dot.
-  assert.match(html, /Checks<span[^>]*class="co-tab-dot is-failure"[^>]*><\/span><span class="co-tab-count">38\/42<\/span>/)
+  assert.match(html, /Checks<span[^>]*class="co-tab-dot is-failure"[^>]*><\/span><span class="co-tab-count">4 failing<\/span>/)
   assert.doesNotMatch(html, /co-change-total/) // the +adds −dels stay inside the Files tab
 })
 
@@ -271,5 +272,19 @@ test('the secondary PR actions are icon buttons that keep a name for screen read
   const css = (await import('node:fs')).readFileSync(new URL('../workspace-theme.js', import.meta.url), 'utf8')
   assert.match(css, /\.co-pr-detail \.co-tab-more \{ display:none/)
   // The checks dot says pass or fail on a phone; the passed/total pill needs room the Review tab uses.
-  assert.match(css, /\.co-pr-detail \.co-tab-dot \+ \.co-tab-count \{ display:none/)
+  assert.doesNotMatch(css, /\.co-tab-dot \+ \.co-tab-count \{ display:none/, 'a phone keeps the Checks number beside its dot')
+})
+
+test('the Commits banner hands its Review again to the foot bar on a phone only when the next step is the same', async t => {
+  const facts = { author: 'sam', head: 'h', lifecycle: 'open', checks: 'pass', mergeable: 'yes', permission: 'WRITE', reviews: [], openThreads: 0, myReview: null, job: null, result: null, outbox: null, readComplete: true, role: 'reviewer' }
+  const commit = (id, title) => ({ oid: id.repeat(40), abbreviatedOid: id.repeat(7), url: 'https://github.com/team/repo/commit/' + id, messageHeadline: title, messageBody: '', committedDate: '2026-11-04T10:00:00Z', authors: { nodes: [{ name: 'sam', user: { login: 'sam' } }] }, statusCheckRollup: null })
+  const entries = { 'description:1': { data: { body: 'B' }, loading: false }, 'activity:1': { data: { items: [] }, loading: false }, 'threads:': { data: { threads: [] }, loading: false }, related: { data: { items: [] }, loading: false }, 'commits:': { data: { commits: [commit('a', 'One'), commit('b', 'Two')], hasMore: false }, loading: false } }
+  const props = standing => ({ pr: { number: 7, repository: { nameWithOwner: 'team/repo', viewerPermission: 'WRITE' }, headRefOid: 'a'.repeat(40), baseRefOid: 'b'.repeat(40), baseRefName: 'main', url: 'https://github.com/team/repo/pull/7', commits: { totalCount: 2, nodes: [] } }, initialTab: 'commits', cacheStore: { entries }, holdUntilLoaded: false, capabilities: {}, review: { standing, earlier: { item: { head_sha: 'a'.repeat(40) } } } })
+  const standing = await render(t, 'decide', { ...facts, myReview: { state: 'COMMENTED', commit: 'old' } })
+  if (!standing) return
+  const html = await render(t, 'PullRequestDetail', props(standing))
+  assert.match(html, /co-commits-again is-pinned/, 'the foot bar offers Review again, so the banner copy hides on a phone')
+  assert.match(html, /class="co-decision-bar"[^>]*>.*Review again/)
+  const quiet = await render(t, 'PullRequestDetail', props(await render(t, 'decide', { ...facts, role: 'author', author: 'sam' })))
+  assert.doesNotMatch(quiet, /co-commits-again is-pinned/)
 })

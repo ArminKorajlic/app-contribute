@@ -166,6 +166,7 @@
     "ui/DefaultAgentSettings.jsx",
     "ui/SeenOnGithub.jsx",
     "ui/WindowHead.jsx",
+    "ui/stripScroll.js",
     "ui/useTipDismiss.js",
     "ui/RunDetail.jsx",
     "ui/ReviewFrame.jsx",

@@ -73,7 +73,7 @@ function UnconfirmedVerdict({ busy, onCheck, onDismiss }) {
   return <>
     <div className="co-verdict-actions">
       <button type="button" className="co-btn" disabled={busy} onClick={check}>{busy ? 'Checking…' : 'Check GitHub now'}</button>
-      {onDismiss ? <button type="button" className="co-btn" disabled={busy} onClick={onDismiss}>Dismiss</button> : null}
+      {onDismiss ? <button type="button" className="co-btn" disabled={busy} onClick={onDismiss}>{NAMES.discard}</button> : null}
     </div>
     {checked ? <p className="co-task-footnote" role="status">Checked just now: GitHub shows no review from this attempt.</p> : null}
   </>

@@ -23,6 +23,10 @@ export const CSS = `
   /* "Your move" purple text on its tinted fill: the plain accent read 4.1:1 there; mixed
      toward the text colour it reads about 6:1 in dark and light, same look. */
   --co-you-text: color-mix(in srgb, var(--accent) 65%, var(--text));
+  /* The other pill tones get the same treatment: each tone mixed 60% toward the text
+     colour, so its text reads 4.5:1 or better on every surface on its own tint in dark and in light. */
+  --co-blocker-text: color-mix(in srgb, var(--danger, #f87171) 60%, var(--text));
+  --co-ready-text: color-mix(in srgb, var(--green, #10b981) 60%, var(--text));
 }
 .co-root {
   box-sizing: border-box; position: relative; min-height: 0; height: 100%;
@@ -36,6 +40,7 @@ export const CSS = `
   /* Caution amber for advisory/attention states that are NOT errors, so real
      failures keep --danger to themselves and nothing benign shouts in red. */
   --co-warn: var(--warning, #b38235);
+  --co-warn-text: color-mix(in srgb, var(--co-warn) 60%, var(--text));
 }
 .co-root *, .co-root *::before, .co-root *::after { box-sizing: inherit; }
 .co-visually-hidden {
@@ -1488,9 +1493,8 @@ export const CSS = `
   .co-tabs button span { min-width: 17px; height: 17px; margin-left: 3px; font-size: var(--co-text-meta); }
   .co-view-heading { gap: 14px; margin-bottom: 12px; }
   .co-view-heading p { margin-top: 5px; font-size: var(--co-text-meta); }
-  .co-project-view-actions .co-btn-quiet { width: 44px; padding-inline: 0; justify-content: center; font-size: 0; }
   .co-lens-nav { gap: 8px; margin-bottom: 20px; }
-  .co-lens-nav button { gap: 5px; min-height: 41px; padding-bottom: 9px; font-size: var(--co-text-meta); }
+  .co-lens-nav button { gap: 5px; min-height: var(--co-control-height); padding-bottom: 9px; font-size: var(--co-text-meta); }
   .co-stage-intro { align-items: flex-start; min-height: 0; margin-bottom: 11px; padding-bottom: 13px; }
   .co-stage-intro h3 { font-size: var(--co-text-body); }
   .co-stage-intro p { font-size: var(--co-text-meta); }

@@ -101,7 +101,10 @@ test('after a review, a line shows where it stopped and a banner offers Review a
   const list = [commit('a'), commit('b'), commit('c')]
   const html = commits({ data: { commits: list, hasMore: false }, reviewedHead: list[0].oid, again: { id: 'review', title: 'Review again' } })
   assert.match(html, /2 new commits since your last review/)
-  assert.match(html, /co-btn co-btn-primary">Review again</)
+  assert.match(html, /co-btn co-commits-again">Review again</)
+  assert.doesNotMatch(html, /co-btn-primary/, 'the page\'s one filled button is the next step, not this banner')
+  const pinned = commits({ data: { commits: list, hasMore: false }, reviewedHead: list[0].oid, again: { id: 'review', title: 'Review again' }, pinned: true })
+  assert.match(pinned, /co-commits-again is-pinned/, 'a phone shows the same step in the foot bar, so the banner hides its copy')
   assert.ok(html.indexOf('Commit a') < html.indexOf('Last review covered up to here') && html.indexOf('Last review covered up to here') < html.indexOf('Commit b'))
   const one = commits({ data: { commits: list.slice(0, 2), hasMore: false }, reviewedHead: list[0].oid, again: null })
   assert.match(one, /1 new commit since your last review/)

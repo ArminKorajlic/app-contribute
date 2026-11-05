@@ -167,7 +167,7 @@ export function ReviewConfirmation({ choice, busy, disabled, error, onConfirm, o
   const postingUnavailable = choice.mode === 'review_merge' && !!capabilities && !(capabilities.post_review === true && capabilities.propose_verdict === true)
   const startBlocked = takeover && !!blocker
   return <section ref={confirmation} tabIndex={-1} className="co-review-window" aria-labelledby={titleId}>
-    <WindowHead icon={takeover ? 'fix' : 'review'} title={copy.title} titleId={titleId} pulls={choice.pulls}
+    <WindowHead icon={takeover ? 'takeover' : 'review'} title={copy.title} titleId={titleId} pulls={choice.pulls}
       tools={<><SeenOnGithub tone={copy.publicEffect.tone} text={copy.publicEffect.text} />{onCancel ? <CloseWindowButton onClick={onCancel} /> : null}</>} />
     <div className="co-rw-body">
       {takeover && choice.intent === 'take_over' && onReasonChange ? <TakeoverReason value={choice.takeover_reason || ''} disabled={busy} onChange={onReasonChange} /> : null}

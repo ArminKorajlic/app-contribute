@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Envelope, EmptyView } from './Envelope.jsx'
 import { TimeAgo } from './GithubParts.jsx'
 import { Icon } from './Icons.jsx'
+import { NAMES } from '../names.js'
 
 // Waiting on you leads, then agents at work, then anything that stopped short or could not be read.
 const ORDER = { waiting: 0, stalled: 1, unknown: 2, done: 3, checking: 4 }
@@ -63,10 +64,14 @@ export function AgentRunsView({ reviews, projects, query, decisionsFor, renderWo
   const finished = entries.filter(entry => entry.bucket in ORDER && entry.bucket !== 'checking').sort((a, b) => ORDER[a.bucket] - ORDER[b.bucket] || b.at - a.at)
   const [picked, setPicked] = useState(null)
   const tab = picked || (running.length ? 'running' : 'finished')
-  const shown = (tab === 'running' ? running : finished).filter(entry => matches(query, entry.item.title, String(entry.item.number), entry.item.repo))
+  // Each tab's number is the rows it opens, searched or not: saved agent work is a row of Finished too.
+  const searched = list => list.filter(entry => matches(query, entry.item.title, String(entry.item.number), entry.item.repo))
+  const runningRows = searched(running), finishedRows = searched(finished)
+  const shown = tab === 'running' ? runningRows : finishedRows
   const groups = groupByProject(shown, projects)
-  const work = tab === 'finished' ? projects.map(project => ({ project, rows: renderWork(project) })).filter(group => group.rows.length) : []
-  const tabs = [['running', 'Running', running.length], ['finished', 'Finished', finished.length]]
+  const savedWork = projects.map(project => ({ project, rows: renderWork(project) })).filter(group => group.rows.length)
+  const work = tab === 'finished' ? savedWork : []
+  const tabs = [['running', 'Running', runningRows.length], ['finished', 'Finished', finishedRows.length + savedWork.reduce((total, group) => total + group.rows.length, 0)]]
   const empty = !groups.length && !work.length
   return <>
     <div className="co-pr-filters" role="group" aria-label="Agent runs">
@@ -82,7 +87,7 @@ export function AgentRunsView({ reviews, projects, query, decisionsFor, renderWo
             <ProjectRows rows={rows} project={project} onOpenPull={onOpenPull} />
           </Envelope>))}
         {work.map(({ project, rows }) => (
-          <Envelope key={`work:${project.key}`} project={project} count={rows.length} foldable={rows.length > 1} onOpenProject={onOpenProject}>{rows}</Envelope>))}
+          <Envelope key={`work:${project.key}`} project={project} group={NAMES.preparedWork} count={rows.length} foldable={rows.length > 1} onOpenProject={onOpenProject}>{rows}</Envelope>))}
       </div>}
   </>
 }

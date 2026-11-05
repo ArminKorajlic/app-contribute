@@ -44,7 +44,7 @@ import { DEFAULT_STAGE, stageOf } from './publication-stage.js'
 import { abandonPrepared, cacheFeed, cacheSourceSnapshot, loadAppSettings, loadCachedFeed, loadCachedSourceSnapshot, loadContributionRecord, loadFreshContributionRecord, loadFreshContributionRecords, loadCycleState, loadFullDiff, loadLedger, restoreAbandoned, saveAppSettings } from './storage.js'
 import { createSyncHub, onShownAgain } from './refresh.js'
 import { checkUpstream } from './upstream-check.js'
-import { DESK_LAST_LOOKED_KEY, deskCounts, projectNeedsCount, settleReviewRequest } from './desk.js'
+import { DESK_LAST_LOOKED_KEY, agentRunsWaiting, deskCounts, projectNeedsCount, settleReviewRequest } from './desk.js'
 import { withIgnoreNote, withoutIgnoreNote } from './collaboration.js'
 import {
   contributionPathDecision,
@@ -1291,7 +1291,7 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
         '',
         'The owner explicitly assigned this exact pull request to themselves from Contribute.',
         'Inspect the complete current diff with expanding scope for correctness, maintainability, simplicity, tests, security/privacy, and avoidable technical debt.',
-        'Do not change the author’s branch. Prepare specific, actionable suggestions for sound findings and re-review if the author updates it.',
+        'Do not change the author’s branch. Prepare specific, actionable suggestions for sound findings and review again if the author updates it.',
         'Do not submit a GitHub review or comment without the owner’s exact approval for that public action.',
       ].join('\n'),
     })
@@ -1561,13 +1561,20 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
     return outcome
   }, [appId, token, applyRecordUpdates, replaceFeed, refreshReviewStatus])
 
+  // Reviews you started: one row per PR for the Agent runs page, counted in the rail.
+  const reviewList = useReviewList({ hub, enabled: !sendOnly && conn.state === 'connected', token, runs: reviewRuns, chats: respondChats, ignored: ignoredReviews, login: conn.login || '' })
+  reviewListRef.current = reviewList
+
   // A linked repository outside the owner's lists still opens as a project.
   const linkedRepository = projectFocus?.repository
+  // A waiting agent run on a repository nothing else involves still gets its card (and so its badge).
+  const runReposKey = agentRunsWaiting(reviewList.entries, new Set()).map(entry => String(entry.item.repo)).sort().join('|')
+  const runRepos = useMemo(() => (runReposKey ? [...new Set(runReposKey.split('|'))] : []), [runReposKey])
   const sourceProjects = useMemo(
     () => attachSourceProjects(sourceSnapshot, records, incomingReviews,
       linkedRepository ? [...repositoryAccess.repositories, linkedRepository] : repositoryAccess.repositories,
-      linkedRepository ? [...followedRepos, linkedRepository.nameWithOwner] : followedRepos),
-    [sourceSnapshot, records, incomingReviews, repositoryAccess.repositories, followedRepos, linkedRepository],
+      linkedRepository ? [...followedRepos, linkedRepository.nameWithOwner] : followedRepos, runRepos),
+    [sourceSnapshot, records, incomingReviews, repositoryAccess.repositories, followedRepos, linkedRepository, runRepos],
   )
   sourceProjectsRef.current = sourceProjects
   const contributionRun = useMemo(() => buildContributionRun({
@@ -1589,11 +1596,8 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
   // What waits on the owner in each project: the same count its Needs you
   // card lists, so the rail and the card never disagree.
   const projectAttention = useMemo(() => Object.fromEntries(sourceProjects
-    .map(project => [project.key, projectNeedsCount(project, projectRun(project).decisions, conn.login || '')])), [sourceProjects, records, reviewStatus, conn.login])
+    .map(project => [project.key, projectNeedsCount(project, projectRun(project).decisions, conn.login || '', reviewList.entries)])), [sourceProjects, records, reviewStatus, conn.login, reviewList.entries])
   // The home's clickable counts: every number names a next step and its view.
-  // Reviews you started: one row per PR for the PR reviews page, counted in the rail.
-  const reviewList = useReviewList({ hub, enabled: !sendOnly && conn.state === 'connected', token, runs: reviewRuns, chats: respondChats, ignored: ignoredReviews, login: conn.login || '' })
-  reviewListRef.current = reviewList
   const deskCountsValue = useMemo(() => deskCounts({
     projects: sourceProjects,
     decisions: contributionRun.decisions,

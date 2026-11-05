@@ -4,6 +4,7 @@ import { inspectReviewSelection, loadReviewSelection } from '../review-selection
 import { ReviewConfirmation } from './ReviewConfirmation.jsx'
 import { openAgentConversation } from './BatchAction.jsx'
 import { Icon } from './Icons.jsx'
+import { NAMES } from '../names.js'
 import { reviewOptions } from '../review-prompts.js'
 
 export function ReviewSelection({ selectionId, appId, token, onClose, onRunsChanged }) {
@@ -47,7 +48,7 @@ export function ReviewSelection({ selectionId, appId, token, onClose, onRunsChan
     <button className="co-btn co-btn-quiet" onClick={onClose}><Icon name="left" size={16} /> Back to repositories</button>
     {state.loading ? <p role="status">Checking the selected contributions…</p> : null}
     {state.error ? <div role="alert"><h2>Could not open this review</h2><p>{state.error}</p><button className="co-btn" onClick={load}>Retry</button></div> : null}
-    {state.run ? <><h2>Review {state.run.state === 'complete' ? 'complete' : 'already started'}</h2><p>This selection has one owning conversation. No additional approval is needed.</p><button className="co-btn co-btn-primary" onClick={() => openAgentConversation(state.run.chat_id)}>Open review conversation</button></> : null}
+    {state.run ? <><h2>Review {state.run.state === 'complete' ? 'complete' : 'already started'}</h2><p>This selection has one owning conversation. No additional approval is needed.</p><button className="co-btn co-btn-primary" onClick={() => openAgentConversation(state.run.chat_id)}>{NAMES.openChat}</button></> : null}
     {choice ? <>
       <ReviewConfirmation appId={appId} token={token} onResolved={setResolved} onOptionsChange={!state.request?.preview_sha256 ? value=>{setResolved(null);setOptions(value)} : undefined} choice={choice} busy={busy} disabled={blockedMerge || !resolved} error={error} onConfirm={approve} onCancel={onClose} onModeChange={!state.request?.preview_sha256 ? value=>{setResolved(null);setMode(value)} : undefined} />
       {state.request?.preview_sha256 ? <p className="co-task-footnote">This link keeps its prepared scope, prompts and model. Start a new selection in the project to choose different settings.</p> : null}

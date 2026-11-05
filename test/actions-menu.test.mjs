@@ -83,6 +83,7 @@ test('Close pull request is the one destructive row: red, apart, and last in You
   assert.equal(model.you.at(-1).intent, 'close')
   assert.equal(item(model, 'close').danger, true)
   assert.equal(item(model, 'close').title, 'Close pull request')
+  assert.equal(item(model, 'close').detail, 'Asks you to confirm first.')
   assert.ok(model.you.filter(entry => entry.intent !== 'close').every(entry => !entry.danger))
   assert.equal(model.you.at(-1).rec, false, 'closing is never the recommended step')
 })

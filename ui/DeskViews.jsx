@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { agentRunsWaiting, authoredPullState, authoredPulls, chainPulls, feedbackPull, mergedRecently, needsPulls, newSince, pullKey } from '../desk.js'
+import { authoredPullState, authoredPulls, chainPulls, feedbackPull, mergedRecently, needsPulls, newSince, projectAgentRuns } from '../desk.js'
 import { attentionListItems } from '../run.js'
 import { conversationCount, prKey, reviewForPull } from '../collaboration.js'
 import { savedFindings } from '../address-feedback.js'
@@ -83,16 +83,12 @@ function DeskAttentionRow({ item, onSelect, action = null }) {
 
 const requestChip = { label: 'Asks for your review', tone: 'you' }
 
-const sameRepo = (a, b) => String(a || '').toLowerCase() === String(b || '').toLowerCase()
-
 // Rows per project and view, each tagged with the Needs you chip that counts it
 // (desk.js NEEDS_CHIPS): review requests first, then the owner's saved-work
 // decisions, their own PRs with a step, and agent runs that wait on them.
 function projectRows(view, project, { login, decisionsFor, lastLooked, query, runs, chats, ignored, reviewEntries, onOpenPull, onOpenRecord }) {
   const rows = []
-  const shown = new Set()
   const pull = (pr, chip, order, chipKey = '') => {
-    shown.add(pullKey(pr))
     rows.push({ chip: chipKey, el: <DeskPullRow key={`pr:${pr.number}`} project={project} pr={pr} chip={chip} order={order} lastLooked={lastLooked} runs={runs} chats={chats} onOpenPull={onOpenPull} login={login} ignored={ignored} /> })
   }
   const requests = view === 'needs' || view === 'requests'
@@ -115,7 +111,6 @@ function projectRows(view, project, { login, decisionsFor, lastLooked, query, ru
   }
   const decisionRow = item => {
     const target = feedbackPull(item)
-    if (target) shown.add(pullKey(target))
     return { chip: 'look', el: (
       <ReviewFrame key={`decision:${item.id}`} state={frameState(reviewForRecord(runs, item.record), { own: true, ignored })} inset={3} radius={10}>
         <DeskAttentionRow item={item} onSelect={openDecision} action={fixAction(item)} />
@@ -129,7 +124,7 @@ function projectRows(view, project, { login, decisionsFor, lastLooked, query, ru
     needsPulls(project, attentionListItems(all), login)
       .filter(([pr]) => matches(query, pr.title, String(pr.number)))
       .forEach(([pr, state]) => pull(pr, state, '', state.key === 'ready' ? 'merge' : 'fix'))
-    agentRunsWaiting((reviewEntries || []).filter(entry => sameRepo(entry.item.repo, project.canonical_repo)), shown)
+    projectAgentRuns(project, reviewEntries, attentionListItems(all), login)
       .filter(entry => matches(query, entry.item.title, String(entry.item.number)))
       .forEach(entry => rows.push({ chip: 'agent', el: <ReviewRow key={`run:${entry.id}`} entry={entry} project={project} onOpenPull={onOpenPull} /> }))
   }
@@ -147,7 +142,7 @@ function MergedRows({ project, records, query, lastLooked }) {
     .filter(record => matches(query, record.title, String(record.number || '')))
     .map(record => (
       <div key={record.id} className="co-desk-row is-static">
-        <Icon name="check" size={16} className="co-desk-merged-icon" />
+        <Icon name="merge" size={16} className="co-desk-merged-icon" />
         <span className="co-desk-row-main">
           <span className="co-desk-row-title"><NewDot value={record.updated_at} lastLooked={lastLooked} />{record.title || 'Untitled contribution'}</span>
           <span className="co-desk-row-meta">
@@ -163,7 +158,7 @@ function MergedRows({ project, records, query, lastLooked }) {
 const EMPTY = {
   needs: { title: 'Nothing needs you right now', hint: 'Review requests, approved work, failing checks and agent runs that wait on you land here.' },
   filtered: { title: 'Nothing left for this step', hint: 'Tap the step again to see everything that needs you.' },
-  requests: { icon: 'review', title: 'No review requests', hint: 'When someone asks for your review, the PR appears here.' },
+  requests: { icon: 'feedback', title: 'No review requests', hint: 'When someone asks for your review, the PR appears here.' },
   mine: { icon: 'pull', title: 'No open PRs of yours', hint: 'PRs you open on GitHub appear here with their next step.' },
   merged: { icon: 'check', title: 'Nothing merged this week', hint: 'Your PRs that land stay here for a week.' },
 }

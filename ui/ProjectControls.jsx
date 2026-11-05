@@ -40,7 +40,7 @@ function LocalLine({ project, run, task }) {
   return <StatusLine icon="edit" title="Local changes" strong={local.strong} text={local.text} sub={local.sub || null}>
     {local.edits ? <>
       <button type="button" className="co-btn" disabled={!run?.privateAction} onClick={() => task?.open('task:prepare')}><Icon name="prepare" size={15} />Make PRs from local changes</button>
-      <button type="button" className="co-btn co-btn-icon" onClick={() => task?.open('task:files')} aria-label="See the files" title="See the files"><Icon name="review" size={16} /></button>
+      <button type="button" className="co-btn co-btn-icon" onClick={() => task?.open('task:files')} aria-label="See the files" title="See the files"><Icon name="file" size={16} /></button>
     </> : null}
   </StatusLine>
 }

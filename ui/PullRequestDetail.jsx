@@ -14,7 +14,9 @@ import { ReviewTab, reviewContent } from './ReviewTab.jsx'
 import { frameOf } from '../pr-standing.js'
 import { ROLE_TITLES } from '../provenance.js'
 import { NAMES } from '../names.js'
+import { showOpenTab } from './stripScroll.js'
 import { NextStep, StateLine } from './NextStep.jsx'
+import { nextStepModel } from '../next-step.js'
 import { PullCommits } from './PullCommits.jsx'
 
 export function DateLabel({ value, prefix = '', time = false }) {
@@ -272,7 +274,7 @@ function PullRequestDetailView({ cacheStore, pr, token, onReview, onAssign, onRe
   // On a phone the four tabs can overflow; the open one is always brought into view.
   const tabStrip = useRef(null)
   const titleRef = useRef(null)
-  useEffect(() => { tabStrip.current?.querySelector('[aria-pressed="true"]')?.scrollIntoView?.({ inline: 'nearest', block: 'nearest' }) }, [tab])
+  useEffect(() => { showOpenTab(tabStrip.current, tabStrip.current?.querySelector('[aria-pressed="true"]')) }, [tab])
   // A review that starts while this page is open takes you to its tab.
   const hadStatus = useRef(!!status)
   useEffect(() => {
@@ -445,7 +447,7 @@ function PullRequestDetailView({ cacheStore, pr, token, onReview, onAssign, onRe
     <PullFeedbackFlag record={record} status={status} activity={ready(activity) ? activity.data : null} />
     </>}
     <nav className="co-detail-tabs" aria-label="Pull request details" ref={tabStrip}>{tabs.map(([key, label]) => <button key={key} aria-pressed={tab === key} onClick={() => setTab(key)}>{label}
-      {key === 'checks' && checks?.total ? <><span className={'co-tab-dot is-' + checks.state} title={`${checks.passed} of ${checks.total} checks passed or skipped`} aria-label={{ success: 'checks passed', failure: 'checks failing', pending: 'checks running' }[checks.state]} /><span className="co-tab-count">{checks.passed}/{checks.total}</span></> : null}
+      {key === 'checks' && checks?.total ? <><span className={'co-tab-dot is-' + checks.state} title={`${checks.passed} of ${checks.total} checks passed or skipped`} aria-label={{ success: 'checks passed', failure: 'checks failing', pending: 'checks running' }[checks.state]} /><span className="co-tab-count">{checks.failed ? `${checks.failed} failing` : `${checks.passed}/${checks.total}`}</span></> : null}
       {key === 'review' ? <ReviewMark standing={review?.standing} status={status} ctx={{ own: review?.own, ignored: review?.ignored }} /> : null}
       {Number.isInteger(tabCounts[key]) ? <span className="co-tab-count">{tabCounts[key]}</span> : null}</button>)}</nav>
     <div className="co-pr-detail-body" role="region" aria-label="Pull request context">
@@ -468,7 +470,7 @@ function PullRequestDetailView({ cacheStore, pr, token, onReview, onAssign, onRe
     {tab === 'review' ? <ReviewTab pr={pr} status={status} readOnly={readOnly} {...review} /> : null}
     {tab === 'files' || tab === 'checks' || tab === 'commits' ? readState(view, tab) : null}
     {tab === 'commits' && ready(view) ? <>
-      <PullCommits data={view.data} reviewedHead={status?.item?.head_sha || review?.earlier?.item?.head_sha || ''} again={againAction} onAgain={intent => onReview?.(intent)} />
+      <PullCommits data={view.data} reviewedHead={status?.item?.head_sha || review?.earlier?.item?.head_sha || ''} again={againAction} pinned={!!againAction && !stale && !readOnly && nextStepModel(review.standing, { record, capabilities })?.primary?.intent === againAction.id} onAgain={intent => onReview?.(intent)} />
       {commitCursors.length > 1 || view.data?.hasMore ? <div className="co-board-actions">
         {commitCursors.length > 1 ? <button className="co-btn" onClick={() => setCommitCursors(old => old.slice(0, -1))}>Previous commits</button> : null}
         {view.data?.hasMore && view.data.nextCursor ? <button className="co-btn" onClick={() => setCommitCursors(old => [...old, view.data.nextCursor])}>Show more commits</button> : null}

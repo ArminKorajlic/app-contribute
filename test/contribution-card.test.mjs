@@ -240,7 +240,7 @@ test('partial reconciliation evidence suggests dismissal without settling the re
   assert.match(html, /Looks already landed/)
   assert.match(html, /2 of 4 distinctive additions are already on main\./)
   assert.match(html, /View possible landing PR/)
-  assert.match(html, />Dismiss</)
+  assert.match(html, />Discard</)
   assert.match(html, /Waiting for your OK/)
 })
 
