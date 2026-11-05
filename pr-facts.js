@@ -57,15 +57,15 @@ export function newestReviewOf(runs, pr) {
   return matches.sort((a, b) => (Date.parse(b.run.created_at || '') || 0) - (Date.parse(a.run.created_at || '') || 0))[0] || null
 }
 
-// The job a run is on this PR. A run you stopped holds nothing; one that failed, was
-// interrupted, or whose conversation ended while it still says "reviewing" has stalled.
-const FINISHED = new Set(['completed', 'failed', 'interrupted'])
+// The job a run is on this PR. A run you stopped holds nothing; one that failed or was
+// interrupted has stalled. A review whose own turn ended ("completed") while it still says
+// "reviewing" is working: it hands the PR to its reviewer helper and sleeps until that
+// helper reports. When nothing will wake it any more, the platform reports "interrupted".
 function jobOf(run, progress) {
   if (run.execution_state === 'stopped') return ''
   if (progress.waiting) return 'needs_answer'
   if (progress.halted) return 'stalled'
-  if (progress.turn !== 'agent') return ''
-  return FINISHED.has(run.execution_state) ? 'stalled' : 'running'
+  return progress.turn === 'agent' ? 'running' : ''
 }
 // What a saved item says is on its way to GitHub, or uncertain there.
 const ITEM_OUTBOX = {

@@ -130,6 +130,13 @@ test('a run that is working still names the job before a Respond conversation do
   assert.equal(prFacts({ pr: pull(), login: 'alex', runs: [stalled] }).job.state, 'stalled')
 })
 
+test('a review whose own turn ended while its reviewer helper works is still running; an interrupted one has stalled', () => {
+  const waitingOnHelper = run({ state: 'reviewing' }, { state: 'reviewing', execution_state: 'completed' })
+  const interrupted = run({ state: 'reviewing' }, { state: 'reviewing', execution_state: 'interrupted' })
+  assert.deepEqual(prFacts({ pr: pull(), login: 'alex', runs: [waitingOnHelper] }).job, { kind: 'review', state: 'running' })
+  assert.equal(prFacts({ pr: pull(), login: 'alex', runs: [interrupted] }).job.state, 'stalled')
+})
+
 test('findings of an older version of your PR no longer wait on you', () => {
   assert.equal(decideFor(mine(), [run({ state: 'needs_you', head_sha: OLD })]).state, 'author.waiting_review')
   assert.equal(decideFor(mine(), [run({ state: 'needs_you' })]).state, 'author.findings')

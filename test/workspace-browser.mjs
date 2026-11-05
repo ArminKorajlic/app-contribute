@@ -1,8 +1,9 @@
 // Run: MOBIUS_FRONTEND_NODE_MODULES=/data/platform/frontend/node_modules \
 //      node test/workspace-browser.mjs
-// Three scenarios, each on a fresh page: runWorkspaceChecks (the project fixture),
-// runDeskFrameChecks (the whole app: a review started on a PR page frames its Desk row) and
-// runReviewRequestChecks (the whole app: a review you submit takes its row out of Review requests).
+// Four scenarios, each on a fresh page: runWorkspaceChecks (the project fixture),
+// runDeskFrameChecks (the whole app: a review started on a PR page frames its Desk row),
+// runReviewRequestChecks (the whole app: a review you submit takes its row out of Review requests) and
+// runReviewHelperWaitChecks (the whole app: a review waiting on its helper reads as at work, not stopped).
 // Run one with WORKSPACE_BROWSER_ONLY=runDeskFrameChecks, for example while
 // runWorkspaceChecks is red, so the Desk check can still show green.
 // Actual app components, native Chromium DOM, and no live app/backend. The
@@ -1629,6 +1630,45 @@ window.runDeskFrameChecks = async () => {
   }
 }
 
+// The whole app on a fresh page: a review hands its PR to a reviewer helper and ends its own
+// turn ("completed") while the review still says "reviewing". That is a review at work, not one
+// that stopped: the Desk row and the PR page show the moving frame. Only a review the platform
+// reports "interrupted" (nothing will wake it any more) asks the owner to run it again.
+window.runReviewHelperWaitChecks = async () => {
+  const checks = []
+  const deskFrame = title => [...document.querySelectorAll('.co-frame')].find(node => text(node).includes(title))?.dataset.frame
+  const helperRun = execution => ({ id: 'review-helper', chat_id: 'review-chat-fixture', mode: 'review', state: 'reviewing', execution_state: execution, can_stop: true,
+    items: [{ repo: 'owner/project', number: 7, head_sha: HEAD, base_ref: 'main', base_sha: BASE, state: 'reviewing' }] })
+  const openPull = async () => {
+    await click([...document.querySelectorAll('.co-desk-row')].find(node => text(node).includes('Contribution 7')))
+    await until(() => query('.co-desk-back') && query('.co-pr-standing'), 'The PR page did not open')
+  }
+  try {
+    reviewRuns.length = 0
+    reviewRuns.push(helperRun('completed'))
+    await mountDeskApp()
+    await until(() => deskFrame('Contribution 7'), 'The Desk did not list the review request')
+    ensure(deskFrame('Contribution 7') === 'reviewing', 'The Desk row of a review waiting on its helper did not wear the moving frame: ' + deskFrame('Contribution 7'))
+    await openPull()
+    ensure(query('.co-frame[data-frame="reviewing"]') && !query('.co-tab-dot.is-waiting'), 'The PR page did not frame a review waiting on its helper as at work')
+    ensure(text(query('.co-pr-standing')) === 'An agent is working on it', 'The PR page said: ' + text(query('.co-pr-standing')))
+    checks.push({ name: 'a review whose own turn ended while its helper works is shown as at work', status: 'pass' })
+    // The platform reports "interrupted" once nothing can wake the review: now it is the owner's move.
+    await click(query('.co-desk-back'))
+    await until(() => query('.co-desk-envelopes'), 'Back did not return to the Desk')
+    reviewRuns[0].execution_state = 'interrupted'
+    window.dispatchEvent(new Event('focus'))
+    await until(() => deskFrame('Contribution 7') === 'verdict', 'The Desk row of an interrupted review did not hold the amber frame: ' + deskFrame('Contribution 7'))
+    await openPull()
+    ensure(text(query('.co-pr-standing')) === 'The agent stopped before it finished. Run it again', 'The PR page said: ' + text(query('.co-pr-standing')))
+    checks.push({ name: 'a review the platform reports interrupted is shown as stopped', status: 'pass' })
+    ensure(calls.forbidden.length === 0, 'Unexpected runtime/transport: ' + JSON.stringify(calls.forbidden))
+    return { status: 'pass', checks, forbidden: calls.forbidden }
+  } catch (error) {
+    return { status: 'fail', checks, error: error.stack, dom: text(query('main')).slice(0, 5000), calls, forbidden: calls.forbidden }
+  }
+}
+
 // The whole app on a fresh page: a review the owner submits answers its request on
 // GitHub, so the Desk row leaves Review requests when the verdict posts, not at the
 // next Sync. Reads after that (the window regaining focus) keep it honest.
@@ -1772,7 +1812,7 @@ async function main() {
     const protocol = cdp(browser), reports = []
     // Each scenario gets a fresh page, so the whole-app Desk scenario never inherits the project fixture's state.
     // WORKSPACE_BROWSER_ONLY=runDeskFrameChecks runs one scenario.
-    const scenarios = process.env.WORKSPACE_BROWSER_ONLY ? [process.env.WORKSPACE_BROWSER_ONLY] : ['runWorkspaceChecks', 'runDeskFrameChecks', 'runReviewRequestChecks']
+    const scenarios = process.env.WORKSPACE_BROWSER_ONLY ? [process.env.WORKSPACE_BROWSER_ONLY] : ['runWorkspaceChecks', 'runDeskFrameChecks', 'runReviewRequestChecks', 'runReviewHelperWaitChecks']
     const viewports = [{ name: 'desktop', width: 1280, height: 900 }, { name: 'phone', width: 390, height: 844 }]
     for (const [viewport, scenario] of viewports.flatMap(size => scenarios.map(name => [size, name]))) {
       const { targetId } = await protocol.send('Target.createTarget', { url: 'about:blank' })

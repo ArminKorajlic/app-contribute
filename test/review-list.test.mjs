@@ -59,10 +59,12 @@ test('what waits on you stays in progress: a draft to send, findings on your own
   assert.equal(question.bucket, 'waiting')
 })
 
-test('an agent at work is running; one whose conversation ended or failed has stalled; one you stopped is done', () => {
+test('an agent at work is running, even while its chat waits on its reviewer helper; one that was interrupted or failed has stalled; one you stopped is done', () => {
   const working = read({ run: run({ state: 'running', execution_state: 'running' }), item: item('reviewing') })
   assert.deepEqual([working.bucket, labels(working)], ['running', ['Agent working']])
-  const stuck = read({ run: run({ state: 'reviewing', execution_state: 'completed' }), item: item('reviewing') })
+  const waitingOnHelper = read({ run: run({ state: 'reviewing', execution_state: 'completed' }), item: item('reviewing') })
+  assert.deepEqual([waitingOnHelper.bucket, labels(waitingOnHelper)], ['running', ['Agent working']])
+  const stuck = read({ run: run({ state: 'reviewing', execution_state: 'interrupted' }), item: item('reviewing') })
   assert.deepEqual([stuck.bucket, labels(stuck)], ['stalled', ['Agent stopped']])
   assert.equal(read({ run: run({ state: 'running', execution_state: 'stopped' }), item: item('reviewing') }).bucket, 'done')
 })
