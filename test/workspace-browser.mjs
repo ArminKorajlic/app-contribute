@@ -444,6 +444,23 @@ async function chooseAgent(root, choice = NAMES.review) {
   await click([...root.querySelectorAll('[role=menuitem]')].find(node => text(node).startsWith(choice)))
   await until(() => review(), 'Review window did not open')
 }
+// The fixture viewer wrote both PRs, and an agent only checks the viewer's own PRs. Another viewer on a Möbius that can post a verdict
+// and merge after it gets the review window's full choices: who sees the result, then whether it merges after the viewer approves.
+const asReviewer = async () => {
+  window.setConnectionFixture({state:'connected',login:'another-viewer'})
+  window.fixtureCapabilities={review_fix_merge:false,post_review:true,propose_verdict:true,post_review_merge:true}
+  await frame(); await frame()
+}
+const asOwner = async () => { window.fixtureCapabilities=undefined; window.setConnectionFixture({state:'connected',login:'owner'}); await frame(); await frame() }
+// Merging follows the viewer's own approval, so it is offered only once "Draft for me" is chosen; returns its switch, still off.
+async function chooseDraftThenMergeSwitch() {
+  await until(()=>button('Draft for me',review()),'Who sees the result did not load')
+  ensure(!review().querySelector('[role=switch]') && text(review()).includes('Merging follows your own approval'),'Merge was offered before the viewer chose to send the verdict')
+  await click(button('Draft for me',review()))
+  const mergeSwitch=review().querySelector('[role=switch]')
+  ensure(mergeSwitch && !mergeSwitch.checked,'Drafting a verdict did not offer an unchecked merge switch')
+  return mergeSwitch
+}
 async function openTab(name) {
   const tab = [...document.querySelectorAll('[role=tab]')].find(node => text(node).startsWith(name))
   ensure(tab, 'Tab missing: ' + name)
@@ -603,12 +620,13 @@ window.runWorkspaceChecks = async () => {
       ensure(text(query('.co-pr-box-head')).includes('2 selected'),'Filtering discarded hidden selection')
       // A Möbius without the core review routes: optional workflows say so, never "Checking…" forever.
       window.presetsMissing=true
-      await chooseAgent(query('.co-pr-box-head'), 'Review each')
-      ensure(text(review()).includes('Contribution 7') && text(review()).includes('Contribution 8'),'Hidden selected identity omitted from confirmation')
-      await until(()=>text(review()).includes('Needs a newer Möbius'),'A missing review-presets route kept checking')
-      ensure(!text(review()).includes('Checking what this Möbius supports'),'Unsupported workflows still read as a pending check')
-      await closeReview()
-      window.presetsMissing=false
+      try {
+        await chooseAgent(query('.co-pr-box-head'), 'Review each')
+        ensure(text(review()).includes('Contribution 7') && text(review()).includes('Contribution 8'),'Hidden selected identity omitted from confirmation')
+        await until(()=>text(review()).includes('need the companion Möbius update'),'A missing review-presets route kept checking')
+        ensure(!text(review()).includes('Checking'),'Unsupported workflows still read as a pending check')
+        await closeReview()
+      } finally { window.presetsMissing=false }
       const trigger=query('.co-pr-open'), listBefore=query('.co-pr-list')
       trigger.focus(); await click(trigger)
       await until(() => text(query('.co-pr-detail')).includes('Fixture PR description 7'),'Inline detail did not load')
@@ -705,22 +723,16 @@ window.runWorkspaceChecks = async () => {
       await until(() => text(query('.co-pr-detail')).includes('Please check this edge case'),'Activity did not load')
       ensure(!query('.co-file-disclosure'),'Files leaked into activity')
       const title=document.querySelectorAll('.co-pr-open')[1]
-      // The viewer owns these fixture PRs, and an agent only checks the viewer's own PRs. A different viewer gets the review
-      // window's full choices, on a Möbius that can post a verdict and merge after it.
-      window.setConnectionFixture({state:'connected',login:'another-viewer'}); await frame(); await frame()
-      window.fixtureCapabilities={review_fix_merge:false,post_review:true,propose_verdict:true,post_review_merge:true}
+      await asReviewer()
       await chooseAgent(query('.co-task-content'), 'Review')
       ensure(text(review()).includes('Contribution 8') && text(review()).includes('ccccccc') && !text(review()).includes('Contribution 7'),'Individual review changed PR scope or version')
-      await until(()=>button('Draft for me',review()),'Who sees the result did not load')
-      ensure(button('Start private review') && !review().querySelector('[role=switch]'),'Individual review granted merge by default')
-      ensure(text(review()).includes('Merging follows your own approval'),'The merge choice did not say why it is not offered yet')
-      await click(button('Draft for me',review()))
-      const mergeSwitch=review().querySelector('[role=switch]')
-      ensure(mergeSwitch && !mergeSwitch.checked && button('Start review, draft a verdict for me'),'Drafting a verdict granted merge or lost its start label')
+      ensure(button('Start private review'),'Individual review granted merge by default')
+      const mergeSwitch=await chooseDraftThenMergeSwitch()
+      ensure(button('Start review, draft a verdict for me'),'Drafting a verdict granted merge or lost its start label')
       await click(mergeSwitch)
       ensure(button('Start review, merge after your approval'),'Individual merge choice did not require guarded approval')
       ensure(mutationRequests().length===0,'Changing individual review mode mutated GitHub')
-      await closeReview(); window.fixtureCapabilities=undefined; window.setConnectionFixture({state:'connected',login:'owner'})
+      await closeReview(); await asOwner()
       await until(() => !review() && !query('.co-task-content'),'Individual review did not close')
       ensure(document.activeElement===title,'Closing individual review did not return focus to its row trigger (focused '+(document.activeElement?.className || document.activeElement?.tagName)+': '+text(document.activeElement)+')')
     })
@@ -745,12 +757,14 @@ window.runWorkspaceChecks = async () => {
       ensure(firstCheckbox.checked && secondCheckbox.checked && reviewRuns.length === 0,'Assignment started review or lost selection')
     })
     await check('inline batch review enumerates exact versions and starts only after approval', async () => {
+      await asReviewer()
+      try {
       await chooseAgent(query('.co-pr-box-head'))
       ensure(review().closest('[role=dialog]')?.getAttribute('aria-modal')==='true','Batch review did not use the modal review window')
       ensure(text(review()).includes('Contribution 7') && text(review()).includes('Contribution 8'),'Batch lost a PR')
       ensure(text(review()).includes('aaaaaaa') && text(review()).includes('ccccccc'),'Exact heads absent')
-      const mergeToggle=[...review().querySelectorAll('label')].find(node=>text(node).includes('Merge when safe'))?.querySelector('input')
-      ensure(mergeToggle && !mergeToggle.checked && reviewRuns.length === 0,'Private review granted merge')
+      ensure(button('Start private review') && reviewRuns.length === 0,'Private review was not the default, or something started')
+      const mergeToggle=await chooseDraftThenMergeSwitch()
       ensure(navigation.length === inventoryNavigationDepth && query('.co-pr-list') === originalList,'Review changed screens or remounted list')
       const region=review(), rect=region.getBoundingClientRect()
       ensure(rect.top >= 0 && rect.top < innerHeight && document.activeElement === region,'Review not visible/focused')
@@ -759,8 +773,10 @@ window.runWorkspaceChecks = async () => {
       ensure(text(review()).includes('merges into the newest version of the target branch'),'Approval falsely pins the displayed base')
       ensure(text(review()).includes('all required checks pass'),'Review and required checks missing from approval')
       window.liveBase='d'.repeat(40)
-      await enabled('Start review, merge when safe')
-      await until(() => reviewRuns.length === 1 && button('Open chat'),'Review did not start')
+      await enabled('Start review, merge after your approval')
+      // Starting closes the review window and clears the selection; the run itself lives in its own conversation.
+      await until(() => reviewRuns.length === 1 && !review(),'Review did not start')
+      ensure(!query('input[aria-label="Select owner/project #7"]').checked && !query('input[aria-label="Select owner/project #8"]').checked,'Starting a review kept the selection')
       const write=mutationRequests().at(-1)
       ensure(write.url.endsWith('/review-runs') && write.body.mode==='review_merge' && write.body.items.length===2,'Wrong workflow request')
       ensure(write.body.items[0].head_sha===HEAD && write.body.items[1].head_sha===SECOND_HEAD,'Approval lost selected heads')
@@ -768,8 +784,12 @@ window.runWorkspaceChecks = async () => {
       ensure(calls.requests.filter(call=>call.body?.query?.includes('ContributeExactPull')).length===2,'Launch did not read exactly its selected PRs')
       window.liveBase=null
       ensure(query('.co-pr-list')===originalList,'Review replaced inventory')
+      } finally { window.liveBase=null; await asOwner() }
     })
     await check('review errors preserve exact selection for an explicit retry', async () => {
+      // The review above has finished, so its PRs are free to be reviewed again (an agent at work on a PR disables Review).
+      for (const run of reviewRuns) { run.state='complete'; run.items=run.items.map(item=>({ ...item, state:'all_clear' })) }
+      await checkGithub('Finished review did not reload')
       await inventory(); await click(firstCheckbox); await chooseAgent(query('.co-pr-box-head'))
       window.failReview = true
       await enabled('Start private review')
