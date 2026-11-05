@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import { actionsMenuModel } from '../actions-menu.js'
 import { Icon } from './Icons.jsx'
 import { useDismissableMenu } from './useDismissableMenu.js'
+import { useKeepOnScreen } from './useKeepOnScreen.js'
 
 // "Actions ▾": what you can do yourself with a PR, and what an agent can do for
 // it. Choosing only opens the confirm sheet or review window; nothing starts
@@ -29,8 +30,10 @@ function Group({ title, items, onPick, named }) {
 export function ActionsMenu({ onChoose, pulls = [], decisions = [], record = null, capabilities = null, disabled = false, variant = 'ghost', label = 'Actions', ariaLabel, align = 'end', defaultOpen = false }) {
   const [open, setOpen] = useState(defaultOpen)
   const root = useRef(null)
+  const list = useRef(null)
   const model = actionsMenuModel(pulls, decisions, { record, capabilities })
   useDismissableMenu(root, open, setOpen)
+  useKeepOnScreen(list, open)
   // The trigger takes focus back first, so whatever opens next returns there.
   function choose(intent) {
     setOpen(false)
@@ -42,7 +45,7 @@ export function ActionsMenu({ onChoose, pulls = [], decisions = [], record = nul
     <button type="button" className={`co-btn ${variant === 'button' ? '' : 'co-btn-quiet '}co-agent-menu-button is-${variant}`} aria-haspopup="menu" aria-expanded={open} aria-label={ariaLabel} disabled={disabled} onClick={() => setOpen(value => !value)}>
       <Icon name="more" size={15} /><span>{label}</span><Icon name="chevron" size={14} />
     </button>
-    {open ? <div className="co-agent-menu-list" role="menu" aria-label="Actions" tabIndex={-1}>
+    {open ? <div className="co-agent-menu-list" ref={list} role="menu" aria-label="Actions" tabIndex={-1}>
       {model.header ? <p className="co-agent-menu-head"><b>{model.header.label}</b>{model.header.text ? ` · ${model.header.text}` : ''}</p> : null}
       {model.headline ? <p className="co-agent-menu-standing">{model.headline}</p> : null}
       <Group title="You" items={model.you} onPick={choose} named={named} />

@@ -126,6 +126,7 @@
     "ui/ReviewsView.jsx",
     "ui/useReviewList.js",
     "ui/useDismissableMenu.js",
+    "ui/useKeepOnScreen.js",
     "ui/AttentionList.jsx",
     "ui/ProjectEdits.jsx",
     "ui/ProjectTabs.jsx",

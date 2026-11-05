@@ -424,6 +424,8 @@ export const WORKSPACE_CSS = `
 .co-pr-detail-actions.is-tips-off .co-tip::after { opacity:0; transition-delay:0s; }
 @media (hover:none) { .co-tip:hover::after { opacity:0; transition-delay:0s; } .co-tip:active::after { opacity:1; transition-delay:0s; } }
 @media (prefers-reduced-motion:reduce) { .co-tip::after { transition-duration:0s; } }
+/* On a phone a tooltip hangs from its button's right edge. Centred, the last button's long label ran past the screen's edge, and although nothing showed, the page scrolled sideways to reach it. */
+@media (max-width:680px) { .co-tip::after { left:auto; right:0; transform:none; } }
 .co-gh-provenance { display:contents; }
 .co-chat-group { position:relative; display:inline-flex; }
 .co-chat-group-list { position:absolute; z-index:30; top:calc(100% + 6px); left:0; width:min(320px,calc(100vw - 32px)); padding:6px; border:1px solid var(--border); border-radius:var(--co-radius-panel); background:var(--surface); box-shadow:0 12px 32px rgba(0,0,0,.28); }

@@ -7,6 +7,7 @@ import DiffView from './diff/DiffView.jsx'
 import { Icon } from './Icons.jsx'
 import { ActionsMenu } from './ActionsMenu.jsx'
 import { useTipDismiss } from './useTipDismiss.js'
+import { useKeepOnScreen } from './useKeepOnScreen.js'
 import { GithubLabel, PullStateBadge, REVIEW_DECISION } from './GithubParts.jsx'
 import { checkSummary, conversationCount } from '../collaboration.js'
 import { openAgentConversation } from './BatchAction.jsx'
@@ -144,6 +145,8 @@ const PROVENANCE_KINDS = { source: 'where it started', review: 'review', fix: 'f
 function ProvenanceGroup({ role, links, lone }) {
   const [open, setOpen] = useState(false)
   const root = useRef(null)
+  const list = useRef(null)
+  useKeepOnScreen(list, open)
   useEffect(() => {
     if (!open) return undefined
     const closeOutside = event => { if (!root.current?.contains(event.target)) setOpen(false) }
@@ -160,7 +163,7 @@ function ProvenanceGroup({ role, links, lone }) {
   }
   return <span className="co-chat-group" ref={root} onKeyDown={event => { if (event.key === 'Escape') setOpen(false) }}>
     <button type="button" className="co-btn co-tip co-gh-chat-link" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(value => !value)} aria-label={many} data-tip={many}><Icon name="feedback" size={15} /><Icon name="chevron" size={14} /></button>
-    {open ? <div className="co-chat-group-list" role="menu" aria-label={many}>
+    {open ? <div className="co-chat-group-list" ref={list} role="menu" aria-label={many}>
       {links.map((link, index) => <button type="button" role="menuitem" key={link.chat_id} onClick={() => { setOpen(false); openAgentConversation(link.chat_id) }}>
         <strong>{kind[0].toUpperCase() + kind.slice(1)} #{index + 1}</strong>{link.title ? <small>{link.title}</small> : null}
       </button>)}
