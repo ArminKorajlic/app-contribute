@@ -1441,8 +1441,8 @@ export const CSS = `
   .co-toolbar { gap: 3px; }
   .co-toolbar-check { width: 32px; padding: 0; justify-content: center; }
   /* Sync and Settings keep a word on a phone: an icon alone is not a label (DESIGN.md). */
-  .co-toolbar-refresh .co-label-long, .co-sync-note { display: none; }
-  .co-toolbar-refresh .co-label-short { display: inline; }
+  .co-toolbar .co-label-long, .co-sync-note { display: none; }
+  .co-toolbar .co-label-short { display: inline; }
   .co-toolbar-refresh { min-width: 40px; justify-content: center; }
   .co-project-control { max-width: 108px; padding-inline: 8px; }
   .co-project-control > span { overflow: hidden; text-overflow: ellipsis; }

@@ -460,7 +460,7 @@ async function chooseProject(name) {
     switcher.dispatchEvent(new Event('change', { bubbles:true }))
     await frame(); await frame(); return
   }
-  const back = query('[aria-label="Back to projects"]')
+  const back = query('[aria-label="Back to repositories"]')
   if (back) await click(back)
   else { window.mobius.nav.back(); await frame(); await frame() }
   await until(() => query('.co-source-row'), 'Project list did not return')
@@ -1272,27 +1272,27 @@ window.runWorkspaceChecks = async () => {
       ensure(body.request_id === 'selection-link-one' && body.items[0].head_sha === HEAD && !body.chat_approval, 'Browser forged chat authority or changed selected work')
     })
     await check('already approved chat selection opens its owner without another approval', async () => {
-      await click(button('Back to projects'))
+      await click(button('Back to repositories'))
       await showSelection('selection-link-one')
       await until(() => button('Open chat'), 'Existing selection did not resolve its owner')
       ensure(!button('Start review, merge when safe') && mutationRequests().length === beforeLink + 1, 'Existing selection asked for duplicate approval')
     })
     await check('changed public version invalidates a link without silently advancing it', async () => {
-      await click(button('Back to projects'))
+      await click(button('Back to repositories'))
       const stale = savedSelection('selection-stale'); stale.items[0].head_sha = SECOND_HEAD
       await showSelection('selection-stale', stale)
       await until(() => text(query('.co-selection-page')).includes('changed or closed'), 'Changed version did not stop approval')
       ensure(!button('Start review, merge when safe') && mutationRequests().length === beforeLink + 1, 'Stale link mutated work')
     })
     await check('changed base version also invalidates a link without silently advancing it', async () => {
-      await click(button('Back to projects'))
+      await click(button('Back to repositories'))
       const stale = savedSelection('selection-stale-base'); stale.items[0].base_sha = 'd'.repeat(40)
       await showSelection('selection-stale-base', stale)
       await until(() => text(query('.co-selection-page')).includes('changed or closed'), 'Changed base did not stop approval')
       ensure(!button('Start review, merge when safe') && mutationRequests().length === beforeLink + 1, 'Stale-base link mutated work')
     })
     await check('editing saved selection during confirmation never approves replacement work', async () => {
-      await click(button('Back to projects'))
+      await click(button('Back to repositories'))
       await showSelection('selection-replaced')
       await until(() => button('Start review, merge when safe'), 'Proposal not ready')
       const changed = savedSelection('selection-replaced'); changed.items[0].number = 8
@@ -1302,7 +1302,7 @@ window.runWorkspaceChecks = async () => {
       ensure(mutationRequests().length === beforeLink + 1, 'Replaced proposal was approved')
     })
     await check('read-only contributor can privately review but cannot approve merging', async () => {
-      await click(button('Back to projects')); window.fixturePermission = 'READ'
+      await click(button('Back to repositories')); window.fixturePermission = 'READ'
       await showSelection('selection-reader')
       await until(() => button('Review privately instead'), 'Permission failure not explained')
       ensure(button('Start review, merge when safe')?.disabled, 'Read permission exposed active merge approval')
@@ -1312,8 +1312,8 @@ window.runWorkspaceChecks = async () => {
       window.fixturePermission = 'WRITE'
     })
     await check('adding an external repository is an explicit saved choice, not a GitHub mutation', async () => {
-      await click(button('Back to projects'))
-      await click(button('Add project'))
+      await click(button('Back to repositories'))
+      await click(button('Add repository'))
       const input = query('#co-repository-name')
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'team/community')
       input.dispatchEvent(new Event('input',{bubbles:true}))

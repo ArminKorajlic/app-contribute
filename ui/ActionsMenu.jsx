@@ -40,7 +40,7 @@ export function ActionsMenu({ onChoose, pulls = [], decisions = [], record = nul
   const named = model.you.length > 0
   return <div className={`co-agent-menu is-align-${align}`} ref={root}>
     <button type="button" className={`co-btn ${variant === 'button' ? '' : 'co-btn-quiet '}co-agent-menu-button is-${variant}`} aria-haspopup="menu" aria-expanded={open} aria-label={ariaLabel} disabled={disabled} onClick={() => setOpen(value => !value)}>
-      <Icon name="prepare" size={15} /><span>{label}</span><Icon name="chevron" size={14} />
+      <Icon name="more" size={15} /><span>{label}</span><Icon name="chevron" size={14} />
     </button>
     {open ? <div className="co-agent-menu-list" role="menu" aria-label="Actions" tabIndex={-1}>
       {model.header ? <p className="co-agent-menu-head"><b>{model.header.label}</b>{model.header.text ? ` · ${model.header.text}` : ''}</p> : null}

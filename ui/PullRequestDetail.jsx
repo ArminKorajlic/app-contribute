@@ -171,7 +171,7 @@ function PullProvenance({ record, onRecord, conversations }) {
   if (!local && !conversations.length) return null
   const roles = [...new Set(conversations.map(link => link.role))]
   return <span className="co-gh-provenance" role="group" aria-label="Where this PR came from">
-    {local ? <button type="button" className="co-btn co-tip co-gh-chat-link" onClick={() => onRecord(record)} aria-label="Open prepared PR" data-tip="Open prepared PR"><Icon name="prepare" size={15} /></button> : null}
+    {local ? <button type="button" className="co-btn co-tip co-gh-chat-link" onClick={() => onRecord(record)} aria-label="Open prepared PR" data-tip="Open prepared PR"><Icon name="draft" size={15} /></button> : null}
     {roles.map(role => <ProvenanceGroup key={role} role={role} links={conversations.filter(link => link.role === role)} lone={conversations.length === 1} />)}
   </span>
 }

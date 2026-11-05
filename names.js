@@ -50,6 +50,12 @@ export const NAMES = Object.freeze({
   copyHash: 'Copy hash',
   viewOnGitHub: 'View on GitHub',
   settings: 'Contribute settings',
+
+  // The app's list of followed repositories. "Projects" is the Möbius shell's own word for something else.
+  repositories: 'Repositories',
+  moreRepositories: 'More repositories',
+  allRepositories: 'All repositories',
+  addRepository: 'Add repository',
 })
 
 const REVIEW_JOBS = new Set(['review', 'review_merge'])

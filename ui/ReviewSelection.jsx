@@ -44,7 +44,7 @@ export function ReviewSelection({ selectionId, appId, token, onClose, onRunsChan
     finally { inFlight.current = false; setBusy(false) }
   }
   return <section className="co-selection-page" aria-label="PR approval">
-    <button className="co-btn co-btn-quiet" onClick={onClose}><Icon name="left" size={16} /> Back to projects</button>
+    <button className="co-btn co-btn-quiet" onClick={onClose}><Icon name="left" size={16} /> Back to repositories</button>
     {state.loading ? <p role="status">Checking the selected contributions…</p> : null}
     {state.error ? <div role="alert"><h2>Could not open this review</h2><p>{state.error}</p><button className="co-btn" onClick={load}>Retry</button></div> : null}
     {state.run ? <><h2>Review {state.run.state === 'complete' ? 'complete' : 'already started'}</h2><p>This selection has one owning conversation. No additional approval is needed.</p><button className="co-btn co-btn-primary" onClick={() => openAgentConversation(state.run.chat_id)}>Open review conversation</button></> : null}

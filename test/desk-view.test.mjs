@@ -51,7 +51,7 @@ const projectFixture = (key, extra = {}) => ({
 
 const countsFixture = { questions: 1, requests: 2, merge: 3, fix: 1, agent: 0, drafts: 0, mine: 4, merged: 0, reviewsRunning: 0 }
 
-test('the rail shows its four views with their counts, the Projects block apart, and marks the open project', async t => {
+test('the rail shows its four views with their counts, the Repositories block apart, and marks the open project', async t => {
   const api = await ui(t)
   if (!api) return
   const project = projectFixture('mobius', { reviewRequests: [pullFixture(1)] })
@@ -60,7 +60,7 @@ test('the rail shows its four views with their counts, the Projects block apart,
   for (const name of ['Needs you', 'Review requests', 'My PRs', 'Agent runs']) assert.match(html, new RegExp(name))
   assert.doesNotMatch(html, /Merged this week|To confirm|PR reviews|My work|Your edits/)
   // Projects are a block of their own: a labelled nav under the four views, with Add project last.
-  assert.match(html, /<nav class="co-rail-projects" aria-labelledby="co-rail-projects-head"><h2 class="co-rail-head" id="co-rail-projects-head">Projects<\/h2>/)
+  assert.match(html, /<nav class="co-rail-projects" aria-labelledby="co-rail-projects-head"><h2 class="co-rail-head" id="co-rail-projects-head">Repositories<\/h2>/)
   assert.match(html, /Möbius/)
   // The project row shows exactly the count held for it (what its Needs you card lists).
   assert.equal(api.projectRailCount(project, { mobius: 3 }), 3)
@@ -202,7 +202,7 @@ test('the sync note says only when it last checked, or that GitHub could not be 
   assert.match(guard, /note\.outcome\?\.ok \? <TimeAgo prefix="Checked " value=\{note\.at\} \/> : 'Couldn’t reach GitHub'/)
   const theme = readFileSync(new URL('../theme.js', import.meta.url), 'utf8')
   // Beside the button on a wide header; a phone header has no room for it.
-  assert.match(theme, /\.co-toolbar-refresh \.co-label-long, \.co-sync-note \{ display: none; \}/)
+  assert.match(theme, /\.co-toolbar \.co-label-long, \.co-sync-note \{ display: none; \}/)
 })
 
 test('list labels are filled pills like the PR page, two at most, and a bot says bot', async t => {
@@ -285,7 +285,7 @@ test('attention rows and the show-more control stay inside the bar', () => {
   assert.match(css, /\.co-attn-more \{ box-sizing:border-box;/)
 })
 
-test('on a phone the four views are one segmented bar with every segment on screen, and the project list is one quiet link', async t => {
+test('on a phone the four views are one segmented bar with every segment on screen, and the repository list is one quiet link', async t => {
   if (!frontendModules) return t.skip('MOBIUS_FRONTEND_NODE_MODULES is required')
   const { renderToStaticMarkup, React, DeskChips } = await (await renderModule(`
     import React from 'react'
@@ -298,7 +298,7 @@ test('on a phone the four views are one segmented bar with every segment on scre
   assert.match(html, /aria-pressed="true" aria-label="Needs you, 7"><b>7<\/b><span>Needs you<\/span>/)
   assert.match(html, /aria-label="Review requests, 2"><b>2<\/b><span>Requests<\/span>/)
   assert.match(html, /<b>·<\/b><span>Agent runs<\/span>/)
-  assert.match(html, /co-desk-chips-projects[^>]*>.*?All projects/)
+  assert.match(html, /co-desk-chips-projects[^>]*>.*?All repositories/)
   assert.doesNotMatch(html, /To confirm|Merged this week|PR reviews|My work|Your edits/)
 })
 
@@ -306,7 +306,7 @@ test('the phone keeps Sync and Settings labelled, a sticky review footer and dec
   const read = file => readFileSync(new URL(`../${file}`, import.meta.url), 'utf8')
   const theme = read('theme.js'), work = read('workspace-theme.js'), app = read('index.jsx')
   assert.match(app, /<span className="co-label-short">\{refreshingAll \? 'Syncing…' : NAMES\.sync\}<\/span>/)
-  assert.match(theme, /\.co-toolbar-refresh \.co-label-short \{ display: inline; \}/)
+  assert.match(theme, /\.co-toolbar \.co-label-short \{ display: inline; \}/)
   assert.doesNotMatch(work, /\.co-header \.co-settings > summary > span \{ display:none; \}/, 'Settings keeps its word on a phone')
   assert.match(work, /\.co-rw-foot \{ position:sticky; bottom:0;/)
   assert.match(work, /\.co-decision-bar \{ display:flex; position:sticky; bottom:0;/)

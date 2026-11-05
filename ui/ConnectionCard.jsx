@@ -4,6 +4,7 @@ import { Icon } from './Icons.jsx'
 import { DEFAULT_STAGE, stageWords } from '../publication-stage.js'
 import { ReviewPromptSettings } from './ReviewPromptSettings.jsx'
 import { DefaultAgentSettings } from './DefaultAgentSettings.jsx'
+import { NAMES } from '../names.js'
 // Component-local settings layout. The app shell keeps its existing theme tokens.
 export const SETTINGS_CSS = `
 .co-settings-workspace { box-sizing:border-box; width:min(820px,calc(100vw - 32px)); height:min(947px,calc(100dvh - 110px)); max-height:calc(100dvh - 110px); display:flex; flex-direction:column; padding:20px; overflow:hidden; scrollbar-width:none; }
@@ -59,10 +60,10 @@ export function ConnectionSettings(props) {
     if (next) void props.onChanged?.()
   }}>
     <summary aria-label={`${accountStatus}${props.conn?.state === 'connected' && props.conn?.login ? ` as ${props.conn.login}` : ''} — Contribute settings`} title={`${accountStatus} · Settings`}>
-      <Icon name="settings" size={20} /><span>Settings</span>
+      <Icon name="settings" size={20} /><span className="co-label-long">{NAMES.settings}</span><span className="co-label-short">Settings</span>
     </summary>
     {open ? <div className="co-settings-panel co-settings-workspace"><style>{SETTINGS_CSS}</style>
-      <header><h2>Settings</h2><button type="button" className="co-btn co-btn-quiet co-btn-icon" aria-label="Close settings" title="Close" onClick={() => { ref.current.open = false; ref.current.querySelector('summary')?.focus() }}><Icon name="close" size={18} /></button></header>
+      <header><h2>{NAMES.settings}</h2><button type="button" className="co-btn co-btn-quiet co-btn-icon" aria-label="Close settings" title="Close" onClick={() => { ref.current.open = false; ref.current.querySelector('summary')?.focus() }}><Icon name="close" size={18} /></button></header>
       <div className="co-settings-layout">
         <div className="co-settings-content">
           <section className="co-settings-account" aria-label="GitHub account"><h3>GitHub</h3><ConnectionCard {...props} /></section>

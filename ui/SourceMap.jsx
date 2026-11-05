@@ -12,6 +12,7 @@ import { TimeAgo } from './GithubParts.jsx'
 import { ProjectFileChanges } from './ProjectEdits.jsx'
 import { TaskContext, TaskPane } from './TaskPane.jsx'
 import { DESK_VIEWS, deskViewKey, splitProjects } from '../desk.js'
+import { NAMES } from '../names.js'
 import { DeskChips, DeskCounts, DeskRail } from './Desk.jsx'
 import { DeskView } from './DeskViews.jsx'
 import { openGithubSettings } from '../github-connection.js'
@@ -370,7 +371,7 @@ export function SourceMap({
   const externalQuestions = external.reduce((count, project) => count + (project.reviewRequests?.length || 0), 0)
   if (loading && !snapshot && !projects.length) return <LoadingState />
   const currentView = DESK_VIEWS.find(item => item.key === desk.view)
-  const viewLabel = currentView?.heading || currentView?.label || 'Your projects'
+  const viewLabel = currentView?.heading || currentView?.label || NAMES.repositories
   return (
     <section className={'co-projects-view' + (selectedProject ? ' is-focus' : '')} aria-label="Project details">
       <div className="co-desk">
@@ -418,7 +419,7 @@ export function SourceMap({
           <>
             <label className="co-desk-search">
               <Icon name="search" size={16} />
-              <input type="search" placeholder="Find a PR, person or project" aria-label="Find a PR, person or project" value={deskQuery} onChange={event => setDeskQuery(event.target.value)} />
+              <input type="search" placeholder="Find a PR, person or repository" aria-label="Find a PR, person or repository" value={deskQuery} onChange={event => setDeskQuery(event.target.value)} />
             </label>
             <DeskView view={desk.view} projects={orderedProjects} records={desk.records} login={desk.login} decisionsFor={desk.decisionsFor} lastLooked={desk.lastLooked} query={deskQuery} runs={desk.runs} chats={desk.respondChats} ignored={desk.ignored} reviews={desk.reviews} counts={desk.counts} needsFilter={needsFilter} onOpenProject={openProject} onOpenPull={desk.onOpenPull} onOpenRecord={openRecordFromDesk} />
           </>

@@ -51,3 +51,23 @@ test('the PR machine names every action from the standard names', () => {
   assert.equal(titles.take_over, NAMES.takeOver)
   assert.equal(titles.review, NAMES.review)
 })
+
+test('the app\'s repository list and its settings take their own names, not the shell\'s words', () => {
+  const read = file => readFileSync(new URL(`../${file}`, import.meta.url), 'utf8')
+  const rail = read('ui/Desk.jsx'), picker = read('ui/RepositoryPicker.jsx')
+  assert.equal(NAMES.repositories, 'Repositories')
+  assert.equal(NAMES.settings, 'Contribute settings')
+  assert.match(rail, /\{NAMES\.repositories\}<\/h2>/)
+  assert.match(rail, /<span>\{NAMES\.moreRepositories\}<\/span>/)
+  assert.match(picker, /<span>\{NAMES\.addRepository\}<\/span>/)
+  assert.match(read('ui/ConnectionCard.jsx'), /<h2>\{NAMES\.settings\}<\/h2>/)
+})
+
+test('an icon means one thing: the sparkle marks agent work only, never the mixed Actions menu', () => {
+  const read = file => readFileSync(new URL(`../${file}`, import.meta.url), 'utf8')
+  assert.doesNotMatch(read('ui/ActionsMenu.jsx'), /name="prepare"/, 'Actions holds your own steps too')
+  assert.doesNotMatch(read('ui/PullRequestDetail.jsx'), /Open prepared PR[^>]*><Icon name="prepare"/, 'a prepared PR is a draft, not an agent')
+  const rail = read('desk.js')
+  const icons = [...rail.matchAll(/key: '[a-z]+', label: NAMES\.\w+, short: [^,]+, icon: '(\w+)'/g)].map(match => match[1])
+  assert.equal(new Set(icons).size, icons.length, 'the four views each have their own icon')
+})

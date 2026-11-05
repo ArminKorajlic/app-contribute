@@ -60,19 +60,19 @@ export function DeskRail({ view, counts, projects, attention, selectedKey, onVie
         {DESK_VIEWS.map(item => <RailViewButton key={item.key} view={item} current={selectedKey ? '' : view} counts={counts} onView={onView} />)}
       </nav>
       <nav className="co-rail-projects" aria-labelledby="co-rail-projects-head">
-        <h2 className="co-rail-head" id="co-rail-projects-head">Projects</h2>
+        <h2 className="co-rail-head" id="co-rail-projects-head">{NAMES.repositories}</h2>
         {[...groups.active, ...groups.builtHere].map(project => (
           <RailProjectButton key={project.key} project={project} attention={attention} selectedKey={selectedKey} onOpenProject={onOpenProject} />
         ))}
         {more.length ? (
           <details className="co-rail-quiet" open={moreOpen || undefined}>
-            <summary><span>More projects</span><b>{more.length}</b><Icon name="chevron" size={13} /></summary>
+            <summary><span>{NAMES.moreRepositories}</span><b>{more.length}</b><Icon name="chevron" size={13} /></summary>
             {more.map(project => <RailProjectButton key={project.key} project={project} attention={attention} selectedKey={selectedKey} onOpenProject={onOpenProject} />)}
           </details>
         ) : null}
         <button type="button" className="co-rail-item is-all" onClick={() => onView('projects')} aria-current={!selectedKey && view === 'projects' ? 'page' : undefined}>
           <Icon name="search" size={15} />
-          <span className="co-rail-label">All projects</span>
+          <span className="co-rail-label">{NAMES.allRepositories}</span>
         </button>
         {addProject ? <div className="co-rail-add">{addProject}</div> : null}
       </nav>
@@ -93,7 +93,7 @@ export function DeskChips({ view, counts, onView }) {
           </button>
         )
       })}
-      <button type="button" className="co-desk-chips-projects" aria-pressed={view === 'projects'} onClick={() => onView('projects')}><Icon name="search" size={15} />All projects</button>
+      <button type="button" className="co-desk-chips-projects" aria-pressed={view === 'projects'} onClick={() => onView('projects')}><Icon name="search" size={15} />{NAMES.allRepositories}</button>
     </div>
   )
 }

@@ -101,7 +101,7 @@ function Header({ appId, fromCache, checking, onBack, children }) {
     <header className="co-header">
       <div className="co-header-main">
         {onBack ? (
-          <button type="button" className="co-header-back" onClick={onBack} aria-label="Back to projects"><Icon name="left" size={18} /><span>Projects</span></button>
+          <button type="button" className="co-header-back" onClick={onBack} aria-label="Back to repositories"><Icon name="left" size={18} /><span>{NAMES.repositories}</span></button>
         ) : (
           <>
             {iconFailed ? (

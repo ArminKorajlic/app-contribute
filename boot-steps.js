@@ -9,7 +9,7 @@ const plural = (count, one, many) => `${count} ${count === 1 ? one : many}`
 export function bootSteps({ ledgerReady, projectsReady, accountReady, accountConnected, pullsReady, runsReady, projectCount = 0, pullCount = 0 }) {
   const steps = [
     { key: 'saved', label: 'Prepared PRs', done: !!ledgerReady },
-    { key: 'projects', label: 'Projects', done: !!projectsReady, detail: projectsReady ? plural(projectCount, 'project', 'projects') : '' },
+    { key: 'projects', label: 'Repositories', done: !!projectsReady, detail: projectsReady ? plural(projectCount, 'repository', 'repositories') : '' },
     { key: 'account', label: 'GitHub account', done: !!accountReady },
     { key: 'pulls', label: 'Pull requests', done: !!pullsReady || !accountConnected, detail: pullsReady && accountConnected ? plural(pullCount, 'PR', 'PRs') : '' },
     { key: 'runs', label: 'Agent runs', done: !!runsReady },
