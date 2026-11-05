@@ -662,8 +662,9 @@ input[type=checkbox].co-switch:focus-visible { outline:2px solid var(--accent); 
 .co-rw-seen { position:relative; display:grid; }
 .co-rw-seen.is-public { --seen:#cf9526; }
 .co-rw-seen.is-private { --seen:var(--green); }
-.co-rw-seen-btn { display:grid; place-items:center; width:40px; padding:0; color:var(--seen); cursor:help; }
-.co-rw-seen-btn:hover,.co-rw-seen.is-pinned .co-rw-seen-btn { background:color-mix(in srgb,var(--seen) 14%,transparent); }
+/* The lock (green: nothing reaches GitHub) and the globe (amber: something does) keep their own colour over the quiet button's. */
+.co-btn.co-rw-seen-btn { display:grid; place-items:center; color:var(--seen); cursor:help; }
+.co-btn.co-rw-seen-btn:not(:disabled):hover,.co-rw-seen.is-pinned .co-btn.co-rw-seen-btn { color:var(--seen); background:color-mix(in srgb,var(--seen) 14%,transparent); }
 .co-rw-seen-card { position:absolute; z-index:3; top:calc(100% + 10px); right:0; width:min(300px,calc(100vw - 56px)); padding:12px 14px; border:1px solid color-mix(in srgb,var(--seen) 40%,var(--border)); border-radius:var(--co-radius-panel); background:var(--surface-2,var(--surface)); box-shadow:0 14px 36px rgba(0,0,0,.4); color:var(--text); font-size:var(--co-text-meta); line-height:1.5; opacity:0; visibility:hidden; transform:translateY(-4px); pointer-events:none; transition:opacity .14s ease,transform .14s ease,visibility 0s .14s; }
 .co-rw-seen-card::before { content:''; position:absolute; top:-6px; right:15px; width:10px; height:10px; border-top:1px solid color-mix(in srgb,var(--seen) 40%,var(--border)); border-left:1px solid color-mix(in srgb,var(--seen) 40%,var(--border)); background:var(--surface-2,var(--surface)); transform:rotate(45deg); }
 .co-rw-seen-btn:focus-visible + .co-rw-seen-card,.co-rw-seen.is-pinned .co-rw-seen-card { opacity:1; visibility:visible; transform:none; transition-delay:0s; }

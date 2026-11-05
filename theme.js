@@ -392,7 +392,8 @@ export const CSS = `
 }
 .co-project-diff-loading { display: flex; align-items: center; gap: 9px; }
 .co-project-diff-note { padding-top: 4px; }
-.co-project-files-toggle { display: flex; align-items: center; justify-content: center; gap: 7px; width: 100%; margin-top: 3px; padding: 7px; color: var(--accent); }
+.co-project-files-toggle { display: flex; align-items: center; justify-content: center; gap: 7px; width: 100%; margin-top: 3px; padding: 7px; }
+.co-btn.co-project-files-toggle { color: var(--accent); }
 .co-project-files-toggle .co-icon { transition: transform .16s ease; }
 .co-project-files-toggle[aria-expanded="true"] .co-icon { transform: rotate(180deg); }
 

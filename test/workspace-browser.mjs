@@ -1645,6 +1645,14 @@ window.runDeskFrameChecks = async () => {
     checks.push({ name: 'the Actions menu never starts its focus on a destructive choice', status: 'pass' })
     await click([...document.querySelectorAll('[role=menuitem]')].find(node => text(node.querySelector('strong')) === 'Review'))
     await until(() => review(), 'Review window did not open')
+    // The lock (green) or globe (amber) takes its colour from --seen: a quiet button's own colour must not win over it.
+    const seen = review().querySelector('.co-rw-seen'), seenButton = seen?.querySelector('.co-rw-seen-btn')
+    ensure(seenButton, 'The review window has no lock or globe')
+    seenButton.style.transition = 'none'
+    seen.style.setProperty('--seen', 'rgb(1, 2, 3)')
+    ensure(getComputedStyle(seenButton).color === 'rgb(1, 2, 3)', 'The lock or globe lost its colour: ' + getComputedStyle(seenButton).color)
+    seen.style.removeProperty('--seen')
+    checks.push({ name: 'the review window lock or globe keeps its green or amber', status: 'pass' })
     const start = () => [...review().querySelectorAll('button')].find(node => text(node).startsWith('Start'))
     await until(() => start() && !start().disabled, 'The review window never offered Start')
     await click(start())

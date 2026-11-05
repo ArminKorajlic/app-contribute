@@ -277,3 +277,11 @@ test('a row that cannot run dims its title, never its reason, and the menu never
   assert.match(menu, /:not\(\[aria-disabled=true\]\):not\(\[data-danger\]\)/)
   assert.match(menu, /querySelector\('\[role=menu\]'\)/, 'a menu with only a destructive choice focuses the menu, not the choice')
 })
+
+test('the lock and globe in a window head, and the files toggle, keep their own colour over the quiet button\'s', () => {
+  const css = ['workspace-theme.js', 'theme.js'].map(file => readFileSync(new URL(`../${file}`, import.meta.url), 'utf8')).join('\n')
+  // Same specificity as `.co-btn-quiet` loses to the later sheet, so these name `.co-btn` as well.
+  assert.match(css, /\.co-btn\.co-rw-seen-btn \{[^}]*color:var\(--seen\)/)
+  assert.match(css, /\.co-btn\.co-rw-seen-btn:not\(:disabled\):hover[^{]*\{[^}]*color:var\(--seen\)/)
+  assert.match(css, /\.co-btn\.co-project-files-toggle \{ color: var\(--accent\); \}/)
+})
