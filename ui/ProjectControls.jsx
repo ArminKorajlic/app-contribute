@@ -37,9 +37,9 @@ const UPSTREAM_ICON = { ok: 'check', warn: 'refresh', muted: 'info' }
 
 function LocalLine({ project, run, task }) {
   const local = localChangeSentence(project)
-  return <StatusLine icon="edit" title="Your edits" strong={local.strong} text={local.text} sub={local.sub || null}>
+  return <StatusLine icon="edit" title="Local changes" strong={local.strong} text={local.text} sub={local.sub || null}>
     {local.edits ? <>
-      <button type="button" className="co-btn" disabled={!run?.privateAction} onClick={() => task?.open('task:prepare')}><Icon name="prepare" size={15} />Make PRs from my edits</button>
+      <button type="button" className="co-btn" disabled={!run?.privateAction} onClick={() => task?.open('task:prepare')}><Icon name="prepare" size={15} />Make PRs from local changes</button>
       <button type="button" className="co-btn co-btn-icon" onClick={() => task?.open('task:files')} aria-label="See the files" title="See the files"><Icon name="review" size={16} /></button>
     </> : null}
   </StatusLine>
@@ -159,14 +159,14 @@ export function ProjectControls({ appId, token, project, run, onStart, loading, 
   const alert = error || cycle.error ? <div className="co-alert" role="alert"><strong>{cycle.phase === 'unknown' ? 'Couldn’t check work status' : 'Work needs attention'}</strong><p className="co-alert-text">{error || cycle.error}</p>{pendingRecovery}</div> : null
   const controls = <section className="co-local-work" aria-label={`Actions for ${project.name}`}>
     <style>{CYCLE_CSS}</style>
-    {local ? <div className="co-project-position" aria-label="Your edits and GitHub">
+    {local ? <div className="co-project-position" aria-label="Local changes and GitHub">
       <LocalLine project={project} run={run} task={task} />
       <UpstreamLine project={project} check={check} />
     </div> : null}
     {local ? <SourceConversations project={project} appId={appId} token={token} /> : null}
     <TaskPane id="task:prepare" dock={false}>
-      <h3>Make PRs from your edits</h3>
-      <p>An agent groups your edits into PRs and checks them. The PRs stay private on your Möbius. Nothing goes to GitHub until you press Send on each one.</p>
+      <h3>Make PRs from local changes</h3>
+      <p>An agent groups your local changes into PRs and checks them. The PRs stay private on your Möbius. Nothing goes to GitHub until you press Send on each one.</p>
       {cycle.phase === 'restoring' ? <p role="status">Checking existing work…</p> : null}
       {local ? <button type="button" className="co-prepare-scope" onClick={() => task?.open('task:scope')}><span><small>Includes</small><strong>{changedFiles ? `${changedFiles} edited ${changedFiles === 1 ? 'file' : 'files'}` : 'All your edits'}</strong></span><Icon name="right" size={16} /></button> : null}
       {fullCycleAction ? <label className="co-workflow-option co-follow-merge"><input type="checkbox" checked={follow} onChange={event => setFollow(event.target.checked)} /><span><strong>Follow through to merge</strong><small>Keep the agent with this change through review. You still approve sharing and merging.</small></span></label> : null}

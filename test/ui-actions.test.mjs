@@ -44,7 +44,7 @@ test('publication copy describes automatic GitHub identity without picker langua
   assert.doesNotMatch(feedSource, /Choose Personal GitHub|Möbius relay supports standalone drafts/)
   assert.match(feedSource, /stageWords\(stage\)\.description/)
   assert.match(stageWords('draft').description + stageWords('ready').description, /your connected GitHub account/)
-  assert.match(sourceMapSource, /\['local', 'With your edits'\]/)
+  assert.match(sourceMapSource, /\['local', 'With local changes'\]/)
   assert.match(sourceMapSource, /\['updates', 'Behind GitHub'\]/)
 })
 
@@ -141,7 +141,7 @@ test('global app handoffs stay durable while source-linked work returns to its c
   assert.doesNotMatch(sourceMapSource, /<AgentHandoffButton/)
   assert.match(sourceMapSource, /renderActivity\?\.\(project, navigation\)/)
   assert.match(feedSource, /function SourceChatChoices/)
-  assert.match(controlsSource, /Make PRs from my edits/)
+  assert.match(controlsSource, /Make PRs from local changes/)
   assert.match(controlsSource, /Open current conversation/)
   assert.match(appSource, /const onFeedback = useCallback/)
   assert.match(appSource, /type: 'moebius:open-chat', chatId: rec\.chat_id, draft \},[\s\S]{0,20}'\*'\)/)
@@ -191,7 +191,7 @@ test('contribution details retain their project parent and refresh only source d
 test('preparation runs as one cycle while every public send stays explicit', () => {
   assert.doesNotMatch(feedSource, /PrivateRunAction|<AgentHandoffButton/)
   assert.match(controlsSource, /start\(run.privateAction, prepareAgent\)/)
-  assert.match(controlsSource, /An agent groups your edits into PRs and checks them\. The PRs stay private on your Möbius\./)
+  assert.match(controlsSource, /An agent groups your local changes into PRs and checks them\. The PRs stay private on your Möbius\./)
   assert.match(cardSource, /<span>\{sending \? 'Sending…' : \(isUpdate \? 'Send update' : 'Send PR'\)\}<\/span>/)
   assert.match(feedSource, /role="alertdialog"/)
   assert.match(feedSource, /Nothing merges\./)
@@ -304,7 +304,7 @@ test('Projects owns vertical scrolling and makes every row visibly navigable', (
 test('one scoped control surface starts private preparation without leaving the project', () => {
   assert.match(appSource, /<ProjectControls[\s\S]*projectProgress=\{progress\}/)
   assert.match(controlsSource, /start\(run.privateAction, prepareAgent\)/)
-  assert.match(controlsSource, /<h3>Make PRs from your edits<\/h3>/)
+  assert.match(controlsSource, /<h3>Make PRs from local changes<\/h3>/)
   assert.match(appSource, /recordsForProject\(records, project\)/)
   assert.match(appSource, /onStart=\{startAgentTask\}/)
   assert.match(themeSource, /\.co-project-controls \{/)

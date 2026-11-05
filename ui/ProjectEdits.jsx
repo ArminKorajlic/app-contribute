@@ -62,10 +62,10 @@ export function ProjectFileChanges({ project, loadProjectDiff, onRefresh }) {
 export function ProjectEdits({ project, run, loadProjectDiff, onRefresh }) {
   const task = useProjectTask()
   const sentence = deskEditsSentence(project)
-  return <section className="co-project-edits" aria-label="Your edits">
+  return <section className="co-project-edits" aria-label="Local changes">
     <div className="co-edits-head">
       <p><strong>{sentence.strong}</strong>{sentence.text}{sentence.sub ? <small>{sentence.sub}</small> : null}</p>
-      <button type="button" className="co-btn" disabled={!run?.privateAction} onClick={() => task?.open('task:prepare')}><Icon name="prepare" size={15} />Make PRs from my edits</button>
+      <button type="button" className="co-btn" disabled={!run?.privateAction} onClick={() => task?.open('task:prepare')}><Icon name="prepare" size={15} />Make PRs from local changes</button>
     </div>
     <ProjectFileChanges project={project} loadProjectDiff={loadProjectDiff} onRefresh={onRefresh} />
   </section>

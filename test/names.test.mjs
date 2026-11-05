@@ -13,7 +13,8 @@ const sources = [...readdirSync(root).filter(name => /\.(js|jsx)$/.test(name)),
 // Names the app used for one meaning before the standard names list (critique, 2026-11-05).
 const RETIRED = ['Mark ready', 'Review and send', 'Re-review', 'Start again', 'Source chat', 'Saved work',
   'Review chats', 'review conversation', 'Check my PR', 'Address feedback', 'Close PR', 'Contribution actions',
-  'Contribution approval', 'Refresh PR list', 'Refresh checks', 'Refresh Contribute']
+  'Contribution approval', 'Refresh PR list', 'Refresh checks', 'Refresh Contribute', 'Your edits', 'My work', 'PR reviews',
+  'To confirm', 'Merged this week', 'Make PRs from my edits']
 
 // Screen text: a quoted string or JSX text. Comments may still name the old words.
 const screenText = line => !/^\s*(\/\/|\*|\/\*)/.test(line)

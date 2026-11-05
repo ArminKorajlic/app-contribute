@@ -152,7 +152,7 @@ test('SSR local preparation remains inventory when another task owns the outlet'
   const props = { project, run: { privateAction: { title: 'Prepare', draft: 'Private preparation' } }, cycle: { phase: 'idle' } }
   const html = ui.render('ProjectControls', props, { activeId: 'task:review', host: null })
   assert.match(html, /1 file<\/strong> changed on this Möbius\./)
-  assert.match(html, /Your edits and GitHub/)
+  assert.match(html, /Local changes and GitHub/)
   assert.match(html, /See the files/)
   assert.doesNotMatch(html, /Check &amp; update safely/)
   assert.equal(ui.render('TaskPane', { id: 'task:prepare', children: 'Task body' }, { activeId: 'task:review', host: null }), '')
@@ -165,7 +165,7 @@ test('SSR preparation checks its own durable conversation before offering anothe
   const privateAction = { title: 'Prepare', draft: 'Private preparation' }
   const html = ui.render('ProjectControls', { project, run: { privateAction }, mergeRun: { privateAction } })
   assert.match(html, /role="status"/)
-  assert.match(html, /Make PRs from my edits/)
+  assert.match(html, /Make PRs from local changes/)
   assert.match(html, /Checking existing work/ )
   assert.match(html, /disabled=""/) // no agent action until the saved project conversation is checked
 })

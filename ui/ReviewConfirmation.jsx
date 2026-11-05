@@ -27,7 +27,7 @@ function Switch({ checked, disabled, label, detail, onChange }) {
 // tap; "Agent posts" lets the agent send its verdict itself, and only when you pick it.
 const WHO = [
   ['private', 'Only me', 'It writes its findings for you. Nothing reaches GitHub.'],
-  ['draft', 'Draft for me', 'It drafts approve, request changes or comment with its wording. Nothing is posted until you send it. It waits under To confirm.'],
+  ['draft', 'Draft for me', 'It drafts approve, request changes or comment with its wording. Nothing is posted until you send it. It waits under Needs you.'],
   ['agent', 'Agent posts', 'It posts its verdict from your account: approve, request changes or comment. You allowed it here, for this review only.'],
 ]
 export const WHO_OPTIONS = {

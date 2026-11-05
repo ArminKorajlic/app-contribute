@@ -1599,7 +1599,8 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
     records,
     login: conn.login || '',
     reviews: reviewList.counts,
-  }), [sourceProjects, contributionRun, incomingReviews, records, conn.login, reviewList.counts])
+    reviewEntries: reviewList.entries,
+  }), [sourceProjects, contributionRun, incomingReviews, records, conn.login, reviewList.counts, reviewList.entries])
   const desk = {
     view: deskView,
     onView: setDeskView,
@@ -1820,7 +1821,7 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
           onProjectOpenChange={setProjectOpen}
           conn={conn} loading={sourceLoading} error={sourceError}
           onRetry={refreshAll} checks={upstreamChecks} attention={projectAttention} loadProjectDiff={loadProjectDiff}
-          repositoryPicker={<RepositoryPicker token={token} connected={conn.state === 'connected'} onAdded={(repo, followed) => {
+          addProject={quiet => <RepositoryPicker quiet={quiet} token={token} connected={conn.state === 'connected'} onAdded={(repo, followed) => {
             setFollowedRepos(followed)
             setRepositoryAccess(old => ({ ...old, repositories: [...old.repositories.filter(item => item.nameWithOwner.toLowerCase() !== repo.nameWithOwner.toLowerCase()), repo] }))
             setProjectFocus({ key: sourceProjects.find(project => project.canonical_repo?.toLowerCase() === repo.nameWithOwner.toLowerCase())?.key || 'external:' + repo.nameWithOwner.toLowerCase(), nonce: crypto.randomUUID() })

@@ -1,4 +1,4 @@
-import { DESK_VIEWS, needsCount, railBadge, splitProjects } from '../desk.js'
+import { DESK_VIEWS, NEEDS_CHIPS, railBadge, splitProjects } from '../desk.js'
 import { Icon } from './Icons.jsx'
 import { ProjectIcon } from './ProjectIcon.jsx'
 import { NAMES } from '../names.js'
@@ -10,12 +10,13 @@ export function projectRailCount(project, attention) {
   return attention?.[project.key] || 0
 }
 
-// Only these views are things waiting on the owner; the rest are information
-// and show a quiet number, so a badge always means "do something".
-const WAITING_ON_YOU = ['needs', 'confirm', 'requests', 'work', 'reviews']
+// Only Needs you and Review requests wait on the owner; the others show a quiet
+// number, so a purple badge always means "do something".
+const WAITING_ON_YOU = ['needs', 'requests']
 
 function RailViewButton({ view, current, counts, onView }) {
   const badge = railBadge(view.key, counts)
+  const running = view.key === 'runs' && badge
   return (
     <button
       type="button" className="co-rail-item" aria-current={current === view.key ? 'page' : undefined}
@@ -23,10 +24,10 @@ function RailViewButton({ view, current, counts, onView }) {
     >
       <Icon name={view.icon} size={16} />
       <span className="co-rail-label">{view.label}</span>
-      {view.key === 'reviews' && counts.reviewsRunning ? <span className="co-arc" role="status" aria-label={`${counts.reviewsRunning} ${counts.reviewsRunning === 1 ? 'review' : 'reviews'} running`} /> : null}
+      {running ? <span className="co-arc" aria-hidden="true" /> : null}
       {badge ? (WAITING_ON_YOU.includes(view.key)
         ? <b className="co-rail-count is-you">{badge}</b>
-        : <span className="co-rail-quiet" title={view.key === 'edits' ? `${badge} edited ${badge === 1 ? 'file' : 'files'}` : undefined}>{badge}</span>) : null}
+        : <span className="co-rail-total">{running ? `${badge} running` : badge}</span>) : null}
     </button>
   )
 }
@@ -45,35 +46,37 @@ function RailProjectButton({ project, attention, selectedKey, onOpenProject }) {
   )
 }
 
-// The desktop side list: one place that answers "what should I look at" and
-// "which project". On narrow screens CSS hides it; DeskChips takes over.
-export function DeskRail({ view, counts, projects, attention, selectedKey, onView, onOpenProject, repositoryPicker }) {
+// The desktop side list: four views, then the projects as a block of their own
+// (finding 2). Quiet apps, local-only apps and repositories not installed here fold
+// into one "More projects" row; Add project is the block's last row (finding 12).
+// On narrow screens CSS hides it and DeskChips takes over.
+export function DeskRail({ view, counts, projects, attention, selectedKey, onView, onOpenProject, addProject = null }) {
   const groups = splitProjects(projects, attention)
+  const more = [...groups.quiet, ...groups.external]
+  const moreOpen = more.some(project => project.key === selectedKey)
   return (
-    <nav className="co-rail" aria-label="Contribute views">
-      {DESK_VIEWS.map(item => <RailViewButton key={item.key} view={item} current={selectedKey ? '' : view} counts={counts} onView={onView} />)}
-      <div className="co-rail-head">Projects</div>
-      {[...groups.active, ...groups.builtHere].map(project => (
-        <RailProjectButton key={project.key} project={project} attention={attention} selectedKey={selectedKey} onOpenProject={onOpenProject} />
-      ))}
-      {groups.quiet.length ? (
-        <details className="co-rail-quiet">
-          <summary><span>Apps with nothing to do</span><b>{groups.quiet.length}</b><Icon name="chevron" size={13} /></summary>
-          {groups.quiet.map(project => <RailProjectButton key={project.key} project={project} attention={attention} selectedKey={selectedKey} onOpenProject={onOpenProject} />)}
-        </details>
-      ) : null}
-      {groups.external.length ? (
-        <details className="co-rail-quiet">
-          <summary><span>On GitHub, not installed</span><b>{groups.external.length}</b><Icon name="chevron" size={13} /></summary>
-          {groups.external.map(project => <RailProjectButton key={project.key} project={project} attention={attention} selectedKey={selectedKey} onOpenProject={onOpenProject} />)}
-        </details>
-      ) : null}
-      <button type="button" className="co-rail-item is-all" onClick={() => onView('projects')} aria-current={!selectedKey && view === 'projects' ? 'page' : undefined}>
-        <Icon name="search" size={15} />
-        <span className="co-rail-label">All projects</span>
-      </button>
-      {repositoryPicker ? <div className="co-rail-picker">{repositoryPicker}</div> : null}
-    </nav>
+    <div className="co-rail">
+      <nav className="co-rail-views" aria-label="Contribute views">
+        {DESK_VIEWS.map(item => <RailViewButton key={item.key} view={item} current={selectedKey ? '' : view} counts={counts} onView={onView} />)}
+      </nav>
+      <nav className="co-rail-projects" aria-labelledby="co-rail-projects-head">
+        <h2 className="co-rail-head" id="co-rail-projects-head">Projects</h2>
+        {[...groups.active, ...groups.builtHere].map(project => (
+          <RailProjectButton key={project.key} project={project} attention={attention} selectedKey={selectedKey} onOpenProject={onOpenProject} />
+        ))}
+        {more.length ? (
+          <details className="co-rail-quiet" open={moreOpen || undefined}>
+            <summary><span>More projects</span><b>{more.length}</b><Icon name="chevron" size={13} /></summary>
+            {more.map(project => <RailProjectButton key={project.key} project={project} attention={attention} selectedKey={selectedKey} onOpenProject={onOpenProject} />)}
+          </details>
+        ) : null}
+        <button type="button" className="co-rail-item is-all" onClick={() => onView('projects')} aria-current={!selectedKey && view === 'projects' ? 'page' : undefined}>
+          <Icon name="search" size={15} />
+          <span className="co-rail-label">All projects</span>
+        </button>
+        {addProject ? <div className="co-rail-add">{addProject}</div> : null}
+      </nav>
+    </div>
   )
 }
 
@@ -93,25 +96,26 @@ export function DeskChips({ view, counts, onView }) {
   )
 }
 
-// Clickable counts under the heading: each one names the next step and jumps
-// to the view that holds it.
-export function DeskCounts({ counts, onView }) {
-  const chips = [
-    counts.questions ? { label: 'To look at', count: counts.questions, view: 'work', you: true } : null,
-    { label: 'Review', count: counts.requests, view: 'requests', you: true },
-    { label: 'Merge', count: counts.merge, view: 'mine' },
-    { label: 'Fix', count: counts.fix, view: 'mine' },
-    counts.drafts ? { label: NAMES.openForReview, count: counts.drafts, view: 'work' } : null,
-    counts.editedFiles ? { label: NAMES.localChanges, count: `${counts.editedFiles} files`, view: 'edits' } : null,
-  ].filter(chip => chip && (chip.count === undefined || chip.count !== 0))
-  if (!chips.length) return null
-  return (
-    <div className="co-desk-counts" role="group" aria-label="What needs you, by next step">
-      {chips.map(chip => (
-        <button key={chip.label + chip.view} type="button" onClick={() => onView(chip.view)}>
-          <b>{chip.count}</b>{chip.label}
-        </button>
-      ))}
-    </div>
-  )
+// The Needs you chips: one per next step, each filtering the list to its rows.
+// Their sum is the rail badge. Drafts ready to open are not urgent, so they are a
+// quiet line under the chips, not a number in them (finding 5).
+export function DeskCounts({ counts, filter = '', onFilter, onView }) {
+  const chips = NEEDS_CHIPS.map(chip => ({ ...chip, value: chip.count(counts) })).filter(chip => chip.value)
+  return <>
+    {chips.length ? (
+      <div className="co-desk-counts" role="group" aria-label="What needs you, by next step">
+        {chips.map(chip => (
+          <button key={chip.key} type="button" aria-pressed={filter === chip.key} onClick={() => onFilter(filter === chip.key ? '' : chip.key)}>
+            <b>{chip.value}</b>{chip.label}
+          </button>
+        ))}
+      </div>
+    ) : null}
+    {counts.drafts ? (
+      <p className="co-desk-quiet-line">
+        {counts.drafts === 1 ? 'One draft is ready to open for review.' : `${counts.drafts} drafts are ready to open for review.`}
+        <button type="button" className="co-btn co-btn-quiet" onClick={() => onView('mine')}>See drafts</button>
+      </p>
+    ) : null}
+  </>
 }

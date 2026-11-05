@@ -266,7 +266,7 @@ test('projects contain their contribution flow without a separate Reviews destin
   assert.match(feedSource, />Finished and closed work</)
   assert.match(feedSource, /DECISION_ACTION_LABELS/)
   assert.match(sourceMapSource, /placeholder="Find a project"/)
-  assert.match(sourceMapSource, /\['local', 'With your edits'\]/)
+  assert.match(sourceMapSource, /\['local', 'With local changes'\]/)
   assert.equal((sourceMapSource.match(/\['all', 'All'\]/g) || []).length, 1)
 })
 

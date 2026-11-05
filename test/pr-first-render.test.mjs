@@ -206,7 +206,7 @@ test('Review starts private and offers who sees it; Review and merge asks only w
   assert.match(privateHtml, /Start private review/)
   const drafting = await render(t, 'ReviewConfirmation', { choice:{ pulls:[pr], mode:'review', intent:'review', options:{ post_review:true, propose_verdict:true } }, capabilities:caps, onModeChange:()=>{}, onOptionsChange:()=>{} })
   assert.match(drafting, /aria-checked="true" class="is-on"[^>]*>Draft for me</)
-  assert.match(drafting, /Nothing is posted until you send it\. It waits under To confirm/)
+  assert.match(drafting, /Nothing is posted until you send it\. It waits under Needs you/)
   assert.doesNotMatch(drafting, /Agent posts/, 'the agent-posts choice needs the served capability')
   assert.match(drafting, /Start review, draft a verdict for me/)
   const agent = await render(t, 'ReviewConfirmation', { choice:{ pulls:[pr], mode:'review', intent:'review', options:{ post_review:true, propose_verdict:true, agent_submits_verdict:true } }, capabilities:{ ...caps, agent_submits_verdict:true }, onModeChange:()=>{}, onOptionsChange:()=>{} })

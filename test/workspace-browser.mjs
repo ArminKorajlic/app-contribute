@@ -479,10 +479,10 @@ window.runWorkspaceChecks = async () => {
     await check('project directory uses wrapped filter buttons instead of a dropdown or scroller', async () => {
       const filters=query('.co-directory-filters'), filterButtons=[...filters.querySelectorAll('button')]
       ensure(filters && !query('.co-directory-filter select') && !query('.co-lens-nav'), 'Project filters did not use the compact button group')
-      ensure(filterButtons.map(node => text(node)).join('|')==='All|With your edits2|Behind GitHub0', 'Project filter choices or counts drifted')
+      ensure(filterButtons.map(node => text(node)).join('|')==='All|With local changes2|Behind GitHub0', 'Project filter choices or counts drifted')
       ensure(button('All',filters).getAttribute('aria-pressed')==='true', 'The active project filter is not exposed')
       await click(query('.co-source-row'))
-      await until(() => document.querySelectorAll('.co-pr-row').length === 2 && button('Make PRs from my edits') && !button('Make PRs from my edits').disabled, 'Project did not settle')
+      await until(() => document.querySelectorAll('.co-pr-row').length === 2 && button('Make PRs from local changes') && !button('Make PRs from local changes').disabled, 'Project did not settle')
       ensure(query('.co-workspace-inventory') && !query('.co-task-content'), 'Opening a project displayed task work')
       ensure(!query('.co-task-content') && calls.starts.length === 0 && mutationRequests().length === 0, 'Opening project started work or opened an action')
     })
@@ -494,7 +494,7 @@ window.runWorkspaceChecks = async () => {
     const inventoryNavigationDepth = navigation.length
     await check('project tabs lead with All PRs, whose filter menu offers each view and change totals stay visible', async () => {
       const tabs=[...document.querySelectorAll('[role=tab]')].map(node => text(node).replace(/\d+$/, ''))
-      ensure(tabs.join('|')==='All PRs|Review requests|My work','Project tabs drifted: '+tabs.join('|'))
+      ensure(tabs.join('|')==='All PRs|Review requests|Agent runs','Project tabs drifted: '+tabs.join('|'))
       ensure([...document.querySelectorAll('[role=tab]')][0].getAttribute('aria-selected')==='true','All PRs is not the default tab')
       const select=query('.co-pr-filter-select')
       ensure(select && [...select.options].map(node => text(node)).join('|')==='Show: all|Show: unassigned|Show: assigned|Show: opened by me','PR filter choices drifted')
@@ -778,7 +778,7 @@ window.runWorkspaceChecks = async () => {
     })
     await check('dismissed work is discoverable without a link and only explicit Restore changes its local state', async () => {
       const before=mutationRequests().length, publications=calls.publications.length
-      await openTab('My work')
+      await openTab('Agent runs')
       const archive=query('.co-run-fold.is-recent')
       ensure(archive && !archive.open,'Dismissed contributions have no collapsed discovery route')
       await click(archive.querySelector('summary'))
@@ -843,7 +843,7 @@ window.runWorkspaceChecks = async () => {
       await inventory()
     })
     await check('source conversation scope loads lazily and remains separate from project preparation', async () => {
-      await click(button('Make PRs from my edits'))
+      await click(button('Make PRs from local changes'))
       await until(() => query('[data-task="task:prepare"]'),'Preparation did not open')
       const scope = query('.co-prepare-scope')
       ensure(text(scope).includes('1 edited file'),'Preparation did not show the collocated file scope')
@@ -865,7 +865,7 @@ window.runWorkspaceChecks = async () => {
       ensure(calls.starts.length===1 && calls.starts[0].draft.includes('app:fixture') && !calls.starts[0].draft.includes('app:other'),'Duplicate or wrong scope')
       await chooseProject('Other project'); ensure(!button('Open conversation'),'Other project inherited progress')
       await chooseProject('Fixture project')
-      await openTab('My work')
+      await openTab('Agent runs')
       await until(() => text(query('.co-work-progress-row')).includes('Agent working'),'Saved task did not restore')
       await click(query('.co-work-progress-row'))
       await until(() => button('Open current conversation',query('[data-task="task:cycle"]')),'Saved conversation unavailable')
@@ -874,18 +874,18 @@ window.runWorkspaceChecks = async () => {
     await check('losing merge rights hides new cycle starts but keeps current work and history visible', async () => {
       window.setProjectsFixture(old => old.map(project => project.key === 'app:fixture' ? { ...project, viewerPermission: 'READ' } : project))
       await chooseProject('Other project'); await chooseProject('Fixture project')
-      await openTab('My work')
+      await openTab('Agent runs')
       await until(() => text(query('.co-work-progress-row')).includes('Agent working'), 'Current work hidden without merge rights')
       await click(query('.co-work-progress-row'))
       const pane = () => query('[data-task="task:cycle"]')
       await until(() => pane() && button('Open current conversation', pane()), 'Cycle status hidden without merge rights')
       ensure(!button('Start fresh full merge cycle', pane()), 'A read-only project offered a new merge cycle')
-      await click(button('Make PRs from my edits'))
+      await click(button('Make PRs from local changes'))
       ensure(!text(query('[data-task="task:prepare"]')).includes('Follow through to merge'), 'A read-only project offered follow-through to merge')
       window.setProjectsFixture(old => old.map(project => project.key === 'app:fixture' ? { ...project, viewerPermission: 'WRITE' } : project))
     })
     await check('effort choices are 44px targets on every viewport', async () => {
-      await chooseProject('Other project'); await click(button('Make PRs from my edits'))
+      await chooseProject('Other project'); await click(button('Make PRs from local changes'))
       await until(() => query('[data-task="task:prepare"] .co-agent-trigger'), 'Make PRs launch did not open')
       const pane = query('[data-task="task:prepare"]')
       await click(pane.querySelector('.co-agent-trigger'))
@@ -914,14 +914,14 @@ window.runWorkspaceChecks = async () => {
       const starts = calls.starts.length
       window.lostStart = true
       const startIn = () => button('Start', query('[data-task="task:prepare"]'))
-      await click(button('Make PRs from my edits')); await until(() => startIn() && !startIn().disabled, 'Make PRs did not settle')
+      await click(button('Make PRs from local changes')); await until(() => startIn() && !startIn().disabled, 'Make PRs did not settle')
       await click(startIn())
-      await openTab('My work')
+      await openTab('Agent runs')
       await until(() => text(query('.co-work-progress-row')).includes('A start needs sending'), 'An unconfirmed start was not offered again')
       const original = calls.starts.at(-1)
       window.lostStart = false
       await chooseProject('Fixture project'); await chooseProject('Third project')
-      await openTab('My work')
+      await openTab('Agent runs')
       await until(() => text(query('.co-work-progress-row')).includes('A start needs sending'), 'The saved cycle was lost on reload')
       await click(query('.co-work-progress-row'))
       await enabled('Send again')
@@ -937,7 +937,7 @@ window.runWorkspaceChecks = async () => {
       const before=mutationRequests().length, starts=calls.starts.length
       const pane=()=>query('[data-task="task:prepare"]'), start=()=>button('Start', pane())
       ensure(!button('Pull updates') && !button('Start pull'),'Contribute still offered its own pull')
-      await click(button('Make PRs from my edits'))
+      await click(button('Make PRs from local changes'))
       await until(()=>start() && !start().disabled,'Make PRs action did not settle')
       ensure(calls.starts.length===starts && mutationRequests().length===before,'Opening preparation started or published work')
       window.failStart=true; await click(start())
@@ -963,7 +963,7 @@ window.runWorkspaceChecks = async () => {
     const historyEntry = id => query('[data-review-run="'+id+'"]')
     const historyFold = () => query('.co-review-history')
     async function openHistory() {
-      await openTab('My work')
+      await openTab('Agent runs')
       await until(()=>historyFold(),'Project review conversations are undiscoverable')
       if(!historyFold().open) await click(historyFold().querySelector('summary'))
     }
@@ -1032,7 +1032,7 @@ window.runWorkspaceChecks = async () => {
       window.fixtureChangedHead=true
       await click(checkButton())
       await until(()=>text(historyEntry('saved-needs')).includes('Older PR version'),'Changed-head review was hidden or shown as current')
-      // Searching PRs on All PRs never hides saved reviews in My work.
+      // Searching PRs on All PRs never hides saved reviews in Agent runs.
       await openTab('All PRs'); await fill(query('[aria-label="Find a pull request"]'),'no matching pull')
       await openSavedRun('saved-needs','Older PR version')
       await openTab('All PRs'); await fill(query('[aria-label="Find a pull request"]'),'')

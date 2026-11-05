@@ -3,7 +3,8 @@ import { discoverRepository } from '../collaboration.js'
 import { followRepository } from '../repositories.js'
 import { Icon } from './Icons.jsx'
 
-export function RepositoryPicker({ token, connected, onAdded }) {
+// `quiet`: the last row of the rail's Projects block; otherwise a secondary button (an empty state).
+export function RepositoryPicker({ token, connected, onAdded, quiet = false }) {
   const [value, setValue] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -33,7 +34,7 @@ export function RepositoryPicker({ token, connected, onAdded }) {
     finally { setBusy(false) }
   }
   return <div className={'co-repository-picker' + (open ? ' is-open' : '')} ref={rootRef}>
-    <button type="button" className="co-btn co-repository-trigger" aria-expanded={open} onClick={() => setOpen(value => !value)}><Icon name="plus" size={16} /><span>Add project</span></button>
+    <button type="button" className={'co-btn co-repository-trigger' + (quiet ? ' co-btn-quiet' : '')} aria-expanded={open} onClick={() => setOpen(value => !value)}><Icon name="plus" size={16} /><span>Add project</span></button>
     {open ? connected ? <form onSubmit={add}>
       <header><strong>Add a GitHub repository</strong><button type="button" className="co-btn co-btn-quiet" onClick={() => setOpen(false)}><Icon name="close" size={17} /> Close</button></header>
       <label htmlFor="co-repository-name">Repository name or link</label>

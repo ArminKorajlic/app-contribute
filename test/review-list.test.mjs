@@ -106,13 +106,14 @@ test('every PR is read live in batches of 25, one batch after another, and only 
   } finally { globalThis.fetch = previous }
 })
 
-test('PR reviews is a view of its own: its badge counts what waits on you, a spinner marks agents at work', () => {
-  assert.ok(DESK_VIEWS.some(view => view.key === 'reviews' && view.label === 'PR reviews'))
-  assert.equal(railBadge('reviews', { reviewsWaiting: 2 }), 2)
-  assert.equal(railBadge('reviews', {}), 0)
-  const counts = deskCounts({ reviews: { waiting: 1, running: 3, stalled: 0, done: 9 } })
-  assert.deepEqual([counts.reviewsWaiting, counts.reviewsRunning], [1, 3])
-  assert.deepEqual([deskCounts().reviewsWaiting, deskCounts().reviewsRunning], [0, 0])
+test('Agent runs is a view of its own: its badge says how many agents are running; a run waiting on you counts in Needs you', () => {
+  assert.ok(DESK_VIEWS.some(view => view.key === 'runs' && view.label === 'Agent runs'))
+  assert.equal(railBadge('runs', { reviewsRunning: 3 }), 3)
+  assert.equal(railBadge('runs', {}), 0)
+  const entries = [row(7, 'o/r', 'waiting', []), row(8, 'o/r', 'running', []), row(9, 'o/r', 'done', [])]
+  const counts = deskCounts({ reviews: { running: 1 }, reviewEntries: entries })
+  assert.deepEqual([counts.agent, counts.reviewsRunning, counts.reviewsFinished], [1, 1, 2])
+  assert.deepEqual([deskCounts().agent, deskCounts().reviewsRunning], [0, 0])
 })
 
 import { frontendModules, renderModule } from './render-harness.mjs'
@@ -133,9 +134,9 @@ const projects = [
 ]
 const row = (number, repo, bucket, chips, extra = {}) => ({ id: reviewKey(repo, number), at: 1, bucket, chips, run: { created_at: '2026-11-03T22:00:00Z' }, item: { repo, number, title: `Review of ${number}`, ...extra } })
 const reviews = (entries, checking = false) => ({ entries, checking, counts: reviewCounts(entries) })
-const base = { view: 'reviews', projects, records: [], login: 'owner', decisionsFor: () => [], lastLooked: '', query: '', runs: [], onOpenProject() {}, onOpenPull() {} }
+const base = { view: 'runs', projects, records: [], login: 'owner', decisionsFor: () => [], lastLooked: '', query: '', runs: [], onOpenProject() {}, onOpenPull() {} }
 
-test('PR reviews groups what is still going by project, with what waits on you first, and keeps Done on its own tab', async t => {
+test('Agent runs puts what is running first, and keeps everything else, waiting on you first, on Finished', async t => {
   if (!frontendModules) return t.skip('MOBIUS_FRONTEND_NODE_MODULES is required')
   const { view } = await screens()
   const entries = [
@@ -144,42 +145,50 @@ test('PR reviews groups what is still going by project, with what waits on you f
     row(239, 'mobius-os/mobius.you', 'done', [{ label: 'Approved', tone: 'good' }]),
   ]
   const html = view({ ...base, reviews: reviews(entries) })
-  assert.match(html, /aria-pressed="true">In progress<span class="co-pr-filter-count">2<\/span>/)
-  assert.match(html, /aria-pressed="false">Done<span class="co-pr-filter-count">1<\/span>/)
-  assert.ok(html.indexOf('Review of 2005') < html.indexOf('Review of 2021'), 'waiting on you leads, then agents at work')
-  assert.match(html, /co-desk-chip is-waiting">Needs you/)
+  assert.match(html, /aria-pressed="true">Running<span class="co-pr-filter-count">1<\/span>/)
+  assert.match(html, /aria-pressed="false">Finished<span class="co-pr-filter-count">2<\/span>/)
+  assert.match(html, /Review of 2021/)
   assert.match(html, /co-desk-chip is-you">Reviewing/)
-  assert.doesNotMatch(html, /Review of 239/, 'finished reviews are on the Done tab')
+  assert.doesNotMatch(html, /Review of 2005|Review of 239/, 'finished and waiting runs are on the Finished tab')
   assert.match(html, /aria-label="Möbius"/)
-  assert.doesNotMatch(html, /aria-label="mobius\.you"/, 'a project with nothing in progress has no card')
+  assert.doesNotMatch(html, /aria-label="mobius\.you"/, 'a project with nothing running has no card')
 })
 
-test('with nothing in progress the page opens on Done, and a repository the desk does not know still gets its card', async t => {
+test('with nothing running the page opens on Finished, waiting on you first, and a PR run is never left out', async t => {
+  if (!frontendModules) return t.skip('MOBIUS_FRONTEND_NODE_MODULES is required')
+  const { view } = await screens()
+  const finished = view({ ...base, reviews: reviews([row(239, 'mobius-os/mobius.you', 'done', [{ label: 'Approved', tone: 'good' }]), row(2005, 'mobius-os/mobius', 'waiting', [{ label: 'Needs you', tone: 'owner' }])]) })
+  assert.match(finished, /aria-pressed="true">Finished<span class="co-pr-filter-count">2<\/span>/)
+  assert.ok(finished.indexOf('Review of 2005') < finished.indexOf('Review of 239'), 'waiting on you leads')
+  assert.match(finished, /co-desk-chip is-waiting">Needs you/)
+})
+
+test('a repository the desk does not know still gets its card on Agent runs', async t => {
   if (!frontendModules) return t.skip('MOBIUS_FRONTEND_NODE_MODULES is required')
   const { view } = await screens()
   const html = view({ ...base, reviews: reviews([row(239, 'mobius-os/mobius.you', 'done', [{ label: 'Approved', tone: 'good' }]), row(5, 'someone/else', 'done', [{ label: 'Review clear', tone: 'good' }])]) })
-  assert.match(html, /aria-pressed="true">Done<span class="co-pr-filter-count">2<\/span>/)
+  assert.match(html, /aria-pressed="true">Finished<span class="co-pr-filter-count">2<\/span>/)
   assert.match(html, /aria-label="mobius\.you"/)
   assert.match(html, /aria-label="someone\/else"/)
   assert.match(html, /co-desk-chip is-ready">Approved/)
-  assert.match(view({ ...base, reviews: reviews([]) }), /No finished reviews yet/)
+  assert.match(view({ ...base, reviews: reviews([]) }), /No finished agent runs yet/)
   assert.match(view({ ...base, query: 'zzz', reviews: reviews([row(239, 'mobius-os/mobius.you', 'done', [])]) }), /Nothing matches your search/)
   assert.match(view({ ...base, reviews: reviews([row(1, 'o/r', 'checking', [])], true) }), /Checking which of these pull requests are still open/)
 })
 
-test('a long history folds behind Show earlier, and the rail names the view with its waiting count and a spinner while agents work', async t => {
+test('a long history folds behind Show earlier, and the rail names Agent runs with a spinner while agents work', async t => {
   if (!frontendModules) return t.skip('MOBIUS_FRONTEND_NODE_MODULES is required')
   const { view, rail } = await screens()
   const many = Array.from({ length: 11 }, (_, index) => row(100 + index, 'mobius-os/mobius', 'done', [{ label: 'Approved', tone: 'good' }]))
   const html = view({ ...base, reviews: reviews(many) })
   assert.match(html, /Show 3 earlier/)
   assert.equal((html.match(/co-desk-row"/g) || []).length, 8)
-  const sidebar = rail({ view: 'reviews', counts: { reviewsWaiting: 2, reviewsRunning: 1 }, projects: [], attention: {}, selectedKey: '', onView() {}, onOpenProject() {} })
-  assert.match(sidebar, /PR reviews/)
-  assert.match(sidebar, /co-arc[^>]*aria-label="1 review running"/)
-  assert.match(sidebar, /co-rail-count is-you">2</)
+  const sidebar = rail({ view: 'runs', counts: { reviewsRunning: 1 }, projects: [], attention: {}, selectedKey: '', onView() {}, onOpenProject() {} })
+  assert.match(sidebar, /Agent runs/)
+  assert.match(sidebar, /co-arc/)
+  assert.match(sidebar, /co-rail-total">1 running</)
   const idle = rail({ view: 'needs', counts: {}, projects: [], attention: {}, selectedKey: '', onView() {}, onOpenProject() {} })
-  assert.doesNotMatch(idle, /co-arc|aria-label="\d+ reviews? running"/)
+  assert.doesNotMatch(idle, /co-arc|running</)
 })
 
 test('a Needs you row offers the fix when your own review of your own PR found problems at its current version', async t => {
