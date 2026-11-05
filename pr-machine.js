@@ -188,8 +188,8 @@ function headlineFor(key, facts, d) {
     .replace('{checks}', checks).replace('{green}', facts.checks === 'none' ? 'no checks' : 'checks green')
 }
 
-// The one entry point: facts in, { role, state, turn, label, headline, next, waitingOn, actions,
-// approvedBy, rereviewFrom } out. The last two name people: who approved this version, and
+// The one entry point: facts in, { role, state, turn, label, headline, next, jobKind, waitingOn, actions,
+// approvedBy, rereviewFrom } out. `jobKind` is the kind of the PR's agent job ('' when none). The last two name people: who approved this version, and
 // whose review is of an older one.
 export function decide(facts) {
   const d = derive(facts)
@@ -202,7 +202,7 @@ export function decide(facts) {
   })
   const waitingOn = state.turn !== 'other' ? '' : facts.role === 'reviewer' ? facts.author || 'the author' : headlineWho(key, d).join(', ') || 'reviewers'
   const label = state.label.replace('{author}', facts.author || 'the author')
-  return { role: facts.role, state: key, turn: state.turn, label, headline: headlineFor(key, facts, d), next: state.next || '', waitingOn, actions,
+  return { role: facts.role, state: key, turn: state.turn, label, headline: headlineFor(key, facts, d), next: state.next || '', jobKind: facts.job?.kind || '', waitingOn, actions,
     approvedBy: d.approvedAtHead, rereviewFrom: [...new Set([...d.changesOlder, ...d.approvedOlder])] }
 }
 

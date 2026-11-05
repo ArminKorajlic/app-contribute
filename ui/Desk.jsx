@@ -80,18 +80,20 @@ export function DeskRail({ view, counts, projects, attention, selectedKey, onVie
   )
 }
 
-// The same destinations as the rail, as one scrollable chip row for phones.
+// The same four views as the rail, as one four-segment bar for phones: every segment is on screen at
+// once (nothing scrolls out of sight), the count above its word. The project list is one quiet link.
 export function DeskChips({ view, counts, onView }) {
   return (
     <div className="co-desk-chips" role="group" aria-label="Contribute views">
-      {[...DESK_VIEWS, { key: 'projects', label: 'All projects', icon: 'search' }].map(item => {
-        const badge = item.key === 'projects' ? 0 : railBadge(item.key, counts)
+      {DESK_VIEWS.map(item => {
+        const badge = railBadge(item.key, counts)
         return (
-          <button key={item.key} type="button" aria-pressed={view === item.key} onClick={() => onView(item.key)}>
-            {item.label}{badge ? <b>{badge}</b> : null}
+          <button key={item.key} type="button" aria-pressed={view === item.key} aria-label={badge ? `${item.label}, ${badge}` : item.label} onClick={() => onView(item.key)}>
+            <b>{badge || '·'}</b><span>{item.short}</span>
           </button>
         )
       })}
+      <button type="button" className="co-desk-chips-projects" aria-pressed={view === 'projects'} onClick={() => onView('projects')}><Icon name="search" size={15} />All projects</button>
     </div>
   )
 }

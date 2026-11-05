@@ -7,11 +7,12 @@ import { NAMES } from './names.js'
 import { projectIsQuiet } from './source-map.js'
 
 // The four views (finding 2). Every other place a PR can be lives inside one of them.
+// `short` is the word under the count on the phone's four-segment bar.
 export const DESK_VIEWS = [
-  { key: 'needs', label: NAMES.needsYou, icon: 'review' },
-  { key: 'requests', label: NAMES.reviewRequests, icon: 'feedback' },
-  { key: 'mine', label: NAMES.myPrs, icon: 'pull' },
-  { key: 'runs', label: NAMES.agentRuns, icon: 'cycle' },
+  { key: 'needs', label: NAMES.needsYou, short: NAMES.needsYou, icon: 'review' },
+  { key: 'requests', label: NAMES.reviewRequests, short: 'Requests', icon: 'feedback' },
+  { key: 'mine', label: NAMES.myPrs, short: NAMES.myPrs, icon: 'pull' },
+  { key: 'runs', label: NAMES.agentRuns, short: NAMES.agentRuns, icon: 'cycle' },
 ]
 
 // The views that were folded in, by the view that holds their rows now. A saved

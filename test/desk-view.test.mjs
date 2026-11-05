@@ -202,7 +202,7 @@ test('the sync note says only when it last checked, or that GitHub could not be 
   assert.match(guard, /note\.outcome\?\.ok \? <TimeAgo prefix="Checked " value=\{note\.at\} \/> : 'Couldn’t reach GitHub'/)
   const theme = readFileSync(new URL('../theme.js', import.meta.url), 'utf8')
   // Beside the button on a wide header; a phone header has no room for it.
-  assert.match(theme, /\.co-toolbar-refresh span, \.co-sync-note \{ display: none; \}/)
+  assert.match(theme, /\.co-toolbar-refresh \.co-label-long, \.co-sync-note \{ display: none; \}/)
 })
 
 test('list labels are filled pills like the PR page, two at most, and a bot says bot', async t => {
@@ -283,4 +283,33 @@ test('attention rows and the show-more control stay inside the bar', () => {
   const css = readFileSync(new URL('../workspace-theme.js', import.meta.url), 'utf8')
   assert.match(css, /\.co-attention-row \{ box-sizing:border-box;/)
   assert.match(css, /\.co-attn-more \{ box-sizing:border-box;/)
+})
+
+test('on a phone the four views are one segmented bar with every segment on screen, and the project list is one quiet link', async t => {
+  if (!frontendModules) return t.skip('MOBIUS_FRONTEND_NODE_MODULES is required')
+  const { renderToStaticMarkup, React, DeskChips } = await (await renderModule(`
+    import React from 'react'
+    import { renderToStaticMarkup } from 'react-dom/server'
+    import { DeskChips } from './ui/Desk.jsx'
+    export { React, renderToStaticMarkup, DeskChips }
+  `))
+  const html = renderToStaticMarkup(React.createElement(DeskChips, { view: 'needs', counts: { questions: 1, requests: 2, merge: 3, fix: 1, mine: 17, reviewsRunning: 0 }, onView() {} }))
+  assert.equal((html.match(/<button/g) || []).length, 5, 'four views plus the project link, no scrolling row of nine')
+  assert.match(html, /aria-pressed="true" aria-label="Needs you, 7"><b>7<\/b><span>Needs you<\/span>/)
+  assert.match(html, /aria-label="Review requests, 2"><b>2<\/b><span>Requests<\/span>/)
+  assert.match(html, /<b>·<\/b><span>Agent runs<\/span>/)
+  assert.match(html, /co-desk-chips-projects[^>]*>.*?All projects/)
+  assert.doesNotMatch(html, /To confirm|Merged this week|PR reviews|My work|Your edits/)
+})
+
+test('the phone keeps Sync and Settings labelled, a sticky review footer and decision bar, and an unsqueezed group header', () => {
+  const read = file => readFileSync(new URL(`../${file}`, import.meta.url), 'utf8')
+  const theme = read('theme.js'), work = read('workspace-theme.js'), app = read('index.jsx')
+  assert.match(app, /<span className="co-label-short">\{refreshingAll \? 'Syncing…' : NAMES\.sync\}<\/span>/)
+  assert.match(theme, /\.co-toolbar-refresh \.co-label-short \{ display: inline; \}/)
+  assert.doesNotMatch(work, /\.co-header \.co-settings > summary > span \{ display:none; \}/, 'Settings keeps its word on a phone')
+  assert.match(work, /\.co-rw-foot \{ position:sticky; bottom:0;/)
+  assert.match(work, /\.co-decision-bar \{ display:flex; position:sticky; bottom:0;/)
+  assert.match(work, /\.co-envelope-head \.co-project-icon,\.co-envelope-head \.co-source-tag,\.co-envelope-head \.co-rail-count \{ flex:none; \}/)
+  assert.match(work, /\.co-envelope-head strong \{ min-width:0;/)
 })

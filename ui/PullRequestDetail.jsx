@@ -479,5 +479,6 @@ function PullRequestDetailView({ cacheStore, pr, token, onReview, onAssign, onRe
     {(tab === 'files' || tab === 'checks') && ready(view) ? pager(number, view.data?.hasMore, view.data?.paginationUnknown, value => setPage(old => ({ ...old, [tab]: value }))) : null}
     {tab === 'checks' && !view.loading ? <button className="co-btn co-btn-quiet" onClick={() => { writeCache(old => { const next = { ...old }; delete next[keys.view]; return next }) }}>{NAMES.sync}</button> : null}
     </div>
+    {review?.standing ? <NextStep bar decision={review.standing} record={record} capabilities={capabilities} disabled={stale || readOnly} onChoose={mode => onReview?.(mode)} onReviewTab={() => setTab('review')} onSync={onRefresh} /> : null}
   </div>
 }

@@ -11,11 +11,22 @@ import { frameOf } from './pr-standing.js'
 // verdict card, the draft and the stopped run live; 'sync' reads GitHub again.
 const ROUTES = {
   check_my_pr: 'menu', respond: 'menu', review: 'menu', open_for_review: 'menu', merge: 'menu',
-  draft_verdict: 'review', send_draft: 'review', check_github: 'review', open_job: 'review', rerun_job: 'review',
+  rerun_job: 'menu',
+  draft_verdict: 'review', send_draft: 'review', check_github: 'review', open_job: 'review',
   retry: 'sync',
 }
 // Where the machine's own action title would be a sentence, the button says the job.
 const TITLES = { draft_verdict: 'See the review', send_draft: 'Read the draft', retry: NAMES.sync }
+
+// A stopped job starts over as the same job through the Actions menu's own window: the machine lets
+// a stalled job be run again, and nothing else is working on the PR. Which menu action that is depends
+// on the job's kind and whose PR it is (review_fix_merge is Finish it for me on yours, Take over on theirs).
+const RERUN_ACTION = {
+  review: { author: 'check_my_pr', reviewer: 'review' }, review_merge: { author: 'check_my_pr', reviewer: 'review' },
+  respond: { author: 'respond', reviewer: 'respond' }, fix: { author: 'respond', reviewer: 'respond' },
+  review_fix_merge: { author: 'finish_it', reviewer: 'take_over' },
+}
+const actionToRun = decision => (decision.next === 'rerun_job' ? RERUN_ACTION[decision.jobKind]?.[decision.role] || 'review' : decision.next)
 
 const GOOD_STATES = new Set(['author.draft_ready', 'author.approved', 'reviewer.mergeable'])
 const BAD_STATES = new Set(['author.blocked', 'unconfirmed', 'unknown'])
@@ -34,13 +45,15 @@ export function pillTone(decision) {
 // cannot run it for you.
 export function nextStepModel(decision, { record = null, capabilities = null } = {}) {
   if (!decision) return null
-  const action = decision.actions.find(item => item.id === decision.next)
+  const action = decision.actions.find(item => item.id === actionToRun(decision))
   const route = ROUTES[decision.next]
   const allowed = action?.enabled && route && (route !== 'menu' || AGENT_INTENTS.has(action.id) || mayRunYourAction(action.id, { record, capabilities }))
+  // The button keeps the words of the machine's own next step (Review again, Run it again), whichever action runs.
+  const title = TITLES[decision.next] || decision.actions.find(item => item.id === decision.next)?.title || action?.title
   return {
     pill: { label: decision.label, tone: pillTone(decision) },
     hint: decision.headline,
-    primary: allowed ? { intent: action.id, route, title: TITLES[action.id] || action.title } : null,
+    primary: allowed ? { intent: action.id, route, title } : null,
   }
 }
 

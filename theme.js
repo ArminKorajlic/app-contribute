@@ -132,14 +132,22 @@ export const CSS = `
   color: var(--muted);
 }
 .co-toolbar-refresh { gap: 7px; white-space: nowrap; }
+.co-label-short { display: none; }
 .co-sync-note { color: var(--muted); font-size: var(--co-text-meta); white-space: nowrap; }
 .co-boot {
   min-height: 70dvh; display: flex; flex-direction: column; align-items: center;
   justify-content: center; gap: 10px; color: var(--muted); text-align: center; padding: 24px;
 }
 .co-boot strong { color: var(--text); font-size: var(--co-text-body); }
-.co-boot span:last-child { font-size: var(--co-text-meta); }
+.co-boot > span:not(.ma-spinner) { font-size: var(--co-text-meta); }
 .co-boot .ma-spinner { width: 28px; height: 28px; margin-bottom: 6px; }
+.co-boot-bar { width:min(280px,80%); height:6px; margin-top:12px; border-radius:var(--co-radius-round); background:var(--surface-2); overflow:hidden; }
+.co-boot-bar i { display:block; height:100%; border-radius:inherit; background:var(--accent); transition:width .3s ease; }
+.co-boot-steps { width:min(280px,80%); margin:10px 0 0; padding:0; list-style:none; text-align:left; font-size:var(--co-text-meta); }
+.co-boot-steps li { display:flex; justify-content:space-between; gap:12px; padding:3px 0; color:var(--muted); }
+.co-boot-steps li.is-done { color:var(--text); }
+.co-boot-steps li.is-current { color:var(--text); font-weight:600; }
+.co-boot-steps em { font-style:normal; }
 .ma-spinner.is-compact { width: 15px; height: 15px; border-width: 2px; }
 .co-offline-note {
   grid-column: 1 / -1; display: block; margin: -2px 0 0 46px;
@@ -1432,7 +1440,9 @@ export const CSS = `
   .co-title { font-size: var(--co-text-body); }
   .co-toolbar { gap: 3px; }
   .co-toolbar-check { width: 32px; padding: 0; justify-content: center; }
-  .co-toolbar-refresh span, .co-sync-note { display: none; }
+  /* Sync and Settings keep a word on a phone: an icon alone is not a label (DESIGN.md). */
+  .co-toolbar-refresh .co-label-long, .co-sync-note { display: none; }
+  .co-toolbar-refresh .co-label-short { display: inline; }
   .co-toolbar-refresh { min-width: 40px; justify-content: center; }
   .co-project-control { max-width: 108px; padding-inline: 8px; }
   .co-project-control > span { overflow: hidden; text-overflow: ellipsis; }

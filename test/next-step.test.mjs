@@ -17,7 +17,7 @@ const GALLERY = [
   ['their PR, asks for you', { role: 'reviewer' }, 'To review', 'you', 'Review', 'menu'],
   ['their PR, new commits', { role: 'reviewer', myReview: { state: 'COMMENTED', commit: 'old' } }, 'New commits · review again', 'waiting', 'Review again', 'menu'],
   ['your PR, approved', { reviews: [{ by: 'kim', state: 'APPROVED', commit: 'h' }] }, 'Ready to merge', 'ready', 'Merge', 'menu'],
-  ['agent stopped', { job: { kind: 'review', state: 'stalled' } }, 'Agent stopped', 'waiting', 'Review again', 'review'],
+  ['agent stopped', { job: { kind: 'review', state: 'stalled' } }, 'Agent stopped', 'waiting', 'Review again', 'menu'],
   ['waiting on others', {}, 'Waiting on reviewers', 'quiet', null, null],
 ]
 for (const [name, extra, pill, tone, button, route] of GALLERY) {
@@ -75,4 +75,18 @@ test('the panel shows the pill, the hint and a filled button that runs the next 
   assert.match(html, /<li class="is-current" aria-current="step">Approved<\/li>/)
   const waiting = render({ decision: decide(facts()), capabilities })
   assert.doesNotMatch(waiting, /co-btn-primary/)
+})
+
+test('a stopped job starts over as the same job, through the menu action it came from', () => {
+  const again = extra => nextStepModel(decide(facts({ job: { state: 'stalled' }, ...extra })), { capabilities }).primary
+  const cases = [
+    [{ role: 'author', job: { kind: 'review', state: 'stalled' } }, 'check_my_pr', 'Review again'],
+    [{ role: 'reviewer', job: { kind: 'review', state: 'stalled' } }, 'review', 'Review again'],
+    [{ role: 'author', openThreads: 1, job: { kind: 'respond', state: 'stalled' } }, 'respond', 'Run it again'],
+    [{ role: 'author', job: { kind: 'review_fix_merge', state: 'stalled' } }, 'finish_it', 'Run it again'],
+    [{ role: 'reviewer', permission: 'ADMIN', job: { kind: 'review_fix_merge', state: 'stalled' } }, 'take_over', 'Run it again'],
+  ]
+  for (const [extra, intent, title] of cases) assert.deepEqual([again(extra).route, again(extra).intent, again(extra).title], ['menu', intent, title], intent)
+  // Someone else's take over needs maintainer rights: without them there is no button to press.
+  assert.equal(again({ role: 'reviewer', permission: 'WRITE', job: { kind: 'review_fix_merge', state: 'stalled' } }), null)
 })

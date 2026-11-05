@@ -450,7 +450,10 @@ test('GitHub is synced once per open: no hidden foreground re-sync, one explicit
 test('the workspace opens only after its first sync and never falls back to the boot screen', () => {
   assert.match(appSource, /const bootReady = ledgerReady && !sourceLoading && conn\.state !== 'checking'/)
   assert.match(appSource, /if \(bootReady\) setBooted\(true\)/)
-  assert.match(appSource, /className="co-boot" role="status"/)
+  // The opening screen names the same five reads bootReady waits for, so its progress cannot drift from it.
+  assert.match(appSource, /<BootProgress ledgerReady=\{ledgerReady\} projectsReady=\{!sourceLoading\} accountReady=\{conn\.state !== 'checking'\}/)
+  assert.match(appSource, /pullsReady=\{incomingReady\} runsReady=\{runsReady\}/)
+  assert.match(readFileSync(new URL('../ui/BootProgress.jsx', import.meta.url), 'utf8'), /className="co-boot" role="status"/)
 })
 
 test('a review chip opens the PR on its Review tab, and a started review no longer opens a pane in the list', () => {

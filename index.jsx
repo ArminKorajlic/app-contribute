@@ -79,6 +79,8 @@ import { SourceMap } from './ui/SourceMap.jsx'
 import { SyncHubContext, useDeskReviewRuns, useReviewList } from './ui/useReviewList.js'
 import { SyncNote } from './ui/GithubParts.jsx'
 import { ProjectEdits } from './ui/ProjectEdits.jsx'
+import { NAMES } from './names.js'
+import { BootProgress } from './ui/BootProgress.jsx'
 import { RepositoryPicker } from './ui/RepositoryPicker.jsx'
 import { ReviewSelection } from './ui/ReviewSelection.jsx'
 import { reviewSelectionIdFromIntent } from './review-selection.js'
@@ -1785,11 +1787,8 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
     return (
       <div className="co-root" data-design-seed="ae1883df">
         <style>{CSS}</style>
-        <div className="co-boot" role="status">
-          <span className="ma-spinner" aria-hidden="true" />
-          <strong>Opening Contribute…</strong>
-          <span>Reading your projects and pull requests from GitHub.</span>
-        </div>
+        <BootProgress ledgerReady={ledgerReady} projectsReady={!sourceLoading} accountReady={conn.state !== 'checking'} accountConnected={conn.state === 'connected'}
+          pullsReady={incomingReady} runsReady={runsReady} projectCount={sourceProjects.length} pullCount={incomingReviews.length} />
       </div>
     )
   }
@@ -1804,7 +1803,8 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
           <SyncNote note={refreshNote} />
           <button type="button" className="co-btn co-toolbar-refresh" onClick={refreshAll} disabled={refreshingAll} aria-busy={refreshingAll} aria-label="Sync with GitHub">
             <Icon name={refreshingAll ? 'refresh' : 'github'} size={16} className={'co-icon' + (refreshingAll ? ' is-spinning' : '')} />
-            <span>{refreshingAll ? 'Syncing…' : 'Sync with GitHub'}</span>
+            <span className="co-label-long">{refreshingAll ? 'Syncing…' : 'Sync with GitHub'}</span>
+            <span className="co-label-short">{refreshingAll ? 'Syncing…' : NAMES.sync}</span>
           </button>
           <ConnectionSettings
             appId={appId} conn={conn} token={token} onChanged={refreshConnection}
