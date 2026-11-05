@@ -16,57 +16,36 @@ colors:
   caution: "#cf9526"
   danger: "var(--danger)"
 typography:
-  headline:
-    fontFamily: "var(--font)"
-    fontSize: "32px"
-    fontWeight: 680
-    lineHeight: 1.2
-    letterSpacing: "-0.025em"
-  headline-phone:
+  title:
     fontFamily: "var(--font)"
     fontSize: "28px"
     fontWeight: 680
     lineHeight: 1.2
     letterSpacing: "-0.025em"
-  task-title:
+  section:
     fontFamily: "var(--font)"
     fontSize: "22px"
     fontWeight: 650
     lineHeight: 1.3
     letterSpacing: "-0.02em"
-  section:
-    fontFamily: "var(--font)"
-    fontSize: "20px"
-    fontWeight: 700
-  row-title:
-    fontFamily: "var(--font)"
-    fontSize: "16px"
-    fontWeight: 650
-    lineHeight: 1.45
   body:
     fontFamily: "var(--font)"
     fontSize: "16px"
     lineHeight: 1.6
-  label:
+  meta:
     fontFamily: "var(--font)"
     fontSize: "14px"
-    fontWeight: 650
-  button:
-    fontFamily: "var(--font)"
-    fontSize: "14px"
-    fontWeight: 500
+    fontWeight: 600
   mono:
     fontFamily: "var(--mono, var(--font))"
-    fontSize: "13px"
+    fontSize: "14px"
     lineHeight: 1.6
 rounded:
-  state: "5px"
-  tab: "7px"
+  pill: "6px"
   field: "8px"
   control: "10px"
   panel: "12px"
-  dock-phone: "16px"
-  dock: "18px"
+  round: "999px"
 spacing:
   micro: "4px"
   compact: "8px"
@@ -81,22 +60,22 @@ components:
   button-primary:
     backgroundColor: "{colors.action}"
     textColor: "{colors.accent-foreground}"
-    typography: "{typography.button}"
-    rounded: "{rounded.field}"
-    padding: "10px 16px"
+    typography: "{typography.meta}"
+    rounded: "{rounded.control}"
+    padding: "8px 14px"
     height: "44px"
   button-secondary:
     backgroundColor: "{colors.surface}"
     textColor: "{colors.text}"
-    typography: "{typography.button}"
-    rounded: "{rounded.field}"
-    padding: "10px 16px"
+    typography: "{typography.meta}"
+    rounded: "{rounded.control}"
+    padding: "8px 14px"
     height: "44px"
   button-quiet:
     backgroundColor: "transparent"
     textColor: "{colors.text-muted}"
-    typography: "{typography.label}"
-    padding: "8px 2px"
+    typography: "{typography.meta}"
+    padding: "8px"
     height: "44px"
   directory-field:
     backgroundColor: "{colors.surface}"
@@ -112,8 +91,8 @@ components:
   work-state:
     backgroundColor: "{colors.surface}"
     textColor: "{colors.text-muted}"
-    typography: "{typography.label}"
-    rounded: "{rounded.state}"
+    typography: "{typography.meta}"
+    rounded: "{rounded.pill}"
     padding: "3px 8px"
   pr-action-toolbar:
     backgroundColor: "transparent"
@@ -142,12 +121,12 @@ components:
 
 **Creative North Star: "The Continuous Project Desk"**
 
-Contribute is one calm project workspace, not a separate agent dashboard or Reviews room. To look at comes first, blockers before news, then two status boxes say what is local and how the project compares with GitHub, then the open pull-request list becomes the principal working surface. Every control names its result in plain words ("Make PRs from my edits", "Sync with GitHub", "Mark ready for review"); none is an unlabeled icon. Titles, authors, labels, check counts and assignment are scannable before detail is opened. To look at, prepared work and the Send and Mark ready rows sit above the status and three tabs, one per job: **All PRs** (the default), **Review requests** and **My work** (agent jobs, agent reviews, agent activity and finished work). Saved public work the live list cannot show stays on All PRs. Old work is never restarted merely by opening it.
+Contribute is one calm project workspace, not a separate agent dashboard or Reviews room. To look at comes first, blockers before news, then two status boxes say what is local and how the project compares with GitHub, then the open pull-request list becomes the principal working surface. Every control names its result in plain words ("Make PRs from local changes", "Sync with GitHub", "Open for review"); none is an unlabeled icon. Titles, authors, labels, check counts and assignment are scannable before detail is opened. To look at, prepared work and the Send and Mark ready rows sit above the status and three tabs, one per job: **All PRs** (the default), **Review requests** and **My work** (agent jobs, agent reviews, agent activity and finished work). Saved public work the live list cannot show stays on All PRs. Old work is never restarted merely by opening it.
 
 Selection belongs to the list: native checkboxes change a stable, in-flow action toolbar. An agent handoff is a choice in the **Actions ▾** menu that opens the review window for exact confirmation; it is not a direct action on selection. Details open inside the row, with a reserved scrolling body below stable actions and tabs. Settings is flat: Review, Fix and Merge guidance share a tabbed editor, with account management first. Model and effort are chosen per launch. Version, consent and safety checks remain implementation contracts, not routine settings content. The Möbius shell owns theme colors, typography, and icons.
 
 **Key Characteristics:**
-- One continuous project workspace with three tabs (All PRs, Review requests, My work); no persistent split pane or second review room.
+- One continuous project workspace with three tabs (All PRs, Review requests, Agent runs); no persistent split pane or second review room.
 - Two plain-language status lines and immediate PR inventory.
 - Separate PR selection, detail, assignment, and agent action, each a labelled control.
 - An Actions ▾ choice, then a review window (agent jobs) or a confirm sheet (your own Merge and Open for review) with exact confirmation before anything starts.
@@ -166,14 +145,14 @@ The palette is semantic and theme-responsive. Accent identifies actions, selecti
 
 ## Typography
 
-Use the inherited shell font and monospace stack. The project/section headline uses the established 32px desktop and 28px phone hierarchy; PR titles are 16px/650 in the current list. Metadata and controls stay at least 14px, reading copy at 16px. Long titles, labels, versions, and paths wrap rather than forcing the viewport wider.
+Use the inherited shell font and monospace stack. There are four sizes: 28px titles, 22px section headings, 16px body and row titles, and 14px for metadata and controls. Nothing is smaller. Long titles, labels, versions, and paths wrap rather than forcing the viewport wider.
 
 **The Readable Floor Rule.** Never shrink workflow copy to fit the phone. Keep practical control targets at least 44px; prompt tabs are 48px tall.
 
 ## Layout
 
-- **Project directory:** Search and factual All / With your edits / Behind GitHub filters narrow actual local and shared project conditions. Each project carries a Platform or App tag and says what waits on the owner ("8 PRs wait for your review. 2 things need you."). Apps with nothing to do fold into one collapsed group that a search opens. A remembered GitHub repository is not treated as an installed local project.
-- **Selected project:** A continuous workspace contains To look at and actionable prepared work, the two status boxes (your edits; updates from GitHub) with **Make PRs from my edits** when there are edits, then the three tabs. When GitHub has updates the GitHub line links to the place that applies them (Settings → Updates for Möbius, the App Store for apps); Contribute starts no update of its own. Edited files and exact versions remain inspectable through **See the files**.
+- **Project directory:** Search and factual All / With local changes / Behind GitHub filters narrow actual local and shared project conditions. Each project carries a Platform or App tag and says what waits on the owner ("8 PRs wait for your review. 2 things need you."). Apps with nothing to do fold into one collapsed group that a search opens. A remembered GitHub repository is not treated as an installed local project.
+- **Selected project:** A continuous workspace contains To look at and actionable prepared work, the two status boxes (local changes; updates from GitHub) with **Make PRs from local changes** when there are some, then the three tabs. When GitHub has updates the GitHub line links to the place that applies them (Settings → Updates for Möbius, the App Store for apps); Contribute starts no update of its own. Edited files and exact versions remain inspectable through **See the files**.
 - **PR inventory:** Laid out like GitHub's PR list: search and a **Show** menu (all, unassigned, assigned, opened by me) above one bordered list box. The Review requests tab shows the same list narrowed to PRs that ask for the owner's review; the list stays one mounted component across tabs, so its pages, runs and selection survive a switch. The box header shows select-all and “N open”; Assign and Actions ▾ appear there only once PRs are selected. Each row has a native checkbox, the GitHub state icon, and four lines: the title; the facts “#123 · author opened 2 days ago · ✓ 18/18 · +a −d” (a check mark for passing, a yellow dot while checks run, an × for failing; additions green, deletions red); the labels, always their own line; then the pills (state, whose turn it is, agent state) on a line of their own. Comments, then the quiet text actions **Assign** (or the assignee avatars) and **Agent ▾** sit on the right; they brighten when the row is in use. Check counts treat skipped and neutral runs as passing, as GitHub does.
 - **Selection and confirmation:** Selection only changes selection. Choosing a job in Actions ▾ opens the review window, a modal dialog with protected focus. Review only (with its **Allow posting the review on GitHub** and **Merge when safe** switches) and Review, fix and merge remain distinct; posting and merging block each other because the platform admits posting only in plain review. An assignment or run opened from one PR appears directly under that PR. The window names the job and each selected PR, lists numbered "What happens" steps, states what GitHub will see (green and private, or amber with the exact public effects), offers per-run model/effort, and labels its start button with exactly what is allowed. Private-review autopilot lives inside its choice; repair-and-merge continues automatically within its approved scope. Exact versions and frozen instructions remain checked underneath, without a second routine preview panel. Assigning a person is separate and does not start review.
 - **Detail:** Follows GitHub's PR page: title with #number, colored labels, then actions (**Actions ▾** with its text, then Assign, View on GitHub and the chat links as 44px icon buttons that name themselves in a tooltip: after the pointer rests 2 seconds, at once on keyboard focus, and while a finger holds it), the state pill and “by author”, and Conversation / Files changed / Checks tabs. Conversation shows the description and comments as bordered comment boxes. The body below has a bounded scroll region so delayed data, long patches, empty states, and errors do not move those controls. Files, checks, and activity load on request; available patches may be incomplete.
@@ -200,7 +179,7 @@ Rows remain line-separated rather than floating cards. Controls and selected row
 
 ### Actions and fields
 
-The inherited primary button marks agent handoff or confirmation; secondary and quiet actions carry assignment, cancel, navigation, and refresh. Disabled actions stay visible. Focus uses a clear accent outline. Search fields keep 16px entry text and a semantic border. Model and effort are chosen at task launch, not in Settings, with an app-owned copy of the chat composer's picker: a compact Agent trigger that opens monochrome provider rows and the same effort track. The default row names the model the launch will actually use (background-agent setting for PR runs, chat default for prepare/pull/cycle). Contribute never restyles the shell's own picker.
+The primary button marks the next step, an agent handoff or a confirmation; secondary and quiet actions carry assignment, cancel, navigation, and sync. Disabled actions stay visible. Focus uses a clear accent outline. Search fields keep 16px entry text and a semantic border. Model and effort are chosen at task launch, not in Settings, with an app-owned copy of the chat composer's picker: a compact Agent trigger that opens monochrome provider rows and the same effort track. The default row names the model the launch will actually use (background-agent setting for PR runs, chat default for prepare/pull/cycle). Contribute never restyles the shell's own picker.
 
 ### Compact project position
 
@@ -212,7 +191,7 @@ The in-flow toolbar keeps select-all, count, Assign, and Take on with agent besi
 
 ### Agent review window and progress
 
-Every agent and confirm window opens with the same three lines (one shared head): the job (Review, Check my PR, Finish it for me or Take over), then “#123 PR name”, then the repository. Steps added by a switch are marked; the start button follows the same choice. What GitHub will see is one icon beside Close (amber when something reaches GitHub, green when nothing does) whose themed hover card, also opened by keyboard focus or a tap, says it in words. Who sees the result sits on one row, the question left and the three choices right. The agent picker starts on the agent saved in Settings → Default agent. Scroll areas around the picker (the list, the Settings panel, the dialog) never show a scrollbar. The window explains public effects and Stop when relevant; exact versions stay in a collapsed detail. On a saved review link the same content renders inline on its page. A takeover never marks a draft ready or merges: every push waits for the owner's Push, and the owner opens and merges it themselves. Take over asks for a reason, posted with the start. Exact head/base binding and prompt/model freeze are checked underneath, not repeated as routine disclosures. A run carries its own owning conversation and named remaining state; queued is not merged, and green checks do not imply independent approval.
+Every agent and confirm window opens with the same three lines (one shared head): the job (Review, Finish it for me or Take over), then “#123 PR name”, then the repository. Steps added by a switch are marked; the start button follows the same choice. What GitHub will see is one icon beside Close (amber when something reaches GitHub, green when nothing does) whose themed hover card, also opened by keyboard focus or a tap, says it in words. Who sees the result sits on one row, the question left and the three choices right. The agent picker starts on the agent saved in Settings → Default agent. Scroll areas around the picker (the list, the Settings panel, the dialog) never show a scrollbar. The window explains public effects and Stop when relevant; exact versions stay in a collapsed detail. On a saved review link the same content renders inline on its page. A takeover never marks a draft ready or merges: every push waits for the owner's Push, and the owner opens and merges it themselves. Take over asks for a reason, posted with the start. Exact head/base binding and prompt/model freeze are checked underneath, not repeated as routine disclosures. A run carries its own owning conversation and named remaining state; queued is not merged, and green checks do not imply independent approval.
 
 ### Actions menu, confirm sheets and review answers
 
@@ -220,7 +199,7 @@ Every agent and confirm window opens with the same three lines (one shared head)
 
 The Review tab picks its buttons by what happened: **Fix these findings** is the one tinted button on the owner's own PR, then **Ignore…**, **Review again** and **Ask the reviewer something**, all plain buttons. The row beside a PR in the list carries one chip for whose turn it is: amber only for the owner's own move, quiet grey for "Waiting on <author>" or "Ignored".
 
-**PR reviews** is a desk view like Needs you: project cards in the desk's order, two tabs (In progress, Done), rows that open the PR on its Review tab. In the rail its badge counts only what waits on the owner and a small spinner shows agents at work; on a phone it is one more chip.
+**Agent runs** is a desk view like Needs you: project cards in the desk's order, two tabs named for what they hold (Running, Finished), rows that open the PR on its Review tab. A run that waits on the owner counts in Needs you, not here; in the rail only a small spinner and “N running” show agents at work. Merged PRs are a filter on My PRs, and local changes are a banner on each project page.
 
 ### Contribution detail
 
@@ -230,13 +209,33 @@ Actions and Conversation / Files changed / Checks tabs remain in place above a b
 
 A single flat prompt editor groups Review, Fix and Merge decision. Tabs have generous targets and a genuine textarea; Save and Restore are explicit. A prior run’s saved prompts are inspectable in its own detail, without duplicating a full prompt in Settings or launch. A preset edit does not mutate a previously admitted run.
 
+## Names, tokens and counts
+
+**The One Name Rule.** One name for one meaning, everywhere. Every button, menu row, hint, pill and test reads its words from `names.js`; to rename something, change it there. A pill says what is true, a hint is one sentence, a button says what you do. Three agent jobs stay separate on purpose (Fix these findings, Finish it for me, Respond to feedback); a stopped fix job starts again as Run it again, a stopped review as Review again. `test/names.test.mjs` keeps retired names out of screen text.
+
+**The Token Sheet Rule.** Five corner radii (6, 8, 10, 12 and round) and four type sizes (14, 16, 22, 28), none under 14px, named as custom properties in `theme.js`; no rule carries a raw value (`test/style-tokens.test.mjs`). Buttons come in three types: primary (filled), secondary (bordered) and quiet (text), plus a danger modifier and an icon-only shape, all 44px (`button-theme.js`). A class that only adds layout may sit beside them; none sets its own border, fill, colour, corner or height. Purple text on its tinted fill is mixed toward the text colour so it reads at 4.5:1 and above.
+
+**The Four Views Rule.** The rail has four views: Needs you, Review requests, My PRs and Agent runs, then Repositories as a block of its own (a heading, a divider, More repositories folded, Add repository last). Older places live inside them (`deskViewKey`). “Projects” is the Möbius shell's own word, so the app's list is Repositories and its settings popover is Contribute settings.
+
+**The One Count Rule.** A badge counts what waits on the owner and is the sum of the chips beside it. The Needs you chips (To look at, Review, Merge, Fix, Agent runs) filter the list below them; a PR with a feedback card counts once, as that card. Drafts ready to open are a quiet line and local files a project banner; neither enters a number.
+
+**The One Icon Rule.** An icon means one thing: the eye is Needs you and Review, the sparkle marks agent work only (not the Actions menu, which also holds the owner's own steps), a draft icon marks a prepared PR, each of the four views has its own mark.
+
+## The PR page's next step
+
+Under the facts line sit a state line (Draft, In review, Approved, Merged, from the PR's own data; an approval counts only for this exact version) and one panel: a pill for what is true, the PR machine's own sentence, and one filled button for the next step it names. The button runs the same handler as the Actions menu (a stopped job starts again through the same window), opens the Review tab, or Syncs; it is absent when the step is not the owner's, is refused, or this Möbius cannot run it. On a phone the button pins to the foot of the page and leaves the panel, so one next step is on screen, never two. The Commits tab follows Comments: grouped by day, each commit with title, authors (the agent's commits marked), time, the checks' result in words, short hash, a labelled Copy hash and a GitHub link; a line shows where the last review stopped and a Review again banner offers the machine's own review action for newer commits. Close pull request is red, apart and last in Actions, and the menu never starts its focus on it.
+
+## On a phone
+
+The four views are one segmented bar with every segment on screen; the repository list is one quiet link. Sync and Settings keep a word. The review window's footer stays on screen so Start is never below the fold. The opening screen names its five reads with a progress bar and real counts, from the same conditions the app waits on.
+
 ## Do's and Don'ts
 
 ### Do:
 - **Do** preserve the plain local and GitHub status above PR work, and send updates to Settings or the App Store.
 - **Do** lead with visible PR title, colored labels, author and GitHub-style check counts; omit empty agent state.
 - **Do** keep selection independent from row detail and route agent action through the review window.
-- **Do** name every control by its result; an icon-only button always carries an accessible name and the same words in its tooltip.
+- **Do** name every control by its result, from `names.js`; an icon-only button always carries an accessible name and the same words in its tooltip.
 - **Do** distinguish assignment, private review, legacy merge scope, and scoped takeover.
 - **Do** keep detail controls stable while context loads and scrolls below them.
 - **Do** show paused work by name and preserve its remaining steps without automatic restart.
