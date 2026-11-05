@@ -117,6 +117,8 @@ window.fetch = async (url, options = {}) => {
     if (call.url === '/api/github/status') return response({ connected: window.fullAppConnected, login: window.fullAppConnected ? 'reconnected-owner' : '',
       ...(window.fullAppBinding ? { frozen_publication_binding: { record_fields: ['plan'] } } : {}) })
     if (call.url === '/api/github/source-status') return response({ apps: [], platform: null })
+    // The whole app also reads the saved review runs (a plain read) whenever it syncs; this page has none. The Desk scenarios keep their own runs.
+    if (!window.fullAppDesk && call.url === '/api/github/contributions/fixture-app/review-runs' && call.method === 'GET') return response({ runs: [] })
     if (call.url.includes('/review-status')) {
       const ids = new URL(call.url, location.origin).searchParams.getAll('record_id')
       return response({ records: ids.map(id => ({ id, state: 'ready' })), ...(ids.length ? { addressed_record_ids: ids } : {}) })
@@ -380,7 +382,7 @@ function Fixture() {
     <button type="button" className="co-btn co-toolbar-refresh" onClick={syncFromHeader} disabled={syncing} aria-busy={syncing} aria-label="Sync with GitHub">Sync with GitHub</button>
     {selectionId ? <ReviewSelection selectionId={selectionId} token="fixture-only" appId="fixture-app" onClose={() => setSelectionId(null)} /> : <SourceMap projects={allProjects} focusKey={projectFocus} snapshot={{ generated_at: 'fixture-'+refreshKey }} conn={conn}
       loadProjectDiff={loadProjectDiff} onRetry={retryAll}
-      repositoryPicker={<RepositoryPicker token="fixture-only" connected onAdded={repositoryAdded} />}
+      addProject={quiet => <RepositoryPicker quiet={quiet} token="fixture-only" connected onAdded={repositoryAdded} />}
       renderActivity={(project, navigation) => project ? <><GithubPullsUnavailable conn={conn} onRetry={retryGithub} /><ProjectControls key={project.key} appId="fixture-app" token="fixture-only" project={project}
         run={runFor(project)} mergeRun={runFor(project)} onStart={start}>
         {({controls,progress})=><ContributionRun run={runFor(project)} controls={controls} projectProgress={progress}
@@ -1361,7 +1363,8 @@ window.runWorkspaceChecks = async () => {
     })
     await check('adding an external repository is an explicit saved choice, not a GitHub mutation', async () => {
       await click(button('Back to repositories'))
-      await click(button('Add repository'))
+      // The side rail's Add repository is hidden on a phone, where the project list carries its own: press the one on screen.
+      await click([...document.querySelectorAll('button')].filter(node => text(node)===NAMES.addRepository).find(node => node.getClientRects().length))
       const input = query('#co-repository-name')
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'team/community')
       input.dispatchEvent(new Event('input',{bubbles:true}))
@@ -1372,7 +1375,7 @@ window.runWorkspaceChecks = async () => {
       ensure([...document.querySelectorAll('.co-source-row')].some(node => node.getClientRects().length && text(node).includes('team/community')), 'Explicitly added repository was lost')
       ensure(mutationRequests().length === beforeLink + 1, 'Adding repository mutated GitHub')
     })
-    await check('returning from Settings refreshes the full app account and live feed exactly once', async () => {
+    await check('syncing after Settings refreshes the full app account and live feed exactly once', async () => {
       // Mount the actual app, not a refresh helper. Only external storage and
       // fetch boundaries are faked; hooks, coordinator and reconciliation run.
       root.render(null)
@@ -1392,25 +1395,29 @@ window.runWorkspaceChecks = async () => {
       ensure(ledgerReads === 1, 'Initial app performed duplicate ledger scans')
       const previous = calls.requests.length
       window.fullAppConnected = true
-      // One authentic parent-window message represents returning from Settings.
-      // No focus/click retries manufacture success or conceal duplicate work.
+      // One authentic parent-window message represents returning from Settings. Returning no longer re-reads on its own
+      // (the app syncs when it opens and when the owner taps Sync), so the owner's one Sync is what picks the account up.
+      // No retries manufacture success or conceal duplicate work.
       window.postMessage({type:'moebius:frame-visibility',visible:true}, '*')
-      await until(() => query('.co-settings summary')?.getAttribute('aria-label')?.includes('reconnected-owner'), 'Foreground did not display the new account')
+      await frame(); await frame()
+      await click(query('.co-toolbar-refresh'))
+      await until(() => query('.co-settings summary')?.getAttribute('aria-label')?.includes('reconnected-owner'), 'Sync did not display the new account')
       const returning = calls.requests.slice(previous)
-      ensure(returning.filter(call => call.url === '/api/github/status').length === 1, 'Foreground checked the account more than once')
+      ensure(returning.filter(call => call.url === '/api/github/status').length === 1, 'Returning checked the account more than once')
       const overlays = returning.filter(call => call.url === '/api/github/graphql' && call.body.query.includes('resource(url:'))
       ensure(overlays.length === 1, 'Expected one foreground live-feed query, got ' + overlays.length)
-      await until(() => values.get('feed-cache.json')?.records?.[0]?.status === 'merged', 'Foreground live state was not reconciled and cached')
-      ensure(ledgerReads === 2, 'Foreground did not own exactly one fresh ledger scan')
-      ensure(returning.every(call => call.method === 'GET' || call.url === '/api/github/graphql'), 'Foreground mutated public work')
+      await until(() => values.get('feed-cache.json')?.records?.[0]?.status === 'merged', 'Live state was not reconciled and cached')
+      ensure(ledgerReads === 2, 'Returning did not own exactly one fresh ledger scan')
+      ensure(returning.every(call => call.method === 'GET' || call.url === '/api/github/graphql'), 'Returning mutated public work')
     })
     await check('settings leads with the GitHub account then one prompt editor and a precise destination', async () => {
       await click(query('.co-settings summary'))
       await until(()=>query('.co-prompt-settings textarea'), 'Prompt editor did not settle')
       const panel=query('.co-settings-panel'), headings=[...panel.querySelectorAll('h3')]
-      ensure(headings.map(h=>text(h)).join('|')==='GitHub account|Agent prompts', 'Settings section order or headings differ')
-      ensure(button('GitHub account settings',panel) && !text(panel).includes('Manage in Settings'), 'Settings destination is ambiguous')
-      await click(button('Done',panel))
+      ensure(headings.map(h=>text(h)).join('|')==='GitHub|Default agent|Agent prompts', 'Settings section order or headings differ')
+      ensure(panel.querySelectorAll('.co-prompt-settings textarea').length===1, 'Settings did not show exactly one prompt editor')
+      ensure(button('Manage account',panel) && !text(panel).includes('Manage in Settings'), 'Settings destination is ambiguous')
+      await click(button('Close settings',panel))
     })
     await check('a chat card sends only after Confirm, through the guarded app handler with the confirmed snapshot', async () => {
       root.render(null)
