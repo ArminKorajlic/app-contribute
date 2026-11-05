@@ -176,13 +176,13 @@ test('a focused review waits for its exact refresh instead of trusting a stale l
 test('review-facing refreshes reject stale async settlements', () => {
   assert.match(appSource, /const reviewStatusRequestRef = useRef\(0\)/)
   assert.match(appSource, /requestId !== reviewStatusRequestRef\.current/)
-  assert.match(appSource, /const incomingReviewsRequestRef = useRef\(0\)/)
-  assert.match(appSource, /requestId !== incomingReviewsRequestRef\.current/)
-  assert.match(appSource, /connRef\.current\.state !== 'connected'/)
-  assert.match(appSource, /incomingReviewsRequestRef\.current \+= 1/)
+  // The hub drops a read begun before an action superseded it, and reads of one fact never overlap.
+  assert.match(appSource, /hub\.supersede\('incoming'\)/)
+  assert.equal((appSource.match(/hub\.supersede\('incoming'\)/g) || []).length, 2, 'settling a review request and assigning one both supersede an in-flight read')
+  assert.match(appSource, /connRef\.current\.state === 'connected'/)
   assert.match(appSource, /refreshMountedLedger: ledgerReadyRef\.current/)
-  assert.match(appSource, /await refreshCoordinatorRef\.current\(\)/)
-  assert.match(appSource, /document\.addEventListener\('visibilitychange', resolveIncompleteStack\)/)
+  assert.match(appSource, /await hub\.refresh\('ledger'\)/)
+  assert.match(appSource, /onShownAgain\(resolveIncompleteStack\)/)
   assert.match(appSource, /window\.mobius\?\.online === false/)
 })
 

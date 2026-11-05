@@ -8,7 +8,7 @@ import { deliverCycleMessage } from '../cycle-delivery.js'
 // The hook's effects observe only a fixture runtime/storage. No DOM, real
 // conversation, saved partner record, or application transport is involved.
 const source = readFileSync(new URL('../ui/useProjectCycle.js', import.meta.url), 'utf8')
-function fixture({ saved = null, runtime = {}, statusError = false, stopResult = { stopped: true }, begin = async () => ({ ok: false, error: 'Fixture start refused' }), current, update = async () => true, list = async () => [], deliver = () => assert.fail('Observation must not start an agent') } = {}) {
+function fixture({ saved = null, runtime = {}, statusError = false, stopResult = { stopped: true }, begin = async () => ({ ok: false, error: 'Fixture start refused' }), current, update = async () => true, list = async () => [], hub = null, deliver = () => assert.fail('Observation must not start an agent') } = {}) {
   const slots = [], effects = [], calls = []
   let cursor = 0, planned = null
   const context = vm.createContext({
@@ -22,6 +22,7 @@ function fixture({ saved = null, runtime = {}, statusError = false, stopResult =
       return slots[index] ||= { current: initial }
     },
     useCallback: callback => callback,
+    useSyncHub: () => hub,
     useEffect: effect => { effects.push(effect) },
     loadCycleState: async key => { calls.push(['load', key]); return typeof saved === 'function' ? saved() : saved },
     beginProjectCycle: async (...args) => { calls.push(['begin', args[0]]); const result = await begin(...args); if (result?.ok) planned = result; return result },
@@ -574,4 +575,21 @@ test('a first start in no conversation says so, not that a conversation was lost
   await until(() => p.render().cycle.phase === 'idle')
   assert.equal(p.render().cycle.error, 'This start isn’t in any conversation. Start it again.')
   assert.equal(platform.chats.length, 0, 'nothing was created by the retry')
+})
+
+test('the observed conversation is read through the sync hub: every five seconds until it completes, then only when shown again', async () => {
+  for (const [runtime, cadence] of [[{ running: true }, 5000], [{ running: false, goal: { status: 'completed' } }, null]]) {
+    const intervals = []
+    const hub = { every: (read, ms) => { intervals.push(ms); return () => {} } }
+    const f = fixture({ saved: { chat_id: 'fixture-chat', title: 'Work' }, runtime, hub })
+    f.render(); await f.restore()
+    f.render(); await f.restore()
+    assert.equal(intervals.at(-1), cadence, JSON.stringify(runtime))
+  }
+})
+
+test('a project view without a sync hub still observes the conversation once', async () => {
+  const f = fixture({ saved: { chat_id: 'fixture-chat', title: 'Work' }, runtime: { running: true } })
+  f.render(); await f.restore()
+  assert.equal(f.render().cycle.phase, 'running')
 })

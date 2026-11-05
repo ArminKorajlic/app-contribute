@@ -441,6 +441,18 @@ detail's **From** line links the local preparation and the source, review and
 fix conversations for that exact repository and number. The block declares no
 executable capability and grants nothing.
 
+## How the screens stay in sync
+
+The app gets no push from Möbius or GitHub, so one sync hub (`refresh.js`, `createSyncHub`) decides when anything is read again; no screen keeps a timer or a focus handler of its own. The one exception is the legacy relay-submission check in `index.jsx`, which polls every 30 s only while a relay-submitted PR is still being confirmed. A pane tiled beside a chat is shown without ever being focused, so the hub follows the shell's visibility signal (`window.mobius.onVisibilityChange`, with the page's visibility on an older Möbius), not window focus.
+
+- **Hidden: no reads.** Shown again: the platform lists are read at once.
+- **Review runs and Respond conversations** (a platform read, shared by the Desk, the PR page and the PR reviews list): every 10 s while a review or conversation is at work, every 30 s otherwise.
+- **GitHub** is watched by a probe once a minute (one point per 100 reviewed PRs): the open review requests and the PRs you reviewed. A moved review request reads the full list (55 points, seconds) at most once every 5 minutes on its own; moved reviewed PRs are read together, only those, in one read at most every 5 minutes on its own. A busy hour with one reviewed PR moving every minute costs about 730 points; with many different ones moving every minute it is capped near 1,400, and automatic reads stop below 1,000 points left. A review that changed state (not each turn of its conversation) reads its PR and the requests at once; a posted verdict answers its request locally, because GitHub's search lags.
+- **Budget:** below 1,000 points left, automatic GitHub reads stop until you press **Sync with GitHub**; the platform reads go on. Sync and your own actions always read, including the PRs you reviewed.
+- **Adding something to read again?** Register it as a fact (`hub.fact(name, { read, apply, every })`), mark it `github: true` if it costs points, and let `hub.refresh(name)` serve the actions that change it. The heavy contribution-history pass stays behind Sync, with no timer.
+
+The `runSyncChecks` scenario of the browser fixture runs the whole app on a fake clock with a frame nobody focuses, and holds each outside change to its bound.
+
 ## Workspace checks
 
 Run the local unit, rendering and Python contracts:

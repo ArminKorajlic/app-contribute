@@ -4,7 +4,7 @@
 // live read of that PR: a saved review cannot say whether its PR moved on, so
 // every PR is read, in bounded batches. A PR that could not be read is shown as
 // unknown, never classified from older saved data.
-import { PR_FIELDS, fetchLiveStates } from './api.js'
+import { PR_FIELDS, aliasedPulls, fetchLiveStates, validPullRef } from './api.js'
 import { standingFor } from './pr-standing.js'
 
 const BATCH = 25
@@ -23,6 +23,23 @@ export function reviewEntries(runs) {
   }
   return [...newest.values()].sort((a, b) => b.at - a.at)
 }
+
+// One run's state as it matters to GitHub: the run and each item with its verdict.
+// Not its conversation (execution_state): a review chat ends a turn each time its
+// helper takes over, and that moves nothing on the PR.
+const runSignature = run => [run.state, ...(run.items || []).map(item => `${item.state}:${item.verdict_proposal?.state || ''}`)].join('|')
+
+// The PRs of the reviews that changed state between two reads of the runs, each
+// with whether its verdict was posted: that answers the PR's review request.
+// Runs that are new, or from before there was a read to compare with, are not changes.
+export function changedReviewRuns(before, after) {
+  const known = new Map((before || []).map(run => [run.id, runSignature(run)]))
+  return (after || []).filter(run => known.has(run.id) && known.get(run.id) !== runSignature(run))
+    .flatMap(run => (run.items || []).map(item => ({ repo: item.repo, number: item.number, verdictPosted: item.verdict_proposal?.state === 'posted' })))
+}
+
+// The runs with `run` shown in place of the one it answers (or first, when it is new).
+export const withReviewRun = (runs, run) => (runs.some(item => item.id === run.id) ? runs.map(item => (item.id === run.id ? run : item)) : [run, ...runs])
 
 const chip = (label, tone) => ({ label, tone })
 const TONE = { you: 'owner', agent: 'running', other: 'quiet', none: 'quiet' }
@@ -53,21 +70,15 @@ export function reviewCounts(entries) {
   return { waiting: count('waiting'), confirm: entries.filter(entry => entry.confirm).length, running: count('running'), stalled: count('stalled'), unknown: count('unknown'), done: count('done') }
 }
 
-const validRef = ref => /^[\w.-]+\/[\w.-]+$/.test(ref.repo) && Number.isSafeInteger(ref.number) && ref.number > 0
-
 async function readBatch(token, refs) {
-  const reads = refs.map((ref, index) => {
-    const [owner, name] = ref.repo.split('/')
-    return `p${index}:repository(owner:${JSON.stringify(owner)},name:${JSON.stringify(name)}) { pullRequest(number:${ref.number}) { ${PR_FIELDS} } }`
-  })
-  const data = await fetchLiveStates(token, `query ContributeReviewPulls { ${reads.join(' ')} }`)
+  const data = await fetchLiveStates(token, `query ContributeReviewPulls { rateLimit { remaining } ${aliasedPulls(refs, PR_FIELDS)} }`)
   return refs.map((ref, index) => [reviewKey(ref.repo, ref.number), data?.[`p${index}`]?.pullRequest || null])
 }
 
 // Every PR a review belongs to, read live in batches one after another. The
 // result holds only the PRs GitHub returned; the rest stay unknown.
 export async function loadReviewPulls(token, refs) {
-  const wanted = refs.filter(validRef)
+  const wanted = refs.filter(validPullRef)
   const batches = Array.from({ length: Math.ceil(wanted.length / BATCH) }, (_, index) => wanted.slice(index * BATCH, (index + 1) * BATCH))
   const read = []
   for (const batch of batches) read.push(...await readBatch(token, batch))

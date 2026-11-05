@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { beginProjectCycle, freezeStartAction, loadCurrentCycle, loadCycleState, updateCurrentCycle } from '../storage.js'
 import { openAgentConversation } from './BatchAction.jsx'
+import { useSyncHub } from './useReviewList.js'
 
 // Run statuses the platform still owns (models.NONTERMINAL_RUN_STATUSES).
 const NONTERMINAL_RUN_STATUSES = ['running', 'parked', 'resume_pending']
@@ -39,6 +40,7 @@ export function projectCyclePhase(runtime) {
 export const BUSY_PHASES = ['starting', 'running', 'waiting', 'scheduled', 'stopping']
 
 export function useProjectCycle(projectKey, deliver) {
+  const hub = useSyncHub()
   const [cycle, setCycle] = useState({ phase: 'restoring', chatId: '', history: [], error: '' })
   const alive = useRef(true)
   const identity = useRef(projectKey)
@@ -82,14 +84,13 @@ export function useProjectCycle(projectKey, deliver) {
     void recheck()
     return () => { alive.current = false; observation.current++ }
   }, [projectKey, recheck])
+  // The conversation is durable; this mounted view only observes it: every five
+  // seconds while it is shown and not complete, and once more when shown again
+  // (the sync hub owns the timer, so a hidden view reads nothing).
   useEffect(() => {
-    if (!cycle.chatId) return
-    const check = () => { if (!document.hidden) void refresh(cycle.chatId) }
-    // The conversation is durable; this mounted view only observes it.
-    const timer = cycle.phase === 'complete' ? null : setInterval(check, 5000)
-    window.addEventListener('focus', check)
-    return () => { clearInterval(timer); window.removeEventListener('focus', check) }
-  }, [cycle.chatId, cycle.phase, refresh])
+    if (!cycle.chatId || !hub) return undefined
+    return hub.every(() => refresh(cycle.chatId), cycle.phase === 'complete' ? null : 5000)
+  }, [hub, cycle.chatId, cycle.phase, refresh])
   // No conversation holds the cycle: its first request never reached Möbius
   // (the usual case), or the owner deleted the conversation it created.
   const NEVER_REACHED = 'This start isn’t in any conversation. Start it again.'

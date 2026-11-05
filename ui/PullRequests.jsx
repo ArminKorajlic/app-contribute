@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { awaitsGithub, earlierReviewForPull, pullAction, mergePull, reviewIntent, collaborationRequest, discoverPull, discoverPulls, liveSelection, loadReviewRuns, conversationCount, matchingPulls, mayAssign, mergeSelection, prKey, reviewForPull, reviewItemProgress, reviewRunRequest, reviewRunTitle, runDetailsElsewhere, notOursToObserve, assignPulls, TAKEOVER_SCOPE } from '../collaboration.js'
+import { awaitsGithub, earlierReviewForPull, pullAction, mergePull, reviewIntent, collaborationRequest, discoverPull, discoverPulls, liveSelection, conversationCount, matchingPulls, mayAssign, mergeSelection, prKey, reviewForPull, reviewItemProgress, reviewRunRequest, reviewRunTitle, runDetailsElsewhere, notOursToObserve, assignPulls, TAKEOVER_SCOPE } from '../collaboration.js'
 import { acknowledgeAssignment, emptyPullView, invalidatedSelection, isOpenPull, isOwnPull, observePulls, pullsInView } from '../pull-view.js'
 import { chipOf, frameOf, standingFor } from '../pr-standing.js'
 import { ReviewFrame } from './ReviewFrame.jsx'
@@ -137,15 +137,16 @@ function AssigneePicker({ pulls, token, appId, ownLogin, onAssigned, onClose }) 
 }
 
 // One session cache per repository: the loaded PR list (view and paging
-// state), the agent-run list, the per-PR detail snapshots and the observation
+// state), the per-PR detail snapshots and the observation
 // generation survive leaving and reopening a project or a PR page, so GitHub
 // is asked once per repository per app open. The header's Refresh (refreshKey)
 // or a change in the local contribution records invalidates the entry.
 const sessionCache = new Map()
+const NO_LIST = []
 function sessionEntry(repo, key) {
   const id = repo.toLowerCase()
   if (sessionCache.get(id)?.key !== key) {
-    sessionCache.set(id, { key, view: null, data: null, runs: null, respondChats: null, details: new Map(), generation: 0 })
+    sessionCache.set(id, { key, view: null, data: null, details: new Map(), generation: 0 })
   }
   return sessionCache.get(id)
 }
@@ -158,11 +159,14 @@ const runAnchor = run => run.items?.length === 1 ? `${run.items[0].repo.toLowerC
 
 // `scope` follows the project tabs: 'all' (every open PR), 'requests' (PRs that
 // ask for the owner's review) or 'mine' (the saved agent reviews only).
-// `onRunsChanged` tells the Desk (its reviewRuns in index.jsx) that a review was
-// started, stopped or re-read here, so its rows show the frame without a Sync.
+// The review runs and the live Respond conversations are the app's one shared copy
+// (`runs`, `respondChats`; index.jsx useDeskReviewRuns), kept fresh by the sync hub:
+// this page holds no copy, timer or focus handler of its own. `onRunPatched(run)`
+// shows the answer of an action here (a start, a stop, a verdict) in that copy, and
+// `onRunsChanged` asks the hub to read it again, so every screen shows the change.
 // `onReviewPosted(repo, number)` tells it the owner's review of a PR reached GitHub,
 // so the row leaves Review requests without waiting for the next read.
-export function PullRequests({ appId, token, project, conn, onChanged, onReviewPosted, onRunsChanged, records = [], onRecord, refreshKey, focusPull, focusRun, onFocusRelease, scope = 'all', onScope, onTotal, presentation = 'list', onOpenPage = null, onStartAgent = null, onOpenForReview = null, ignoredReviews = null, onIgnoreReview = null, onUndoIgnore = null }) {
+export function PullRequests({ appId, token, project, conn, onChanged, onReviewPosted, runs = NO_LIST, respondChats = NO_LIST, runsError = '', onRunsChanged, onRunPatched, records = [], onRecord, refreshKey, focusPull, focusRun, onFocusRelease, scope = 'all', onScope, onTotal, presentation = 'list', onOpenPage = null, onStartAgent = null, onOpenForReview = null, ignoredReviews = null, onIgnoreReview = null, onUndoIgnore = null }) {
   const repo = project?.canonical_repo || ''
   const publicRevision = records.filter(record => record.url).map(record => `${record.id}:${record.status}:${record.number}:${record.last_updated_pr_at || ''}`).sort().join('|')
   const session = sessionEntry(repo, `${refreshKey}|${publicRevision}`)
@@ -178,10 +182,12 @@ export function PullRequests({ appId, token, project, conn, onChanged, onReviewP
   const focusRef = useRef(null)
   focusRef.current = focusKey ? { key: focusKey, nonce: focusPull.nonce, repo: focusPull.repo, number: focusPull.number } : null
   const [focusError, setFocusError] = useState(null)
-  const [runs, setRuns] = useState(session.runs || [])
-  // Live Respond-to-feedback conversations come with the runs: they hold a PR as an agent job too.
-  const [respondChats, setRespondChats] = useState(session.respondChats || [])
-  const [runError, setRunError] = useState('')
+  // Three sources of the one "agent progress unavailable" note: an action's own
+  // failure (cleared by the next action), a failed read of the runs (`runsError`,
+  // cleared by the next read) and a failed read of the linked run (likewise).
+  const [ownRunError, setOwnRunError] = useState('')
+  const [linkedError, setLinkedError] = useState('')
+  const runError = ownRunError || runsError || linkedError
   const [filter, setFilter] = useState('all')
   const [query, setQuery] = useState('')
   const [searchOpen, setSearchOpen] = useState(false)
@@ -274,22 +280,18 @@ export function PullRequests({ appId, token, project, conn, onChanged, onReviewP
   const linkedRef = useRef(null)
   linkedRef.current = linked
   const runFocusRef = useRef(null)
-  // One ordering boundary for every run observation: a read applies only if
-  // nothing newer was issued or confirmed since it began. A Stop, a newer
-  // read advances it, and exact reads also match their lease nonce, so an older response can never
-  // overwrite a confirmed newer state.
-  const runsEpoch = useRef(0)
-  const loadRuns = useCallback(async () => {
-    const epoch = ++runsEpoch.current
-    const current = () => alive.current && runsEpoch.current === epoch
-    let list
-    try {
-      const show = next => { if (current()) { setRuns(next.runs || []); setRespondChats(next.respond_chats || []); setRunError('') } }
-      list = await loadReviewRuns(token, appId, { onList: show })
-      show(list)
-    } catch (error) { if (current()) setRunError(error.message); return }
+  const runsChangedRef = useRef(onRunsChanged)
+  runsChangedRef.current = onRunsChanged
+  // One ordering boundary for the linked run's exact read: it applies only if
+  // nothing newer was issued or confirmed since it began. A Stop advances it, a
+  // newer read advances it, and exact reads also match their lease nonce, so an
+  // older response can never overwrite a confirmed newer state.
+  const linkedEpoch = useRef(0)
+  const readLinked = useCallback(async list => {
+    const epoch = ++linkedEpoch.current
+    const current = () => alive.current && linkedEpoch.current === epoch
     const focus = runFocusRef.current
-    if (!current() || !focus || (list.runs || []).some(run => run.id === focus.runId)) return
+    if (!focus || list.some(run => run.id === focus.runId)) return
     const path = `review-runs/${encodeURIComponent(focus.runId)}`
     try {
       if (linkedRef.current && !runDetailsElsewhere(linkedRef.current) && awaitsGithub(linkedRef.current)) {
@@ -298,10 +300,9 @@ export function PullRequests({ appId, token, project, conn, onChanged, onReviewP
         catch (error) { if (!notOursToObserve(error)) throw error }
       }
       const exact = (await collaborationRequest(token, appId, path)).run
-      if (current() && runFocusRef.current?.nonce === focus.nonce && exact) setLinked(exact)
-    } catch (error) { if (current()) setRunError(`This run's latest status is unavailable: ${error.message}`) }
+      if (current() && runFocusRef.current?.nonce === focus.nonce && exact) { setLinked(exact); setLinkedError('') }
+    } catch (error) { if (current()) setLinkedError(`This run's latest status is unavailable: ${error.message}`) }
   }, [token, appId])
-  useEffect(() => { sessionRef.current.runs = runs; sessionRef.current.respondChats = respondChats }, [runs, respondChats])
   // What this Möbius can do for the owner (Merge among it), asked once. An older
   // Möbius answers 404 and keeps the menu as it was.
   useEffect(() => {
@@ -313,8 +314,7 @@ export function PullRequests({ appId, token, project, conn, onChanged, onReviewP
   useEffect(() => {
     if (conn.state !== 'connected') return
     // A repository already read this session reopens from its cache with no
-    // new GitHub round-trip; Refresh or changed local records reload it. Agent
-    // runs stay live either way: they track review progress, not the list.
+    // new GitHub round-trip; Refresh or changed local records reload it.
     const cached = sessionRef.current
     if (cached.view && cached.data && !cached.data.loading && !cached.data.error) {
       if (viewRef.current !== cached.view) { viewRef.current = cached.view; setView(cached.view) }
@@ -322,12 +322,9 @@ export function PullRequests({ appId, token, project, conn, onChanged, onReviewP
     } else {
       void load()
     }
-    void loadRuns()
-    const refresh = () => { if (!document.hidden) void loadRuns() }
-    const timer = setInterval(refresh, 20000)
-    window.addEventListener('focus', refresh)
-    return () => { clearInterval(timer); window.removeEventListener('focus', refresh) }
-  }, [conn.state, publicRevision, refreshKey, load, loadRuns])
+    // Opening a project's list or a PR page shows the runs as they are now, not as the last cadence read had them.
+    void runsChangedRef.current?.()
+  }, [conn.state, publicRevision, refreshKey, load])
   useEffect(() => {
     task?.setPublicKeys(new Set(view.inventory))
     return () => task?.setPublicKeys(new Set())
@@ -355,6 +352,8 @@ export function PullRequests({ appId, token, project, conn, onChanged, onReviewP
   // The lease brings its exact read; it is kept and refreshed only while held.
   // An exact read lands only on the lease (nonce) it was issued for.
   useEffect(() => { setLinked(runFocusId && focusRun?.run?.id === runFocusId ? focusRun.run : null) }, [runFocusId, focusRun?.nonce])
+  // The linked run is read again with each new copy of the runs (the hub's cadence).
+  useEffect(() => { if (conn.state === 'connected' && runFocusId) void readLinked(runs) }, [runs, runFocusId, focusRun?.nonce, conn.state, readLinked])
   const runOpened = useRef('')
   const runPresent = !!runFocusId && (runs.some(run => run.id === runFocusId) || linked?.id === runFocusId)
   useEffect(() => {
@@ -435,7 +434,7 @@ export function PullRequests({ appId, token, project, conn, onChanged, onReviewP
       if (!resolved) throw new Error('The selected workflow is still being checked. Try again shortly.')
       const pulls = await liveSelection(token, choice.pulls)
       const result = await collaborationRequest(token, appId, 'review-runs', reviewRunRequest({ ...choice, pulls, options:resolved.options, agent:resolved.agent, preview_sha256:resolved.preview.preview_sha256 }))
-      setRuns(old => [result.run, ...old.filter(run => run.id !== result.run.id)])
+      onRunPatched?.(result.run)
       void onRunsChanged?.()
       setChoice(null); setSelected(new Set())
     } catch (error) {
@@ -448,16 +447,16 @@ export function PullRequests({ appId, token, project, conn, onChanged, onReviewP
   // instead of any older read. Null when it failed (the error is shown).
   async function runAction(run, action, body = {}) {
     if (busy) return null
-    setBusy(true); setRunError('')
-    runsEpoch.current++ // reads issued before the action cannot land after it
+    setBusy(true); setOwnRunError('')
+    linkedEpoch.current++ // a linked read issued before the action cannot land after it
     try {
       const result = await collaborationRequest(token, appId, `review-runs/${encodeURIComponent(run.id)}/${action}`, body)
-      runsEpoch.current++
+      linkedEpoch.current++
       if (linkedRef.current?.id === run.id) setLinked(result.run)
-      setRuns(old => old.map(item => item.id === run.id ? result.run : item))
+      onRunPatched?.(result.run)
       void onRunsChanged?.()
       return result
-    } catch (error) { setRunError(error.message); return null }
+    } catch (error) { setOwnRunError(error.message); return null }
     finally { setBusy(false) }
   }
   const stopRun = run => runAction(run, 'stop')
@@ -468,7 +467,7 @@ export function PullRequests({ appId, token, project, conn, onChanged, onReviewP
   async function decideVerdict(run, item, proposal, decision, extra = {}) {
     const result = await runAction(run, 'verdict', { repo: item.repo, number: item.number, head_sha: item.head_sha, proposal_id: proposal.id, decision, ...extra })
     if (result?.verdict?.state === 'posted') onReviewPosted?.(item.repo, item.number)
-    if (result?.merge_resumed === false) setRunError('Approved on GitHub. Open the review conversation and ask it to continue to the merge.')
+    if (result?.merge_resumed === false) setOwnRunError('Approved on GitHub. Open the review conversation and ask it to continue to the merge.')
   }
   // The owner's own Push or Don't push for fixes an agent prepared. The platform pushes exactly
   // that commit, once, and only if the branch has not moved; the agent never pushes by itself.
@@ -516,16 +515,7 @@ export function PullRequests({ appId, token, project, conn, onChanged, onReviewP
   const addressDialog = addressing && onStartAgent ? <ReviewDialog onClose={() => setAddressing(null)}><AddressFeedbackWindow pr={addressing.pr} findings={addressing.findings} token={token} appId={appId} onStart={onStartAgent} onClose={() => setAddressing(null)} /></ReviewDialog> : null
   const closeIgnore = () => setIgnoring(null)
   // A posted review changes what the run shows (a link to it, and whose turn it is), so the runs are read again.
-  async function refreshRuns() {
-    try {
-      const list = await collaborationRequest(token, appId, 'review-runs')
-      runsEpoch.current++
-      setRuns(list.runs || [])
-      setRespondChats(list.respond_chats || [])
-      setRunError('')
-      void onRunsChanged?.()
-    } catch (error) { setRunError(error.message) }
-  }
+  const refreshRuns = () => onRunsChanged?.()
   const closePost = () => setPosting(null)
   // The posted findings are a review of the PR, which answers a request for it.
   const findingsPosted = outcome => {
@@ -556,7 +546,7 @@ export function PullRequests({ appId, token, project, conn, onChanged, onReviewP
   const visibleKeys = new Set(visible.map(prKey))
   const openRun = run => task?.open(`task:run:${run.id}`)
   // Saved reviews compare with the loaded PRs, so a failed read shows on every tab.
-  const loadError = data.error ? <div className="co-alert" role="alert"><strong>Couldn’t load pull requests</strong><p className="co-alert-text">{data.error}</p><button className="co-btn" disabled={data.loading} onClick={() => { void load(); void loadRuns() }}>Try again</button></div> : null
+  const loadError = data.error ? <div className="co-alert" role="alert"><strong>Couldn’t load pull requests</strong><p className="co-alert-text">{data.error}</p><button className="co-btn" disabled={data.loading} onClick={() => { void load(); void onRunsChanged?.() }}>Try again</button></div> : null
   if (scope === 'edits') return null
   if (scope === 'mine') return <section className="co-public-work is-mine" aria-label="Agent reviews">
     {runError ? <p className="co-pr-note" role="status">Agent progress unavailable: {runError}</p> : null}

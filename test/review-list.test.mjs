@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { DESK_VIEWS, deskCounts, railBadge } from '../desk.js'
-import { classifyReview, loadReviewPulls, reviewCounts, reviewEntries, reviewKey } from '../review-list.js'
+import { changedReviewRuns, classifyReview, loadReviewPulls, reviewCounts, reviewEntries, reviewKey, withReviewRun } from '../review-list.js'
 
 const HEAD = 'a'.repeat(40)
 const run = (extra = {}) => ({ id: 'r', state: 'complete', execution_state: 'completed', chat_id: 'c', created_at: '2026-11-03T22:00:00Z', ...extra })
@@ -200,4 +200,23 @@ test('a Needs you row offers the fix when your own review of your own PR found p
   assert.doesNotMatch(view({ ...base, runs: [{ ...found, items: [{ ...found.items[0], state: 'all_clear' }] }] }), /Fix these findings/)
   assert.doesNotMatch(view({ ...base, login: 'someone-else' }), /Fix these findings/)
   assert.doesNotMatch(view({ ...base, runs: [] }), /Fix these findings|co-desk-row-split/)
+})
+
+test('only a review that changed state moves its PR: not a new run, not a turn of its conversation', () => {
+  const working = run({ id: 'a', state: 'reviewing', execution_state: 'running', items: [item('reviewing')] })
+  assert.deepEqual(changedReviewRuns(null, [working]), [], 'the first read has nothing to compare with')
+  assert.deepEqual(changedReviewRuns([working], [working, run({ id: 'b', items: [item('reviewing', { number: 7 })] })]), [], 'a new run is not a change')
+  const turnEnded = { ...working, execution_state: 'completed' }
+  assert.deepEqual(changedReviewRuns([working], [turnEnded]), [], 'a review chat ending its turn moves nothing on the PR')
+  const verdictReady = { ...working, state: 'needs_you', items: [item('verdict_pending', { verdict_proposal: { state: 'proposed' } })] }
+  assert.deepEqual(changedReviewRuns([working], [verdictReady]), [{ repo: 'mobius-os/mobius', number: 2019, verdictPosted: false }])
+  const posted = { ...verdictReady, state: 'complete', items: [item('all_clear', { verdict_proposal: { state: 'posted' } })] }
+  assert.deepEqual(changedReviewRuns([verdictReady], [posted]), [{ repo: 'mobius-os/mobius', number: 2019, verdictPosted: true }])
+})
+
+test('an action\'s answer replaces its run in place, or comes first when the run is new', () => {
+  const [a, b] = [run({ id: 'a' }), run({ id: 'b' })]
+  const changed = { ...a, state: 'reviewing' }
+  assert.deepEqual(withReviewRun([a, b], changed), [changed, b])
+  assert.deepEqual(withReviewRun([b], a).map(entry => entry.id), ['a', 'b'])
 })

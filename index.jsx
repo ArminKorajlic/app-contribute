@@ -42,7 +42,7 @@ import { stackPublicationRecords } from './stack.js'
 import { deliverCycleMessage } from './cycle-delivery.js'
 import { DEFAULT_STAGE, stageOf } from './publication-stage.js'
 import { abandonPrepared, cacheFeed, cacheSourceSnapshot, loadAppSettings, loadCachedFeed, loadCachedSourceSnapshot, loadContributionRecord, loadFreshContributionRecord, loadFreshContributionRecords, loadCycleState, loadFullDiff, loadLedger, restoreAbandoned, saveAppSettings } from './storage.js'
-import { createRefreshCoordinator } from './refresh.js'
+import { createSyncHub, onShownAgain } from './refresh.js'
 import { checkUpstream } from './upstream-check.js'
 import { DESK_LAST_LOOKED_KEY, deskCounts, projectNeedsCount, settleReviewRequest } from './desk.js'
 import { withIgnoreNote, withoutIgnoreNote } from './collaboration.js'
@@ -54,6 +54,7 @@ import {
   assignIncomingReview,
   fetchIncomingReviews,
   fetchGithubStatus,
+  githubRemainingPoints,
   fetchLiveStates,
   fetchMobiusContributionStatus,
   fetchContributionScreenshot,
@@ -75,7 +76,7 @@ import { ContributionRun } from './ui/Feed.jsx'
 import { ScreenshotLoaderContext } from './ui/useScreenshots.js'
 import { Icon } from './ui/Icons.jsx'
 import { SourceMap } from './ui/SourceMap.jsx'
-import { useDeskReviewRuns, useReviewList } from './ui/useReviewList.js'
+import { SyncHubContext, useDeskReviewRuns, useReviewList } from './ui/useReviewList.js'
 import { SyncNote } from './ui/GithubParts.jsx'
 import { ProjectEdits } from './ui/ProjectEdits.jsx'
 import { RepositoryPicker } from './ui/RepositoryPicker.jsx'
@@ -89,9 +90,6 @@ import { cardRecordIds, chatBlockTarget } from './chat-blocks.js'
 import { InlineBlockSession } from './ui/InlineBlockSession.jsx'
 import { reviewAddressFor, writeBindingRefusal } from './send-readiness.js'
 import { readBlockSession } from './block-protocol.js'
-
-// The shortest gap between two reads of the review requests triggered by the window regaining focus.
-const INCOMING_REREAD_MS = 30000
 
 // The app's own icon, with a lettered fallback for installs whose icon route
 // 404s. Mirrors the App Store header pattern.
@@ -340,7 +338,9 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
   const connRef = useRef(conn)
   const connectionRequestRef = useRef(0)
   const reviewStatusRequestRef = useRef(0)
-  const incomingReviewsRequestRef = useRef(0)
+  // The one refresh path: every fact the app shows is read through it (refresh.js).
+  const hub = useMemo(() => createSyncHub({ remainingPoints: githubRemainingPoints }), [])
+  useEffect(() => hub.start(), [hub])
   const agentStartRef = useRef(false)
   const sourceSnapshotRef = useRef(sourceSnapshot)
   const readySignalRef = useRef(false)
@@ -555,49 +555,43 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
   const refreshConnectionRef = useRef(null)
   refreshConnectionRef.current = refreshConnection
 
-  const incomingReadAtRef = useRef(0)
-  const refreshIncomingReviews = useCallback(async () => {
-    const requestId = incomingReviewsRequestRef.current + 1
-    incomingReviewsRequestRef.current = requestId
-    if (connRef.current.state !== 'connected') {
-      setIncomingReviews([])
-      return []
-    }
-    incomingReadAtRef.current = Date.now()
-    const rows = await fetchIncomingReviews(token)
-    if (
-      requestId !== incomingReviewsRequestRef.current
-      || connRef.current.state !== 'connected'
-    ) return []
-    // A read that failed leaves the list as it was; an empty one would clear every request.
-    if (rows) setIncomingReviews(rows)
-    return rows || []
-  }, [token])
-
-  // A review submitted from a PR page answers its request: the row leaves
-  // Review requests now. The request id moves on so a read already in flight
-  // cannot put it back.
-  const settleIncomingReview = useCallback((repo, number) => {
-    incomingReviewsRequestRef.current += 1
-    setIncomingReviews(current => settleReviewRequest(current, repo, number))
-  }, [])
-
-  // A review can also be submitted outside this app (on GitHub, in a review
-  // chat), so coming back to the window reads the requests again, at most every
-  // half minute: each read is a few seconds of GitHub work.
+  // The review requests are a GitHub fact: the hub reads them on open, on Sync, when
+  // a review changed state and when its probe saw a change, and on its own at most
+  // every five minutes (each read is 55 points and seconds of GitHub work).
   useEffect(() => {
     if (sendOnly) return undefined
-    const onFocus = () => {
-      if (document.hidden || Date.now() - incomingReadAtRef.current < INCOMING_REREAD_MS) return
-      void refreshIncomingReviews()
-    }
-    window.addEventListener('focus', onFocus)
-    return () => window.removeEventListener('focus', onFocus)
-  }, [refreshIncomingReviews, sendOnly])
+    return hub.fact('incoming', {
+      github: true,
+      read: () => (connRef.current.state === 'connected' ? fetchIncomingReviews(token) : []),
+      // A read that failed leaves the list as it was; an empty one would clear every request.
+      apply: rows => { if (rows) setIncomingReviews(connRef.current.state === 'connected' ? rows : []) },
+      failed: () => {},
+    })
+  }, [hub, token, sendOnly])
+  const refreshIncomingReviews = useCallback(() => hub.refresh('incoming'), [hub])
+
+  // A review submitted from a PR page answers its request: the row leaves
+  // Review requests now. Reads already in flight are superseded so none can
+  // put it back.
+  const settleIncomingReview = useCallback((repo, number) => {
+    hub.supersede('incoming')
+    setIncomingReviews(current => settleReviewRequest(current, repo, number))
+  }, [hub])
+
+  // A review the platform reports changed state (it ended, its verdict posted, it
+  // merged): its PR may have moved and the request it answered may be gone. A
+  // posted verdict answers its request now, as the owner's own post does, because
+  // GitHub's search lags; anything else reads the requests again.
+  const reviewListRef = useRef(null)
+  const onReviewsMoved = useCallback(moved => {
+    moved.filter(pull => pull.verdictPosted).forEach(pull => settleIncomingReview(pull.repo, pull.number))
+    if (moved.some(pull => !pull.verdictPosted)) void hub.changed('incoming')
+    reviewListRef.current?.pullsMoved(moved)
+  }, [hub, settleIncomingReview])
 
   // Review runs for the whole desk: its rows show which PRs are under review.
-  const { runs: reviewRuns, respondChats, ready: runsReady, refresh: refreshReviewRuns } = useDeskReviewRuns({
-    token, appId, connState: conn.state, sendOnly, pullPageOpen: !!pullPage,
+  const { runs: reviewRuns, respondChats, error: runsError, ready: runsReady, refresh: refreshReviewRuns, patch: patchReviewRun } = useDeskReviewRuns({
+    hub, token, appId, connState: conn.state, sendOnly, pullPageOpen: !!pullPage, onReviewsMoved,
   })
   // Review requests count toward the first full sync, so the workspace never
   // opens with an empty inbox that fills in a beat later.
@@ -693,11 +687,12 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
     return () => { cancelled = true }
   }, [token, fetchRefreshed, replaceFeed, signalReady, sendOnly])
 
-  // One coordinator owns every later full pass (the header's Refresh, a chat
-  // card's Try again, a focused link's catch-up): concurrent requests dedupe
-  // into one run plus at most one trailing run. GitHub is synced once when the
-  // app opens; there is deliberately no timer and no hidden focus/visibility
-  // re-sync — the owner refreshes explicitly from the header.
+  // The hub's `ledger` fact owns every later full pass (the header's Refresh, a
+  // chat card's Try again, a focused link's catch-up): concurrent requests dedupe
+  // into one run plus at most one trailing run. This heavy pass is synced once
+  // when the app opens and has deliberately no timer and no visibility re-sync —
+  // the owner refreshes explicitly from the header. The lighter facts (review
+  // runs, review requests, reviewed PRs) are the hub's to keep fresh (refresh.js).
   const refreshWorkRef = useRef(null)
   const forceRefreshRef = useRef(false)
   const runRefreshWork = useCallback(async () => {
@@ -728,12 +723,9 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
     }
   }, [fetchRefreshed, refreshReviewStatus, replaceFeed])
   refreshWorkRef.current = runRefreshWork
-  const refreshCoordinatorRef = useRef(null)
-  if (!refreshCoordinatorRef.current) {
-    refreshCoordinatorRef.current = createRefreshCoordinator(
-      () => refreshWorkRef.current(),
-    )
-  }
+  // The contribution feed's full pass is heavy: it has no timer and runs only on
+  // Sync, from a card, or when a chat's focus intent needs the full history.
+  useEffect(() => hub.fact('ledger', { read: () => refreshWorkRef.current(), apply: () => {} }), [hub])
 
 
   // Shell review cards use the platform's one-shot app-intent rail. The card
@@ -788,7 +780,7 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
       if (document.visibilityState !== 'visible') return
       resolving = true
       try {
-        await refreshCoordinatorRef.current()
+        await hub.refresh('ledger')
         if (!cancelled) {
           setFocusedRecordLookup({ nonce, recordId: '', queue: true, ready: true })
         }
@@ -798,12 +790,10 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
     }
 
     resolveFocusedQueue()
-    document.addEventListener('visibilitychange', resolveFocusedQueue)
-    window.addEventListener('focus', resolveFocusedQueue)
+    const stopWatching = onShownAgain(resolveFocusedQueue)
     return () => {
       cancelled = true
-      document.removeEventListener('visibilitychange', resolveFocusedQueue)
-      window.removeEventListener('focus', resolveFocusedQueue)
+      stopWatching()
     }
   }, [reviewFocus?.queue, reviewFocus?.nonce, reviewFocus?.refreshMountedLedger, ledgerReady])
 
@@ -832,7 +822,7 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
       ) return
       resolvingStack = true
       try {
-        await refreshCoordinatorRef.current()
+        await hub.refresh('ledger')
         if (!cancelled) setFocusedRecordLookup({ nonce, recordId, ready: true })
       } finally {
         resolvingStack = false
@@ -877,8 +867,7 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
       needsStackRefresh = true
       await resolveIncompleteStack()
     }
-    document.addEventListener('visibilitychange', resolveIncompleteStack)
-    window.addEventListener('focus', resolveIncompleteStack)
+    const stopWatching = onShownAgain(resolveIncompleteStack)
     window.addEventListener('online', resolveIncompleteStack)
     resolveFocusedReview().catch(() => {
       // A failed direct read is not proof that the review disappeared. Keep
@@ -887,8 +876,7 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
     })
     return () => {
       cancelled = true
-      document.removeEventListener('visibilitychange', resolveIncompleteStack)
-      window.removeEventListener('focus', resolveIncompleteStack)
+      stopWatching()
       window.removeEventListener('online', resolveIncompleteStack)
     }
   }, [reviewFocus?.recordId, reviewFocus?.nonce, ledgerReady])
@@ -1303,10 +1291,10 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
     // The assignment settled after any earlier incoming-review request began.
     // Invalidate that request before hiding this row so its stale response
     // cannot put the just-assigned review back into the queue.
-    incomingReviewsRequestRef.current += 1
+    hub.supersede('incoming')
     setIncomingReviews((current) => current.filter((row) => row.url !== item.url))
     return { ok: true }
-  }, [appId, token, startAgentTask])
+  }, [appId, token, startAgentTask, hub])
 
   // One explicit confirmation advances the exact current phase of an already-
   // reviewed chain. The response may contain partial progress, so merge every
@@ -1591,7 +1579,8 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
     .map(project => [project.key, projectNeedsCount(project, projectRun(project).decisions, conn.login || '')])), [sourceProjects, records, reviewStatus, conn.login])
   // The home's clickable counts: every number names a next step and its view.
   // Reviews you started: one row per PR for the PR reviews page, counted in the rail.
-  const reviewList = useReviewList({ token, runs: reviewRuns, chats: respondChats, ignored: ignoredReviews, login: conn.login || '' })
+  const reviewList = useReviewList({ hub, enabled: !sendOnly && conn.state === 'connected', token, runs: reviewRuns, chats: respondChats, ignored: ignoredReviews, login: conn.login || '' })
+  reviewListRef.current = reviewList
   const deskCountsValue = useMemo(() => deskCounts({
     projects: sourceProjects,
     decisions: contributionRun.decisions,
@@ -1640,7 +1629,8 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
   function renderPullRequests(project, navigation, view = null, page = null) {
     if (page) {
       return <PullRequests key={`page:${page.repo}#${page.number}`} appId={appId} token={token}
-        project={project} conn={conn} refreshKey={refreshKey} onChanged={refreshIncomingReviews} onReviewPosted={settleIncomingReview} onRunsChanged={refreshReviewRuns}
+        project={project} conn={conn} refreshKey={refreshKey} onChanged={refreshIncomingReviews} onReviewPosted={settleIncomingReview}
+        runs={reviewRuns} respondChats={respondChats} runsError={runsError} onRunsChanged={refreshReviewRuns} onRunPatched={patchReviewRun}
         presentation="page" focusPull={page} onFocusRelease={() => {}} onStartAgent={startAgentTask} onOpenForReview={onMarkReady} ignoredReviews={ignoredReviews} onIgnoreReview={onIgnoreReview} onUndoIgnore={onUndoIgnore}
         records={recordsForProject(records, project)} onRecord={record => {
           setPullPage(null)
@@ -1648,7 +1638,8 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
         }} />
     }
     return <PullRequests key={`pulls:${project?.key || 'all'}`} appId={appId} token={token}
-      project={project} conn={conn} refreshKey={refreshKey} onChanged={refreshIncomingReviews} onReviewPosted={settleIncomingReview} onRunsChanged={refreshReviewRuns}
+      project={project} conn={conn} refreshKey={refreshKey} onChanged={refreshIncomingReviews} onReviewPosted={settleIncomingReview}
+      runs={reviewRuns} respondChats={respondChats} runsError={runsError} onRunsChanged={refreshReviewRuns} onRunPatched={patchReviewRun}
       scope={view?.scope || 'all'} onScope={view?.onScope} onTotal={view?.onTotal} onStartAgent={startAgentTask} onOpenForReview={onMarkReady} ignoredReviews={ignoredReviews} onIgnoreReview={onIgnoreReview} onUndoIgnore={onUndoIgnore}
       onOpenPage={(pr, tab) => openPullPage(project, pr, tab)}
       focusPull={pullFocus?.number ? pullFocus : null} focusRun={pullFocus?.runId ? pullFocus : null} onFocusRelease={releasePullFocus}
@@ -1665,11 +1656,11 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
   async function refreshEverything() {
     const [sourceOk] = await Promise.all([
       refreshSources(),
-      refreshCoordinatorRef.current(),
+      hub.refresh('ledger'),
     ])
     let upstream = null
     if (conn.state === 'connected') {
-      const [, , checked] = await Promise.all([loadRepositories(), refreshIncomingReviews(), checkUpstream(token, sourceProjects), refreshReviewRuns()])
+      const [, , checked] = await Promise.all([loadRepositories(), refreshIncomingReviews(), checkUpstream(token, sourceProjects), refreshReviewRuns(), reviewList.syncPulls()])
       upstream = checked
       if (checked.ok) setUpstreamChecks(checked.results)
     }
@@ -1740,7 +1731,7 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
         let work
         if (ledgerReadyRef.current) {
           forceRefreshRef.current = true
-          work = refreshCoordinatorRef.current()
+          work = hub.refresh('ledger')
         } else {
           work = refreshReviewStatus()
         }
@@ -1792,6 +1783,7 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
   }
   // One workspace owns project context and the exact contribution beneath it.
   return (
+    <SyncHubContext.Provider value={hub}>
     <ScreenshotLoaderContext.Provider value={loadScreenshot}>
     <div className="co-root" data-design-seed="ae1883df">
       <style>{CSS}</style>
@@ -1856,5 +1848,6 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
       </main>
     </div>
     </ScreenshotLoaderContext.Provider>
+    </SyncHubContext.Provider>
   )
 }

@@ -201,6 +201,12 @@ export const PR_FIELDS = `id number title url state headRefOid headRefName baseR
   viewerLatestReview { state commit { oid } }
   reviewThreads(last:50) { nodes { isResolved comments(last:1) { nodes { author { login __typename } } } } }`
 
+// The account's GitHub points left, as the last answer that carried a rateLimit
+// said: one budget for the whole app. The sync hub reads it to stop automatic
+// GitHub reads when the account runs low (refresh.js SYNC_POLICY.lowPoints).
+let githubPointsLeft = null
+export const githubRemainingPoints = () => githubPointsLeft
+
 export async function fetchLiveStates(token, query) {
   try {
     const r = await fetchRead('/api/github/graphql', {
@@ -210,10 +216,23 @@ export async function fetchLiveStates(token, query) {
     })
     if (!r.ok) return null
     const body = await r.json()
-    return body && typeof body === 'object' ? body.data || null : null
+    const data = body && typeof body === 'object' ? body.data || null : null
+    const left = data?.rateLimit?.remaining
+    if (Number.isFinite(left)) githubPointsLeft = left
+    return data
   } catch {
     return null
   }
+}
+
+export const validPullRef = ref => /^[\w.-]+\/[\w.-]+$/.test(ref.repo) && Number.isSafeInteger(ref.number) && ref.number > 0
+
+// One aliased read per PR (p0, p1, ...): GitHub answers them in a single request.
+export function aliasedPulls(refs, fields) {
+  return refs.map((ref, index) => {
+    const [owner, name] = ref.repo.split('/')
+    return `p${index}:repository(owner:${JSON.stringify(owner)},name:${JSON.stringify(name)}) { pullRequest(number:${ref.number}) { ${fields} } }`
+  }).join(' ')
 }
 
 // Open pull requests that involve the viewer (the source of "On GitHub" projects),
@@ -223,6 +242,7 @@ export async function fetchLiveStates(token, query) {
 // than treat a failed read as "nothing asks for your review".
 export async function fetchIncomingReviews(token) {
   const query = `query ContributeIncomingReviews {
+    rateLimit { remaining }
     involved: search(query: "is:pr is:open involves:@me", type: ISSUE, first: 50) { nodes { ... on PullRequest { ${PR_FIELDS} } } }
     requested: search(query: "is:pr is:open review-requested:@me", type: ISSUE, first: 50) { nodes { ... on PullRequest { ${PR_FIELDS} } } }
   }`
@@ -233,6 +253,36 @@ export async function fetchIncomingReviews(token) {
   const requestedUrls = new Set(requested.map(item => item.url))
   const involved = valid(data.involved.nodes).filter(item => !requestedUrls.has(item.url))
   return [...requested.map(item => ({ ...item, reviewRequested: true })), ...involved]
+}
+
+const PROBE_BATCH = 100
+const PROBE_REQUESTED = 'requested: search(query: "is:pr is:open review-requested:@me", type: ISSUE, first: 100) { nodes { ... on PullRequest { id updatedAt } } }'
+
+function probeQuery(batch, withRequests) {
+  return `query ContributeChangeProbe {
+    rateLimit { remaining }
+    ${withRequests ? PROBE_REQUESTED : ''}
+    ${aliasedPulls(batch, 'updatedAt state')}
+  }`
+}
+
+// What changed on GitHub, for one point per hundred PRs: a signature of the open
+// review requests as a whole (key `requests`) and of each PR the owner reviewed
+// (the caller's `key`). Only these are watched; every other list is read when
+// opened or synced. Null when GitHub did not answer, so a failed probe is never a change.
+export async function fetchChangeProbe(token, pulls) {
+  const wanted = pulls.filter(validPullRef)
+  const count = Math.max(1, Math.ceil(wanted.length / PROBE_BATCH))
+  const batches = Array.from({ length: count }, (_, index) => wanted.slice(index * PROBE_BATCH, (index + 1) * PROBE_BATCH))
+  const answers = await Promise.all(batches.map((batch, index) => fetchLiveStates(token, probeQuery(batch, index === 0))))
+  if (answers.some(data => !data) || !Array.isArray(answers[0].requested?.nodes)) return null
+  const requests = answers[0].requested.nodes.map(node => `${node.id}@${node.updatedAt}`).sort().join(',')
+  const signatures = new Map([['requests', requests]])
+  answers.forEach((data, batchIndex) => batches[batchIndex].forEach((pull, index) => {
+    const pr = data[`p${index}`]?.pullRequest
+    signatures.set(pull.key, pr ? `${pr.updatedAt}|${pr.state}` : 'gone')
+  }))
+  return signatures
 }
 
 export async function assignIncomingReview({ appId, token, repo, number }) {
