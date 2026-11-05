@@ -4,6 +4,7 @@ import { requestOptions } from '../collaboration.js'
 import { loadWorkflowOptions, previewWorkflow, reviewOptions } from '../review-prompts.js'
 import { loadPullActivity, loadPullThreads } from '../pull-details.js'
 import { AgentModelSettings } from './AgentModelSettings.jsx'
+import { SeenOnGithub } from './SeenOnGithub.jsx'
 import { openAgentConversation } from './BatchAction.jsx'
 import { focusActionRegion } from './TaskPane.jsx'
 import { Icon } from './Icons.jsx'
@@ -39,11 +40,14 @@ const STEPS = [
 
 // The window behind Agent > Respond to feedback. It reads what the PR asks for,
 // asks how far to go, then starts an agent conversation from a written brief.
-export function AddressFeedbackWindow({ pr, findings = null, token, appId, onStart, onClose }) {
+export function AddressFeedbackWindow({ pr, findings = null, token, appId, defaultAgent = null, onStart, onClose }) {
   const root = useRef(null)
   const [state, setState] = useState({ phase: 'loading', items: [], partial: false })
   const [rung, setRung] = useState('show')
-  const [agent, setAgent] = useState(null)
+  // The agent saved for reviews and fixes starts the window and is the picker's
+  // Default row; without one, the server's answer below names the default.
+  const ownDefault = defaultAgent?.model ? defaultAgent : null
+  const [agent, setAgent] = useState(ownDefault)
   // What "default" means right now (the owner's background agent and its quota
   // fallback), read the way the review window reads it, so the picker can name it.
   const [defaultChoice, setDefaultChoice] = useState(null)
@@ -64,6 +68,7 @@ export function AddressFeedbackWindow({ pr, findings = null, token, appId, onSta
     return () => controller.abort()
   }, [token, pr.repository.nameWithOwner, pr.number, pr.headRefOid])
   useEffect(() => {
+    if (ownDefault) return undefined
     let alive = true
     loadWorkflowOptions(token, appId)
       .then(data => previewWorkflow(token, appId, requestOptions(reviewOptions({ post_review: false, propose_verdict: false }, data.options), 'review'), undefined, 'review'))
@@ -84,13 +89,16 @@ export function AddressFeedbackWindow({ pr, findings = null, token, appId, onSta
     } catch { setError('Could not start the agent. Try again.') }
     finally { setBusy(false) }
   }
-  const heading = <header className="co-rw-head">
+  const heading = (seen = null) => <header className="co-rw-head">
     <span className="co-rw-icon"><Icon name="feedback" size={22} /></span>
     <div><h3>Respond to feedback</h3><p className="co-rw-pr"><strong>#{pr.number} {pr.title}</strong><span>{pr.repository.nameWithOwner}</span></p></div>
-    <button type="button" className="co-quiet-action co-rw-close" aria-label="Close" onClick={onClose}><Icon name="close" size={18} /></button>
+    <div className="co-rw-tools">
+      {seen}
+      <button type="button" className="co-quiet-action co-rw-close" aria-label="Close" onClick={onClose}><Icon name="close" size={18} /></button>
+    </div>
   </header>
   if (started) return <section ref={root} tabIndex={-1} className="co-review-window" aria-label="Respond to feedback started">
-    {heading}
+    {heading()}
     <div className="co-rw-body">
       <p className="co-rw-note">{started.reused ? 'An agent is already working on this PR.' : 'The agent is on it.'} The conversation has its progress and, when it finishes, the changes it made, the test results and the replies it drafted. Nothing has been sent to GitHub{pushing ? ' and it will ask you before it pushes' : ''}.</p>
     </div>
@@ -100,7 +108,7 @@ export function AddressFeedbackWindow({ pr, findings = null, token, appId, onSta
     </div></footer>
   </section>
   return <section ref={root} tabIndex={-1} className="co-review-window" aria-label="Respond to feedback">
-    {heading}
+    {heading(<SeenOnGithub tone={pushing ? 'public' : 'private'} text={pushing ? 'only the fixes it pushes, after you approve. The drafted replies need their own approval.' : 'nothing. It works in a private copy until you decide.'} />)}
     <div className="co-rw-body">
       <h4 className="co-rw-label">What should it address?</h4>
       {state.phase === 'loading' ? <p className="co-rw-note" role="status">Reading the reviews and threads…</p> : null}
@@ -114,10 +122,8 @@ export function AddressFeedbackWindow({ pr, findings = null, token, appId, onSta
       <ol className="co-rw-steps">
         {[...STEPS, pushing ? 'It stops and shows you the result, then waits for your one approval before pushing to the branch.' : 'It stops and shows you the result. Nothing is pushed.'].map((text, index) => <li key={text}><b>{index + 1}</b><span>{text}</span></li>)}
       </ol>
-      <p className={'co-rw-public ' + (pushing ? 'is-public' : 'is-private')} role="status">
-        <Icon name={pushing ? 'globe' : 'lock'} size={18} /><span><strong>Seen on GitHub:</strong> {pushing ? 'only the fixes it pushes, after you approve. The drafted replies need their own approval.' : 'nothing. It works in a private copy until you decide.'}</span>
-      </p>
-      <AgentModelSettings token={token} choice={agent} defaultChoice={defaultChoice} defaultHint="Your background agent setting" onChange={next => { setAgent(next); return true }} />
+      <AgentModelSettings token={token} choice={agent} defaultChoice={ownDefault || defaultChoice} explicitDefault={!!ownDefault}
+        defaultHint={ownDefault ? 'Your default for reviews and fixes' : 'Your background agent setting'} onChange={next => { setAgent(next); return true }} />
     </div>
     <footer className="co-rw-foot">
       <p>It reads the PR as it is now. If the PR changes while the agent works, it stops and tells you.</p>

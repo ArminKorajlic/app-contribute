@@ -273,6 +273,14 @@ export function boundedStartText(value, max) {
   const text = String(value ?? '').replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim()
   return text.length <= max ? text : text.slice(0, max - 1).trimEnd() + '…'
 }
+// A named model and effort inside the platform's limits, or null when none is
+// named or one value is too long to send.
+export function boundedAgent(agent) {
+  if (!agent?.provider || !agent?.model) return null
+  const model = String(agent.model), provider = String(agent.provider), effort = agent.effort ? String(agent.effort) : ''
+  if (model.length > START_LIMITS.model || provider.length > START_LIMITS.provider || effort.length > START_LIMITS.effort) return null
+  return { provider, model, ...(effort ? { effort } : {}) }
+}
 export function freezeStartAction(action) {
   const title = boundedStartText(action?.title, START_LIMITS.title)
   if (!title || typeof action?.draft !== 'string' || !action.draft.trim()) return null
@@ -283,11 +291,10 @@ export function freezeStartAction(action) {
   }
   if (Number.isSafeInteger(action.count)) frozen.count = action.count
   if (action.merge === true) frozen.merge = true
-  const agent = action.agent
-  if (agent?.provider && agent?.model) {
-    const model = String(agent.model), provider = String(agent.provider), effort = agent.effort ? String(agent.effort) : ''
-    if (model.length > START_LIMITS.model || provider.length > START_LIMITS.provider || effort.length > START_LIMITS.effort) return null
-    frozen.agent = { provider, model, ...(effort ? { effort } : {}) }
+  if (action.agent?.provider && action.agent?.model) {
+    const agent = boundedAgent(action.agent)
+    if (!agent) return null
+    frozen.agent = agent
   }
   return frozen
 }
@@ -510,13 +517,17 @@ const DEFAULT_APP_SETTINGS = Object.freeze({
 })
 // Older builds kept one app-wide agent model here. Each launch now carries its
 // own model choice (none means the chat default), so these keys are retired.
+// `review_agent` is not their return: it is only where a Review, Re-review or
+// Fix window starts. That window still sends its own choice for its own run.
 const RETIRED_SETTINGS = ['agent_provider', 'agent_model', 'agent_effort']
 
 export function normalizeAppSettings(raw) {
   const kept = raw && typeof raw === 'object'
     ? Object.fromEntries(Object.entries(raw).filter(([key]) => !RETIRED_SETTINGS.includes(key)))
     : {}
-  return { ...DEFAULT_APP_SETTINGS, ...kept, submission_method: 'github', new_pr_stage: stageOf(kept.new_pr_stage) }
+  const { review_agent: savedAgent, ...others } = kept
+  const reviewAgent = boundedAgent(savedAgent)
+  return { ...DEFAULT_APP_SETTINGS, ...others, submission_method: 'github', new_pr_stage: stageOf(others.new_pr_stage), ...(reviewAgent ? { review_agent: reviewAgent } : {}) }
 }
 
 // App-level preferences (not per-contribution): publication and Autopilot.

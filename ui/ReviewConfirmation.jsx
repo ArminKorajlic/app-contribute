@@ -6,6 +6,7 @@ import { focusActionRegion } from './TaskPane.jsx'
 import { Icon } from './Icons.jsx'
 import { ReviewPromptPreview } from './ReviewPromptSettings.jsx'
 import { AgentModelSettings } from './AgentModelSettings.jsx'
+import { SeenOnGithub } from './SeenOnGithub.jsx'
 
 // A fresh launch offers only the workflows this Möbius advertises.
 export function takeoverCapabilityBlocker({ capabilities, saved }) {
@@ -36,10 +37,12 @@ export const WHO_OPTIONS = {
 function WhoSees({ who, agentAllowed, disabled, onChange }) {
   const choices = WHO.filter(([key]) => key !== 'agent' || agentAllowed)
   return <div className="co-rw-who">
-    <h4 className="co-rw-label">Who sees the result?</h4>
-    <div className="co-seg" role="radiogroup" aria-label="Who sees the result">
-      {choices.map(([key, label]) => <button key={key} type="button" role="radio" aria-checked={who === key}
-        className={who === key ? 'is-on' : ''} disabled={disabled} onClick={() => onChange(key)}>{label}</button>)}
+    <div className="co-rw-who-row">
+      <h4 className="co-rw-label">Who sees the result?</h4>
+      <div className="co-seg" role="radiogroup" aria-label="Who sees the result">
+        {choices.map(([key, label]) => <button key={key} type="button" role="radio" aria-checked={who === key}
+          className={who === key ? 'is-on' : ''} disabled={disabled} onClick={() => onChange(key)}>{label}</button>)}
+      </div>
     </div>
     <p className="co-rw-note">{WHO.find(([key]) => key === who)?.[2]}</p>
   </div>
@@ -55,7 +58,7 @@ function TakeoverReason({ value, disabled, onChange }) {
   </label>
 }
 
-function PullHeading({ pulls, title, titleId, onCancel, takeover }) {
+function PullHeading({ pulls, title, titleId, onCancel, takeover, seen }) {
   const one = pulls.length === 1
   return <header className="co-rw-head">
     <span className="co-rw-icon"><Icon name={takeover ? 'fix' : 'review'} size={22} /></span>
@@ -65,18 +68,17 @@ function PullHeading({ pulls, title, titleId, onCancel, takeover }) {
         ? <p className="co-rw-pr"><strong>#{pulls[0].number} {pulls[0].title}</strong><span>{pulls[0].repository.nameWithOwner}</span></p>
         : <><p className="co-rw-pr"><strong>{pulls.length} PRs</strong></p><ul className="co-rw-list">{pulls.map(pr => <li key={prKey(pr)}><strong>#{pr.number}</strong> {pr.title}<span>{pr.repository.nameWithOwner}</span></li>)}</ul></>}
     </div>
-    {onCancel ? <button type="button" className="co-quiet-action co-rw-close" aria-label="Close" onClick={onCancel}><Icon name="close" size={18} /></button> : null}
+    {seen || onCancel ? <div className="co-rw-tools">
+      {seen}
+      {onCancel ? <button type="button" className="co-quiet-action co-rw-close" aria-label="Close" onClick={onCancel}><Icon name="close" size={18} /></button> : null}
+    </div> : null}
   </header>
 }
 
 function WhatHappens({ copy }) {
-  const privateRun = copy.publicEffect.tone === 'private'
   return <>
     <h4 className="co-rw-label">What happens</h4>
     <ol className="co-rw-steps">{copy.steps.map((step, index) => <li key={step.text} className={step.added ? 'is-added' : ''}><b>{index + 1}</b><span>{step.text}</span></li>)}</ol>
-    <p className={'co-rw-public ' + (privateRun ? 'is-private' : 'is-public')} role="status">
-      <Icon name={privateRun ? 'lock' : 'globe'} size={18} /><span><strong>Seen on GitHub:</strong> {copy.publicEffect.text}</span>
-    </p>
   </>
 }
 
@@ -145,7 +147,7 @@ function takeoverBlockerFor(choice, capabilities, saved) {
 // what GitHub will see, which model runs it, and one start button whose label
 // matches what is allowed. Opened in a dialog from a PR list, or inline on a
 // saved review-link page.
-export function ReviewConfirmation({ choice, busy, disabled, error, onConfirm, onCancel, onModeChange, appId, token, onResolved, onOptionsChange, onAgentChange, onReasonChange, bindCurrentTarget = false, capabilities: served = null, ownLogin = '' }) {
+export function ReviewConfirmation({ choice, busy, disabled, error, onConfirm, onCancel, onModeChange, appId, token, onResolved, onOptionsChange, onAgentChange, onReasonChange, bindCurrentTarget = false, capabilities: served = null, ownLogin = '', defaultAgent = null }) {
   const confirmation = useRef(null)
   const titleId = useId()
   const [promptOptions, setPromptOptions] = useState(null)
@@ -157,6 +159,9 @@ export function ReviewConfirmation({ choice, busy, disabled, error, onConfirm, o
   // The preview resolves what "default" means right now (owner background
   // agent setting and its quota fallback); keep that answer for the picker.
   const [defaultChoice, setDefaultChoice] = useState(null)
+  // The agent the owner saved for reviews and fixes starts every window and is
+  // the picker's Default row; without one, the server's answer above is.
+  const ownDefault = defaultAgent?.model ? defaultAgent : null
   const resolve = useCallback(value => {
     setPromptOptions(value?.options || null); setCapabilities(value ? (value.capabilities || {}) : null)
     if (value) setUnsupported(false)
@@ -176,7 +181,7 @@ export function ReviewConfirmation({ choice, busy, disabled, error, onConfirm, o
   const postingUnavailable = choice.mode === 'review_merge' && !!capabilities && !(capabilities.post_review === true && capabilities.propose_verdict === true)
   const startBlocked = takeover && !!blocker
   return <section ref={confirmation} tabIndex={-1} className="co-review-window" aria-labelledby={titleId}>
-    <PullHeading pulls={choice.pulls} title={copy.title} titleId={titleId} onCancel={onCancel} takeover={takeover} />
+    <PullHeading pulls={choice.pulls} title={copy.title} titleId={titleId} onCancel={onCancel} takeover={takeover} seen={<SeenOnGithub tone={copy.publicEffect.tone} text={copy.publicEffect.text} />} />
     <div className="co-rw-body">
       {takeover && choice.intent === 'take_over' && onReasonChange ? <TakeoverReason value={choice.takeover_reason || ''} disabled={busy} onChange={onReasonChange} /> : null}
       {takeover
@@ -185,7 +190,8 @@ export function ReviewConfirmation({ choice, busy, disabled, error, onConfirm, o
       {startBlocked ? <p className="co-rw-blocker" role="status">{blocker}</p> : null}
       {postingUnavailable ? <p className="co-rw-blocker" role="status">Merging after your approval needs a newer Möbius. This would run as a private review.</p> : null}
       <WhatHappens copy={copy} />
-      {onAgentChange ? <AgentModelSettings token={token} choice={choice.agent} defaultChoice={defaultChoice} defaultHint="Your background agent setting" onChange={next => { onAgentChange(next); return true }} /> : null}
+      {onAgentChange ? <AgentModelSettings token={token} choice={choice.agent} defaultChoice={ownDefault || defaultChoice} explicitDefault={!!ownDefault}
+        defaultHint={ownDefault ? 'Your default for reviews and fixes' : 'Your background agent setting'} onChange={next => { onAgentChange(next); return true }} /> : null}
       {appId && token ? <ReviewPromptPreview token={token} appId={appId} choice={choice} onResolved={resolve} onUnsupported={() => setUnsupported(true)} /> : null}
       <VersionDetails pulls={choice.pulls} live={bindCurrentTarget} />
     </div>

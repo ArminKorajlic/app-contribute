@@ -314,7 +314,11 @@ Review/Fix/Merge guidance shares one flat Settings editor. At launch choose
 **Actions ▾ → Review** (who sees the result: **Only me**, **Draft for me** or,
 where this Möbius supports it, **Agent posts**; with a draft, optionally **Merge
 after I approve**), **Check my PR** on your own PR, or **Finish it for me** /
-**Take over**, plus model and effort, in the review window. There is
+**Take over**, plus model and effort, in the review window. Settings →
+*Default agent* saves one agent and effort (`review_agent` in the app settings)
+that Review, Re-review, Finish it for me, Take over and Respond to feedback start
+from; each window still lets you pick another agent for that one run, and with
+none saved the windows follow the Möbius background agent setting. There is
 no automatic-continuation option: the platform does not support it. Each launch
 sends only the options its mode accepts: review and merge prompts always, the
 fix prompt only for Review, fix & merge (new takeovers have no repair-round

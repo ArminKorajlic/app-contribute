@@ -155,6 +155,8 @@
     "pr_block.py",
     "review-prompts.js",
     "ui/ReviewPromptSettings.jsx",
+    "ui/DefaultAgentSettings.jsx",
+    "ui/SeenOnGithub.jsx",
     "ui/RunDetail.jsx",
     "ui/ReviewFrame.jsx",
     "ui/ReviewTab.jsx",

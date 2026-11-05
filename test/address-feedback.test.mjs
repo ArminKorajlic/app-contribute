@@ -97,7 +97,8 @@ test('the Address feedback window names the default agent the way the review win
   const source = readFileSync(new URL('../ui/AddressFeedback.jsx', import.meta.url), 'utf8')
   assert.match(source, /previewWorkflow\(token, appId, requestOptions\(reviewOptions\(/)
   assert.match(source, /setDefaultChoice\(preview\?\.options\?\.choice \|\| null\)/)
-  assert.match(source, /<AgentModelSettings token=\{token\} choice=\{agent\} defaultChoice=\{defaultChoice\}/)
+  // The saved agent for reviews and fixes names the Default row; with none saved, the server's answer does.
+  assert.match(source, /<AgentModelSettings token=\{token\} choice=\{agent\} defaultChoice=\{ownDefault \|\| defaultChoice\}/)
 })
 
 const savedReview = (extra = {}) => ({ run: { id: 'r1' }, item: { repo: 'o/r', number: 120, head_sha: 'abcdef1234567', state: 'needs_you', summary: '1. The notice is stored in error.\n2. No test covers the reply path.', public_review: { state: 'posted', url: 'https://github.com/o/r/pull/120#issuecomment-9' }, ...extra } })
