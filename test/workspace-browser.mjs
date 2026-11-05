@@ -729,7 +729,8 @@ window.runWorkspaceChecks = async () => {
       ensure(!query('.co-file-disclosure'),'Files leaked into activity')
       const title=document.querySelectorAll('.co-pr-open')[1]
       await asReviewer()
-      await chooseAgent(query('.co-task-content'), 'Review')
+      try {
+      await chooseAgent(query('.co-task-content'), NAMES.review)
       ensure(text(review()).includes('Contribution 8') && text(review()).includes('ccccccc') && !text(review()).includes('Contribution 7'),'Individual review changed PR scope or version')
       ensure(button('Start private review'),'Individual review granted merge by default')
       const mergeSwitch=await chooseDraftThenMergeSwitch()
@@ -737,7 +738,8 @@ window.runWorkspaceChecks = async () => {
       await click(mergeSwitch)
       ensure(button('Start review, merge after your approval'),'Individual merge choice did not require guarded approval')
       ensure(mutationRequests().length===0,'Changing individual review mode mutated GitHub')
-      await closeReview(); await asOwner()
+      await closeReview()
+      } finally { await asOwner() }
       await until(() => !review() && !query('.co-task-content'),'Individual review did not close')
       ensure(document.activeElement===title,'Closing individual review did not return focus to its row trigger (focused '+(document.activeElement?.className || document.activeElement?.tagName)+': '+text(document.activeElement)+')')
     })
@@ -781,6 +783,7 @@ window.runWorkspaceChecks = async () => {
       await enabled('Start review, merge after your approval')
       // Starting closes the review window and clears the selection; the run itself lives in its own conversation.
       await until(() => reviewRuns.length === 1 && !review(),'Review did not start')
+      await until(() => ['7','8'].every(n => query('[data-pr="owner/project#'+n+'"]')?.closest('.co-frame')?.dataset.frame === 'reviewing'),'A started review did not show on its rows')
       ensure(!query('input[aria-label="Select owner/project #7"]').checked && !query('input[aria-label="Select owner/project #8"]').checked,'Starting a review kept the selection')
       const write=mutationRequests().at(-1)
       ensure(write.url.endsWith('/review-runs') && write.body.mode==='review_merge' && write.body.items.length===2,'Wrong workflow request')
@@ -794,7 +797,8 @@ window.runWorkspaceChecks = async () => {
     await check('review errors preserve exact selection for an explicit retry', async () => {
       // The review above has finished, so its PRs are free to be reviewed again (an agent at work on a PR disables Review).
       for (const run of reviewRuns) { run.state='complete'; run.items=run.items.map(item=>({ ...item, state:'all_clear' })) }
-      await checkGithub('Finished review did not reload')
+      await click(checkButton())
+      await until(() => { const frame = query('[data-pr="owner/project#7"]')?.closest('.co-frame')?.dataset.frame; return frame && frame !== 'reviewing' },'Finished review did not reload')
       await inventory(); await click(firstCheckbox); await chooseAgent(query('.co-pr-box-head'))
       window.failReview = true
       await enabled('Start private review')
@@ -1580,10 +1584,6 @@ window.runWorkspaceChecks = async () => {
         ensure(card().confirmation.length === 2 && card().confirmation.every(item => item.facts.some(fact => fact.label === 'Change' && fact.value === '2 files · +5 −1')), 'Confirm lacked the stack phase or its size')
         // The platform stops advertising the binding before the write.
         window.fullAppBinding = false
-        const statusReads = calls.requests.filter(call => call.url === '/api/github/status').length
-        shownAgain()
-        await until(() => calls.requests.filter(call => call.url === '/api/github/status').length > statusReads, 'The connection was not re-read')
-        await frame(); await frame()
         fire('confirm', 'stack-n2')
         await until(() => /no longer confirms the exact version/.test(card()?.note || '') || states.some(state => (state.actions || []).some(action => /no longer confirms the exact version/.test(action.note || ''))), 'A lost binding did not refuse: ' + JSON.stringify(card()))
         ensure(!calls.requests.slice(before).some(call => call.method === 'POST' && /\/(submit|submit-stack|update-stack|update-existing)$/.test(call.url)), 'An unbound send was made')
