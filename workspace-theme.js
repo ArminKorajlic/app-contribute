@@ -425,9 +425,10 @@ export const WORKSPACE_CSS = `
 .co-pr-detail-actions .co-tip { min-width:44px; min-height:44px; padding:0; justify-content:center; }
 /* An icon-only button names itself in a tooltip: after the pointer rests on it for 2 s, at once on keyboard focus, and while a finger holds it. */
 .co-tip { position:relative; }
-.co-tip::after { content:attr(data-tip); position:absolute; top:calc(100% + 6px); left:50%; z-index:40; transform:translateX(-50%); padding:5px 9px; border-radius:6px; background:var(--text); color:var(--bg); font:600 13px/1.2 var(--font); white-space:nowrap; opacity:0; pointer-events:none; transition:opacity .12s 0s; }
+.co-tip::after { content:attr(data-tip); position:absolute; top:calc(100% + 6px); left:50%; z-index:40; transform:translateX(-50%); padding:5px 9px; border-radius:6px; background:var(--text); color:var(--bg); font:600 13px/1.2 var(--font); white-space:nowrap; max-width:min(360px,70vw); overflow:hidden; text-overflow:ellipsis; opacity:0; pointer-events:none; transition:opacity .12s 0s; }
 .co-tip:hover::after { opacity:1; transition-delay:2s; }
 .co-tip:focus-visible::after { opacity:1; transition-delay:0s; }
+.co-pr-detail-actions.is-tips-off .co-tip::after { opacity:0; transition-delay:0s; }
 @media (hover:none) { .co-tip:hover::after { opacity:0; transition-delay:0s; } .co-tip:active::after { opacity:1; transition-delay:0s; } }
 @media (prefers-reduced-motion:reduce) { .co-tip::after { transition-duration:0s; } }
 .co-gh-provenance { display:contents; }

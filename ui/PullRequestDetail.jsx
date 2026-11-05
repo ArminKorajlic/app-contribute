@@ -6,11 +6,13 @@ import { CopyId, commentReference } from './CopyId.jsx'
 import DiffView from './diff/DiffView.jsx'
 import { Icon } from './Icons.jsx'
 import { ActionsMenu } from './ActionsMenu.jsx'
+import { useTipDismiss } from './useTipDismiss.js'
 import { GithubLabel, PullStateBadge, REVIEW_DECISION } from './GithubParts.jsx'
 import { checkSummary, conversationCount } from '../collaboration.js'
 import { openAgentConversation } from './BatchAction.jsx'
 import { ReviewTab, reviewContent } from './ReviewTab.jsx'
 import { frameOf } from '../pr-standing.js'
+import { ROLE_TITLES } from '../provenance.js'
 
 export function DateLabel({ value, prefix = '', time = false }) {
   if (!value || !Number.isFinite(Date.parse(value))) return null
@@ -145,7 +147,9 @@ function ProvenanceGroup({ role, links, lone }) {
   const [one, many] = PROVENANCE_LABELS[role] || ['Chat', 'Chats']
   if (links.length === 1) {
     const name = lone ? 'Open chat' : `Open ${one.toLowerCase()}`
-    return <button type="button" className="co-btn co-tip co-gh-chat-link" onClick={() => openAgentConversation(links[0].chat_id)} aria-label={name} data-tip={name}><Icon name="feedback" size={15} /></button>
+    // The chat's own title rides in the tooltip; a role's stand-in title ("Source conversation") would only repeat the name.
+    const title = links[0].title === ROLE_TITLES[role] ? '' : links[0].title
+    return <button type="button" className="co-btn co-tip co-gh-chat-link" onClick={() => openAgentConversation(links[0].chat_id)} aria-label={name} data-tip={title ? `${name} · ${title}` : name}><Icon name="feedback" size={15} /></button>
   }
   return <span className="co-chat-group" ref={root} onKeyDown={event => { if (event.key === 'Escape') setOpen(false) }}>
     <button type="button" className="co-btn co-tip co-gh-chat-link" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(value => !value)} aria-label={many} data-tip={many}><Icon name="feedback" size={15} /><Icon name="chevron" size={14} /></button>
@@ -259,6 +263,7 @@ export function PullRequestDetail(props) {
 // viewer wrote the PR, busy and error state, the run actions, and the loaded PRs.
 function PullRequestDetailView({ cacheStore, pr, token, onReview, onAssign, onRefresh, canAssign, status, onProgress, onRecord, record, capabilities = null, readOnly = false, provenance = [], holdUntilLoaded = false, initialTab = 'conversation', review = {} }) {
   const [tab, setTab] = useState(initialTab)
+  const tips = useTipDismiss()
   // On a phone the four tabs can overflow; the open one is always brought into view.
   const tabStrip = useRef(null)
   const titleRef = useRef(null)
@@ -404,7 +409,7 @@ function PullRequestDetailView({ cacheStore, pr, token, onReview, onAssign, onRe
       <h3 className="co-gh-pr-title" ref={titleRef}>{pr.title} <span className="co-pr-title-num">#{pr.number}</span></h3>
       {labels.length ? <div className="co-gh-labels">{labels.map(label => <GithubLabel key={label.name} name={label.name} color={label.color} />)}</div> : null}
     </header>
-    <div className="co-pr-detail-actions">
+    <div className={'co-pr-detail-actions' + tips.className} onPointerOut={tips.onPointerOut} onBlur={tips.onBlur}>
       {!readOnly ? <ActionsMenu variant="button" align="start" pulls={[pr]} decisions={review?.standing ? [review.standing] : []} record={record} capabilities={capabilities} disabled={stale} onChoose={mode => onReview?.(mode)} ariaLabel={`Choose an action for PR ${pr.number}`} /> : null}
       {!readOnly && canAssign ? <button className="co-btn co-tip" disabled={stale} onClick={onAssign} aria-label="Assign" data-tip="Assign"><Icon name="person" /></button> : null}
       {status && onProgress ? <button className="co-btn" onClick={onProgress}>Agent progress</button> : null}

@@ -2,7 +2,7 @@
 // repository and the number must match: equal numbers in other repositories
 // are unrelated work.
 const CHAT_ID = /^[A-Za-z0-9_-]{1,128}$/
-const ROLE_TITLES = { source: 'Source conversation', review: 'Review conversation', fix: 'Fix conversation' }
+export const ROLE_TITLES = { source: 'Source conversation', review: 'Review conversation', fix: 'Fix conversation' }
 
 const recordRepo = record => (record.repo || record.plan?.repo || '').toLowerCase()
 

@@ -242,9 +242,11 @@ test('several conversations of one kind fold into a Source chats dropdown, one s
   assert.match(two, /aria-label="Source chats" data-tip="Source chats"/)
   assert.match(two, /co-chat-group/)
   assert.doesNotMatch(two, /Source chat 2|Source chat #1/) // the list opens on demand, closed by default
-  assert.match(two, /aria-label="Open review chat" data-tip="Open review chat"/) // a single review chat stays a plain icon button
+  assert.match(two, /aria-label="Open review chat" data-tip="Open review chat · Review it"/) // a single review chat stays a plain icon button, its own title in the tooltip
   const one = await render(t, 'PullRequestDetail', { pr, cacheStore: loadedConversation(), provenance: [{ chat_id: 'c1', role: 'source', title: 'Build the thing' }] })
-  assert.match(one, /aria-label="Open chat" data-tip="Open chat"/, 'a PR with one chat says just Open chat')
+  assert.match(one, /aria-label="Open chat" data-tip="Open chat · Build the thing"/, 'a PR with one chat says Open chat, then that chat\'s title')
+  const plain = await render(t, 'PullRequestDetail', { pr, cacheStore: loadedConversation(), provenance: [{ chat_id: 'c1', role: 'source', title: 'Source conversation' }] })
+  assert.match(plain, /aria-label="Open chat" data-tip="Open chat"/, 'a stand-in role title is not repeated in the tooltip')
   assert.doesNotMatch(one, /Source chats|co-chat-group/)
 })
 

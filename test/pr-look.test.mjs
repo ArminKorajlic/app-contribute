@@ -77,6 +77,17 @@ test('an icon-only button names itself after 2 s of hover, at once on keyboard f
   assert.match(css, /prefers-reduced-motion:reduce\) \{ \.co-tip::after \{ transition-duration:0s; \}/)
 })
 
+test('Escape hides an icon button tooltip until the pointer or focus leaves that button', () => {
+  const css = readFileSync(new URL('../workspace-theme.js', import.meta.url), 'utf8')
+  assert.match(css, /\.co-pr-detail-actions\.is-tips-off \.co-tip::after \{ opacity:0; transition-delay:0s; \}/)
+  const hook = readFileSync(new URL('../ui/useTipDismiss.js', import.meta.url), 'utf8')
+  assert.match(hook, /event\.key === 'Escape'\) setDismissed\(true\)/)
+  assert.match(hook, /onPointerOut: event => /)
+  assert.match(hook, /onBlur: rearm/)
+  const detail = readFileSync(new URL('../ui/PullRequestDetail.jsx', import.meta.url), 'utf8')
+  assert.match(detail, /className=\{'co-pr-detail-actions' \+ tips\.className\} onPointerOut=\{tips\.onPointerOut\} onBlur=\{tips\.onBlur\}/)
+})
+
 test('every agent and confirm window starts with the same head: the job, then #number and name, then the repository', async t => {
   const mod = await load(t)
   if (!mod) return

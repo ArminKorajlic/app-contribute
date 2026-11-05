@@ -158,6 +158,7 @@
     "ui/DefaultAgentSettings.jsx",
     "ui/SeenOnGithub.jsx",
     "ui/WindowHead.jsx",
+    "ui/useTipDismiss.js",
     "ui/RunDetail.jsx",
     "ui/ReviewFrame.jsx",
     "ui/ReviewTab.jsx",
