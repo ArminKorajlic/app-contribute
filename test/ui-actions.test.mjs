@@ -463,16 +463,19 @@ test('a review chip opens the PR on its Review tab, and a started review no long
   assert.match(appSource, /setPullPage\(\{ key: project\?\.key \|\| '', repo, number: pr\.number, tab,/)
 })
 
-test('the desk reads review runs once, wraps its rows in the frame, and opens a reviewed PR on its Review tab', () => {
+test('the desk shares one review-run list, wraps its rows in the frame, and opens a reviewed PR on its Review tab', () => {
   const deskSource = readFileSync(new URL('../ui/DeskViews.jsx', import.meta.url), 'utf8')
   assert.match(deskSource, /<ReviewFrame state=\{framed\} inset=\{3\}/)
   assert.match(deskSource, /onOpenPull\(project, pr, framed === 'idle' \? 'conversation' : 'review'\)/)
   assert.match(deskSource, /frameState\(reviewForRecord\(runs, item\.record\), \{ own: true, ignored \}\)/)
-  assert.match(appSource, /const reviewActive = hasActiveReview\(reviewRuns\)/)
+  // One run list serves the whole desk; the hook that reads it lives beside the review list.
+  const runsHook = readFileSync(new URL('../ui/useReviewList.js', import.meta.url), 'utf8')
+  assert.match(appSource, /useDeskReviewRuns\(\{/)
+  assert.match(runsHook, /const active = hasActiveReview\(runs\)/)
   assert.match(appSource, /runs: reviewRuns,/)
   // Refresh renews the runs with everything else; nothing polls unless a review is working.
   assert.match(appSource, /checkUpstream\(token, sourceProjects\), refreshReviewRuns\(\)/)
-  assert.match(appSource, /if \(!reviewActive\) return undefined/)
+  assert.match(runsHook, /if \(!active\) return undefined/)
   assert.match(sourceMapSource, /runs=\{desk\.runs\}/)
 })
 

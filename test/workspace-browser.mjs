@@ -1,5 +1,9 @@
 // Run: MOBIUS_FRONTEND_NODE_MODULES=/data/platform/frontend/node_modules \
 //      node test/workspace-browser.mjs
+// Two scenarios, each on a fresh page: runWorkspaceChecks (the project fixture) and
+// runDeskFrameChecks (the whole app: a review started on a PR page frames its Desk row).
+// Run one with WORKSPACE_BROWSER_ONLY=runDeskFrameChecks, for example while
+// runWorkspaceChecks is red, so the Desk check can still show green.
 // Actual app components, native Chromium DOM, and no live app/backend. The
 // browser gets a disposable profile; all transports and host capabilities are
 // mocked before mount, with CSP and CDP network blocking as a second boundary.
@@ -94,9 +98,11 @@ window.fetch = async (url, options = {}) => {
       if (/mutation\b/i.test(call.body.query)) return forbidden('GraphQL mutation')(call)
       if (call.body.query.includes('resource(url:')) return response({data:{r0:{__typename:'PullRequest',state:'MERGED',isDraft:false}}})
       if (call.body.query.includes('ContributeRepositories')) return response({data:{viewer:{repositories:{nodes:[],pageInfo:{hasNextPage:false,endCursor:null}}}}})
-      if (call.body.query.includes('search(')) return response({data:{search:{nodes:[],pageInfo:{hasNextPage:false,endCursor:null}}}})
+      // The Desk scenario asks the fixture PRs for review; everything else it reads falls through to the project mocks below.
+      if (window.fullAppDesk && call.body.query.includes('ContributeIncomingReviews')) return response({data:{requested:{nodes:[pulls[0]]},involved:{nodes:[]}}})
+      if (!window.fullAppDesk && call.body.query.includes('search(')) return response({data:{search:{nodes:[],pageInfo:{hasNextPage:false,endCursor:null}}}})
     }
-    return forbidden('full-app fetch')(call.url)
+    if (!window.fullAppDesk) return forbidden('full-app fetch')(call.url)
   }
   if (call.url === '/api/github/graphql' && call.method === 'POST') {
     if (/mutation\b/i.test(call.body.query)) return forbidden('GraphQL mutation')(call)
@@ -119,6 +125,11 @@ window.fetch = async (url, options = {}) => {
         closingIssuesReferences:{nodes:[],pageInfo:{hasNextPage:false}},
         timelineItems:{nodes:[],pageInfo:{hasNextPage:false}},
       }}}})
+    }
+    if (call.body.query.includes('ContributeReviewPulls')) {
+      // The review list reads each reviewed PR live, one alias per PR.
+      const reads = [...call.body.query.matchAll(/(p\d+):repository\(owner:"[^"]+",name:"[^"]+"\) \{ pullRequest\(number:(\d+)\)/g)]
+      return response({ data: Object.fromEntries(reads.map(([, alias, number]) => [alias, { pullRequest: pulls.find(pr => pr.number === Number(number)) || null }])) })
     }
     if (!call.body.query.includes('ContributePullRequests')) return forbidden('unknown GraphQL query')(call.body.query)
     if(window.failPulls) return new Response(JSON.stringify({detail:'Fixture pull read error'}),{status:503})
@@ -1543,8 +1554,64 @@ window.runWorkspaceChecks = async () => {
     return { status: 'fail', checks, error: error.stack, dom: text(query('main')).slice(0, 5000), calls, forbidden: calls.forbidden }
   }
 }
-`
 
+// The whole app on a fresh page: a review the owner starts from a PR's own page
+// must show on that PR's Desk row without pressing Sync with GitHub.
+window.runDeskFrameChecks = async () => {
+  const checks = []
+  const deskFrame = title => [...document.querySelectorAll('.co-frame')].find(node => text(node).includes(title))?.dataset.frame
+  try {
+    root.render(null)
+    await frame(); await frame()
+    window.fullAppFixture = true; window.fullAppConnected = true; window.fullAppDesk = true
+    values.set('followed-repositories.json', ['owner/project'])
+    window.mobius.storage.listWithStatus = async () => ({ complete: true, entries: [] })
+    // A PR GitHub read completely: without these facts its standing is "couldn't read" and nothing frames it.
+    Object.assign(pulls[0], { mergeable: 'MERGEABLE', reviewDecision: null, commits: { nodes: [{ commit: { statusCheckRollup: null } }] },
+      latestOpinionatedReviews: { nodes: [] }, reviewThreads: { nodes: [] } })
+    root.render(<ContributeApp appId="fixture-app" token="fixture-only" />)
+    await until(() => deskFrame('Contribution 7'), 'The Desk did not list the review request')
+    ensure(deskFrame('Contribution 7') === 'idle', 'The row wore a frame before any review ran')
+    await click([...document.querySelectorAll('.co-desk-row')].find(node => text(node).includes('Contribution 7')))
+    await until(() => query('[aria-label="Choose an action for PR 7"]'), 'The PR page did not open')
+    await click(query('[aria-label="Choose an action for PR 7"]'))
+    await click([...document.querySelectorAll('[role=menuitem]')].find(node => text(node.querySelector('strong')) === 'Review'))
+    await until(() => review(), 'Review window did not open')
+    const start = () => [...review().querySelectorAll('button')].find(node => text(node).startsWith('Start'))
+    await until(() => start() && !start().disabled, 'The review window never offered Start')
+    await click(start())
+    await until(() => reviewRuns.length === 1, 'The review did not start')
+    // The PR page itself knows the run, so the missing frame below is the Desk's, not the fixture's.
+    await until(() => query('.co-frame[data-frame="reviewing"]'), 'The PR page did not frame the review it started')
+    // The Desk is told at once, before the owner leaves the page: here only onRunsChanged reads the run list again.
+    const started = calls.requests.findIndex(call => call.method === 'POST' && call.url.endsWith('/review-runs'))
+    await until(() => calls.requests.slice(started + 1).some(call => call.method === 'GET' && call.url.endsWith('/review-runs')), 'Starting the review did not make the Desk re-read its review runs')
+    await click(query('.co-desk-back'))
+    await until(() => query('.co-desk-envelopes'), 'Back did not return to the Desk')
+    await until(() => deskFrame('Contribution 7') === 'reviewing', 'The Desk row has no review frame after Back: ' + deskFrame('Contribution 7'))
+    checks.push({ name: 'a review started on a PR page leaves its Desk row framed once the owner is back', status: 'pass' })
+    // A review stopped elsewhere (a chat, another device) shows when the window regains focus.
+    reviewRuns[0].execution_state = 'stopped'
+    window.dispatchEvent(new Event('focus'))
+    await until(() => deskFrame('Contribution 7') === 'idle', 'The Desk kept the frame of a stopped review after the window regained focus')
+    checks.push({ name: 'a review stopped elsewhere loses its Desk frame when the window regains focus', status: 'pass' })
+    // Leaving a PR page re-reads too. The Desk's 15 s poll cannot be what shows it: this scenario ends well inside the 5 s wait of each step.
+    delete reviewRuns[0].execution_state
+    window.dispatchEvent(new Event('focus'))
+    await until(() => deskFrame('Contribution 7') === 'reviewing', 'The Desk did not frame the review again after focus')
+    await click([...document.querySelectorAll('.co-desk-row')].find(node => text(node).includes('Contribution 7')))
+    await until(() => query('.co-desk-back') && query('[aria-label="Choose an action for PR 7"]'), 'The PR page did not open again')
+    reviewRuns[0].execution_state = 'stopped'
+    await click(query('.co-desk-back'))
+    await until(() => deskFrame('Contribution 7') === 'idle', 'The Desk kept the frame of a review stopped while its PR page was open')
+    checks.push({ name: 'leaving a PR page makes the Desk re-read the review runs', status: 'pass' })
+    ensure(calls.forbidden.length === 0, 'Unexpected runtime/transport: ' + JSON.stringify(calls.forbidden))
+    return { status: 'pass', checks, forbidden: calls.forbidden }
+  } catch (error) {
+    return { status: 'fail', checks, error: error.stack, dom: text(query('main')).slice(0, 5000), calls, forbidden: calls.forbidden }
+  }
+}
+`
 async function chromiumPath() {
   if (process.env.CHROMIUM_PATH) return process.env.CHROMIUM_PATH
   for (const path of ['/usr/bin/chromium', '/usr/bin/chromium-browser', '/usr/bin/google-chrome']) {
@@ -1613,7 +1680,11 @@ async function main() {
     { stdio: ['ignore', 'ignore', 'pipe', 'pipe', 'pipe'] })
     browser.stderr.resume()
     const protocol = cdp(browser), reports = []
-    for (const viewport of [{ name: 'desktop', width: 1280, height: 900 }, { name: 'phone', width: 390, height: 844 }]) {
+    // Each scenario gets a fresh page, so the whole-app Desk scenario never inherits the project fixture's state.
+    // WORKSPACE_BROWSER_ONLY=runDeskFrameChecks runs one scenario.
+    const scenarios = process.env.WORKSPACE_BROWSER_ONLY ? [process.env.WORKSPACE_BROWSER_ONLY] : ['runWorkspaceChecks', 'runDeskFrameChecks']
+    const viewports = [{ name: 'desktop', width: 1280, height: 900 }, { name: 'phone', width: 390, height: 844 }]
+    for (const [viewport, scenario] of viewports.flatMap(size => scenarios.map(name => [size, name]))) {
       const { targetId } = await protocol.send('Target.createTarget', { url: 'about:blank' })
       const { sessionId } = await protocol.send('Target.attachToTarget', { targetId, flatten: true })
       const inputErrors = []
@@ -1640,7 +1711,7 @@ async function main() {
       await protocol.send('Page.navigate', { url: pathToFileURL(page).href }, sessionId)
       const evaluated = await protocol.send('Runtime.evaluate', { expression: `new Promise((resolve, reject) => {
         const deadline = Date.now() + 5000;
-        function ready() { if (window.runWorkspaceChecks) window.runWorkspaceChecks().then(resolve, reject);
+        function ready() { if (window[${JSON.stringify(scenario)}]) window[${JSON.stringify(scenario)}]().then(resolve, reject);
           else if (Date.now() > deadline) reject(new Error('Fixture did not load'));
           else setTimeout(ready, 20); }
         ready();
@@ -1651,7 +1722,7 @@ async function main() {
       const network = protocol.events.filter(event => event.sessionId === sessionId && event.method === 'Network.requestWillBeSent'
         && !/^(file|data):/.test(event.params.request.url)).map(event => event.params.request.url)
       if (network.length) { report.status = 'fail'; report.unexpectedNetwork = network }
-      reports.push({ viewport, ...report })
+      reports.push({ viewport, scenario, ...report })
       await protocol.send('Target.closeTarget', { targetId })
     }
     const passed = reports.every(report => report.status === 'pass')

@@ -158,7 +158,9 @@ const runAnchor = run => run.items?.length === 1 ? `${run.items[0].repo.toLowerC
 
 // `scope` follows the project tabs: 'all' (every open PR), 'requests' (PRs that
 // ask for the owner's review) or 'mine' (the saved agent reviews only).
-export function PullRequests({ appId, token, project, conn, onChanged, records = [], onRecord, refreshKey, focusPull, focusRun, onFocusRelease, scope = 'all', onScope, onTotal, presentation = 'list', onOpenPage = null, onStartAgent = null, onOpenForReview = null, ignoredReviews = null, onIgnoreReview = null, onUndoIgnore = null }) {
+// `onRunsChanged` tells the Desk (its reviewRuns in index.jsx) that a review was
+// started, stopped or re-read here, so its rows show the frame without a Sync.
+export function PullRequests({ appId, token, project, conn, onChanged, onRunsChanged, records = [], onRecord, refreshKey, focusPull, focusRun, onFocusRelease, scope = 'all', onScope, onTotal, presentation = 'list', onOpenPage = null, onStartAgent = null, onOpenForReview = null, ignoredReviews = null, onIgnoreReview = null, onUndoIgnore = null }) {
   const repo = project?.canonical_repo || ''
   const publicRevision = records.filter(record => record.url).map(record => `${record.id}:${record.status}:${record.number}:${record.last_updated_pr_at || ''}`).sort().join('|')
   const session = sessionEntry(repo, `${refreshKey}|${publicRevision}`)
@@ -432,6 +434,7 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
       const pulls = await liveSelection(token, choice.pulls)
       const result = await collaborationRequest(token, appId, 'review-runs', reviewRunRequest({ ...choice, pulls, options:resolved.options, agent:resolved.agent, preview_sha256:resolved.preview.preview_sha256 }))
       setRuns(old => [result.run, ...old.filter(run => run.id !== result.run.id)])
+      void onRunsChanged?.()
       setChoice(null); setSelected(new Set())
     } catch (error) {
       setError(error.message)
@@ -450,6 +453,7 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
       runsEpoch.current++
       if (linkedRef.current?.id === run.id) setLinked(result.run)
       setRuns(old => old.map(item => item.id === run.id ? result.run : item))
+      void onRunsChanged?.()
       return result
     } catch (error) { setRunError(error.message); return null }
     finally { setBusy(false) }
@@ -510,7 +514,14 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
   const closeIgnore = () => setIgnoring(null)
   // A posted review changes what the run shows (a link to it, and whose turn it is), so the runs are read again.
   async function refreshRuns() {
-    try { const list = await collaborationRequest(token, appId, 'review-runs'); runsEpoch.current++; setRuns(list.runs || []); setRespondChats(list.respond_chats || []); setRunError('') } catch (error) { setRunError(error.message) }
+    try {
+      const list = await collaborationRequest(token, appId, 'review-runs')
+      runsEpoch.current++
+      setRuns(list.runs || [])
+      setRespondChats(list.respond_chats || [])
+      setRunError('')
+      void onRunsChanged?.()
+    } catch (error) { setRunError(error.message) }
   }
   const closePost = () => setPosting(null)
   const postDialog = posting ? <ReviewDialog onClose={closePost}><PostFindings pr={posting.pr} run={posting.run} item={posting.item} own={posting.own} token={token} appId={appId} onDone={refreshRuns} onClose={closePost} /></ReviewDialog> : null

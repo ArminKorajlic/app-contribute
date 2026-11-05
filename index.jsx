@@ -45,8 +45,7 @@ import { abandonPrepared, cacheFeed, cacheSourceSnapshot, loadAppSettings, loadC
 import { createRefreshCoordinator } from './refresh.js'
 import { checkUpstream } from './upstream-check.js'
 import { DESK_LAST_LOOKED_KEY, deskCounts, projectNeedsCount } from './desk.js'
-import { hasActiveReview } from './review-frame.js'
-import { loadReviewRuns, withIgnoreNote, withoutIgnoreNote } from './collaboration.js'
+import { withIgnoreNote, withoutIgnoreNote } from './collaboration.js'
 import {
   contributionPathDecision,
   contributionStackDecision,
@@ -76,7 +75,7 @@ import { ContributionRun } from './ui/Feed.jsx'
 import { ScreenshotLoaderContext } from './ui/useScreenshots.js'
 import { Icon } from './ui/Icons.jsx'
 import { SourceMap } from './ui/SourceMap.jsx'
-import { useReviewList } from './ui/useReviewList.js'
+import { useDeskReviewRuns, useReviewList } from './ui/useReviewList.js'
 import { SyncNote } from './ui/GithubParts.jsx'
 import { ProjectEdits } from './ui/ProjectEdits.jsx'
 import { RepositoryPicker } from './ui/RepositoryPicker.jsx'
@@ -569,32 +568,12 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
     return rows
   }, [token])
 
+  // Review runs for the whole desk: its rows show which PRs are under review.
+  const { runs: reviewRuns, respondChats, ready: runsReady, refresh: refreshReviewRuns } = useDeskReviewRuns({
+    token, appId, connState: conn.state, sendOnly, pullPageOpen: !!pullPage,
+  })
   // Review requests count toward the first full sync, so the workspace never
   // opens with an empty inbox that fills in a beat later.
-  // Review runs for the whole desk: its rows show which PRs are under review.
-  // Read once at open and on Refresh; polled only while a review is running.
-  // The same list names the live Respond-to-feedback conversations: another agent job on a PR.
-  const [reviewRuns, setReviewRuns] = useState([])
-  const [respondChats, setRespondChats] = useState([])
-  const [runsReady, setRunsReady] = useState(false)
-  const refreshReviewRuns = useCallback(async () => {
-    try {
-      const list = await loadReviewRuns(token, appId)
-      setReviewRuns(list.runs || [])
-      setRespondChats(list.respond_chats || [])
-    } catch { /* the rows simply show no frame */ }
-  }, [token, appId])
-  useEffect(() => {
-    if (sendOnly || conn.state === 'checking') return
-    if (conn.state !== 'connected') { setRunsReady(true); return }
-    void refreshReviewRuns().finally(() => setRunsReady(true))
-  }, [conn.state, refreshReviewRuns, sendOnly])
-  const reviewActive = hasActiveReview(reviewRuns) || respondChats.length > 0
-  useEffect(() => {
-    if (!reviewActive) return undefined
-    const timer = window.setInterval(() => { void refreshReviewRuns() }, 15000)
-    return () => window.clearInterval(timer)
-  }, [reviewActive, refreshReviewRuns])
   const [incomingReady, setIncomingReady] = useState(false)
   useEffect(() => {
     if (sendOnly || conn.state === 'checking') return
@@ -1634,7 +1613,7 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
   function renderPullRequests(project, navigation, view = null, page = null) {
     if (page) {
       return <PullRequests key={`page:${page.repo}#${page.number}`} appId={appId} token={token}
-        project={project} conn={conn} refreshKey={refreshKey} onChanged={refreshIncomingReviews}
+        project={project} conn={conn} refreshKey={refreshKey} onChanged={refreshIncomingReviews} onRunsChanged={refreshReviewRuns}
         presentation="page" focusPull={page} onFocusRelease={() => {}} onStartAgent={startAgentTask} onOpenForReview={onMarkReady} ignoredReviews={ignoredReviews} onIgnoreReview={onIgnoreReview} onUndoIgnore={onUndoIgnore}
         records={recordsForProject(records, project)} onRecord={record => {
           setPullPage(null)
@@ -1642,7 +1621,7 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
         }} />
     }
     return <PullRequests key={`pulls:${project?.key || 'all'}`} appId={appId} token={token}
-      project={project} conn={conn} refreshKey={refreshKey} onChanged={refreshIncomingReviews}
+      project={project} conn={conn} refreshKey={refreshKey} onChanged={refreshIncomingReviews} onRunsChanged={refreshReviewRuns}
       scope={view?.scope || 'all'} onScope={view?.onScope} onTotal={view?.onTotal} onStartAgent={startAgentTask} onOpenForReview={onMarkReady} ignoredReviews={ignoredReviews} onIgnoreReview={onIgnoreReview} onUndoIgnore={onUndoIgnore}
       onOpenPage={(pr, tab) => openPullPage(project, pr, tab)}
       focusPull={pullFocus?.number ? pullFocus : null} focusRun={pullFocus?.runId ? pullFocus : null} onFocusRelease={releasePullFocus}
@@ -1805,7 +1784,7 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
       </div>
       <main ref={pageRef} className="co-page is-sources">
         {selectionError ? <p className="co-run-error" role="alert">{selectionError}</p> : null}
-        {selectionFocus ? <ReviewSelection selectionId={selectionFocus} appId={appId} token={token} onClose={closeSelection} /> : <SourceMap
+        {selectionFocus ? <ReviewSelection selectionId={selectionFocus} appId={appId} token={token} onClose={closeSelection} onRunsChanged={refreshReviewRuns} /> : <SourceMap
           snapshot={sourceSnapshot} projects={sourceProjects} focusKey={projectFocus} desk={desk}
           onProjectOpenChange={setProjectOpen}
           conn={conn} loading={sourceLoading} error={sourceError}
