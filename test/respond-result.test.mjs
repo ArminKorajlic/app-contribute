@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFileSync } from 'node:fs'
-import { normalizeDecision, normalizeResult, planSteps, POST_COMMAND, postMessage, resultSlug, responseFor, responseOutbox, responseStatus, responseView } from '../respond-result.js'
+import { RESEND_AFTER_MS, WATCH_MS, chatStarting, normalizeDecision, normalizeResult, planSteps, POST_COMMAND, postMessage, postingSoon, resultSlug, responseFor, responseOutbox, responseStatus, responseView } from '../respond-result.js'
 
 // The example the Python helper's own tests also pin the digest of: one file, both sides of the contract.
 const example = () => JSON.parse(readFileSync(new URL('./fixtures/respond-result.example.json', import.meta.url), 'utf8'))
@@ -137,4 +137,45 @@ test('the message that tells the chat to post is exact, names the one command, a
   assert.equal(POST_COMMAND(result()), 'python3 /data/apps/contribute/respond_result.py post --pr owner/repo#7 --id r-3f9a1c2b04d5')
   assert.match(message, /Do not push, comment, reply or edit anything on GitHub by hand\. If it refuses, say why and stop\./)
   assert.match(message, /checks the approval and the PR head itself/)
+})
+
+// ---- the seconds after Post
+const SENT = Date.parse('2026-11-06T09:30:00Z') // when `decision()` says Post was pressed
+const approvedView = (patch = {}) => responseView([entry('ready', decision(patch))], pull())
+
+test('the chat is starting for 30 s after Post; at 30 s the card may offer Send again', () => {
+  assert.equal(RESEND_AFTER_MS, 30000)
+  const approved = approvedView()
+  assert.equal(approved.status, 'approved')
+  assert.equal(chatStarting(approved, SENT + 1000), true)
+  assert.equal(chatStarting(approved, SENT + RESEND_AFTER_MS - 1), true)
+  assert.equal(chatStarting(approved, SENT + RESEND_AFTER_MS), false)
+})
+
+test('only an approved answer can be starting', () => {
+  assert.equal(chatStarting(responseView([entry('ready')], pull()), SENT), false, 'nothing was approved')
+  assert.equal(chatStarting(responseView([entry('posting', decision())], pull()), SENT + 1000), false, 'posting has its own state')
+  assert.equal(chatStarting(responseView([entry('failed', decision(), { error: { step: 'replies', message: 'x' } })], pull()), SENT + 1000), false)
+  assert.equal(chatStarting(null, SENT), false)
+})
+
+test('a clock a little behind the one that pressed Post is trusted, one far off is not, so the way out is never hidden for long', () => {
+  const approved = approvedView()
+  assert.equal(chatStarting(approved, SENT - 3000), true, 'this device is 3 s behind')
+  assert.equal(chatStarting(approved, SENT - 60000), false, 'a minute off: do not hide Send again')
+  assert.equal(chatStarting(approvedView({ at: 'not a time' }), SENT), false)
+  assert.equal(chatStarting(approvedView({ at: '' }), SENT), false)
+})
+
+test('an approved or posting answer is read closely for five minutes after Post, then on the idle cadence', () => {
+  assert.equal(WATCH_MS, 300000)
+  assert.equal(postingSoon(entry('ready', decision()), SENT + 1000), true, 'approved, the chat has not started')
+  assert.equal(postingSoon(entry('posting', decision()), SENT + 1000), true)
+  assert.equal(postingSoon(entry('ready', decision()), SENT + WATCH_MS - 1), true)
+  assert.equal(postingSoon(entry('ready', decision()), SENT + WATCH_MS), false, 'a chat that never starts is not read fast forever')
+  assert.equal(postingSoon(entry('posting', decision()), SENT + WATCH_MS), false, 'nor a post that was left posting')
+  assert.equal(postingSoon(entry('ready'), SENT), false, 'nothing approved')
+  assert.equal(postingSoon(entry('posted', decision()), SENT + 1000), false)
+  assert.equal(postingSoon(entry('failed', decision(), { error: { step: 'replies', message: 'x' } }), SENT + 1000), false, 'stopped: nothing is moving')
+  assert.equal(postingSoon(entry('ready', decision({ result_id: 'r-aaaaaaaaaaaa' })), SENT + 1000), false, 'an approval of another result')
 })

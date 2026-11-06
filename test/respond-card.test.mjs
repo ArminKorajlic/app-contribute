@@ -99,11 +99,37 @@ test('an answer the PR has moved past is out of date: nothing to Post, a second 
   assert.ok(labels.includes(NAMES.respondAgain) && labels.includes(NAMES.discard))
 })
 
-test('an approved answer waits for the chat to start, and can be sent again', async t => {
-  const html = await card(t, response('ready', {}, approval('approved')))
+// `approval()` says Post was pressed at 09:30:00; the card is shown at a chosen moment after it.
+const SENT = Date.parse('2026-11-06T09:30:00Z')
+const chatButtons = html => buttons(html).filter(label => [NAMES.postAnswer, NAMES.sendAgain, NAMES.openChat, NAMES.discard].includes(label))
+
+test('right after Post the card says the chat is starting: a spinner, no Send again', async t => {
+  const html = await card(t, response('ready', {}, approval('approved')), { now: SENT + 3000 })
   if (!html) return
-  assert.match(texts(html), /Approved\. Waiting for the chat to post it/)
-  assert.deepEqual(buttons(html).filter(label => [NAMES.postAnswer, NAMES.sendAgain, NAMES.openChat, NAMES.discard].includes(label)), [NAMES.sendAgain, NAMES.openChat])
+  assert.match(texts(html), /Sent to the chat/)
+  assert.match(texts(html), /The chat is starting\. This takes a few seconds\./)
+  assert.match(html, /class="co-arc"/, 'a spinner, as while posting')
+  assert.match(html, /data-frame="reviewing"/, 'the travelling frame: something is under way')
+  assert.deepEqual(chatButtons(html), [NAMES.openChat])
+  assert.doesNotMatch(texts(html), /send it again|Approved/i)
+})
+
+test('after 30 s without the chat starting, Send again is offered, in words that say why', async t => {
+  const html = await card(t, response('ready', {}, approval('approved')), { now: SENT + 31000 })
+  if (!html) return
+  assert.match(texts(html), /Not started yet/)
+  assert.match(texts(html), /The chat has not started yet\. Send it again, or open the chat\./)
+  assert.doesNotMatch(html, /class="co-arc"/)
+  assert.match(html, /data-frame="verdict"/, 'it waits on you again')
+  assert.deepEqual(chatButtons(html), [NAMES.sendAgain, NAMES.openChat])
+})
+
+test('when the message to the chat failed, Send again is offered at once, not after 30 s', async t => {
+  const html = await card(t, response('ready', {}, approval('approved')), { now: SENT + 2000, error: 'Could not reach Möbius. Send again.' })
+  if (!html) return
+  assert.deepEqual(chatButtons(html), [NAMES.sendAgain, NAMES.openChat])
+  assert.match(html, /role="alert"[^>]*>Could not reach Möbius\. Send again\./)
+  assert.doesNotMatch(texts(html), /The chat is starting/)
 })
 
 test('while posting the card shows the steps and which are done, and nothing to press but the chat', async t => {

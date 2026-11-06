@@ -1690,7 +1690,10 @@ async function mountDeskApp({ pullPatch = {} } = {}) {
   window.fullAppFixture = true; window.fullAppConnected = true; window.fullAppDesk = true
   values.set('followed-repositories.json', ['owner/project'])
   // Only the saved Respond answers and decisions are ever listed; every other folder is empty.
-  window.mobius.storage.listWithStatus = async prefix => ({ complete: true, entries: !prefix.startsWith('respond-') ? [] : [...values].filter(([key]) => key.startsWith(prefix)).map(([key, value]) => ({ type: 'file', name: key.slice(prefix.length), path: key, content: structuredClone(value) })) })
+  // A test may hold the reads of the saved answers (window.holdResponsesRead) and let them go with window.releaseResponsesRead().
+  window.responseGates = []
+  window.releaseResponsesRead = () => { window.holdResponsesRead = false; window.responseGates.splice(0).forEach(resolve => resolve()) }
+  window.mobius.storage.listWithStatus = async prefix => (window.holdResponsesRead && prefix.startsWith('respond-') ? await new Promise(resolve => window.responseGates.push(resolve)) : null, { complete: true, entries: !prefix.startsWith('respond-') ? [] : [...values].filter(([key]) => key.startsWith(prefix)).map(([key, value]) => ({ type: 'file', name: key.slice(prefix.length), path: key, content: structuredClone(value) })) })
   // A PR GitHub read completely: without these facts its standing is "couldn't read" and nothing frames it.
   Object.assign(pulls[0], { mergeable: 'MERGEABLE', reviewDecision: null, commits: { nodes: [{ commit: { statusCheckRollup: null } }] },
     latestOpinionatedReviews: { nodes: [] }, reviewThreads: { nodes: [] }, ...pullPatch })
@@ -1901,6 +1904,7 @@ window.runRespondResultChecks = async () => {
   const button = label => [...document.querySelectorAll('button')].find(node => text(node) === label)
   const reviewBody = () => text(query('.co-pr-detail-body'))
   const hint = () => text(query('.co-next-hint'))
+  const settle = async () => { for (let turn = 0; turn < 6; turn++) await frame() }
   const answer = async (patch, decision) => {
     values.set(RESPONSE_KEY, savedResponse(patch))
     decision ? values.set(DECISION_KEY, decision) : values.delete(DECISION_KEY)
@@ -1921,7 +1925,9 @@ window.runRespondResultChecks = async () => {
     ensure(!reviewBody().includes('No review yet'), 'The tab still said No review yet')
     ensure(button(NAMES.postAnswer) && !button(NAMES.postAnswer).disabled, 'Post is not offered')
     checks.push({ name: 'a saved answer is a draft to send: the row, the panel and the Review tab all say so', status: 'pass' })
-    // Post: the owner's approval is written for exactly this answer, and the chat is told to run the helper.
+    // Post: the owner's approval is written for exactly this answer, and the chat is told to run the helper. The reads that follow are
+    // held for a moment: until the refreshed answer is on screen the card stays busy, so Post cannot be pressed twice in that gap.
+    window.holdResponsesRead = true
     await click(button(NAMES.postAnswer))
     await until(() => values.get(DECISION_KEY)?.decision === 'approved', 'Post wrote no approval')
     ensure(values.get(DECISION_KEY).result_id === 'r-3f9a1c2b04d5' && values.get(DECISION_KEY).digest === 'd'.repeat(64), 'The approval named another answer: ' + JSON.stringify(values.get(DECISION_KEY)))
@@ -1929,9 +1935,20 @@ window.runRespondResultChecks = async () => {
     const sent = calls.messages[0]
     ensure(sent.chatId === 'respond-chat-fixture' && sent.cid === 'respond-post-r-3f9a1c2b04d5', 'The message went to ' + sent.chatId + ' as ' + sent.cid)
     ensure(sent.content.includes('python3 /data/apps/contribute/respond_result.py post --pr owner/project#7 --id r-3f9a1c2b04d5'), 'The message did not name the command: ' + sent.content)
-    await until(() => reviewBody().includes('Approved. Waiting for the chat to post it'), 'The card did not follow the approval: ' + reviewBody())
+    await settle()
+    ensure(button(NAMES.postAnswer)?.disabled || !button(NAMES.postAnswer), 'Post could be pressed again before the refreshed answer arrived: ' + reviewBody())
+    window.releaseResponsesRead()
+    await until(() => reviewBody().includes('Sent to the chat'), 'The card did not follow the approval: ' + reviewBody())
     ensure(hint() === 'Sending to GitHub…', 'The panel said: ' + hint())
-    checks.push({ name: 'Post writes the approval for this answer and tells the chat to run the helper', status: 'pass' })
+    ensure(!button(NAMES.sendAgain) && button(NAMES.openChat), 'Send again was offered while the chat is starting: ' + reviewBody())
+    ensure(reviewBody().includes('The chat is starting') && query('.co-pr-detail-body .co-arc'), 'The card showed no spinner: ' + reviewBody())
+    checks.push({ name: 'Post writes the approval for this answer, tells the chat to run the helper, and the card says it is starting, with no Send again', status: 'pass' })
+    // Thirty seconds on with nothing started, the way out comes back, in words that say why.
+    values.set(DECISION_KEY, { ...values.get(DECISION_KEY), at: new Date(Date.now() - 40000).toISOString() })
+    shownAgain()
+    await until(() => reviewBody().includes('Not started yet') && button(NAMES.sendAgain), 'The card never offered Send again: ' + reviewBody())
+    ensure(reviewBody().includes('The chat has not started yet. Send it again, or open the chat.'), 'The stalled card said: ' + reviewBody())
+    checks.push({ name: 'after 30 s with nothing started, Send again is offered', status: 'pass' })
     // The helper at work and done.
     await answer({ state: 'posting' }, values.get(DECISION_KEY))
     await until(() => reviewBody().includes('Posting'), 'The card did not show posting: ' + reviewBody())

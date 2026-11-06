@@ -32,6 +32,9 @@ import { SearchField } from './SearchField.jsx'
 // A takeover's one scope: repairs to the named PR, each push approved by the owner.
 const scopeFor = mode => mode === 'review_fix_merge' ? { confirmation_scope: TAKEOVER_SCOPE } : {}
 
+// How long a card waits for the refreshed saved answers after Post or Discard before it is pressable again.
+const REFRESH_WAIT_MS = 4000
+
 // The review chip's look by who holds the next move (see pr-standing.js chipOf).
 const CHIP_TONE_CLASS = { owner: ' needs-you', waiting: ' is-waiting', plain: '' }
 
@@ -505,17 +508,18 @@ export function PullRequests({ appId, token, project, conn, onChanged, onReviewP
   const retryJob = (run, pr) => RETRY_JOBS[standingOf(pr).role]?.[run.mode] || (standingOf(pr).role === 'author' ? 'check_my_pr' : 'review')
   const retryPulls = run => (run.items || []).map(item => pulls.find(pr => prKey(pr) === `${item.repo.toLowerCase()}#${item.number}`)).filter(pr => pr && isOpenPull(pr))
   // Post and Discard act on the answer on screen, one at a time. Either way the saved answers and the runs are read again: an approval
-  // may be written even when the chat could not be told, and the card must say where things stand.
+  // may be written even when the chat could not be told, and the card must say where things stand. The card stays busy until the
+  // refreshed answers are on screen (for at most REFRESH_WAIT_MS), so Post cannot be pressed again while the old state still shows.
   async function answerAction(pr, act) {
     const key = prKey(pr)
     setRespondBusy(key)
     setRespondFailure(null)
     const outcome = await act().catch(() => ({ ok: false, error: 'This did not go through. Try again.' }))
     if (!alive.current) return
-    setRespondBusy('')
     if (!outcome.ok) setRespondFailure({ key, message: outcome.error })
-    void onResponsesChanged?.()
     void onRunsChanged?.()
+    await Promise.race([Promise.resolve(onResponsesChanged?.()), new Promise(resolve => setTimeout(resolve, REFRESH_WAIT_MS))])
+    if (alive.current) setRespondBusy('')
   }
   // What a PR's Review tab needs: the run's own actions and whether you wrote the PR.
   const reviewProps = pr => {

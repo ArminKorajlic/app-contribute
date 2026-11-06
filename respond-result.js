@@ -118,8 +118,23 @@ export function responseStatus(entry, pr) {
   return decision === 'approved' ? 'approved' : 'ready'
 }
 
-// Whether the chat is, or is about to be, posting this answer: a screen shows it again soon, not on the idle cadence.
-export const postingSoon = entry => entry.result.state === 'posting' || (entry.result.state === 'ready' && decisionOf(entry) === 'approved')
+// The seconds after Post. Both real posts had the message at the chat in 2 s, the first step done by 8.6 s and everything posted by 13 s.
+// The chat gets this long to start before the card offers Send again.
+export const RESEND_AFTER_MS = 30000
+// After Post an answer is read closely for this long, then on the idle cadence: a chat that never starts is not read fast for ever.
+export const WATCH_MS = 300000
+// A clock a few seconds behind the one that pressed Post is normal; further off, the time is not trusted.
+const SKEW_MS = 5000
+
+// Whether `at` (a saved time) is less than `limit` ms before `now`. An unreadable time is never within.
+const withinMs = (at, now, limit) => { const elapsed = now - Date.parse(at || ''); return elapsed > -SKEW_MS && elapsed < limit }
+
+// Whether the owner pressed Post so recently that the chat is still expected to be starting the command: the card says so and offers no
+// Send again yet. Only an approved answer can be starting (posting and stopped have their own states).
+export const chatStarting = (view, now = Date.now()) => view?.status === 'approved' && withinMs(view.decision?.at, now, RESEND_AFTER_MS)
+
+// Whether this answer is being posted, and Post was pressed recently enough to read it closely.
+export const postingSoon = (entry, now = Date.now()) => ['ready', 'posting'].includes(entry.result.state) && decisionOf(entry) === 'approved' && withinMs(entry.decision.at, now, WATCH_MS)
 
 // The PR page's view of a response: the entry and its status, or null when there is nothing to show.
 export function responseView(responses, pr) {

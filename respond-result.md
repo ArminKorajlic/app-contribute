@@ -162,11 +162,15 @@ Exit codes: 0 done, 2 bad input, 3 refused, 4 failed part-way.
 
 ## What the app does with it
 
-* **Reads** both folders with the sync hub (every 10 s while something is posting, 30 s
-  otherwise) and pairs each result with its decision.
+* **Reads** both folders with the sync hub (every 2.5 s while an answer is being posted, for five
+  minutes after Post; every 30 s otherwise) and pairs each result with its decision.
 * **Status** of a result on its PR: `ready` (fresh: the PR head still equals `pr.head_sha`),
   `stale` (the head moved), `approved` (approved, not yet `posting`), `posting`, `posted`,
-  `failed`, or none (discarded).
+  `failed`, or none (discarded). For the first 30 s after the decision's `at`, `approved` is "the
+  chat is starting": the card says **Sent to the chat** with a spinner and offers no Send again
+  (both real posts had the message at the chat in 2 s and the first step done by 8.6 s). After
+  that it says **Not started yet** and offers Send again; if the message to the chat failed it
+  offers Send again at once.
 * **PR logic** (unchanged): `ready` and `approved` supply the existing "draft" fact, `posting` the
   "sending" fact, `failed` the "unconfirmed" fact. `stale` and none supply nothing, so the PR
   reads "Feedback to answer" again.

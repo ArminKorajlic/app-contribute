@@ -1,6 +1,7 @@
 // Reading the saved Respond-to-feedback results and writing the owner's decision, through the app's storage.
 // The helper writes `respond-results/`; the app writes `respond-decisions/`; neither writes the other's folder.
-import { DECISION_FOLDER, RESULT_FOLDER, normalizeDecision, normalizeResult, resultSlug } from './respond-result.js'
+import { DECISION_FOLDER, RESULT_FOLDER, normalizeDecision, normalizeResult, postingSoon, resultSlug } from './respond-result.js'
+import { SYNC_POLICY } from './refresh.js'
 
 const storageOf = () => window.mobius.storage
 
@@ -50,3 +51,13 @@ export async function writeDecision(slug, { result_id: resultId, digest, decisio
 export async function clearDecision(slug, storage = storageOf()) {
   try { await storage.remove(`${DECISION_FOLDER}${slug}.json`) } catch { /* the helper only ever acts on an approval for the exact answer, so a left-over one is harmless */ }
 }
+
+// The saved answers as a fact of the sync hub (ui/useRespondResults.js): read now and then, and closely while an answer is being posted,
+// so the card follows the posting script step by step. A failed read keeps what is shown. These are reads of the app's own storage.
+export const respondFact = apply => ({
+  read: () => loadResponses(),
+  apply,
+  failed: () => {},
+  every: { live: SYNC_POLICY.responsesLiveMs, idle: SYNC_POLICY.runsIdleMs },
+  live: list => !!list && list.some(entry => postingSoon(entry)),
+})

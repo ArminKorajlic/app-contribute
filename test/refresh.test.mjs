@@ -2,6 +2,9 @@ import test, { afterEach, mock } from 'node:test'
 import assert from 'node:assert/strict'
 
 import { SYNC_POLICY, createRefreshCoordinator, createSyncHub, onShownAgain, watchVisibility } from '../refresh.js'
+import { respondFact } from '../respond-store.js'
+import { normalizeDecision, normalizeResult } from '../respond-result.js'
+import { readFileSync } from 'node:fs'
 
 test('refresh coordinator deduplicates overlap and preserves one trailing run', async () => {
   let runs = 0
@@ -344,4 +347,31 @@ test('a view\'s repeating read that never settles does not silence the view for 
   assert.equal(started, 1, 'a read began while the first was still within its minute')
   await elapse(20000)
   assert.ok(started >= 2, 'the view never read again after a read that never settled')
+})
+
+// The saved Respond-to-feedback answers: read every 30 s, and every 2.5 s only while an answer is being posted (and only for five
+// minutes after Post), so the card follows the posting script step by step without reading fast forever.
+test('the saved answers are read closely while one is being posted, and on the idle cadence otherwise', async () => {
+  const { hub, state, fact, setVisible } = setup()
+  const example = JSON.parse(readFileSync(new URL('./fixtures/respond-result.example.json', import.meta.url), 'utf8'))
+  const approvedNow = () => ({ slug: 'owner__repo__7', result: normalizeResult(example),
+    decision: normalizeDecision({ version: 1, result_id: example.id, digest: example.digest, decision: 'approved', at: new Date(Date.now()).toISOString() }) })
+  let list = []
+  const spec = respondFact(() => {})
+  assert.equal(SYNC_POLICY.responsesLiveMs, 2500)
+  hub.start()
+  fact('responses', { every: spec.every, live: spec.live, read: async () => { state.reads.responses = (state.reads.responses || 0) + 1; return list } })
+  await setVisible(true)
+  await hub.refresh('responses')
+  await elapse(SYNC_POLICY.runsIdleMs)
+  assert.equal(state.reads.responses, 2, 'nothing is being posted: one read per idle interval')
+  list = [approvedNow()]
+  await hub.refresh('responses') // Post pressed: the owner's own read
+  const before = state.reads.responses
+  for (let step = 0; step < 4; step++) { mock.timers.tick(SYNC_POLICY.responsesLiveMs); await settle() }
+  assert.equal(state.reads.responses - before, 4, 'an approved answer is read every 2.5 s')
+  await elapse(300000)
+  const later = state.reads.responses
+  await elapse(SYNC_POLICY.runsIdleMs)
+  assert.equal(state.reads.responses - later, 1, 'five minutes on, a chat that never started is back on the idle cadence')
 })
