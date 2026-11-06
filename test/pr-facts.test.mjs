@@ -125,6 +125,22 @@ test('a review list with another page is unknown: an opinion on the next page mu
   assert.match(PR_FIELDS, /latestOpinionatedReviews\([^)]*\) \{ pageInfo \{ hasNextPage \}/, 'the read asks GitHub whether the list goes on')
 })
 
+test('a clean private review of their PR is settled, and comes back for re-review when they push', () => {
+  const clean = head => [run({ state: 'all_clear', head_sha: head })]
+  // At this version it reads as done: there is no verdict to send and no finding to set aside.
+  const settled = decideFor(pull(), clean(HEAD))
+  assert.deepEqual([settled.state, settled.turn], ['reviewer.kept_private', 'none'])
+  // After new commits it is an older version: the PR is back in front of the reviewer.
+  const pushed = decideFor(pull(), clean(OLD))
+  assert.deepEqual([pushed.state, pushed.turn, pushed.next], ['reviewer.re_review', 'you', 'review'])
+  assert.equal(pushed.actions.find(action => action.id === 'review').title, 'Re-review')
+  // Findings on a version the PR left behind are old news, and your own PR is never nagged about it.
+  assert.equal(decideFor(pull(), [run({ state: 'needs_you', head_sha: OLD })]).state, 'reviewer.to_review')
+  assert.equal(decideFor(mine(), clean(OLD)).state, 'author.waiting_review')
+  // A re-review that already ran at the new version is not "new commits" again.
+  assert.equal(decideFor(pull(), clean(HEAD)).state, 'reviewer.kept_private')
+})
+
 test('open threads on your PR are feedback; a thread you answered last is not', () => {
   const thread = login => ({ isResolved: false, comments: { nodes: [{ author: { login } }] } })
   assert.equal(decideFor(mine({ reviewThreads: { nodes: [thread('Sam')] } })).state, 'author.feedback')

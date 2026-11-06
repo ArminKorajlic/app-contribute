@@ -222,6 +222,9 @@ checked over every case and every combination of the facts that matter):
    stale with its version), and no agent job running. GitHub asking for no review is
    not an approval.
 3. Only new commits bring their PR back for re-review; a reply or a thank-you never does.
+   That includes a clean private review of their PR: at its own version it reads as done
+   (nothing to send, nothing to set aside); once they push, the PR is back to re-review.
+   Your own PR is never nagged about an older clean check.
 4. One agent job per PR at a time. A job that stalled holds nothing. A Respond to
    feedback conversation counts as the PR's job for as long as it can still move.
 5. Take over is for maintainers only, and needs a reason.

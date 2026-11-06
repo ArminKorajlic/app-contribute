@@ -40,6 +40,7 @@ function derive(facts) {
     mine: facts.myReview || null,
     mineAtHead: !!facts.myReview && facts.myReview.commit === facts.head,
     result,
+    earlier: facts.earlier && facts.earlier.head !== facts.head ? facts.earlier : null,
     openFindings: result?.outcome === 'findings' && !result.setAside,
     outbox,
     botFindings: (facts.reviews || []).some(review => review.bot && review.state !== 'APPROVED'),
@@ -108,12 +109,13 @@ function approvedStanding(facts) {
 }
 
 // Your verdict on this version comes first, then a finished review of this version
-// (a re-review that is done is no longer "new commits"), then an older review of yours.
+// (a re-review that is done is no longer "new commits"), then an older review of yours, posted on
+// GitHub (`mine`) or kept private (`earlier`).
 function reviewerStanding(facts, d) {
   if (d.mineAtHead && d.mine.state === 'CHANGES_REQUESTED') return 'reviewer.waiting_author'
   if (d.mineAtHead) return mergeBlocker(facts, d) ? 'reviewer.reviewed' : 'reviewer.mergeable'
   if (d.result) return d.result.setAside ? 'reviewer.kept_private' : 'reviewer.result_ready'
-  if (d.mine) return 'reviewer.re_review'
+  if (d.mine || d.earlier) return 'reviewer.re_review'
   return facts.lifecycle === 'draft' ? 'reviewer.draft' : 'reviewer.to_review'
 }
 
@@ -156,7 +158,7 @@ export const ACTIONS = [
     when: (facts, d) => firstReason(readable(facts), stillOpen(facts), jobIdle(facts), nothingInFlight(d), somethingToAnswer(facts, d) ? '' : 'Nothing to respond to.') },
   { id: 'finish_it', by: 'agent', roles: ['author'], title: 'Finish it for me', detail: 'Responds, checks and fixes. Stops for your approval before each push.',
     when: (facts, d) => firstReason(readable(facts), stillOpen(facts), mayWrite(facts.permission) ? '' : 'Needs write access to this repository.', jobIdle(facts), nothingInFlight(d)) },
-  { id: 'review', by: 'agent', roles: ['reviewer'], title: d => (d.mine || d.result ? 'Re-review' : 'Review'), detail: 'Private, drafted for you, or posted by the agent if you allow it.',
+  { id: 'review', by: 'agent', roles: ['reviewer'], title: d => (d.mine || d.result || d.earlier ? 'Re-review' : 'Review'), detail: 'Private, drafted for you, or posted by the agent if you allow it.',
     when: (facts, d) => firstReason(readable(facts), stillOpen(facts), jobIdle(facts), nothingInFlight(d)) },
   { id: 'take_over', by: 'agent', roles: ['reviewer'], title: 'Take over', detail: 'Maintainers only. Needs a reason, and says so on the PR. Each push needs your approval.',
     when: (facts, d) => firstReason(readable(facts), stillOpen(facts), MAINTAINER.includes(facts.permission) ? '' : 'Only maintainers can take over someone else’s PR.', jobIdle(facts), nothingInFlight(d)) },

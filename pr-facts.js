@@ -93,11 +93,18 @@ function outboxOf(item) {
 }
 
 function resultOf(item, progress, ignored) {
-  if (item.state === 'all_clear') return { head: item.head_sha, outcome: 'clear', setAside: false }
+  // A clean review has no verdict to send and no finding to set aside, and the Review tab offers
+  // neither: it stands as a private review of this version ("kept private"), not as work waiting on you.
+  if (item.state === 'all_clear') return { head: item.head_sha, outcome: 'clear', setAside: true }
   if (item.state !== 'needs_you' || progress.waiting || progress.halted) return null
   const setAside = !!ignoredNote(item, ignored) || ['discarded', 'not_dispatched'].includes(item.verdict_proposal?.state)
   return { head: item.head_sha, outcome: 'findings', setAside }
 }
+
+// A clean private review of an older version. The result itself is only ever of the current
+// version, so this remembers that the PR was reviewed and has since moved: it needs another look.
+// Findings on an older version are old news and say nothing here.
+const earlierOf = (item, pr) => (item.state === 'all_clear' && item.head_sha && item.head_sha !== pr?.headRefOid ? { head: item.head_sha } : null)
 
 // A review this app saw GitHub confirm counts before GitHub's own list catches up.
 function sentReview(item) {
@@ -138,7 +145,7 @@ const respondJobOf = (chats, pr) => {
 const jobFor = (runJob, chats, pr) => (runJob && runJob.state !== 'stalled' ? runJob : respondJobOf(chats, pr) || runJob)
 
 function runFacts(review, pr, own, ignored) {
-  if (!review) return { job: null, result: null, outbox: null, sent: null }
+  if (!review) return { job: null, result: null, earlier: null, outbox: null, sent: null }
   const { run, item } = review
   const progress = reviewItemProgress(run, item, { own, ignored })
   const outbox = outboxOf(item)
@@ -146,6 +153,7 @@ function runFacts(review, pr, own, ignored) {
   return {
     job: job && !(job === 'running' && outbox?.state === 'sending') ? { kind: run.mode || 'review', state: job } : null,
     result: resultOf(item, progress, ignored),
+    earlier: earlierOf(item, pr),
     outbox,
     sent: sentReview(item),
   }
@@ -173,6 +181,7 @@ export function prFacts({ pr, login, runs = [], ignored = null, chats = [] }) {
     openThreads: threads || 0,
     job: jobFor(fromRuns.job, chats, pr),
     result: fromRuns.result,
+    earlier: fromRuns.earlier,
     outbox: fromRuns.outbox,
     // Without the connected account, whose PR this is cannot be told: nothing is decided.
     readComplete: !!login && reviews !== null && threads !== null,
