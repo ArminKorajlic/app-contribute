@@ -153,3 +153,15 @@ test('the line-number gutter grows with the file so 4-digit numbers never run to
   assert.equal(lineNumberDigits([{ lines: [{ oldNo: 1084, newNo: 1504 }] }]), 4)
   assert.equal(lineNumberDigits([{ lines: [{ oldNo: 99999, newNo: null }] }]), 5)
 })
+
+test('the gutter width of a very large file is computed without a call argument per line', async () => {
+  const { lineNumberDigits, parseUnifiedDiff } = await import('../ui/diff/parseUnifiedDiff.js')
+  const blank = 140000
+  const patch = `diff --git a/big.txt b/big.txt\nnew file mode 100644\n--- /dev/null\n+++ b/big.txt\n@@ -0,0 +1,${blank} @@\n${'+\n'.repeat(blank)}`
+  const [file] = parseUnifiedDiff(patch)
+  assert.equal(file.insertions, blank)
+  assert.equal(lineNumberDigits(file.hunks), 6)
+  // Missing, empty and non-numeric lines still fall back to the three-digit minimum.
+  assert.equal(lineNumberDigits(undefined), 3)
+  assert.equal(lineNumberDigits([{ lines: [{ oldNo: null, newNo: NaN }, {}] }, {}]), 3)
+})
