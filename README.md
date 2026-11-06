@@ -366,7 +366,8 @@ layers in order. Only
 attempts whose outcome is unknown survive a reload, as a bounded checkpoint of
 ids, and lock their unit until a read shows the result.
 
-After Confirm the card reports calm state through the host's row and title
+After Confirm, on a Möbius that advertises `row-state` in the session's
+`features`, the card reports calm state through the host's row and title
 fields: each row shows **Sending** with a spinner, then its pull request
 (`#123 ↗`, opening GitHub) and state pill (Open, Draft, Merged, Closed), and
 the header changes to "Sending N contributions", "N pull requests opened" (or
@@ -377,7 +378,25 @@ app's card refresh, with backoff) for ten minutes after the send, then says
 **Not confirmed** and offers only **Open Contribute**. It never resends. A row
 whose send failed shows **Not sent** and its one-line reason; the action is
 **Retry** when the guarded send path accepts those records again (the sent
-rows are never resent), otherwise **Open Contribute**.
+rows are never resent), otherwise **Open Contribute**. A merged pull request's pill is purple (the
+`accent` tone), and the card opts in to value-only row facts (`item_facts:
+"values"` in the printed card and `itemFacts` in its reports), since Project
+and Change read on their own; Confirm's rows keep their labels.
+
+On an older Möbius (no `row-state`), the card keeps the result on its action:
+a status pill (Sending, Checking GitHub, Not confirmed, Not sent, Open,
+Merged…), the pull request links, and a disabled **Sent** once everything is
+published. Where a newer host would show **Open Contribute**, it shows a
+disabled action with one line saying to open Contribute; the header's
+"Open in Contribute" link is the way there. Ship the Möbius change first.
+
+A card printed before items named its records (a "legacy" card: one
+`chat-send:<id>` action, no `review:` items) is read-only: a published record
+shows its status and pull request link on a disabled **Sent**; a prepared one
+offers **Open Contribute**; a missing, dismissed or unreadable record says so
+(an unreadable one offers **Try again**, which only reads again). A batch
+legacy card or a card whose action does not match its items offers only
+**Open Contribute**.
 
 The card (`"expand": false`, so no inline app view) has one item per
 contribution: its title opens that entry (`review:<id>`) and its facts are

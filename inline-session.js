@@ -25,12 +25,14 @@ const CHECKPOINT_BYTES = 32768
 const MAX_ATTEMPTS = 24
 const UNRESOLVED = new Set(['sending', 'unknown'])
 const UNKNOWN_NOTE = 'GitHub hasn’t confirmed the result yet.'
+// After the recheck window, on a host without row state (no Open control).
+export const EXPIRED_NOTE = 'GitHub hasn’t confirmed the result. Open Contribute to check it.'
 // Rechecks of an unknown outcome: quick at first, then once a minute, for ten
 // minutes after the send. After that the row says "Not confirmed" and the
 // card opens Contribute; nothing is ever retried blindly.
 export const RECHECK_DELAYS_MS = [3000, 6000, 12000, 24000, 45000, 60000]
 export const RECHECK_WINDOW_MS = 10 * 60 * 1000
-const PULL_STATUS = { draft: ['Draft', 'neutral'], open: ['Open', 'success'], landing: ['Open', 'success'], merged: ['Merged', 'neutral'], closed: ['Closed', 'neutral'] }
+const PULL_STATUS = { draft: ['Draft', 'neutral'], open: ['Open', 'success'], landing: ['Open', 'success'], merged: ['Merged', 'accent'], closed: ['Closed', 'neutral'] }
 // A pending recheck never keeps a process alive on its own (Node's unref);
 // in a browser frame it is an ordinary timeout.
 const DEFAULT_TIMERS = { set: (fn, ms) => { const id = setTimeout(fn, ms); id?.unref?.(); return id }, clear: id => clearTimeout(id) }
@@ -39,6 +41,10 @@ export const LEDGER_NOTE = 'Could not read every contribution. Open Contribute t
 export const TIMEOUT_NOTE = 'Contribute didn’t answer in time. Try again.'
 export const REFRESH_FAILED_NOTE = 'Contribute couldn’t check this right now. Try again.'
 export const NEWER_NOTE = 'Sending from chat needs a newer Möbius. Open Contribute to send.'
+// A card whose action does not match its items only points to Contribute.
+export const UNMATCHED_NOTE = 'Open Contribute to send them.'
+export const LEGACY_NOTE = 'Open Contribute to send it.'
+export const UNCHECKED_NOTE = 'Couldn’t check this contribution right now.'
 export const RECOVERY_NOTE = 'The previous result from this card could not be restored. Open Contribute to check it; nothing will be sent from here.'
 
 // ---- Recovery checkpoint: unresolved attempt identities only, never records,
@@ -137,12 +143,15 @@ export const DEFERRED_NOTE = 'It is sent after the layers before it. Open Contri
 export const SIZE_NOTE = 'This contribution needs a fresh check in Contribute before it can be sent: its change size is missing.'
 const confirmable = record => !relayed(record) && sized(record) && identified(record)
 
-export function createInlineSession({ sessionId, actions, items = null, checkpoint = null, retain = false, recoveryError = false, publish, loadExact, onNeedRuntime,
+export function createInlineSession({ sessionId, actions, items = null, features = null, checkpoint = null, retain = false, recoveryError = false, publish, loadExact, onNeedRuntime,
   timers = DEFAULT_TIMERS, now = () => Date.now() }) {
   const advertised = [...new Map((actions || []).filter(item => typeof item?.key === 'string').map(item => [item.key, item])).values()]
   // The card's items name its records; its one action covers exactly them.
   const targets = new Map(advertised.map(item => [item.key, sendTarget(item.key, items)]))
   const idsFor = key => targets.get(key)?.ids || []
+  // The records whose status a card shows: its send set, or the one record a
+  // legacy card names, which is read for status only.
+  const shownIds = key => targets.get(key)?.legacy ? [targets.get(key).legacy] : idsFor(key)
   let attempts = []
   let fault = ''
   try {
@@ -156,6 +165,7 @@ export function createInlineSession({ sessionId, actions, items = null, checkpoi
   const generations = new Map()
   const reading = new Set()
   const unreadable = new Set()
+  const absent = new Set() // unreadable because the read found no record
   let runtime = null
   let activating = ''
   // The app's refresh completion count an activation is waiting for. The app
@@ -178,8 +188,11 @@ export function createInlineSession({ sessionId, actions, items = null, checkpoi
   // The host's row intents; a row reports state only for a record it lists.
   const rowIntents = new Set((Array.isArray(items) ? items : []).map(item => item?.intent).filter(intent => typeof intent === 'string'))
   const rowOf = id => `review:${id}`
+  // A host that draws row state, a live title and open-only actions says so;
+  // an older one gets the earlier presentation on the action itself.
+  const drawsRows = Array.isArray(features) && features.includes('row-state')
 
-  const allIds = () => [...new Set([...advertised.flatMap(item => idsFor(item.key)), ...attempts.flatMap(attempt => attempt.ids)])]
+  const allIds = () => [...new Set([...advertised.flatMap(item => shownIds(item.key)), ...attempts.flatMap(attempt => attempt.ids)])]
   // Newest saved copy wins between the app's ledger and exact reads.
   const current = () => {
     const merged = new Map()
@@ -209,7 +222,8 @@ export function createInlineSession({ sessionId, actions, items = null, checkpoi
     // A host that does not send the card's items cannot say which records the
     // action covers, so nothing is confirmable from here.
     if (targets.get(key)?.needsItems) return NEWER_NOTE
-    if (targets.get(key)?.invalid) return 'This card no longer matches its listed contributions. Open Contribute to send them.'
+    if (targets.get(key)?.legacy) return legacyNote(targets.get(key).legacy)
+    if (targets.get(key)?.invalid) return UNMATCHED_NOTE
     if (!runtime) return ''
     if (runtime.reviewStatus?.state === 'unavailable') return 'Could not verify the current review. Try again; nothing was sent.'
     if (idsFor(key).some(id => unreadable.has(id)) && !reading.size) return 'Could not read this contribution. Try again; nothing was sent.'
@@ -259,14 +273,29 @@ export function createInlineSession({ sessionId, actions, items = null, checkpoi
     return `“${name}”: ${reason}`
   }
 
+  // How a legacy card's record stands, once read: nothing when it is
+  // published (its status and link show it), else where to send or check it.
+  function legacyNote(id) {
+    const record = current().get(id)
+    if (!record) return absent.has(id) ? sendBlocker(null) : unreadable.has(id) ? UNCHECKED_NOTE : ''
+    if (isPublished(record)) return ''
+    return record.status === 'prepared' ? LEGACY_NOTE : sendBlocker(record)
+  }
+
   // An unknown outcome is still being checked until its window has passed.
   const checkingAttempt = attempt => attempt.state === 'unknown' && now() - attempt.at < RECHECK_WINDOW_MS
   const latestAttempt = id => attempts.filter(attempt => attempt.ids.includes(id)).at(-1)
+  // The rows carry each record's state when this host draws row state and the
+  // card lists every record the action shows as a row. A legacy card (no rows)
+  // or an older host keeps the state on the action instead.
+  const rowsShown = key => drawsRows && shownIds(key).length > 0 && shownIds(key).every(id => rowIntents.has(rowOf(id)))
 
   function actionState(item) {
     const key = item.key
+    const target = targets.get(key)
     const ids = idsFor(key)
-    const records = ids.map(id => current().get(id))
+    const shown = shownIds(key)
+    const records = shown.map(id => current().get(id))
     const mine = attempts.filter(attempt => attempt.ids.some(id => ids.includes(id)))
     const busy = mine.some(attempt => attempt.state === 'sending')
     const unknown = !busy && mine.some(attempt => attempt.state === 'unknown')
@@ -276,29 +305,57 @@ export function createInlineSession({ sessionId, actions, items = null, checkpoi
     const failure = published ? null : mine.filter(attempt => ['failed', 'not_attempted'].includes(attempt.state)).at(-1)
     const confirming = frozen?.key === key
     const checking = activating === key
-    const loading = ids.some(id => !current().has(id) && reading.has(id))
+    const loading = shown.some(id => !current().has(id) && reading.has(id))
+    // A card that does not match its items never reaches Confirm; it shows
+    // status and points to Contribute, which is not a warning.
+    const passive = Boolean(target?.invalid)
+    const legacy = target?.legacy
+    // A legacy record that could not be checked is read again by Try again.
+    const recheck = Boolean(legacy) && unreadable.has(legacy) && !absent.has(legacy)
     // A failed check or read can be retried; retrying only reads again.
-    const retry = runtime?.reviewStatus?.state === 'unavailable' || ids.some(id => unreadable.has(id)) || ledgerIncomplete() || checkRetryable(key) || Boolean(refreshNote)
+    const retry = recheck || runtime?.reviewStatus?.state === 'unavailable' || ids.some(id => unreadable.has(id)) || ledgerIncomplete() || checkRetryable(key) || Boolean(refreshNote)
     const reason = fault || blockedReason(key)
-    // Nothing can be done from the chat: the control opens Contribute instead.
-    const openOnly = !busy && !checking && !confirming && (Boolean(fault) || unknown && !checkingResult || Boolean(reason) && !retry && !unknown)
+    const rows = rowsShown(key)
+    const sentLegacy = Boolean(legacy) && published
+    // Nothing can be done from the chat: on a host that draws it, the control
+    // opens Contribute instead of sitting disabled.
+    const stuck = Boolean(fault) || unknown && !checkingResult || Boolean(reason) && !retry && !unknown
+    const openOnly = drawsRows && stuck && !busy && !checking && !confirming && !sentLegacy
     const label = openOnly ? 'Open Contribute' : busy ? 'Sending…' : checkingResult || checking ? 'Checking…' : loading ? 'Loading…'
-      : retry ? 'Try again' : failure ? 'Retry' : item.label || 'Contribute'
-    // A failure the rows already explain is not repeated under the action.
-    const rowsExplain = ids.some(id => rowIntents.has(rowOf(id)) && rowFailure(id))
+      : retry ? 'Try again' : sentLegacy || published && !rows ? 'Sent' : failure ? 'Retry' : item.label || 'Contribute'
+    // A failure the rows already explain is not repeated under the action, and
+    // a note that only says to open Contribute is the open control itself.
+    const rowsExplain = rows && ids.some(id => rowFailure(id))
+    const onlyPoints = openOnly && [LEGACY_NOTE, UNMATCHED_NOTE].includes(reason)
+    const note = busy || checkingResult || (rowsExplain || onlyPoints) && !fault ? ''
+      : unknown ? (rows ? '' : EXPIRED_NOTE)
+      : text(fault || failure?.note || (activating === key ? '' : refreshNote) || reason)
+    // Without rows the action carries the result: a status pill and PR links.
+    const [status, statusTone] = rows ? ['', 'neutral'] : actionStatus({ fault, busy, checkingResult, unknown, failure, published, records })
     return {
       key, label,
       disabled: !openOnly && (busy || checkingResult || checking || loading || sending() || Boolean(frozen) && !confirming
-        || Boolean(reason) && !retry),
+        || passive && !recheck || Boolean(reason) && !retry || sentLegacy || published && !rows),
       busy: busy || checkingResult,
       open: openOnly,
       confirming,
       confirmation: confirming ? frozen.units.flatMap(unit => unit.ready.map(confirmationItem)) : null,
-      hidden: published && !busy && !confirming,
-      // One plain line at most; the row pills carry each contribution's state.
-      note: busy || unknown || rowsExplain && !fault ? '' : text(fault || failure?.note || (activating === key ? '' : refreshNote) || reason),
-      tone: 'neutral', status: '', statusTone: 'neutral', links: [], badges: [],
+      hidden: published && rows && !busy && !confirming,
+      note, tone: 'neutral', status, statusTone,
+      links: rows ? [] : records.filter(isPublished).map(record => ({ label: `#${publishedPull(record).number}`, url: publishedPull(record).url })),
+      badges: [],
     }
+  }
+
+  // The action's own status where there are no rows to carry it.
+  function actionStatus({ fault, busy, checkingResult, unknown, failure, published, records }) {
+    if (fault) return ['Needs attention', 'danger']
+    if (busy) return ['Sending', 'neutral']
+    if (checkingResult) return ['Checking GitHub', 'neutral']
+    if (unknown) return ['Not confirmed', 'neutral']
+    if (failure) return ['Not sent', failure.state === 'failed' ? 'danger' : 'neutral']
+    if (published) return records.length === 1 ? PULL_STATUS[records[0].status] || ['Sent', 'success'] : ['Sent', 'success']
+    return ['', 'neutral']
   }
 
   // This record's last send failed and it is not published.
@@ -324,6 +381,7 @@ export function createInlineSession({ sessionId, actions, items = null, checkpoi
   }
 
   function rows() {
+    if (!drawsRows) return []
     return allIds().filter(id => rowIntents.has(rowOf(id)))
       .flatMap(id => { const state = rowState(id); return state ? [{ intent: rowOf(id), ...state }] : [] }).slice(0, 12)
   }
@@ -331,14 +389,20 @@ export function createInlineSession({ sessionId, actions, items = null, checkpoi
   // The header says what happened; until something has, the card keeps its own.
   function title() {
     const ids = [...new Set(advertised.flatMap(item => idsFor(item.key)))]
-    if (!ids.length) return ''
+    if (!drawsRows || !ids.length) return ''
     const now = current()
     const records = ids.map(id => now.get(id))
-    if (ids.some(id => ['sending', 'unknown'].includes(latestAttempt(id)?.state) && !isPublished(now.get(id)))) {
+    const open = id => !isPublished(now.get(id))
+    // Only a send or a check still underway is "Sending"; an expired check
+    // says the result is not confirmed (or how many were sent).
+    if (ids.some(id => open(id) && (latestAttempt(id)?.state === 'sending' || latestAttempt(id) && checkingAttempt(latestAttempt(id))))) {
       return `Sending ${plural(ids.length, 'contribution', 'contributions')}`
     }
     const sent = records.filter(isPublished).length
-    if (sent < ids.length) return sent ? `${sent} of ${ids.length} sent` : ''
+    if (sent < ids.length) {
+      if (sent) return `${sent} of ${ids.length} sent`
+      return ids.some(id => latestAttempt(id)?.state === 'unknown') ? 'Result not confirmed' : ''
+    }
     // An update to an existing pull request did not open one.
     if (records.every(record => record.plan?.action === 'pr')) return sent === 1 ? 'Pull request opened' : `${sent} pull requests opened`
     return sent === 1 ? 'Contribution sent' : `${sent} contributions sent`
@@ -373,6 +437,8 @@ export function createInlineSession({ sessionId, actions, items = null, checkpoi
     if (data !== (lastCheckpoint?.data ?? null)) lastCheckpoint = data ? { id: crypto.randomUUID(), data } : null
     publish({
       sessionId, actions: advertised.map(actionState), title: title(), items: rows(),
+      // Contribute's row facts (project, size) read on their own.
+      ...(drawsRows ? { itemFacts: 'values' } : {}),
       retain: Boolean(fault || lastCheckpoint || frozen || activating || sending()),
       checkpoint: lastCheckpoint, checkpointAck, recoveryError: Boolean(fault), ackNonce,
     })
@@ -414,18 +480,23 @@ export function createInlineSession({ sessionId, actions, items = null, checkpoi
   // Newest-issued exact read wins per record; reads never send.
   async function read(ids) {
     const issued = ids.map(id => { const generation = (generations.get(id) || 0) + 1; generations.set(id, generation); reading.add(id); return generation })
-    const results = await Promise.all(ids.map(id => Promise.resolve().then(() => loadExact(id)).catch(() => null)))
+    const results = await Promise.all(ids.map(id => Promise.resolve().then(() => loadExact(id)).then(record => ({ record }), () => ({ failed: true }))))
     if (!alive) return
     ids.forEach((id, index) => {
       if (generations.get(id) !== issued[index]) return
       reading.delete(id)
-      if (results[index]?.id === id) { exact.set(id, results[index]); unreadable.delete(id) } else unreadable.add(id)
+      const { record, failed } = results[index]
+      if (record?.id === id) { exact.set(id, record); unreadable.delete(id); absent.delete(id); return }
+      unreadable.add(id)
+      if (failed) absent.delete(id); else absent.add(id)
     })
     settle(); emit()
   }
 
   function activate(key) {
     if (fault || sending() || frozen) return
+    // A legacy card only reads its record again; it never needs the runtime.
+    if (targets.get(key)?.legacy) { void read(shownIds(key)); return }
     activating = key
     awaitDone = -1
     awaitLegacy = false

@@ -47,7 +47,9 @@ test('state goes through the host handle, or is posted with the document generat
   assert.equal(readBlockSession({ sessionId: 's', generation: 3, actions: [] }).generation, 3)
   assert.equal(readBlockSession({ actions: [] }), null)
   assert.deepEqual(readBlockSession({ sessionId: 's', generation: '3', actions: [], retain: 'yes', checkpoint: { id: 'c', data: '{}', other: 1 } }),
-    { sessionId: 's', generation: null, actions: [], items: null, checkpoint: { id: 'c', data: '{}' }, retain: false, recoveryError: false })
+    { sessionId: 's', generation: null, actions: [], items: null, features: [], checkpoint: { id: 'c', data: '{}' }, retain: false, recoveryError: false })
+  // What the host draws beyond the original fields; only strings are kept.
+  assert.deepEqual(readBlockSession({ sessionId: 's', actions: [], features: ['row-state', 3, null] }).features, ['row-state'])
 })
 
 test('the card item intents are read in card order, validated and deduplicated, and absent items stay absent', () => {

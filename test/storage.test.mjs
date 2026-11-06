@@ -55,6 +55,13 @@ test('a publishing decision rejects an offline cached record', async (t) => {
   }
 
   assert.equal(await loadFreshContributionRecord('cached'), null)
+  // A chat card's strict read tells an unreachable record from an absent one.
+  await assert.rejects(loadFreshContributionRecord('cached', { strict: true }))
+  globalThis.window = { mobius: { storage: {} } }
+  assert.equal(await loadFreshContributionRecord('cached'), null)
+  await assert.rejects(loadFreshContributionRecord('cached', { strict: true }))
+  globalThis.window = { mobius: { storage: { getWithVersion: async () => ({ value: null, version: null }) } } }
+  assert.equal(await loadFreshContributionRecord('gone', { strict: true }), null)
 })
 
 test('concurrent ledger refreshes share one enumeration but later refreshes stay fresh', async (t) => {

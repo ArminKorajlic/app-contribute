@@ -45,6 +45,10 @@ export function itemRecordIds(items) {
 // action is `chat-send:<id>` for a one-item card or `chat-send-batch:<handle>`
 // over every item; either must match the items exactly, or it is refused. The
 // items, never the action, are the source of the record set.
+//
+// A card printed before its items named records has no `review:` item. Its
+// one-record action still names the record whose status it shows (`legacy`),
+// but a refused target never sends: `ids` stays empty.
 export function sendTarget(key, items) {
   const single = SEND.exec(String(key || ''))
   const batch = BATCH.exec(String(key || ''))
@@ -54,7 +58,9 @@ export function sendTarget(key, items) {
   if (!ids) return { kind, ids: [], needsItems: true }
   const matches = ids.length >= 1 && ids.length <= MAX_BATCH
     && (single ? ids.length === 1 && ids[0] === single[1] : batchHandle(ids) === batch[1])
-  return matches ? { kind, ids } : { kind, ids: [], invalid: true }
+  if (matches) return { kind, ids }
+  const legacy = single && !items.some(item => REVIEW_ITEM.test(String(item?.intent || '')))
+  return legacy ? { kind, ids: [], invalid: true, legacy: single[1] } : { kind, ids: [], invalid: true }
 }
 
 // Every record a card's action names, for read-only status requests.

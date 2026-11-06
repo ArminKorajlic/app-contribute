@@ -18,6 +18,8 @@ export function readBlockSession(value) {
     // wins). null when the host sent none, so nothing is resolved from them.
     items: Array.isArray(value.items) ? value.items.map(item => item?.intent).filter(intent => typeof intent === 'string' && INTENT.test(intent))
       .filter((intent, index, list) => list.indexOf(intent) === index).map(intent => ({ intent })) : null,
+    // What the host draws beyond the original report fields (`row-state`).
+    features: Array.isArray(value.features) ? value.features.filter(feature => typeof feature === 'string').slice(0, 16) : [],
     checkpoint: value.checkpoint && typeof value.checkpoint === 'object' ? { id: value.checkpoint.id, data: value.checkpoint.data } : null,
     retain: value.retain === true,
     recoveryError: Boolean(value.recoveryError),

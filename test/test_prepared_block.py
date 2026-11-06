@@ -38,6 +38,8 @@ class PreparedBlockTests(unittest.TestCase):
     block = self.card(record('one'))
     self.assertEqual(block['intent'], 'review:one')
     self.assertEqual((block['inline'], block['interaction'], block['expand']), (True, 'inline', False))
+    # Project and size read on their own, so the card opts in to value-only row facts.
+    self.assertEqual(block['item_facts'], 'values')
     self.assertEqual(block['items'], [{'title': 'Change one', 'intent': 'review:one',
       'facts': [{'label': 'Project', 'value': 'owner/repo'}, {'label': 'Change', 'value': '2 files · +4 −1'}]}])
     self.assertEqual(block['action'], {'label': 'Contribute', 'intent': 'chat-send:one'})

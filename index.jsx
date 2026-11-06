@@ -634,7 +634,9 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
   // Focus + visibility can fire together, and an online transition can land
   // during either refresh, so one coordinator deduplicates concurrent work and
   // preserves exactly one trailing refresh when an event arrives mid-flight.
-  // There is deliberately no timer: a hidden/idle app consumes no resources.
+  // The app itself has no timer: a hidden/idle app consumes no resources. The
+  // one exception is a chat card with an unconfirmed send, which calls the
+  // card refresh below on a bounded backoff for ten minutes (inline-session.js).
   const refreshWorkRef = useRef(null)
   const forceRefreshRef = useRef(false)
   const runRefreshWork = useCallback(async () => {
@@ -1541,7 +1543,8 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
   // content state instead of leaving "Checking…" visible forever.
   const checking = loading && records.length === 0 && !sourceSnapshot
 
-  // A card's Try again: once the first ledger read is done, the full pass
+  // A card's Try again, and a card's automatic recheck of an unconfirmed send:
+  // once the first ledger read is done, the full pass
   // (ledger, review status, connection) through the refresh coordinator, even
   // while the frame is hidden; before that, the review status on its own. One
   // card refresh runs at a time. The card sees `refreshing` while it runs and

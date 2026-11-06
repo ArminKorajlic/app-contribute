@@ -5,9 +5,10 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { batchHandle, cardRecordIds, itemRecordIds, sendTarget } from '../chat-blocks.js'
+import { frontendModules, renderModule } from './render-harness.mjs'
 import { readBlockSession } from '../block-protocol.js'
 import { reviewAddressFor } from '../send-readiness.js'
-import { attemptOutcome, confirmationItem, RECHECK_DELAYS_MS, RECHECK_WINDOW_MS, LEDGER_NOTE, NEWER_NOTE, UNLISTED_LAYER_NOTE, REFRESH_FAILED_NOTE, SIZE_NOTE, TIMEOUT_NOTE, createInlineSession, decodeCheckpoint, encodeCheckpoint, observeAttempt, RECOVERY_NOTE } from '../inline-session.js'
+import { attemptOutcome, confirmationItem, EXPIRED_NOTE, RECHECK_DELAYS_MS, RECHECK_WINDOW_MS, LEDGER_NOTE, LEGACY_NOTE, NEWER_NOTE, UNCHECKED_NOTE, UNMATCHED_NOTE, UNLISTED_LAYER_NOTE, REFRESH_FAILED_NOTE, SIZE_NOTE, TIMEOUT_NOTE, createInlineSession, decodeCheckpoint, encodeCheckpoint, observeAttempt, RECOVERY_NOTE } from '../inline-session.js'
 
 const HEAD = 'a'.repeat(40), NEXT = 'c'.repeat(40)
 function prepared(id, extra = {}) {
@@ -36,10 +37,11 @@ function serverReviewStatus(addressed, store) {
 // default a one-record card's item; a batch card passes its items.
 const reviewItems = ids => ids.map(id => ({ intent: `review:${id}` }))
 const defaultItems = actions => reviewItems(actions.flatMap(item => /^chat-send:(.+)$/.exec(item.key)?.[1] || []))
-function harness({ actions, items = defaultItems(actions), records, checkpoint = null, retain = false, send, sendStack, address = null, loadExact = null, runtime: extra = {} }) {
+// A current host draws row state by default; pass `features: []` for an older one.
+function harness({ actions, items = defaultItems(actions), features = ['row-state'], records, checkpoint = null, retain = false, send, sendStack, address = null, loadExact = null, runtime: extra = {} }) {
   const store = new Map(records.map(record => [record.id, record]))
   const states = [], sends = [], needs = []
-  const session = createInlineSession({ sessionId: 'session-1', actions, items, checkpoint, retain, publish: state => states.push(structuredClone(state)),
+  const session = createInlineSession({ sessionId: 'session-1', actions, items, features, checkpoint, retain, publish: state => states.push(structuredClone(state)),
     loadExact: loadExact ? id => loadExact(id, store) : async id => store.has(id) ? structuredClone(store.get(id)) : null, onNeedRuntime: () => needs.push(true) })
   const runtime = () => ({ records: [...store.values()], ledgerReady: true, connection: 'connected', frozenBinding: true,
     reviewStatus: serverReviewStatus(address || reviewAddressFor(cardRecordIds(actions.map(item => item.key), items), [...store.values()]), store),
@@ -338,8 +340,81 @@ test('a stale or forged batch card offers nothing to send', async () => {
   const h = harness({ actions, items: reviewItems(['a', 'b']), records: [prepared('a'), prepared('b')] })
   h.session.start(); await tick()
   const batch = h.action(actions[0].key)
-  assert.equal(batch.open, true)
-  assert.match(batch.note, /no longer matches/)
+  // A mismatch points to Contribute without a warning: the control is the pointer.
+  assert.deepEqual([batch.open, batch.label, batch.note, batch.tone, batch.status], [true, 'Open Contribute', '', 'neutral', ''])
+})
+
+test('a card printed before its items named records shows only its record status and never sends', async () => {
+  // Such a card has no `review:` items; its one action names the record.
+  assert.deepEqual(sendTarget('chat-send:a', []), { kind: 'record', ids: [], invalid: true, legacy: 'a' })
+  assert.deepEqual(sendTarget('chat-send:a', [{ intent: 'pull-request:owner/repo#7' }]), { kind: 'record', ids: [], invalid: true, legacy: 'a' })
+  assert.deepEqual(sendTarget('chat-send:a', reviewItems(['b'])), { kind: 'record', ids: [], invalid: true }, 'a new card that does not match is not legacy')
+  assert.deepEqual(sendTarget(`chat-send-batch:${batchHandle(['a', 'b'])}`, []), { kind: 'batch', ids: [], invalid: true })
+  assert.deepEqual(cardRecordIds(['chat-send:a'], []), [], 'nothing is addressed for sending')
+  const actions = [{ key: 'chat-send:one', label: 'Contribute' }]
+  const show = async record => {
+    const h = harness({ actions, items: [], records: record ? [record] : [] })
+    h.session.start(); await tick()
+    const state = h.action('chat-send:one')
+    h.fire('chat-send:one', 'activate'); h.provide(); await tick()
+    h.fire('chat-send:one', 'confirm'); await tick()
+    assert.equal(h.action('chat-send:one').confirming, false)
+    assert.equal(h.sends.length, 0, 'a legacy card is never confirmable from chat')
+    return state
+  }
+  const sent = await show(published(prepared('one')))
+  // A legacy card has no item rows, so the action itself stays visible.
+  assert.deepEqual([sent.hidden, sent.disabled, sent.open, sent.label, sent.status, sent.statusTone, sent.note], [false, true, false, 'Sent', 'Open', 'success', ''])
+  assert.deepEqual(sent.links, [{ label: '#7', url: 'https://github.com/owner/repo/pull/7' }])
+  // Prepared: the control opens Contribute, so the note that says so is not repeated.
+  const waiting = await show(prepared('one'))
+  assert.deepEqual([waiting.open, waiting.label, waiting.note, waiting.tone, waiting.status, waiting.badges], [true, 'Open Contribute', '', 'neutral', '', []])
+  const missing = await show(null)
+  assert.deepEqual([missing.open, missing.note, missing.tone, missing.status], [true, 'This contribution is no longer in Contribute.', 'neutral', ''])
+  const dismissed = await show(prepared('one', { record: { status: 'abandoned' } }))
+  assert.deepEqual([dismissed.note, dismissed.tone, dismissed.status], ['This contribution was dismissed.', 'neutral', ''])
+  // An older host draws no open link: the same card stays disabled and says where to send it.
+  const older = harness({ actions, items: [], features: [], records: [prepared('one')] })
+  older.session.start(); await tick()
+  assert.deepEqual([older.action('chat-send:one').open, older.action('chat-send:one').disabled, older.action('chat-send:one').note], [false, true, LEGACY_NOTE])
+})
+
+test('a legacy card that could not check its record offers Try again, which only reads again', async () => {
+  let reachable = false
+  const h = harness({ actions: [{ key: 'chat-send:one' }], items: [], records: [published(prepared('one'))],
+    loadExact: async (id, store) => { if (!reachable) throw new Error('offline'); return structuredClone(store.get(id)) } })
+  h.session.start(); await tick()
+  let state = h.action('chat-send:one')
+  assert.deepEqual([state.note, state.tone, state.status, state.label, state.disabled], [UNCHECKED_NOTE, 'neutral', '', 'Try again', false],
+    'an unavailable read is not reported as a missing contribution')
+  reachable = true
+  h.fire('chat-send:one', 'activate'); await tick()
+  state = h.action('chat-send:one')
+  assert.deepEqual([state.status, state.label, state.disabled, state.note], ['Open', 'Sent', true, ''])
+  assert.deepEqual(state.links, [{ label: '#7', url: 'https://github.com/owner/repo/pull/7' }])
+  assert.equal(h.needs.length, 0, 'a legacy card never asks for the publication runtime')
+  assert.equal(h.sends.length, 0)
+})
+
+test('a legacy batch card and a mismatched new card stay closed with a neutral note', async () => {
+  const ids = ['one', 'two']
+  for (const [actions, items] of [[[{ key: `chat-send-batch:${batchHandle(ids)}`, label: 'Contribute all' }], []],
+    [[{ key: 'chat-send:one' }], reviewItems(['two'])]]) {
+    const h = harness({ actions, items, records: ids.map(id => prepared(id)) })
+    h.session.start(); await tick()
+    const state = h.last().actions[0]
+    assert.deepEqual([state.open, state.note, state.tone, state.status, state.hidden], [true, '', 'neutral', '', false])
+    h.fire(actions[0].key, 'activate'); h.provide(); await tick()
+    h.fire(actions[0].key, 'confirm'); await tick()
+    assert.equal(h.last().actions[0].confirming, false)
+    assert.equal(h.sends.length, 0)
+  }
+  // The matching card for the same record is unchanged: it reaches Confirm and sends once.
+  const h = harness({ actions: [{ key: 'chat-send:one' }], records: [prepared('one')] })
+  await openConfirm(h, 'chat-send:one')
+  assert.equal(h.action('chat-send:one').confirming, true)
+  h.fire('chat-send:one', 'confirm'); await tick()
+  assert.deepEqual(h.sends.map(send => send.ids), [['one']])
 })
 
 test('a broken or missing recovery checkpoint never resurrects Send', async () => {
@@ -978,7 +1053,7 @@ function timed(options, c) {
   const h = harness(options)
   h.session.dispose()
   const states = h.states
-  const session = createInlineSession({ sessionId: 'session-1', actions: options.actions, items: options.items ?? defaultItems(options.actions),
+  const session = createInlineSession({ sessionId: 'session-1', actions: options.actions, items: options.items ?? defaultItems(options.actions), features: options.features ?? ['row-state'],
     checkpoint: options.checkpoint ?? null, retain: options.retain ?? false, publish: state => states.push(structuredClone(state)),
     loadExact: async id => h.store.has(id) ? structuredClone(h.store.get(id)) : null, onNeedRuntime: () => h.needs.push(true),
     timers: c.timers, now: c.now })
@@ -1093,4 +1168,128 @@ test('an update to an existing pull request is reported as sent, not opened; row
   const older = harness({ actions: [{ key: 'chat-send:one' }], items: null, records: [published(prepared('one'), 31)] })
   older.session.start(); older.provide(); await tick()
   assert.deepEqual(older.last().items, [], 'without the card items there are no rows to report on')
+})
+
+test('the host shows a legacy card\'s published status and PR link, and a neutral note while prepared', async t => {
+  const BLOCKS = process.env.MOBIUS_BLOCKS_FRONTEND || ''
+  if (!BLOCKS || !frontendModules) return t.skip('set MOBIUS_BLOCKS_FRONTEND and MOBIUS_FRONTEND_NODE_MODULES to render the real host block')
+  const markdown = `${BLOCKS}/src/components/ChatView/markdown`
+  // Host modules only: stylesheets and the hidden app canvas are not rendered.
+  const stub = { name: 'stub-host', load(id) {
+    if (id.endsWith('.css')) return { code: '', moduleType: 'js' }
+    if (/AppCanvas\/AppCanvas\.jsx$|useAppBlockSession\.js$/.test(id)) return { code: 'export default function Stub() { return null }', moduleType: 'js' }
+    return null
+  } }
+  const host = await renderModule(`
+import { createElement } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
+import { PassiveBlockView } from '${markdown}/PassiveAppBlock.jsx'
+import { appBlockFromToken, blockActions, blockItems } from '${markdown}/appBlock.js'
+import { sessionState } from '${markdown}/appBlockSession.js'
+export const parse = text => appBlockFromToken({ type: 'code', lang: 'mobius-app', text })
+export const init = block => ({ actions: blockActions(block), items: blockItems(block), features: ['row-state'] })
+export function render(block, message) {
+  const state = sessionState(message, message.sessionId, new Set(blockActions(block).map(action => action.key)))
+  return renderToStaticMarkup(createElement(PassiveBlockView, { block, app: { id: 1, name: 'Contribute', slug: 'contribute' },
+    state, locked: false, onEvent() {}, onInternalNav() {} }))
+}`, [stub])
+  // A card as printed before #116: root facts and one action, no items.
+  const block = host.parse(JSON.stringify({ app: 'contribute', intent: 'review:one', title: 'Change one', interaction: 'inline',
+    facts: [{ label: 'Repository', value: 'owner/repo' }, { label: 'Action', value: 'Open a new pull request' }],
+    action: { label: 'Contribute', intent: 'chat-send:one' } }))
+  const rendered = async record => {
+    const { actions, items, features } = host.init(block)
+    const h = harness({ actions, items, features, records: [record] })
+    h.session.start(); await tick()
+    const { sessionId, ...body } = h.last()
+    return host.render(block, { type: 'moebius:app-block-state', sessionId, ...body })
+  }
+  const sent = await rendered(published(prepared('one')))
+  assert.match(sent, /<span class="md-app-block__pill is-success">Open<\/span>/)
+  assert.match(sent, /<a class="md-app-block__link" href="https:\/\/github.com\/owner\/repo\/pull\/7"[^>]*>#7<svg/)
+  assert.match(sent, /<button[^>]*disabled=""[^>]*>Sent<\/button>/)
+  const waiting = await rendered(prepared('one'))
+  assert.match(waiting, /<a class="md-app-block__action is-secondary" href="[^"]*">Open Contribute<\/a>/)
+  assert.doesNotMatch(waiting, /md-app-block__note|<button[^>]*md-app-block__action/)
+  for (const markup of [sent, waiting]) assert.doesNotMatch(markup, /Needs attention|no longer matches|is-attention/)
+})
+
+test('after the window the header says the result is not confirmed, never still sending', async () => {
+  const c = clock()
+  const h = timed({ actions: [{ key: 'chat-send:one' }], records: [prepared('one')], send: () => ({ uncertain: true }) }, c)
+  await openConfirm(h, 'chat-send:one')
+  h.fire('chat-send:one', 'confirm'); await tick()
+  assert.equal(h.last().title, 'Sending 1 contribution')
+  for (let i = 0; i < 20 && c.pending().length; i++) await c.advance(60000)
+  assert.equal(h.last().title, 'Result not confirmed')
+  // With another row sent, the header counts what is known.
+  const two = ['one', 'two']
+  const actions = [{ key: `chat-send-batch:${batchHandle(two)}` }]
+  const c2 = clock()
+  const m = timed({ actions, items: reviewItems(two), records: two.map(id => prepared(id)), send: rec => rec.id === 'one' ? { ok: true } : { uncertain: true } }, c2)
+  await openConfirm(m, actions[0].key)
+  m.store.set('one', published(prepared('one'), 5))
+  m.fire(actions[0].key, 'confirm'); await tick()
+  for (let i = 0; i < 20 && c2.pending().length; i++) await c2.advance(60000)
+  assert.equal(m.last().title, '1 of 2 sent')
+})
+
+test('a partly sent card retries only the failed contribution through a second Confirm', async () => {
+  const ids = ['one', 'two']
+  const actions = [{ key: `chat-send-batch:${batchHandle(ids)}`, label: 'Contribute all' }]
+  let first = true
+  const h = harness({ actions, items: reviewItems(ids), records: ids.map(id => prepared(id)),
+    send: rec => rec.id === 'two' && first ? (first = false, { notAttempted: true, error: 'The saved proposal changed.' }) : { ok: true } })
+  const key = actions[0].key
+  await openConfirm(h, key)
+  h.store.set('one', published(prepared('one'), 5))
+  h.fire(key, 'confirm'); await tick(); h.provide(); await tick()
+  assert.equal(h.action(key).label, 'Retry')
+  assert.equal(h.action(key).disabled, false)
+  h.fire(key, 'activate'); await tick(); h.provide(); await tick()
+  assert.deepEqual(h.action(key).confirmation.map(item => item.title), ['Change two'], 'Confirm lists only the unsent one')
+  h.store.set('two', published(prepared('two'), 6))
+  h.fire(key, 'confirm'); await tick()
+  assert.deepEqual(h.sends.map(send => send.ids), [['one'], ['two'], ['two']])
+  assert.equal(h.last().title, '2 pull requests opened')
+})
+
+test('disposing the card cancels its pending recheck', async () => {
+  const c = clock()
+  const h = timed({ actions: [{ key: 'chat-send:one' }], records: [prepared('one')], send: () => ({ uncertain: true }) }, c)
+  await openConfirm(h, 'chat-send:one')
+  h.fire('chat-send:one', 'confirm'); await tick()
+  assert.equal(c.pending().length, 1)
+  h.session.dispose()
+  assert.equal(c.pending().length, 0)
+})
+
+test('on an older host the action itself carries the result, and nothing relies on row state', async () => {
+  const gate = deferred()
+  const h = harness({ actions: [{ key: 'chat-send:one' }], features: [], records: [prepared('one')], send: () => gate.promise })
+  await openConfirm(h, 'chat-send:one')
+  assert.equal('itemFacts' in h.last(), false)
+  h.fire('chat-send:one', 'confirm'); await tick()
+  assert.deepEqual([h.action('chat-send:one').label, h.action('chat-send:one').status], ['Sending…', 'Sending'])
+  assert.deepEqual([h.last().title, h.last().items], ['', []])
+  h.store.set('one', { ...published(prepared('one'), 7), status: 'merged' })
+  gate.resolve({ ok: true }); await tick()
+  const sent = h.action('chat-send:one')
+  assert.deepEqual([sent.hidden, sent.disabled, sent.open, sent.label, sent.status, sent.statusTone], [false, true, false, 'Sent', 'Merged', 'accent'])
+  assert.deepEqual(sent.links, [{ label: '#7', url: 'https://github.com/owner/repo/pull/7' }])
+  // An expired check is a disabled control with one line saying where to look.
+  const c = clock()
+  const lost = timed({ actions: [{ key: 'chat-send:one' }], features: [], records: [prepared('one')], send: () => ({ uncertain: true }) }, c)
+  await openConfirm(lost, 'chat-send:one')
+  lost.fire('chat-send:one', 'confirm'); await tick()
+  for (let i = 0; i < 20 && c.pending().length; i++) await c.advance(60000)
+  const state = lost.action('chat-send:one')
+  assert.deepEqual([state.open, state.disabled, state.status, state.note], [false, true, 'Not confirmed', EXPIRED_NOTE])
+})
+
+test('a row-state host gets value-only row facts and a purple Merged pill', async () => {
+  const h = harness({ actions: [{ key: 'chat-send:one' }], records: [{ ...published(prepared('one'), 8), status: 'merged' }] })
+  h.session.start(); h.provide(); await tick()
+  assert.equal(h.last().itemFacts, 'values')
+  assert.deepEqual(h.last().items[0], { intent: 'review:one', status: 'Merged', statusTone: 'accent', links: [{ label: '#8', url: 'https://github.com/owner/repo/pull/8' }] })
 })
