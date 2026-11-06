@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { addressItems, respondAction } from '../address-feedback.js'
+import { addressItems, respondAction, respondScope } from '../address-feedback.js'
 import { requestOptions } from '../collaboration.js'
 import { loadWorkflowOptions, previewWorkflow, reviewOptions } from '../review-prompts.js'
 import { loadPullActivity, loadPullThreads } from '../pull-details.js'
-import { AgentModelSettings } from './AgentModelSettings.jsx'
+import { AgentModelSettings, ConversationAgent } from './AgentModelSettings.jsx'
 import { SeenOnGithub } from './SeenOnGithub.jsx'
 import { CloseWindowButton, WindowHead } from './WindowHead.jsx'
 import { openAgentConversation } from './BatchAction.jsx'
@@ -95,7 +95,7 @@ export function AddressFeedbackWindow({ pr, findings = null, response = null, to
       {state.partial && state.phase === 'ready' ? <p className="co-rw-note">Some of this PR’s feedback could not be read, so the list may be incomplete.</p> : null}
       <p className="co-rw-note co-rw-callout"><b>It does not review the PR again.</b> It answers only what is ticked, fixes it in a private copy and runs the tests.</p>
       <p className="co-rw-note co-rw-callout"><b>Then:</b> the answers, changed files and commits appear in this PR’s Review tab. Nothing is pushed or posted until you press <b>{NAMES.postAnswer}</b>.</p>
-      {response ? <p className="co-rw-note co-rw-callout">This replaces the answer that is waiting. The conversation keeps its agent.</p>
+      {response ? <><p className="co-rw-note co-rw-callout">This replaces the answer that is waiting.</p><ConversationAgent token={token} scope={respondScope(pr.repository.nameWithOwner, pr.number)} /></>
         : <AgentModelSettings token={token} choice={agent} defaultChoice={ownDefault || defaultChoice} explicitDefault={!!ownDefault}
           defaultHint={ownDefault ? 'Your default for reviews and fixes' : 'Your background agent setting'} onChange={next => { setAgent(next); return true }} />}
     </div>

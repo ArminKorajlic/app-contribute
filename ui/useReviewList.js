@@ -3,7 +3,7 @@ import { fetchChangeProbe } from '../api.js'
 import { loadReviewRuns } from '../collaboration.js'
 import { SYNC_POLICY } from '../refresh.js'
 import { hasActiveReview } from '../review-frame.js'
-import { changedReviewRuns, classifyReview, loadReviewPulls, reviewCounts, reviewEntries, reviewKey, withReviewRun } from '../review-list.js'
+import { changedReviewRuns, classifyReview, loadReviewPulls, pendingRespondStarts, reviewCounts, reviewEntries, reviewKey, withRespondStart, withReviewRun } from '../review-list.js'
 
 // The one sync hub of the open app (refresh.js createSyncHub): index.jsx provides
 // it, and every screen asks it to read again instead of keeping a timer of its
@@ -112,9 +112,15 @@ function usePullPageExit(pullPageOpen, refresh) {
 // and `patch` shows an action's own answer in it. These are reads of the
 // platform's review list, not of GitHub, though loadReviewRuns may re-check
 // GitHub for a run that still waits on it, at most once a minute per run.
+// A Respond conversation the owner just started (`respondStarted`) is shown at
+// once and read for at once, so its PR does not keep its old state until the next read.
 export function useDeskReviewRuns({ hub, token, appId, connState, sendOnly, pullPageOpen, onReviewsMoved }) {
   const [runs, setRuns] = useState([])
-  const [respondChats, setRespondChats] = useState([])
+  const [listedChats, setListedChats] = useState([])
+  const started = useRef([])
+  const [startedChats, setStartedChats] = useState([])
+  const keepStarted = useCallback(next => { started.current = next; setStartedChats(next) }, [])
+  const respondChats = useMemo(() => [...listedChats, ...startedChats], [listedChats, startedChats])
   const [error, setError] = useState('')
   const [ready, setReady] = useState(false)
   const enabled = !sendOnly && connState === 'connected'
@@ -131,16 +137,22 @@ export function useDeskReviewRuns({ hub, token, appId, connState, sendOnly, pull
       apply: list => {
         const moved = changedReviewRuns(shown.current, list.runs || [])
         show(list.runs || [])
-        setRespondChats(list.respond_chats || [])
+        const listed = list.respond_chats || []
+        setListedChats(listed)
+        keepStarted(pendingRespondStarts(started.current, listed, Date.now(), SYNC_POLICY.respondStartGraceMs))
         setError('')
         if (moved.length) movedRef.current?.(moved)
       },
       failed: failure => setError(failure.message),
       every: { live: SYNC_POLICY.runsLiveMs, idle: SYNC_POLICY.runsIdleMs },
-      live: list => !!list && (hasActiveReview(list.runs) || (list.respond_chats || []).length > 0),
+      live: list => started.current.length > 0 || (!!list && (hasActiveReview(list.runs) || (list.respond_chats || []).length > 0)),
     })
-  }, [hub, enabled, token, appId, show])
+  }, [hub, enabled, token, appId, show, keepStarted])
   const refresh = useCallback(() => hub.refresh('runs'), [hub])
+  const respondStarted = useCallback(chat => {
+    keepStarted(withRespondStart(started.current, { ...chat, state: 'running', at: Date.now() }))
+    void refresh()
+  }, [keepStarted, refresh])
   useEffect(() => {
     if (sendOnly || connState === 'checking') return
     if (connState !== 'connected') { setReady(true); return }
@@ -152,5 +164,5 @@ export function useDeskReviewRuns({ hub, token, appId, connState, sendOnly, pull
     show(withReviewRun(shown.current, run))
   }, [hub, show])
   usePullPageExit(pullPageOpen, refresh)
-  return { runs, respondChats, error, ready, refresh, patch }
+  return { runs, respondChats, error, ready, refresh, patch, respondStarted }
 }

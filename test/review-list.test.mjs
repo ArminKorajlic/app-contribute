@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { DESK_VIEWS, deskCounts, railBadge } from '../desk.js'
-import { changedReviewRuns, classifyReview, loadReviewPulls, reviewCounts, reviewEntries, reviewKey, withReviewRun } from '../review-list.js'
+import { changedReviewRuns, classifyReview, loadReviewPulls, pendingRespondStarts, reviewCounts, reviewEntries, reviewKey, withRespondStart, withReviewRun } from '../review-list.js'
 
 const HEAD = 'a'.repeat(40)
 const run = (extra = {}) => ({ id: 'r', state: 'complete', execution_state: 'completed', chat_id: 'c', created_at: '2026-11-03T22:00:00Z', ...extra })
@@ -228,4 +228,28 @@ test('an action\'s answer replaces its run in place, or comes first when the run
   const changed = { ...a, state: 'reviewing' }
   assert.deepEqual(withReviewRun([a, b], changed), [changed, b])
   assert.deepEqual(withReviewRun([b], a).map(entry => entry.id), ['a', 'b'])
+})
+
+// ---- a Respond conversation the owner just started
+const startedChat = (extra = {}) => ({ repo: 'mobius-os/mobius', number: 2019, chat_id: 'c', state: 'running', at: 1000, ...extra })
+
+test('a started Respond conversation stands in for its PR until the platform lists it', () => {
+  const started = [startedChat()]
+  assert.deepEqual(pendingRespondStarts(started, [], 5000, 60000), started, 'not listed yet: still shown as at work')
+  assert.deepEqual(pendingRespondStarts(started, [{ repo: 'Mobius-OS/Mobius', number: 2019, chat_id: 'c', state: 'running' }], 5000, 60000), [],
+    'once a read names the PR (in any letter case), the platform answer is the one shown')
+  assert.deepEqual(pendingRespondStarts(started, [{ repo: 'mobius-os/mobius', number: 2020, chat_id: 'd', state: 'running' }], 5000, 60000), started,
+    'another PR listed does not answer for this one')
+})
+
+test('a started Respond conversation the platform never lists stops looking busy after the grace', () => {
+  assert.deepEqual(pendingRespondStarts([startedChat()], [], 1000 + 60000, 60000), [])
+  assert.deepEqual(pendingRespondStarts(undefined, undefined, 0, 60000), [])
+})
+
+test('starting Respond again on the same PR replaces the earlier start, never doubles it', () => {
+  const first = startedChat({ at: 1 })
+  const next = withRespondStart([first, startedChat({ number: 7, chat_id: 'e' })], startedChat({ repo: 'MOBIUS-OS/mobius', at: 2 }))
+  assert.deepEqual(next.map(chat => [chat.number, chat.at]), [[7, 1000], [2019, 2]], 'the other PR stays; this PR keeps only its newest start')
+  assert.ok(!next.includes(first))
 })

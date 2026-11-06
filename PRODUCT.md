@@ -188,6 +188,10 @@ the owner, and folds apps with nothing to do.
   started after 30 seconds (at once if the message to the chat failed). When the PR moves after the
   answer, the card says it is out of date and offers **Respond again** or **Discard**, and
   while the chat waits on a card of its own, its box asks first and Post says why it is off.
+  **Respond again** names the agent the PR's conversation keeps (model and effort; a second
+  pass builds on the first, so there is no picker), and once it starts the Review tab shows
+  **Working on feedback** at once, with the old answer's Post held back, instead of after
+  the next read.
 - **PR reviews** (side menu) lists the reviews the owner started, by project, in
   two tabs: **In progress** (waiting on the owner first, then agents at work, then
   anything stuck or unreadable) and **Done**. Every PR is read live, in batches of

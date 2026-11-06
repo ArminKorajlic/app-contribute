@@ -112,6 +112,8 @@ window.fetch = async (url, options = {}) => {
   calls.requests.push(call)
   // A conversation of the app: the platform returns the PR's existing one for its scope, and takes a message into any chat the app made.
   if (call.method === 'POST' && call.url === '/api/app-chats/start') { calls.appChatStarts.push(call.body); return response({ chat_id: 'respond-chat-fixture', outcome: 'reused' }) }
+  // The app's own conversation for a PR's Respond scope, with the agent it keeps.
+  if (call.method === 'GET' && call.url.startsWith('/api/app-chats?scope=')) return response([{ id: 'respond-chat-fixture', provider: 'codex', model: 'fixture-model', effort: 'xhigh', scope: decodeURIComponent(call.url.split('scope=')[1]) }])
   if (call.method === 'POST' && /^\/api\/chats\/[\w-]+\/messages$/.test(call.url)) { calls.messages.push({ chatId: call.url.split('/')[3], ...call.body }); return response({ status: 'started' }) }
   if (call.url === '/api/models') return response({providers:{codex:[{id:'fixture-model',label:'Fixture model',available:true,effort_levels:['none','minimal','low','medium','high','xhigh'],default_effort:'low'}]}})
   if (call.url === '/api/owner/model-prefs') return response({hidden_ids:[]})
@@ -1982,6 +1984,15 @@ window.runRespondResultChecks = async () => {
   }
 }
 
+// A picture of this moment when a capture run asks for one (window.workspaceShot is a CDP binding); otherwise nothing.
+// It waits up to 1.5 s for finite animations (a window fading in) to end first; a spinner never ends, so it is not waited for.
+async function captureShot(name) {
+  if (!window.workspaceShot) return
+  const settled = Promise.all(document.getAnimations().filter(animation => animation.effect?.getTiming().iterations !== Infinity).map(animation => animation.finished.catch(() => {})))
+  await Promise.race([settled, new Promise(resolve => setTimeout(resolve, 1500))])
+  await new Promise(resolve => { window.finishShot = resolve; window.workspaceShot(name) })
+}
+
 // Respond again is delivered into the PR's conversation as a message: the platform hands back the conversation it already has for the
 // PR's scope without sending the job, so a plain start would only reopen it.
 window.runRespondAgainChecks = async () => {
@@ -2003,6 +2014,14 @@ window.runRespondAgainChecks = async () => {
     await until(() => query('.co-review-window'), 'The Respond window did not open')
     const window_ = text(query('.co-review-window'))
     ensure(window_.includes('This replaces the answer that is waiting') && window_.includes('It does not review the PR again') && !window_.includes('How far should it go'), 'The window said: ' + window_)
+    await until(() => text(query('.co-review-window [aria-label="Agent"]')).includes('Fixture model'), 'The window did not name the conversation’s agent: ' + text(query('.co-review-window')))
+    const agentLine = text(query('.co-review-window [aria-label="Agent"]'))
+    ensure(agentLine.includes('Extra high') && agentLine.includes('Same agent as the first answer') && !query('.co-review-window .co-model-list'), 'The agent line said: ' + agentLine)
+    ensure(calls.requests.some(call => call.url === '/api/app-chats?scope=' + encodeURIComponent('contribute-address:owner/project#7')), 'The agent was not read from the PR’s own conversation')
+    checks.push({ name: 'Respond again names the agent the PR’s conversation keeps, with its effort, and offers no picker', status: 'pass' })
+    await captureShot('respond-again-window')
+    const runsReads = () => calls.requests.filter(call => call.method === 'GET' && call.url === '/api/github/contributions/fixture-app/review-runs').length
+    const readsBefore = runsReads()
     await until(() => button(NAMES.respondAgain) && !button(NAMES.respondAgain).disabled, 'Respond again is not ready: ' + window_)
     await click(button(NAMES.respondAgain))
     await until(() => calls.messages.length === 1, 'Respond again sent the conversation nothing')
@@ -2013,6 +2032,13 @@ window.runRespondAgainChecks = async () => {
     ensure(!calls.requests.some(call => call.method === 'PATCH' && call.url.startsWith('/api/app-chats/')), 'A second pass changed the conversation’s agent')
     await until(() => text(query('.co-review-window')).includes('The agent is on it'), 'The window did not confirm: ' + text(query('.co-review-window')))
     checks.push({ name: 'Respond again goes into the PR’s own conversation as one message, with the new brief', status: 'pass' })
+    // The platform does not list the conversation yet (respondChats stays empty): the PR shows it at work anyway, and reads again at once.
+    await until(() => runsReads() > readsBefore, 'The runs were not read again after the start')
+    await click(button('Close'))
+    await until(() => reviewBody().includes('Working on feedback'), 'The Review tab did not show the agent at work: ' + reviewBody())
+    ensure(button(NAMES.postAnswer)?.disabled && reviewBody().includes('The agent is working on this PR right now'), 'The old answer could still be posted: ' + reviewBody())
+    checks.push({ name: 'once started, the Review tab shows the agent at work at once and holds the old answer’s Post back', status: 'pass' })
+    await captureShot('respond-again-review-tab')
     ensure(calls.forbidden.length === 0, 'Unexpected runtime/transport: ' + JSON.stringify(calls.forbidden))
     return { status: 'pass', checks, forbidden: calls.forbidden }
   } catch (error) {
@@ -2302,6 +2328,19 @@ function cdp(browser) {
   } }
 }
 
+const shotsFolder = process.env.WORKSPACE_BROWSER_SHOTS || ''
+async function captureShots(protocol, sessionId, viewportName) {
+  await protocol.send('Runtime.addBinding', { name: 'workspaceShot' }, sessionId)
+  return protocol.onEvent(event => {
+    if (event.sessionId !== sessionId || event.method !== 'Runtime.bindingCalled' || event.params.name !== 'workspaceShot') return
+    void (async () => {
+      const { data } = await protocol.send('Page.captureScreenshot', { format: 'png' }, sessionId)
+      await writeFile(join(shotsFolder, `${event.params.payload}-${viewportName}.png`), Buffer.from(data, 'base64'))
+      await protocol.send('Runtime.evaluate', { expression: 'window.finishShot()' }, sessionId)
+    })()
+  })
+}
+
 async function main() {
   if (!frontendModules) throw new Error('MOBIUS_FRONTEND_NODE_MODULES is required')
   const require = createRequire(join(frontendModules, 'package.json'))
@@ -2355,6 +2394,8 @@ async function main() {
       })
       await protocol.send('Runtime.enable', {}, sessionId)
       await protocol.send('Runtime.addBinding', { name: 'workspaceNativeKey' }, sessionId)
+      // WORKSPACE_BROWSER_SHOTS=<folder> saves a PNG wherever a scenario calls captureShot(name): the PR's before and after pictures.
+      const unsubscribeShots = shotsFolder ? await captureShots(protocol, sessionId, viewport.name) : () => {}
       await protocol.send('Network.enable', {}, sessionId)
       await protocol.send('Network.setBlockedURLs', { urls: ['http://*', 'https://*', 'ws://*', 'wss://*'] }, sessionId)
       await protocol.send('Emulation.setDeviceMetricsOverride', { width: viewport.width, height: viewport.height, deviceScaleFactor: 1, mobile: viewport.name === 'phone' }, sessionId)
@@ -2369,6 +2410,7 @@ async function main() {
       })`, awaitPromise: true, returnByValue: true }, sessionId)
       const report = evaluated.result?.value || { status: 'fail', error: evaluated.exceptionDetails || evaluated }
       unsubscribeInput()
+      unsubscribeShots()
       if (inputErrors.length) { report.status = 'fail'; report.nativeInputErrors = inputErrors }
       const network = protocol.events.filter(event => event.sessionId === sessionId && event.method === 'Network.requestWillBeSent'
         && !/^(file|data):/.test(event.params.request.url)).map(event => event.params.request.url)

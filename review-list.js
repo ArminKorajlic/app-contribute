@@ -41,6 +41,18 @@ export function changedReviewRuns(before, after) {
 // The runs with `run` shown in place of the one it answers (or first, when it is new).
 export const withReviewRun = (runs, run) => (runs.some(item => item.id === run.id) ? runs.map(item => (item.id === run.id ? run : item)) : [run, ...runs])
 
+// Respond conversations the owner started that the platform's list does not name yet. The platform lists a conversation only
+// once its turn is live, a moment after the start, so until then the started one stands in for it. It stops standing in when a
+// read names its PR, or after `graceMs`: a start that never ran must not leave the PR looking busy.
+const respondPull = chat => `${String(chat.repo).toLowerCase()}#${chat.number}`
+export function pendingRespondStarts(started, listed, now, graceMs) {
+  const named = new Set((listed || []).map(respondPull))
+  return (started || []).filter(chat => !named.has(respondPull(chat)) && now - chat.at < graceMs)
+}
+
+// The started conversations with `chat` in place of an earlier start on the same PR.
+export const withRespondStart = (started, chat) => [...(started || []).filter(item => respondPull(item) !== respondPull(chat)), chat]
+
 const chip = (label, tone) => ({ label, tone })
 const TONE = { you: 'owner', agent: 'running', other: 'quiet', none: 'quiet' }
 const GOOD = new Set(['merged', 'reviewer.mergeable', 'author.approved'])

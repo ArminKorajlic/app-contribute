@@ -196,5 +196,8 @@ Exit codes: 0 done, 2 bad input, 3 refused, 4 failed part-way.
 * **Discard** writes the decision `discarded`. **Respond again** sends the new brief into the same
   chat (the platform returns an existing chat for the PR's scope without sending a new job, so the
   app delivers it as a message, like project work); the old result stays until the new one replaces it.
+  The window names that chat's agent, read from the app's own chat list for the scope. The started
+  chat holds the PR in the app at once (the platform lists it only once its turn is live), until a
+  read of the runs names it or for one minute at most, and the runs are read again right away.
 * The brief given to the Respond agent ends with the `save` command, not with an approval card,
   and tells it that it never pushes, posts, replies, resolves or changes anything on GitHub.

@@ -221,3 +221,38 @@ export function AgentModelSettings({ token, choice, onChange, defaultChoice = nu
     </div> : null}
   </section>
 }
+
+/** What a conversation's saved agent is called, from its app-chat summary and the
+ *  model registry: `{provider, title, detail}`. No saved model means the chat
+ *  default of its provider. Null when there is no conversation. */
+export function conversationAgent(chat, registry) {
+  if (!chat?.provider) return null
+  if (!chat.model) return { provider: chat.provider, title: 'Default model', detail: providerLabel(chat.provider) }
+  const model = (registry?.providers?.[chat.provider] || []).find(item => item.id === chat.model)
+  const effort = modelEfforts(chat.provider, model).find(item => item.value === chat.effort)?.label || ''
+  return { provider: chat.provider, title: model?.label || chat.model, detail: effort }
+}
+
+const AGENT_KEPT = 'Same agent as the first answer, so it builds on that work'
+
+/** The agent a second pass runs on, read-only: the PR's conversation keeps its
+ *  agent, so the window names it instead of offering a choice. `scope` is the
+ *  conversation's app-chat scope. Unreadable, it says so without a name. */
+export function ConversationAgent({ token, scope }) {
+  const [agent, setAgent] = useState(null)
+  useEffect(() => {
+    let alive = true
+    Promise.all([readJson(token, `/api/app-chats?scope=${encodeURIComponent(scope)}`), readJson(token, '/api/models').catch(() => null)])
+      .then(([chats, registry]) => { if (alive) setAgent(conversationAgent(chats?.[0], registry)) })
+      .catch(() => {})
+    return () => { alive = false }
+  }, [token, scope])
+  const detail = agent?.detail ? `${agent.detail} · ${AGENT_KEPT}` : AGENT_KEPT
+  return <section className="co-agent-picker" aria-label="Agent">
+    <div className="co-agent-trigger co-agent-kept">
+      <span className="co-agent-trigger-label">Agent</span>
+      <span className="co-model-mark"><ProviderMark provider={agent?.provider || ''} /></span>
+      <span className="co-agent-trigger-value"><strong>{agent?.title || 'This PR’s conversation'}</strong><small>{detail}</small></span>
+    </div>
+  </section>
+}

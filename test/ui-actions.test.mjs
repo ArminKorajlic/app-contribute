@@ -476,7 +476,7 @@ test('the desk shares one review-run list, wraps its rows in the frame, and open
   // One run list serves the whole desk; the hook that reads it lives beside the review list.
   const runsHook = readFileSync(new URL('../ui/useReviewList.js', import.meta.url), 'utf8')
   assert.match(appSource, /useDeskReviewRuns\(\{/)
-  assert.match(runsHook, /live: list => !!list && \(hasActiveReview\(list\.runs\)/)
+  assert.match(runsHook, /live: list => started\.current\.length > 0 \|\| \(!!list && \(hasActiveReview\(list\.runs\)/, 'fast reads while a review works, or while a just-started Respond conversation is not listed yet')
   assert.match(appSource, /runs: reviewRuns,/)
   // Refresh renews the runs with everything else; the hub reads them faster while a review is working and slower otherwise.
   assert.match(appSource, /checkUpstream\(token, sourceProjects\), refreshReviewRuns\(\)/)
