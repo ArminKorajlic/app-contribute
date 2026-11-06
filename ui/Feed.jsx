@@ -525,6 +525,7 @@ const STATE_LABELS = {
   mark_ready: 'Review draft',
   ready_attention: 'Review',
   route_attention: 'Choose route',
+  check_attention: 'Source check',
   public_attention: 'Resolve',
   private_review: 'Review',
   connecting: 'Finishing publication',
@@ -535,6 +536,7 @@ const STATE_LABELS = {
 const DECISION_ACTION_LABELS = {
   ready_attention: 'Review',
   route_attention: 'Choose',
+  check_attention: 'Open',
   public_attention: 'Resolve',
   private_review: 'Review',
   request: 'Review',
@@ -726,6 +728,43 @@ function BatchOwnedFocus({ item, reviewStatus, onReview, onFeedback, onSetAutopi
   )
 }
 
+// Reviewed work that only waits on a source check. The owner either reconnects
+// GitHub or asks for the check again; no review agent can help.
+function CheckAttentionFocus({ item, reviewStatus, onRefresh, onFeedback, onSetAutopilot, loadDiff }) {
+  const records = runUnitRecords(item)
+  const [checking, setChecking] = useState(false)
+  async function checkAgain() {
+    setChecking(true)
+    try { await onRefresh?.() } finally { setChecking(false) }
+  }
+  return (
+    <div className="co-focus-unit">
+      <section className="co-run-focus-summary is-check_attention">
+        <small>{item.reconnect ? 'GitHub needs reconnecting' : 'Source check unavailable'}</small>
+        <h3>{itemHeading(item)}</h3>
+        <p role="status">{item.message}</p>
+        {!item.reconnect && onRefresh ? (
+          <button type="button" className="co-btn co-btn-primary" disabled={checking} aria-busy={checking} onClick={checkAgain}>
+            {checking ? 'Checking…' : 'Try again'}
+          </button>
+        ) : null}
+        <SourceChatChoices records={records} onFeedback={onFeedback} />
+      </section>
+      {records.map(record => (
+        <ContributionCard
+          key={record.id}
+          rec={record}
+          reviewState={reviewStateFor(record, reviewStatus)}
+          onSetAutopilot={onSetAutopilot}
+          loadDiff={loadDiff}
+          initialExpanded={records.length === 1}
+          showDecision={false}
+        />
+      ))}
+    </div>
+  )
+}
+
 export function FocusedItem({
   item,
   reviewStatus,
@@ -737,9 +776,13 @@ export function FocusedItem({
   onWithdraw,
   onMarkReady,
   onAssignIncomingReview,
+  onRefresh,
   loadDiff,
 }) {
   const records = runUnitRecords(item)
+  if (item.kind === 'check_attention') {
+    return <CheckAttentionFocus item={item} reviewStatus={reviewStatus} onRefresh={onRefresh} onFeedback={onFeedback} onSetAutopilot={onSetAutopilot} loadDiff={loadDiff} />
+  }
   if (item.kind === 'incoming_review') {
     return <IncomingFocus item={item} onAssignIncomingReview={onAssignIncomingReview} />
   }
@@ -848,6 +891,7 @@ export function ContributionRun({
   onSetAutopilot,
   onWithdraw,
   onAssignIncomingReview,
+  onRefresh,
   loadDiff,
   presentation = 'project',
   renderPublicWork,
@@ -959,6 +1003,7 @@ export function ContributionRun({
             onWithdraw={onWithdraw}
             onMarkReady={onMarkReady}
             onAssignIncomingReview={onAssignIncomingReview}
+            onRefresh={onRefresh}
             loadDiff={loadDiff}
           />
         )}

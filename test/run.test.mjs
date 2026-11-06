@@ -352,20 +352,36 @@ test('human-required prepared attention stays in Needs you and outside private w
   assert.equal(run.privateAction, null)
 })
 
-test('reviewed work whose source check could not run names the fix instead of a review', () => {
+test('reviewed work whose source check could not run asks the owner instead of a review', () => {
   const run = buildContributionRun({
-    records: [prepared('reconnect'), prepared('transient')],
+    records: [prepared('reconnect'), prepared('transient'), prepared('unchecked')],
     reviewStatus: { byId: {
       reconnect: { state: 'unavailable', code: 'github_reconnect' },
       transient: { state: 'unavailable', code: 'review_unavailable' },
     } },
   })
 
-  assert.deepEqual(run.decisions.map(item => item.kind), ['private_review', 'private_review'])
-  const details = Object.fromEntries(run.decisions.map(item => [item.record.id, item.detail]))
-  assert.match(details.reconnect, /^Reconnect GitHub in Möbius Settings → Accounts/)
-  assert.match(details.transient, /could not be checked just now/)
-  assert.doesNotMatch(Object.values(details).join(' '), /review needed/i)
+  const byId = Object.fromEntries(run.decisions.map(item => [item.record.id, item]))
+  assert.equal(byId.reconnect.kind, 'check_attention')
+  assert.equal(byId.reconnect.reconnect, true)
+  assert.match(byId.reconnect.message, /^Reconnect GitHub in Möbius Settings → Accounts/)
+  assert.match(byId.reconnect.detail, /^Reconnect GitHub to send · /)
+  assert.equal(byId.transient.kind, 'check_attention')
+  assert.equal(byId.transient.reconnect, false)
+  assert.match(byId.transient.message, /could not be checked just now/)
+  // A record with no row in a successful check is still unknown work.
+  assert.equal(byId.unchecked.kind, 'private_review')
+  assert.equal(run.privateAction.count, 1, 'only the unchecked record is private work')
+})
+
+test('a failed status request never turns reviewed work into review work', () => {
+  const run = buildContributionRun({
+    records: [prepared('reviewed')],
+    reviewStatus: { state: 'unavailable', byId: {} },
+  })
+
+  assert.deepEqual(run.decisions.map(item => item.kind), ['check_attention'])
+  assert.match(run.decisions[0].message, /could not be checked just now/)
   assert.equal(run.privateAction, null)
 })
 

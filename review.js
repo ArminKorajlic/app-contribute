@@ -106,19 +106,26 @@ export function reviewStateFor(rec, reviewStatus) {
 
 // A source check that could not finish blocks Send without claiming the source
 // changed or that the work needs another review. Reconnecting GitHub is the
-// owner's to do, so it is named; any other unavailable check clears on its own.
+// owner's to do, so it is named; any other unavailable check can be retried.
 export function reviewCheckBlocker(reviewState) {
   if (reviewState?.state !== 'unavailable') return ''
   return reviewState.code === 'github_reconnect'
     ? 'Reconnect GitHub in Möbius Settings → Accounts, then send again.'
-    : 'The source could not be checked just now. Try again in a few minutes.'
+    : 'The source could not be checked just now. Try again in a moment.'
+}
+
+// The check that applies to one record: its own row, or, when the whole status
+// request failed, that failure.
+function sourceCheckFor(rec, reviewStatus) {
+  return reviewStateFor(rec, reviewStatus) ||
+    (reviewStatus?.state === 'unavailable' ? { state: 'unavailable', code: '' } : null)
 }
 
 // Reviewed work whose only gap is a check that could not run. An agent review
 // cannot fix that, so it is never queued for one.
 function awaitingSourceCheck(rec, reviewStatus) {
   return qualityReviewFor(rec).state === 'all_clear' &&
-    Boolean(reviewCheckBlocker(reviewStateFor(rec, reviewStatus)))
+    Boolean(reviewCheckBlocker(sourceCheckFor(rec, reviewStatus)))
 }
 
 const QUALITY_REVIEW_STATES = new Set([
@@ -603,8 +610,11 @@ export function partitionReviewUnits(units, reviewStatus) {
     } else if (reviewRecords.every((rec) => isAllClear(rec, reviewStatus) || awaitingSourceCheck(rec, reviewStatus))) {
       // Reviewed work waiting on a check that could not run: name what clears
       // it instead of queueing a review that cannot help.
-      const unchecked = reviewRecords.find((rec) => awaitingSourceCheck(rec, reviewStatus))
-      awaitingCheck.push({ unit, message: reviewCheckBlocker(reviewStateFor(unchecked, reviewStatus)) })
+      // Only the owner can clear a reconnect, so it outranks a retryable layer.
+      const checks = reviewRecords.map((rec) => sourceCheckFor(rec, reviewStatus))
+        .filter((check) => check?.state === 'unavailable')
+      const check = checks.find((row) => row.code === 'github_reconnect') || checks[0]
+      awaitingCheck.push({ unit, reconnect: check.code === 'github_reconnect', message: reviewCheckBlocker(check) })
     } else {
       needsReview.push(unit)
     }

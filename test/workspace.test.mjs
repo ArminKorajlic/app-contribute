@@ -5,6 +5,7 @@ import {
 } from '../collaboration.js'
 import { beginProjectCycle, loadCurrentCycle, loadCycleState, projectCycleScope, saveCycleState, updateCurrentCycle } from '../storage.js'
 import { frontendModules, renderModule } from './render-harness.mjs'
+import { buildContributionRun } from '../run.js'
 
 // Real React SSR through the app's bundler. These tests do not claim browser
 // click coverage, focus/scroll behavior, or component mount lifetime: the
@@ -349,6 +350,33 @@ test('SSR selecting a focused contribution retains the project inventory and his
       assert.match(html, new RegExp(label), `${label} remains listed for ${selectedId}`)
     }
     assert.doesNotMatch(html, /This contribution moved|Archived proposals/)
+  }
+})
+
+test('SSR reviewed work waiting on a source check asks the owner, with the reason and the right action', async t => {
+  const ui = await rendered(t)
+  if (!ui) return
+  const prepared = id => ({
+    id, type: 'pr', status: 'prepared', repo: 'owner/project', title: `Change ${id}`,
+    plan: { action: 'pr', repo: 'owner/project', title: `Change ${id}`, head_sha: HEAD },
+    quality_review: { state: 'all_clear', reviewed_head_sha: HEAD },
+  })
+  for (const [code, message, retry] of [
+    ['github_reconnect', /Reconnect GitHub in Möbius Settings → Accounts, then send again\./, false],
+    ['review_unavailable', /The source could not be checked just now\. Try again in a moment\./, true],
+  ]) {
+    const reviewStatus = { state: 'ready', byId: { one: { state: 'unavailable', code } } }
+    const current = buildContributionRun({ records: [prepared('one')], reviewStatus })
+    const [item] = current.decisions
+    assert.equal(item.kind, 'check_attention')
+    const props = { run: current, reviewStatus, githubState: 'connected', onRefresh: async () => {} }
+    const list = ui.render('ContributionRun', { ...props, selectedId: '' }, { activeId: '', host: null })
+    assert.match(list, /aria-label="Needs you"[\s\S]*Change one/, code)
+    assert.doesNotMatch(list, /Prepared work/, code)
+    const focus = ui.render('ContributionRun', { ...props, selectedId: item.id }, { activeId: item.id, host: null })
+    assert.match(focus, message, code)
+    assert.doesNotMatch(focus, /Private review needed|Review all|>Review</, code)
+    assert.equal(/<button[^>]*>Try again<\/button>/.test(focus), retry, code)
   }
 })
 

@@ -480,6 +480,28 @@ test('an unavailable review check ends the check with an enabled Try again that 
   assert.equal(h.sends.length, 0)
 })
 
+test('a record whose own source check could not finish offers Try again; a reconnect does not', async () => {
+  const refreshes = []
+  const h = harness({ actions: [{ key: 'chat-send:one' }], records: [prepared('one')], runtime: { refresh() { refreshes.push(true) } } })
+  const check = row => h.session.updateRuntime({ ...h.runtime(), reviewStatus: { state: 'ready', addressed: ['one'], byId: { one: row } } })
+  h.session.start(); await tick()
+  check({ state: 'unavailable', code: 'github_reconnect' }); await tick()
+  let state = h.action('chat-send:one')
+  assert.equal(state.disabled, true, 'only the owner can clear a reconnect')
+  assert.match(state.note, /Reconnect GitHub in Möbius Settings/)
+  check({ state: 'unavailable', code: 'review_unavailable' }); await tick()
+  state = h.action('chat-send:one')
+  assert.equal(state.disabled, false)
+  assert.equal(state.label, 'Try again')
+  assert.match(state.note, /could not be checked just now\. Try again in a moment\./)
+  h.fire('chat-send:one', 'activate'); await tick()
+  assert.equal(refreshes.length, 1, 'Try again asks for a fresh check')
+  h.provide(); await tick() // the check recovers
+  h.fire('chat-send:one', 'activate'); await tick()
+  assert.equal(h.action('chat-send:one').confirming, true)
+  assert.equal(h.sends.length, 0)
+})
+
 test('Confirm shows the public PR title and the first line of its description within the fact limit', () => {
   const item = confirmationItem(prepared('pub', { plan: { title: 'Fix the flaky upload retry', body_draft: '## Summary\n\nRetries uploads once on a reset connection.\n\nMore detail.' } }))
   assert.equal(item.title, 'Fix the flaky upload retry', 'the PR title is the item heading')

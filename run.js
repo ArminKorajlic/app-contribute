@@ -419,9 +419,13 @@ export function buildContributionRun({
       detail: `Private review needed · ${unitRepo(unit)}`,
     }))
   }
-  for (const { unit, message } of partition.awaitingCheck) {
-    decisions.push(decision('private_review', unit, byRepo, {
-      detail: `${message} · ${unitRepo(unit)}`,
+  // Reviewed work waiting only on a source check is the owner's to unblock
+  // (reconnect) or retry, never another private review.
+  for (const { unit, reconnect, message } of partition.awaitingCheck) {
+    decisions.push(decision('check_attention', unit, byRepo, {
+      reconnect,
+      message,
+      detail: `${reconnect ? 'Reconnect GitHub to send' : 'Source check unavailable'} · ${unitRepo(unit)}`,
     }))
   }
   for (const { unit, readiness } of structurallyBlocked) {
