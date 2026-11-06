@@ -1579,7 +1579,7 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
     .map(project => [project.key, projectNeedsCount(project, projectRun(project).decisions, conn.login || '')])), [sourceProjects, records, reviewStatus, conn.login])
   // The home's clickable counts: every number names a next step and its view.
   // Reviews you started: one row per PR for the PR reviews page, counted in the rail.
-  const reviewList = useReviewList({ token, runs: reviewRuns, ignored: ignoredReviews, login: conn.login || '' })
+  const reviewList = useReviewList({ token, runs: reviewRuns, ignored: ignoredReviews, login: conn.login || '', refreshKey })
   const deskCountsValue = useMemo(() => deskCounts({
     projects: sourceProjects,
     decisions: contributionRun.decisions,
