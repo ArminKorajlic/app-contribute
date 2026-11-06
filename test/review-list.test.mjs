@@ -195,7 +195,8 @@ test('a Needs you row offers the fix when your own review of your own PR found p
   if (!frontendModules) return t.skip('MOBIUS_FRONTEND_NODE_MODULES is required')
   const { view } = await screens()
   const head = 'a'.repeat(40)
-  const pr = { number: 2005, title: 'Follow a lost update', headRefOid: head, baseRefName: 'main', author: { login: 'owner' }, repository: { nameWithOwner: 'mobius-os/mobius' }, comments: { totalCount: 1 }, isDraft: false, labels: { nodes: [] } }
+  const pr = { number: 2005, title: 'Follow a lost update', headRefOid: head, baseRefName: 'main', author: { login: 'owner' }, repository: { nameWithOwner: 'mobius-os/mobius', viewerPermission: 'WRITE' }, comments: { totalCount: 1 }, isDraft: false, labels: { nodes: [] },
+    state: 'OPEN', mergeable: 'MERGEABLE', latestOpinionatedReviews: { nodes: [] }, reviewThreads: { nodes: [] } }
   const project = { ...projects[0], incomingReviews: [pr] }
   const feedback = { id: 'f', kind: 'public_attention', label: 'Feedback on 2005', record: { repo: 'mobius-os/mobius', number: 2005 } }
   const found = { id: 'r', created_at: '2026-11-04T07:00:00Z', state: 'needs_you', execution_state: 'completed', items: [{ repo: 'mobius-os/mobius', number: 2005, base_ref: 'main', head_sha: head, state: 'needs_you', summary: 'Three problems.' }] }
@@ -208,6 +209,9 @@ test('a Needs you row offers the fix when your own review of your own PR found p
   assert.doesNotMatch(view({ ...base, ignored: { [`mobius-os/mobius#2005@${head}`]: { reason: 'Not a problem' } } }), /Fix these findings/)
   assert.doesNotMatch(view({ ...base, runs: [{ ...found, items: [{ ...found.items[0], state: 'all_clear' }] }] }), /Fix these findings/)
   assert.doesNotMatch(view({ ...base, login: 'someone-else' }), /Fix these findings/)
+  // The machine owns the button: a prepared fix waiting for your Push already deals with these findings.
+  const fix = { id: 'a', state: 'proposed', head_sha: 'f'.repeat(40), from_sha: head }
+  assert.doesNotMatch(view({ ...base, runs: [{ ...found, items: [{ ...found.items[0], repair_attempts: [fix] }] }] }), /Fix these findings/)
   assert.doesNotMatch(view({ ...base, runs: [] }), /Fix these findings|co-desk-row-split/)
 })
 

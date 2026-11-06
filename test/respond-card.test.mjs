@@ -221,3 +221,19 @@ test('a posted answer older than the newest check steps below it, and each card 
   assert.match(page, new RegExp(`${NAMES.respond} ·`), 'the answer names its run')
   assert.match(page, /bbbbbbb → 2222222/, 'a posted answer shows the version it moved the PR to')
 })
+
+test('under a ready answer that took the check’s findings on, the check card keeps only the question; under one that did not, its buttons stay', async t => {
+  const check = { run: { id: 'r1', state: 'needs_you', execution_state: 'completed', mode: 'review_fix_merge', chat_id: 'c1', created_at: '2026-11-06T07:00:00Z' },
+    item: { repo: 'owner/repo', number: 7, head_sha: HEAD, base_ref: 'main', state: 'needs_you', summary: 'Two problems.' } }
+  const shown = async reviewer => {
+    const view = response('ready', { points: [{ ...example().points[0], reviewer }] })
+    const standing = standingFor({ pr: livePr, login: 'me', runs: [{ ...check.run, items: [check.item] }], responses: [{ slug: view.slug, result: view.result, decision: view.decision }] })
+    return render(t, 'ReviewTab', { pr, own: true, status: check, standing, response: view, onFix() {}, onIgnore() {}, onStart() {}, onPostResponse() {}, onDiscardResponse() {} })
+  }
+  const covered = await shown('Agent review'); if (!covered) return
+  assert.match(covered, /covers these findings/)
+  for (const gone of ['Fix these findings', 'Ignore…', 'Review again']) assert.doesNotMatch(covered, new RegExp(gone), gone)
+  const other = await shown('alex')
+  assert.doesNotMatch(other, /covers these findings/)
+  assert.match(other, /Fix these findings/)
+})

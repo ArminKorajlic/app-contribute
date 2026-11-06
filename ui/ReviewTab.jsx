@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { OWNER_ITEM_STATES, REVIEW_STATE_NAMES, ignoredNote, reviewItemProgress, reviewRunHalted, reviewRunTitle, reviewStartedAt, waitingRepair } from '../collaboration.js'
+import { OWNER_ITEM_STATES, REVIEW_STATE_NAMES, ignoredNote, reviewItemProgress, reviewRunHalted, reviewRunTitle, reviewStartedAt } from '../collaboration.js'
 import { postableFindings, reviewActionPlan, reviewStoppable } from '../review-actions.js'
 import { frameOf } from '../pr-standing.js'
 import { openAgentConversation } from './BatchAction.jsx'
@@ -39,8 +39,8 @@ export function reviewContent(status, ctx) {
   if (progress.halted || item.state === 'failed') return { key: 'halted', title: progress.label, box: 'changes' }
   if (progress.turn === 'agent') return { key: 'running', title: progress.label }
   if (item.state === 'verdict_pending') return { key: 'verdict', title: 'Verdict waiting for you', box: 'verdict' }
-  // A prepared fix is the one decision while it waits: the findings' own buttons come back after Don't push.
-  if (waitingRepair(item)) return { key: 'fix_ready', title: 'A fix is ready to push', box: 'verdict' }
+  // A prepared fix that owns the findings (the machine's coveredBy) is what this card is about; its buttons are the machine's too.
+  if (ctx?.covered === 'repair') return { key: 'fix_ready', title: 'A fix is ready to push', box: 'verdict' }
   if (progress.turn === 'author') return { key: 'waiting', title: progress.label }
   if (ignoredNote(item, ctx?.ignored)) return { key: 'ignored', title: 'Ignored' }
   if (item.state === 'needs_you' && item.verdict_proposal?.event === 'REQUEST_CHANGES') return { key: 'changes', title: 'Changes found', box: 'changes' }
@@ -62,7 +62,7 @@ const allowed = (standing, ...ids) => !!standing?.actions?.some(action => ids.in
 // would contradict them.
 export function ReviewTab(props) {
   return <>
-    <ReviewSteps standing={props.standing} fixWaiting={!!waitingRepair(props.status?.item)} itemState={props.status?.item?.state} />
+    <ReviewSteps standing={props.standing} itemState={props.status?.item?.state} />
     <ReviewCards {...props} />
   </>
 }
@@ -93,10 +93,7 @@ const runKind = (run, own) => (run.mode === 'review_fix_merge' ? (own ? NAMES.fi
 
 // `quiet`: another box above already holds the amber "needs you" frame, so this saved review stays plain.
 function SavedReview({ quiet = false, pr, status, response = null, standing = null, earlier = null, own = null, ignored = null, canPost = false, readOnly = false, busy = false, error = '', onStart, onStop, onRetry, onVerdict, onRepair, onCheck, onFix, onIgnore, onUndoIgnore, onPost, pulls = [], listState = {} }) {
-  const found = reviewContent(status, { own, ignored })
-  // A ready answer above already answers these findings: it is the one decision, so this card only informs.
-  const answered = ['findings', 'changes'].includes(found.key) ? pointsAnswering(response, status.run, status.item) : 0
-  const tone = answered ? { ...found, key: 'answered' } : found
+  const tone = reviewContent(status, { own, ignored, covered: standing?.coveredBy })
   const running = tone.key === 'running'
   const elapsed = useElapsed(status ? reviewStartedAt(status.run, status.item) : null, running)
   if (!status && earlier) return <EarlierReview earlier={earlier} response={response} pr={pr} own={own === true} readOnly={readOnly} onStart={onStart} role={standing?.role} />
@@ -135,7 +132,7 @@ function SavedReview({ quiet = false, pr, status, response = null, standing = nu
       onDecide={onVerdict ? (proposal, decision, extra) => onVerdict(item, proposal, decision, extra) : null} onCheck={onCheck || null} /> : null}
     <RepairProposal item={item} busy={busy} onDecide={onRepair && !readOnly ? (attempt, decision) => onRepair(item, attempt, decision) : null} />
     {posted ? <a className="co-btn co-btn-quiet" href={item.public_review.url} target="_blank" rel="noopener noreferrer">View the posted review on GitHub</a> : null}
-    {answered ? <p className="co-review-note" role="status">Your ready answer above covers these findings ({answered === 1 ? '1 point' : `${answered} points`}). Post or discard it first.</p> : null}
+    {standing?.coveredBy === 'answer' && ['findings', 'changes'].includes(tone.key) ? <p className="co-review-note" role="status">Your ready answer above covers these findings. Post or discard it first.</p> : null}
     {item.tests ? <details className="co-task-details"><summary>What it ran</summary><p className="co-review-note">{item.tests}</p></details> : null}
     <p className="co-review-note">{savedVersion(item, pulls, listState)}</p>
     {error ? <p role="alert">{error}</p> : null}

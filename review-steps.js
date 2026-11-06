@@ -15,20 +15,20 @@ const STEP_OF_STATE = {
 const STEP_OF_JOB = { respond: 0, fix: 2, review: 1, review_merge: 1, review_fix_merge: 2 }
 const STEP_OF_ITEM = { reviewing: 1, repairing: 2, pushing: 2 }
 
-function currentStep(standing, fixWaiting, itemState) {
-  if (standing.state === 'to_confirm') return fixWaiting ? 2 : 0
+function currentStep(standing, itemState) {
+  if (standing.state === 'to_confirm') return standing.coveredBy === 'repair' ? 2 : 0
   if (['working', 'needs_answer', 'stalled'].includes(standing.state)) return STEP_OF_ITEM[itemState] ?? STEP_OF_JOB[standing.jobKind] ?? -1
   return STEP_OF_STATE[standing.state] ?? -1
 }
 
-// `fixWaiting`: an agent's prepared fix waits for your Push. `itemState`: what the PR's saved review is doing.
+// `itemState`: what the PR's saved review is doing. A prepared fix waiting for your Push is the machine's `coveredBy: 'repair'`.
 // Returns [] when the strip has nothing true to say.
-export function reviewSteps(standing, { fixWaiting = false, itemState = '' } = {}) {
+export function reviewSteps(standing, { itemState = '' } = {}) {
   if (standing?.role !== 'author') return []
-  const current = currentStep(standing, fixWaiting, itemState)
+  const current = currentStep(standing, itemState)
   if (current < 0) return []
   return STEPS.map((label, index) => ({
-    label: index === current && fixWaiting ? 'Fix ready: push?' : label,
+    label: index === current && standing.coveredBy === 'repair' ? 'Fix ready: push?' : label,
     at: index < current ? 'passed' : index === current ? 'current' : 'ahead',
   }))
 }

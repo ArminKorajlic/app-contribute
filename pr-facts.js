@@ -75,17 +75,19 @@ const ITEM_OUTBOX = {
   marking_ready: ['ready', 'sending'], ready_unknown: ['ready', 'unconfirmed'],
   verdict_posting: ['verdict', 'sending'], verdict_unknown: ['verdict', 'unconfirmed'],
 }
+// A verdict and a fix deal with the findings of their review: while one waits or is on its way it owns them (pr-machine.js).
+const COVERING_KINDS = new Set(['verdict', 'push'])
 const VERDICT_OUTBOX = { proposed: 'drafted', posting: 'sending', unknown: 'unconfirmed' }
 const COMMENT_OUTBOX = { posting: 'sending', unknown: 'unconfirmed' }
 
 function outboxOf(item) {
   const proposal = item.verdict_proposal
-  if (VERDICT_OUTBOX[proposal?.state]) return { kind: 'verdict', event: proposal.event, head: proposal.head_sha || item.head_sha, state: VERDICT_OUTBOX[proposal.state] }
+  if (VERDICT_OUTBOX[proposal?.state]) return { kind: 'verdict', event: proposal.event, head: proposal.head_sha || item.head_sha, state: VERDICT_OUTBOX[proposal.state], covers: true }
   const repair = waitingRepair(item)
-  if (repair) return { kind: 'repair', head: repair.base, state: 'drafted', attempt: repair.id }
+  if (repair) return { kind: 'repair', head: repair.base, state: 'drafted', attempt: repair.id, covers: true }
   if (COMMENT_OUTBOX[item.public_review?.state]) return { kind: 'comment', head: item.head_sha, state: COMMENT_OUTBOX[item.public_review.state] }
   const [kind, state] = ITEM_OUTBOX[item.state] || []
-  return kind ? { kind, head: item.head_sha, state } : null
+  return kind ? { kind, head: item.head_sha, state, ...(COVERING_KINDS.has(kind) ? { covers: true } : {}) } : null
 }
 
 function resultOf(item, progress, ignored) {
@@ -155,7 +157,8 @@ function runFacts(review, pr, own, ignored) {
 export function prFacts({ pr, login, runs = [], ignored = null, chats = [], responses = [] }) {
   const own = isOwnPull(pr, login)
   const reviews = reviewsOf(pr)
-  const fromRuns = runFacts(newestReviewOf(runs, pr), pr, own, ignored)
+  const review = newestReviewOf(runs, pr)
+  const fromRuns = runFacts(review, pr, own, ignored)
   const myReview = own ? null : myReviewOf(pr, fromRuns.sent, reviews, login)
   const threads = own ? openThreadsOf(pr, login) : 0
   return {
@@ -172,7 +175,7 @@ export function prFacts({ pr, login, runs = [], ignored = null, chats = [], resp
     job: jobFor(fromRuns.job, chats, pr),
     result: fromRuns.result,
     // A review run's own draft comes first; otherwise a saved Respond answer is the draft (or the sending) there is.
-    outbox: fromRuns.outbox || responseOutbox(responseFor(responses, pr), pr),
+    outbox: fromRuns.outbox || responseOutbox(responseFor(responses, pr), pr, review),
     readComplete: reviews !== null && threads !== null,
   }
 }

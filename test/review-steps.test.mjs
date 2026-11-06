@@ -5,7 +5,7 @@ import { reviewSteps } from '../review-steps.js'
 const at = steps => steps.map(step => `${step.label}:${step.at}`)
 
 test('a prepared fix waiting for Push puts your PR on the fix step, asking the question', () => {
-  assert.deepEqual(at(reviewSteps({ role: 'author', state: 'to_confirm' }, { fixWaiting: true })),
+  assert.deepEqual(at(reviewSteps({ role: 'author', state: 'to_confirm', coveredBy: 'repair' })),
     ['Answer feedback:passed', 'Check:passed', 'Fix ready: push?:current', 'Reviewers:ahead'])
 })
 

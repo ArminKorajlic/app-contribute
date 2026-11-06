@@ -6,6 +6,7 @@ import { savedFindings } from '../address-feedback.js'
 import { frameState, reviewForRecord } from '../review-frame.js'
 import { ReviewFrame } from './ReviewFrame.jsx'
 import { chipOf, frameOf, standingFor } from '../pr-standing.js'
+import { actionOf } from '../pr-machine.js'
 import { recordsForProject } from '../source-map.js'
 import { STATUS_LABELS } from '../domain.js'
 import { groupNote, lookAtReason } from './AttentionList.jsx'
@@ -102,6 +103,8 @@ function projectRows(view, project, { login, decisionsFor, lastLooked, query, ru
     const target = feedbackPull(item)
     const pr = target && authoredPulls(project.incomingReviews, login).find(candidate => prKey(candidate) === prKey(target))
     if (!pr || !savedFindings(reviewForPull(runs, pr), ignored)) return null
+    // The machine decides whether Respond may start; a draft that already deals with the findings turns it off.
+    if (!actionOf(standingFor({ pr, login, runs: runs || [], chats: chats || [], responses: responses || [], ignored }), 'respond')?.enabled) return null
     return { label: NAMES.fixFindings, run: () => onOpenPull(project, target, 'review', 'fix') }
   }
   const openDecision = item => {
