@@ -83,15 +83,17 @@ const requestChip = { label: 'Asks for your review', tone: 'you' }
 // owner's saved-work decisions follow; then their own actionable PRs.
 function projectRows(view, project, { login, decisionsFor, lastLooked, query, runs, chats, ignored, onOpenPull, onOpenRecord }) {
   const rows = []
+  // The search finds a project by its name too: a name match keeps all of its rows.
+  const keep = (...parts) => matches(query, project.name, ...parts)
   const pull = (pr, chip, order) => rows.push(
     <DeskPullRow key={`pr:${pr.number}`} project={project} pr={pr} chip={chip} order={order} lastLooked={lastLooked} runs={runs} chats={chats} onOpenPull={onOpenPull} login={login} ignored={ignored} />,
   )
-  const requests = view === 'work' ? [] : (project.reviewRequests || []).filter(pr => matches(query, pr.title, String(pr.number), pr.author?.login))
+  const requests = view === 'work' ? [] : (project.reviewRequests || []).filter(pr => keep(pr.title, String(pr.number), pr.author?.login))
   const all = decisionsFor(project)
   const decisions = (view === 'work' ? all : view === 'needs' ? attentionListItems(all) : [])
-    .filter(item => matches(query, item.label, String(item.record?.number || '')))
+    .filter(item => keep(item.label, String(item.record?.number || '')))
   const mine = view === 'needs' || view === 'mine'
-    ? authoredPulls(project.incomingReviews, login).filter(pr => matches(query, pr.title, String(pr.number)))
+    ? authoredPulls(project.incomingReviews, login).filter(pr => keep(pr.title, String(pr.number), pr.author?.login))
     : []
   // Your own agent review of your own PR found problems at its current version:
   // the row offers the fix itself, and opens the PR straight into it.
@@ -120,7 +122,7 @@ function projectRows(view, project, { login, decisionsFor, lastLooked, query, ru
   if (view === 'needs') {
     // A PR that already has its feedback card above is listed once, there.
     needsPulls(project, attentionListItems(all), login)
-      .filter(([pr]) => matches(query, pr.title, String(pr.number)))
+      .filter(([pr]) => keep(pr.title, String(pr.number), pr.author?.login))
       .forEach(([pr, state]) => pull(pr, state))
   }
   if (view === 'mine') {
@@ -133,7 +135,7 @@ function projectRows(view, project, { login, decisionsFor, lastLooked, query, ru
 
 function MergedRows({ project, records, query, lastLooked }) {
   return records
-    .filter(record => matches(query, record.title, String(record.number || '')))
+    .filter(record => matches(query, project.name, record.title, String(record.number || '')))
     .map(record => (
       <div key={record.id} className="co-desk-row is-static">
         <Icon name="check" size={16} className="co-desk-merged-icon" />

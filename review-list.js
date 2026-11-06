@@ -55,21 +55,23 @@ export function reviewCounts(entries) {
 
 const validRef = ref => /^[\w.-]+\/[\w.-]+$/.test(ref.repo) && Number.isSafeInteger(ref.number) && ref.number > 0
 
+// One batch of PR reads. A batch GitHub cannot answer fails the whole read, so a long history is
+// never half-read and then treated as complete; a PR missing from an answered batch is unknown.
 async function readBatch(token, refs) {
   const reads = refs.map((ref, index) => {
     const [owner, name] = ref.repo.split('/')
     return `p${index}:repository(owner:${JSON.stringify(owner)},name:${JSON.stringify(name)}) { pullRequest(number:${ref.number}) { ${PR_FIELDS} } }`
   })
   const data = await fetchLiveStates(token, `query ContributeReviewPulls { ${reads.join(' ')} }`)
-  return refs.map((ref, index) => [reviewKey(ref.repo, ref.number), data?.[`p${index}`]?.pullRequest || null])
+  if (!data) throw new Error('Could not read the pull requests. Try again.')
+  return refs.map((ref, index) => [reviewKey(ref.repo, ref.number), data[`p${index}`]?.pullRequest || null])
 }
 
 // Every PR a review belongs to, read live in batches one after another. The
 // result holds only the PRs GitHub returned; the rest stay unknown.
 export async function loadReviewPulls(token, refs) {
   const wanted = refs.filter(validRef)
-  const batches = Array.from({ length: Math.ceil(wanted.length / BATCH) }, (_, index) => wanted.slice(index * BATCH, (index + 1) * BATCH))
   const read = []
-  for (const batch of batches) read.push(...await readBatch(token, batch))
+  for (let from = 0; from < wanted.length; from += BATCH) read.push(...await readBatch(token, wanted.slice(from, from + BATCH)))
   return new Map(read.filter(([, pr]) => pr))
 }

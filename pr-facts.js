@@ -29,22 +29,27 @@ function checksOf(pr) {
   return CHECKS[checkSummary(pr)?.state] || 'unknown'
 }
 
-// Every opinion GitHub lists. A deleted account reads as "ghost" and a review whose
-// commit is gone (a force-push) keeps an empty commit: it still blocks as a change
-// request and never counts as an approval of this version.
+// Every opinion GitHub lists, or null when the list is not the whole of it: a first page of
+// a longer list could omit a standing change request (which would enable Merge) or the
+// current approval. A deleted account reads as "ghost" and a review whose commit is gone
+// (a force-push) keeps an empty commit: it still blocks as a change request and never
+// counts as an approval of this version.
 function reviewsOf(pr) {
-  const nodes = pr?.latestOpinionatedReviews?.nodes
-  if (!Array.isArray(nodes)) return null
+  const connection = pr?.latestOpinionatedReviews
+  const nodes = connection?.nodes
+  if (!Array.isArray(nodes) || connection.pageInfo?.hasNextPage === true) return null
   return nodes.filter(node => node?.state).map(node => ({
     by: node.author?.login || 'ghost', state: node.state, commit: node.commit?.oid || '', bot: isBot(node.author),
   }))
 }
 
 // Threads a person other than you spoke last in (a bot's thread is input, never
-// waiting on you). Null when the threads were not read.
+// waiting on you). Null when the threads were not read, or are only the last page of a
+// longer list: a missed open thread would hide feedback and disable Respond.
 function openThreadsOf(pr, login) {
-  const nodes = pr?.reviewThreads?.nodes
-  if (!Array.isArray(nodes)) return null
+  const connection = pr?.reviewThreads
+  const nodes = connection?.nodes
+  if (!Array.isArray(nodes) || connection.pageInfo?.hasPreviousPage === true) return null
   return nodes.filter(thread => {
     const last = thread?.comments?.nodes?.at(-1)?.author
     return thread && thread.isResolved === false && !isBot(last) && lower(last?.login) !== lower(login)
@@ -169,6 +174,7 @@ export function prFacts({ pr, login, runs = [], ignored = null, chats = [] }) {
     job: jobFor(fromRuns.job, chats, pr),
     result: fromRuns.result,
     outbox: fromRuns.outbox,
-    readComplete: reviews !== null && threads !== null,
+    // Without the connected account, whose PR this is cannot be told: nothing is decided.
+    readComplete: !!login && reviews !== null && threads !== null,
   }
 }
