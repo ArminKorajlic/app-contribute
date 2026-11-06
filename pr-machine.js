@@ -213,13 +213,3 @@ export function decide(facts) {
   return { role: facts.role, state: key, turn: state.turn, label, headline: headlineFor(key, facts, d), next: state.next || '', waitingOn, actions,
     approvedBy: d.approvedAtHead, rereviewFrom: [...new Set([...d.changesOlder, ...d.approvedOlder])] }
 }
-
-
-// What the platform asks before an effect: '' when allowed, otherwise the reason.
-export function actionBlocker(facts, actionId) {
-  const action = decide(facts).actions.find(item => item.id === actionId)
-  if (!action) return `You can’t do that as the ${facts.role === 'author' ? 'author' : 'reviewer'} of this PR.`
-  return action.reason
-}
-
-export const actionOf = (decision, id) => decision.actions.find(action => action.id === id) || null

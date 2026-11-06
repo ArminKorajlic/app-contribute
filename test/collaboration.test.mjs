@@ -174,11 +174,11 @@ test('Finish it for me and Take over need a Möbius that asks before every push:
   }
 })
 
-test('takeover eligibility distinguishes drafts, base merge rights and fork push rights', async () => {
+test('takeover eligibility distinguishes base merge rights and fork push rights; a draft is never in the way', async () => {
   const { takeoverBlocker } = await import('../collaboration.js')
   const ready = pull(9, { repository:{nameWithOwner:'team/repo',viewerPermission:'WRITE'}, headRepository:{nameWithOwner:'team/repo',viewerPermission:'WRITE'} })
   assert.equal(takeoverBlocker([ready]), '')
-  assert.match(takeoverBlocker([{...ready,isDraft:true}]), /Draft/)
+  assert.equal(takeoverBlocker([{...ready,isDraft:true}]), '', 'a draft can be taken over: the agent never readies it, you do')
   assert.match(takeoverBlocker([{...ready,repository:{viewerPermission:'READ'}}]), /merge access/)
   assert.equal(takeoverBlocker([{...ready,headRepository:{nameWithOwner:'fork/repo',viewerPermission:'WRITE'}}]), '')
   assert.match(takeoverBlocker([{...ready,headRepository:{nameWithOwner:'fork/repo',viewerPermission:'READ'}}]), /push access/)
@@ -191,9 +191,8 @@ test('takeover eligibility distinguishes drafts, base merge rights and fork push
 test('a takeover never asks to mark a draft ready: one repair scope, and a reason only when you gave one', async () => {
   const { takeoverBlocker, reviewRunRequest, TAKEOVER_SCOPE } = await import('../collaboration.js')
   const draft = pull(9, { isDraft: true, headRepository: { viewerPermission: 'WRITE' } })
-  assert.match(takeoverBlocker([draft]), /Draft/)
-  assert.equal(takeoverBlocker([draft], { allowDraft: true }), '', 'a draft can be taken over: the agent never readies it, you do')
-  assert.match(takeoverBlocker([{ ...draft, headRepository: { viewerPermission: 'READ' } }], { allowDraft: true }), /push access/)
+  assert.equal(takeoverBlocker([draft]), '', 'a draft can be taken over: the agent never readies it, you do')
+  assert.match(takeoverBlocker([{ ...draft, headRepository: { viewerPermission: 'READ' } }]), /push access/)
   const old = { request_id: 'fixture-old', mode: 'review_fix_merge', pulls: [draft] }
   assert.equal(reviewRunRequest(old).confirmation_scope, TAKEOVER_SCOPE)
   assert.equal(reviewRunRequest({ ...old, confirmation_scope: 'named_pr_repairs_ready_and_reviewed_successors' }).confirmation_scope, TAKEOVER_SCOPE, 'an older saved draft-ready scope is never sent again')

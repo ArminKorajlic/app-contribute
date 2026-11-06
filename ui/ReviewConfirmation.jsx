@@ -138,7 +138,7 @@ function VersionDetails({ pulls, live }) {
 // Rights do not depend on the capability read, so they explain first. A draft can be
 // taken over: the agent never marks it ready, you do.
 function takeoverBlockerFor(choice, capabilities) {
-  return takeoverBlocker(choice.pulls, { allowDraft: true })
+  return takeoverBlocker(choice.pulls)
     || takeoverCapabilityBlocker({ capabilities })
     || (choice.intent === 'take_over' && !String(choice.takeover_reason || '').trim() ? 'Write why you are taking it over.' : '')
 }
