@@ -296,7 +296,7 @@ export function createInlineSession({ sessionId, actions, items = null, checkpoi
       confirmation: confirming ? frozen.units.flatMap(unit => unit.ready.map(confirmationItem)) : null,
       hidden: published && !busy && !confirming,
       // One plain line at most; the row pills carry each contribution's state.
-      note: busy || unknown ? '' : text(fault || (rowsExplain ? '' : failure?.note) || (activating === key ? '' : refreshNote) || reason),
+      note: busy || unknown || rowsExplain && !fault ? '' : text(fault || failure?.note || (activating === key ? '' : refreshNote) || reason),
       tone: 'neutral', status: '', statusTone: 'neutral', links: [], badges: [],
     }
   }
