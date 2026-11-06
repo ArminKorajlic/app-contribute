@@ -14,6 +14,16 @@ async function ui(t) {
     export { projectRailCount }
     export const rail = props => renderToStaticMarkup(React.createElement(DeskRail, props))
     export const counts = props => renderToStaticMarkup(React.createElement(DeskCounts, props))
+    // Where each chip leads, found by pressing it (DeskCounts holds no hooks, so it can be called directly).
+    export function chipDestinations(counts) {
+      const destinations = {}
+      let pressed = null
+      for (const chip of DeskCounts({ counts, onView: view => { pressed = view } }).props.children) {
+        chip.props.onClick()
+        destinations[chip.props.children[1]] = pressed
+      }
+      return destinations
+    }
     export const view = props => renderToStaticMarkup(React.createElement(DeskView, props))
   `)
   return renderer
@@ -74,6 +84,19 @@ test('counts chips name next steps and skip empty edits', async t => {
   assert.match(html, /28 files/)
   const none = api.counts({ counts: { ...countsFixture, questions: 0, editedFiles: 0, requests: 0, merge: 0, fix: 0, drafts: 0 }, onView: () => {} })
   assert.equal(none, '')
+})
+
+test('every count chip leads to a view that lists what it counted', async t => {
+  const api = await ui(t)
+  if (!api) return
+  // An approved draft opened outside Contribute: counted by Mark ready, with no saved decision behind it.
+  const draft = pullFixture(9, { author: { login: 'owner' }, reviewDecision: 'APPROVED', isDraft: true })
+  const project = projectFixture('kanban', { incomingReviews: [draft] })
+  const counts = { ...countsFixture, questions: 0, requests: 0, merge: 0, fix: 0, editedFiles: 0, drafts: 1, mine: 1, work: 0 }
+  const view = api.chipDestinations(counts)['Mark ready']
+  const html = api.view({ view, projects: [project], records: [], login: 'owner', decisionsFor: () => [], lastLooked: '', query: '', onOpenProject: () => {}, onOpenPull: () => {}, onOpenRecord: () => {} })
+  assert.match(html, /Improve thing 9/)
+  assert.match(html, /Approved, still a draft/)
 })
 
 test('a side view keeps each app inside one card with its own name and Open', async t => {
