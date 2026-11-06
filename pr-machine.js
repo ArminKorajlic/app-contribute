@@ -28,7 +28,10 @@ function derive(facts) {
   const atHead = review => review.commit === facts.head
   const names = test => [...new Map(people.filter(test).map(review => [String(review.by).toLowerCase(), review.by])).values()]
   const result = facts.result?.head === facts.head ? facts.result : null
-  const outbox = facts.outbox?.head === facts.head ? facts.outbox : null
+  // A draft belongs to the version it was written for and goes stale with it. Something sent to GitHub
+  // whose outcome is not known does not: a new head neither confirms nor refutes it, so it holds
+  // (and blocks the next job or Merge) until it is reconciled.
+  const outbox = facts.outbox && (facts.outbox.state !== 'drafted' || facts.outbox.head === facts.head) ? facts.outbox : null
   return {
     approvedAtHead: names(review => review.state === 'APPROVED' && atHead(review)),
     approvedOlder: names(review => review.state === 'APPROVED' && !atHead(review)),

@@ -48,6 +48,30 @@ test('an uncertain merge reads as unconfirmed in both roles (bug 5)', () => {
   assert.equal(decideFor(mine(), [run({ state: 'merge_unknown' })]).state, 'unconfirmed')
 })
 
+test('a write nobody confirmed is held when the PR moves on: a new head neither confirms nor refutes it', () => {
+  const actionOf = (decision, id) => decision.actions.find(action => action.id === id)
+  const approved = { latestOpinionatedReviews: { nodes: [opinion('Sam', 'APPROVED')] } }
+  // Written to at OLD; the PR is at HEAD now. The same items one version later would be held too.
+  const unknown = { push_unknown: {}, merge_unknown: {}, ready_unknown: {}, verdict_unknown: { verdict_proposal: { state: 'unknown', event: 'APPROVE', head_sha: OLD } } }
+  for (const [state, extra] of Object.entries(unknown)) {
+    for (const [role, pr] of [['yours', mine(approved)], ['theirs', pull(approved)]]) {
+      const decision = decideFor(pr, [run({ state, head_sha: OLD, ...extra })])
+      assert.equal(decision.state, 'unconfirmed', `${state} on ${role}`)
+      for (const id of ['merge', 'check_my_pr', 'respond', 'finish_it', 'review', 'take_over'].filter(id => actionOf(decision, id))) {
+        assert.equal(actionOf(decision, id).enabled, false, `${id} stays off while ${state} is unresolved`)
+        assert.match(actionOf(decision, id).reason, /not confirmed yet|Nobody|Needs|Only/, `${id}: ${actionOf(decision, id).reason}`)
+      }
+    }
+  }
+  assert.equal(actionOf(decideFor(mine(approved), [run({ state: 'merge_unknown', head_sha: OLD })]), 'merge').reason, 'Something sent to GitHub is not confirmed yet.')
+  // Still on its way out when the push itself moved the head.
+  assert.equal(decideFor(mine(approved), [run({ state: 'pushing', head_sha: OLD })]).state, 'sending')
+  // A draft is another matter: it belongs to the version it was written for, and goes stale with it.
+  const draft = run({ state: 'verdict_pending', head_sha: OLD, verdict_proposal: { state: 'proposed', event: 'APPROVE', head_sha: OLD } })
+  assert.equal(decideFor(pull(), [draft]).state, 'reviewer.to_review')
+  assert.equal(decideFor(pull(), [{ ...draft, items: [{ ...draft.items[0], head_sha: HEAD, verdict_proposal: { ...draft.items[0].verdict_proposal, head_sha: HEAD } }] }]).state, 'to_confirm')
+})
+
 test('their new commits after your approval bring it back for re-review (bug 6)', () => {
   const pr = pull({ viewerLatestReview: { state: 'APPROVED', commit: { oid: OLD } }, latestOpinionatedReviews: { nodes: [opinion('Alex', 'APPROVED', OLD)] } })
   assert.equal(decideFor(pr).state, 'reviewer.re_review')

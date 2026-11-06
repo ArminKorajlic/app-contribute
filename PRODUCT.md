@@ -217,8 +217,10 @@ checked over every case and every combination of the facts that matter):
 1. An author never gets a public review action. An agent's check of your PR is private.
 2. Merge needs an approval of this exact version by someone other than the author (a bot
    never counts), no change request still standing (even on an older version), checks
-   that pass or do not exist, no conflicts, nothing unconfirmed on its way to GitHub,
-   and no agent job running. GitHub asking for no review is not an approval.
+   that pass or do not exist, no conflicts, nothing unconfirmed on its way to GitHub
+   (a new commit does not settle it: it holds until reconciled, while a draft goes
+   stale with its version), and no agent job running. GitHub asking for no review is
+   not an approval.
 3. Only new commits bring their PR back for re-review; a reply or a thank-you never does.
 4. One agent job per PR at a time. A job that stalled holds nothing. A Respond to
    feedback conversation counts as the PR's job for as long as it can still move.
