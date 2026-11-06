@@ -94,6 +94,7 @@
     "ui/ClampedMarkdown.jsx",
     "ui/watchOverflow.js",
     "ui/CopyId.jsx",
+    "ui/clipboard.js",
     "ui/FileDiffList.jsx",
     "ui/ContributionCard.jsx",
     "ui/Feed.jsx",
