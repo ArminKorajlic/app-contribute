@@ -121,7 +121,7 @@ test('SSR review window starts takeover only when the entire selection is eligib
   const ui = await rendered(t)
   if (!ui) return
   const renderChoice = (pulls, mode = 'review', busy = false) => ui.render('ReviewConfirmation', {
-    choice: { request_id: 'fixture-choice', mode, pulls }, busy, onModeChange: () => {}, capabilities: { review_fix_merge: true },
+    choice: { request_id: 'fixture-choice', mode, pulls }, busy, onModeChange: () => {}, capabilities: { review_fix_merge: true, pr_machine: true },
   })
   for (const permission of ['WRITE', 'MAINTAIN', 'ADMIN']) {
     const pulls = [pull(7, { repository: { nameWithOwner: project.canonical_repo, viewerPermission: permission } })]
