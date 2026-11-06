@@ -888,6 +888,22 @@ for (const [label, topError, reason] of [
   })
 }
 
+test('in one phase, the unsized layer is named with its own reason, not its sized parent', async () => {
+  const ids = ['base', 'top', 'solo']
+  const actions = [{ key: `chat-send-batch:${batchHandle(ids)}`, label: 'Contribute all' }]
+  const base = layer('base', 1, '')
+  const top = layer('top', 2, 'base')
+  top.plan.base_sha = base.plan.head_sha
+  top.plan.diff_stat = ''
+  const h = harness({ actions, items: reviewItems(ids), records: [base, top, prepared('solo')] })
+  await openConfirm(h, actions[0].key)
+  const state = h.action(actions[0].key)
+  assert.equal(state.confirming, false)
+  assert.equal(state.note, `“Change top”: ${SIZE_NOTE}`)
+  h.fire(actions[0].key, 'confirm'); await tick()
+  assert.equal(h.sends.length, 0)
+})
+
 const SHA = 'e'.repeat(64)
 const shot = (name, alt = name) => ({ name, sha256: SHA, size: 1200, alt })
 

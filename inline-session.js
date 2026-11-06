@@ -115,6 +115,8 @@ const sized = record => Boolean(changeSize(record?.plan))
 const identified = record => [record.plan?.repo || record.repo, record.plan?.branch || record.branch,
   record.plan?.head_sha, record.plan?.diff_sha256].every(Boolean)
 export const UNLISTED_LAYER_NOTE = 'This card doesn’t list every layer of the stack. Open Contribute to send it.'
+export const IDENTITY_NOTE = 'Its saved version is incomplete. Open Contribute to send it.'
+const ATTENTION_NOTE = 'It needs attention in Contribute.'
 export const DEFERRED_NOTE = 'It is sent after the layers before it. Open Contribute to send them in order.'
 export const SIZE_NOTE = 'This contribution needs a fresh check in Contribute before it can be sent: its change size is missing.'
 const confirmable = record => !relayed(record) && sized(record) && identified(record)
@@ -216,15 +218,22 @@ export function createInlineSession({ sessionId, actions, items = null, checkpoi
   }
 
   // One status line naming the listed record that holds a partly ready card:
-  // the first with a blocker of its own, else the first held at all.
+  // the first with a reason of its own (a send blocker, an unresolved send, a
+  // missing size or identity), else the first held. Only a record outside its
+  // stack's next phase is said to wait for its turn.
   function heldNote(key, held) {
     const now = current()
-    const own = id => now.has(id)
-      ? sendBlocker(now.get(id), reviewStateFor(now.get(id), runtime.reviewStatus), { requireCheck: true })
-      : 'This contribution is no longer in Contribute.'
+    const unitOf = id => units(key).find(unit => unit.records.some(record => record.id === id))
+    const own = id => {
+      const record = now.get(id)
+      if (!record) return 'This contribution is no longer in Contribute.'
+      const unit = unitOf(id)
+      return sendBlocker(record, reviewStateFor(record, runtime.reviewStatus), { requireCheck: true })
+        || (unit && locked(unit) ? UNKNOWN_NOTE : '') || (sized(record) ? '' : SIZE_NOTE) || (identified(record) ? '' : IDENTITY_NOTE)
+    }
     const id = held.find(own) || held[0]
-    const unit = units(key).find(member => member.records.some(record => record.id === id))
-    const reason = own(id) || (unit && locked(unit) ? UNKNOWN_NOTE : !sized(now.get(id)) ? SIZE_NOTE : unit?.reason || DEFERRED_NOTE)
+    const unit = unitOf(id)
+    const reason = own(id) || unit?.reason || (unit?.ready.some(record => record.id === id) ? ATTENTION_NOTE : DEFERRED_NOTE)
     const title = text(now.get(id)?.plan?.title || now.get(id)?.title || id, 500)
     const name = title.length <= 40 ? title : `${title.slice(0, 40).replace(/\s+\S*$/, '')}…`
     return `“${name}”: ${reason}`
