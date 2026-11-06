@@ -107,3 +107,7 @@ test('only findings with nothing of theirs on GitHub can be posted', () => {
 test('a prepared fix waiting for Push replaces the findings buttons: only the question stays', () => {
   assert.deepEqual(keys(reviewActionPlan({ tone: 'fix_ready', own: true, chat: true, can: everything })), ['ask'])
 })
+
+test('findings a ready answer already covers offer only the question', () => {
+  assert.deepEqual(keys(reviewActionPlan({ tone: 'answered', own: true, chat: true, can: everything })), ['ask'])
+})

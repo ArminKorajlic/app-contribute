@@ -11,6 +11,7 @@ import { ResponseCard } from './ResponseCard.jsx'
 import { TimeAgo } from './GithubParts.jsx'
 import { RepairProposal, VerdictProposal, savedVersion } from './RunDetail.jsx'
 import { RunTag } from './RunTag.jsx'
+import { pointsAnswering } from '../respond-result.js'
 import { ReviewSteps } from './ReviewSteps.jsx'
 import { NAMES } from '../names.js'
 
@@ -91,11 +92,14 @@ const reviewIsNewer = (status, response) => !!status && FINISHED_ANSWERS.has(res
 const runKind = (run, own) => (run.mode === 'review_fix_merge' ? (own ? NAMES.finishIt : NAMES.takeOver) : reviewRunTitle(run))
 
 // `quiet`: another box above already holds the amber "needs you" frame, so this saved review stays plain.
-function SavedReview({ quiet = false, pr, status, standing = null, earlier = null, own = null, ignored = null, canPost = false, readOnly = false, busy = false, error = '', onStart, onStop, onRetry, onVerdict, onRepair, onCheck, onFix, onIgnore, onUndoIgnore, onPost, pulls = [], listState = {} }) {
-  const tone = reviewContent(status, { own, ignored })
+function SavedReview({ quiet = false, pr, status, response = null, standing = null, earlier = null, own = null, ignored = null, canPost = false, readOnly = false, busy = false, error = '', onStart, onStop, onRetry, onVerdict, onRepair, onCheck, onFix, onIgnore, onUndoIgnore, onPost, pulls = [], listState = {} }) {
+  const found = reviewContent(status, { own, ignored })
+  // A ready answer above already answers these findings: it is the one decision, so this card only informs.
+  const answered = ['findings', 'changes'].includes(found.key) ? pointsAnswering(response, status.run, status.item) : 0
+  const tone = answered ? { ...found, key: 'answered' } : found
   const running = tone.key === 'running'
   const elapsed = useElapsed(status ? reviewStartedAt(status.run, status.item) : null, running)
-  if (!status && earlier) return <EarlierReview earlier={earlier} readOnly={readOnly} onStart={onStart} role={standing?.role} />
+  if (!status && earlier) return <EarlierReview earlier={earlier} response={response} pr={pr} own={own === true} readOnly={readOnly} onStart={onStart} role={standing?.role} />
   if (!status) {
     // The Agent button above already starts a review, so there is nothing to offer here.
     return <div className="co-review-box" aria-label="Review">
@@ -131,6 +135,7 @@ function SavedReview({ quiet = false, pr, status, standing = null, earlier = nul
       onDecide={onVerdict ? (proposal, decision, extra) => onVerdict(item, proposal, decision, extra) : null} onCheck={onCheck || null} /> : null}
     <RepairProposal item={item} busy={busy} onDecide={onRepair && !readOnly ? (attempt, decision) => onRepair(item, attempt, decision) : null} />
     {posted ? <a className="co-btn co-btn-quiet" href={item.public_review.url} target="_blank" rel="noopener noreferrer">View the posted review on GitHub</a> : null}
+    {answered ? <p className="co-review-note" role="status">Your ready answer above covers these findings ({answered === 1 ? '1 point' : `${answered} points`}). Post or discard it first.</p> : null}
     {item.tests ? <details className="co-task-details"><summary>What it ran</summary><p className="co-review-note">{item.tests}</p></details> : null}
     <p className="co-review-note">{savedVersion(item, pulls, listState)}</p>
     {error ? <p role="alert">{error}</p> : null}
@@ -142,20 +147,27 @@ function SavedReview({ quiet = false, pr, status, standing = null, earlier = nul
   return <ReviewFrame state={standing && !quiet ? frameOf(standing) : 'idle'} radius={12}>{body}</ReviewFrame>
 }
 
-// The PR changed after its last review, so that review is of an earlier version:
-// show it for what it was, and offer to review the version that is here now.
-function EarlierReview({ earlier, readOnly, onStart, role }) {
+// The PR changed after its last review, so that review is of an earlier version. It looks like
+// every other round: its run, what became of it, its findings folded, and a button that names the
+// version it would check now. "Answered" only when an answer above really took its findings on.
+function EarlierReview({ earlier, response, pr, own, readOnly, onStart, role }) {
   const { run, item } = earlier
+  const answered = pointsAnswering(response, run, item)
+  const now = String(pr?.headRefOid || '').slice(0, 7)
+  const check = role === 'author' ? 'Check' : 'Review'
   return <div className="co-review-box" aria-label="Review">
+    <RunTag kind={runKind(run, own)} at={run.created_at} />
     <div className="co-review-head">
-      <h4>Reviewed an earlier version</h4>
-      <span className="co-review-version">{item.head_sha?.slice(0, 7) || '…'} → {item.base_ref || 'main'}</span>
+      <h4>Checked {item.head_sha?.slice(0, 7) || '…'}{answered ? <span className="co-desk-chip is-ready">Answered</span> : null}</h4>
+      <span className="co-review-version">{now ? `before ${now}` : 'an earlier version'}</span>
     </div>
-    <p className="co-review-note" style={{ color: 'var(--text)', fontSize: 'var(--co-text-body)' }}>The last review was <TimeAgo value={run.created_at} />, on commit <code>{item.head_sha?.slice(0, 7)}</code>. This PR has changed since, so its findings may no longer apply.</p>
-    {item.summary ? <ClampedMarkdown markdown={item.summary} /> : null}
+    <p className="co-review-note" style={{ color: 'var(--text)', fontSize: 'var(--co-text-body)' }}>{answered
+      ? `Your answer above dealt with ${answered === 1 ? '1 point' : `${answered} points`} of what it found.`
+      : 'This PR has changed since, so its findings may no longer apply. Nobody answered them.'}</p>
+    {item.summary ? <details className="co-task-details"><summary>What the check found</summary><ClampedMarkdown markdown={item.summary} /></details> : null}
     <div className="co-review-actions">
-      {run.chat_id ? <button type="button" className="co-btn" onClick={() => openAgentConversation(run.chat_id)}>{NAMES.openChat}</button> : null}
-      {readOnly ? null : <button type="button" className="co-btn" onClick={() => onStart?.(role === 'author' ? 'check_my_pr' : 'review')}>{NAMES.reviewAgain}</button>}
+      {run.chat_id ? <button type="button" className="co-btn co-btn-quiet" onClick={() => openAgentConversation(run.chat_id)}>{NAMES.openChat}</button> : null}
+      {readOnly ? null : <button type="button" className="co-btn" onClick={() => onStart?.(role === 'author' ? 'check_my_pr' : 'review')}>{now ? `${check} ${now}` : NAMES.reviewAgain}</button>}
     </div>
   </div>
 }

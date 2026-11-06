@@ -47,6 +47,7 @@ export function reviewActionPlan({ tone, own = false, chat = false, asked = fals
         ...ask('Ask the reviewer something'),
       ]
     case 'fix_ready':
+    case 'answered':
       return ask('Ask the agent')
     case 'ignored':
       return [...(can.undo ? [{ key: 'undo', label: 'Undo ignore' }] : []), ...ask('Ask the reviewer something')]

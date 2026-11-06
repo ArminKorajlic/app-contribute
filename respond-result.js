@@ -143,6 +143,15 @@ export function responseView(responses, pr) {
   return status ? { ...entry, status } : null
 }
 
+// How many points of a ready or posted answer answer this saved review's findings, or 0. Only an answer built on the
+// version the review checked, made after it, counts: an older or other-version answer never covered it.
+export const AGENT_REVIEW = 'Agent review'
+export function pointsAnswering(view, run, item) {
+  if (!['ready', 'posted'].includes(view?.status) || view.result.pr.head_sha !== item?.head_sha) return 0
+  if ((Date.parse(view.result.created_at) || 0) < (Date.parse(run?.created_at) || 0)) return 0
+  return view.result.points.filter(point => point.reviewer === AGENT_REVIEW).length
+}
+
 // What the PR logic already understands: a draft waiting for the owner, something being sent, something GitHub did not confirm.
 // It is about the PR as it stands now (the logic ignores a fact about another head), so once the push has moved the head, a post
 // that stopped part-way still reads as not confirmed.

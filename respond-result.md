@@ -73,6 +73,7 @@ needs compare-and-swap. Every write is atomic (temporary file, then rename).
   `previous_path`). `patch` holds the hunks only (from the first `@@`, the format of
   GitHub's REST `patch`), or `null` for a binary file or one over the caps, in which case
   `patch_omitted` is `true` (binary files also have `binary: true`).
+* A point answering the owner's saved agent-review findings has the reviewer `Agent review`, exactly.
 * Caps: 30 points; point title 160, answer 400, reviewer 60 characters; 12 replies of at
   most 20 000 characters; description at most 60 000; 10 logins; tests 500; 60 commits;
   300 files; a file's patch 60 000 and all patches together 400 000 characters.

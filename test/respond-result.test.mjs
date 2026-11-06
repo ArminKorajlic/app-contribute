@@ -179,3 +179,13 @@ test('an approved or posting answer is read closely for five minutes after Post,
   assert.equal(postingSoon(entry('failed', decision(), { error: { step: 'replies', message: 'x' } }), SENT + 1000), false, 'stopped: nothing is moving')
   assert.equal(postingSoon(entry('ready', decision({ result_id: 'r-aaaaaaaaaaaa' })), SENT + 1000), false, 'an approval of another result')
 })
+
+test('a ready answer covers a saved review only with Agent review points, on the version that review checked', async () => {
+  const { pointsAnswering } = await import('../respond-result.js')
+  const view = { status: 'ready', result: { pr: { head_sha: 'h1' }, created_at: '2026-11-06T10:00:00Z', points: [{ reviewer: 'Agent review' }, { reviewer: 'alex' }] } }
+  const run = { created_at: '2026-11-06T09:00:00Z' }
+  assert.equal(pointsAnswering(view, run, { head_sha: 'h1' }), 1)
+  assert.equal(pointsAnswering(view, run, { head_sha: 'h2' }), 0, 'another version')
+  assert.equal(pointsAnswering({ ...view, status: 'posted' }, run, { head_sha: 'h1' }), 1, 'a posted answer still took them on')
+  assert.equal(pointsAnswering({ ...view, status: 'stale' }, run, { head_sha: 'h1' }), 0, 'a stale answer never did')
+})
