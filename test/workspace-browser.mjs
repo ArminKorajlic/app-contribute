@@ -7,7 +7,8 @@
 // runReviewHelperWaitChecks (the whole app: a review waiting on its helper reads as at work, not stopped) and
 // runRespondAnswerChecks (the whole app: a Respond-to-feedback chat that asks you is answered from the Review tab, with no Answer-the-agent button),
 // runRespondResultChecks (the whole app: a saved Respond-to-feedback answer is a draft to send in the Review tab, and Post, Discard and its stale and busy states work) and
-// runRespondAgainChecks (the whole app: Respond again is delivered into the PR's existing conversation as a message).
+// runRespondAgainChecks (the whole app: Respond again is delivered into the PR's existing conversation as a message) and
+// runAskApprovalChecks (the whole app: a reviewer who looked again without approving is asked to approve with a note, and an approval of the same work carries over).
 // Run one with WORKSPACE_BROWSER_ONLY=runDeskFrameChecks (and one viewport with WORKSPACE_BROWSER_VIEWPORT=desktop), for example while
 // runWorkspaceChecks is red, so the Desk check can still show green.
 // Actual app components, native Chromium DOM, and no live app/backend. The
@@ -77,7 +78,7 @@ const prepared = {
     head_sha: HEAD, branch: 'fix/fixture' },
   quality_review: { state: 'all_clear', reviewed_head_sha: HEAD },
 }
-const calls = { exactRuns: [], restores: [], diffs: [], requests: [], starts: [], publications: [], status: [], forbidden: [], opened: [], releases: [], stops: [], messages: [], appChatStarts: [], githubRetries: 0 }
+const calls = { exactRuns: [], restores: [], diffs: [], requests: [], starts: [], publications: [], status: [], forbidden: [], opened: [], releases: [], stops: [], messages: [], appChatStarts: [], asks: [], githubRetries: 0 }
 const values = new Map(), versions = new Map(), navigation = [], reviewRuns = [], respondChats = []
 let versionCounter = 0
 const pulls = [pull(7), pull(8, { headRefOid: SECOND_HEAD, assignees: { nodes: [{ login: 'teammate' }] } })]
@@ -110,6 +111,8 @@ function forbidden(kind) {
 window.fetch = async (url, options = {}) => {
   const call = { url: String(url), method: options.method || 'GET', body: options.body ? JSON.parse(options.body) : null, at: Date.now() }
   calls.requests.push(call)
+  // The platform's note asking reviewers who looked again to approve: the one public write of the Ask for approval sheet.
+  if (call.method === 'POST' && call.url === '/api/github/contributions/fixture-app/pulls/ask-approval') { calls.asks.push(call.body); return response({ state: 'asked', observed_head_sha: call.body.head_sha, repo: call.body.repo, number: call.body.number, head_sha: call.body.head_sha }) }
   // A conversation of the app: the platform returns the PR's existing one for its scope, and takes a message into any chat the app made.
   if (call.method === 'POST' && call.url === '/api/app-chats/start') { calls.appChatStarts.push(call.body); return response({ chat_id: 'respond-chat-fixture', outcome: 'reused' }) }
   // The app's own conversation for a PR's Respond scope, with the agent it keeps.
@@ -239,6 +242,8 @@ window.fetch = async (url, options = {}) => {
     return response({ chats: [] })
   }
   if (call.url.startsWith('/api/github/api/repos/owner/project/') && call.method === 'GET') {
+    // GitHub's comparison of a version against the base tip: each scenario says what the PR's own files are at each commit.
+    if(call.url.includes('/compare/')) return window.compareAnswers ? response(window.compareAnswers(call.url.split('...')[1])) : forbidden('unexpected comparison')(call.url)
     if(call.url.includes('/commits/')) {
       const head=call.url.match(/commits\/([a-f0-9]+)\//)?.[1]
       ensure([HEAD,SECOND_HEAD].includes(head),'Checks lost their exact head')
@@ -2046,6 +2051,122 @@ window.runRespondAgainChecks = async () => {
   }
 }
 
+// A reviewer who looked again and only commented still holds a change request on GitHub, and an approval of an older commit
+// stays good when the PR's own work did not change. The PR page says so in one voice and offers the one next step.
+const OLD_HEAD = 'd'.repeat(40)
+const reviewer = { login: 'teammate', __typename: 'User' }
+const OWN_LOOKED_AGAIN = { author: { login: 'reconnected-owner' }, reviewDecision: 'CHANGES_REQUESTED',
+  latestOpinionatedReviews: { nodes: [{ state: 'CHANGES_REQUESTED', author: reviewer, commit: { oid: OLD_HEAD } }] },
+  latestReviews: { nodes: [{ state: 'COMMENTED', author: reviewer, commit: { oid: HEAD } }] } }
+// The same approval at another old commit: what GitHub says about a pair of commits cannot change, so the app asks once per pair.
+const approvedAt = oid => ({ author: { login: 'reconnected-owner' }, reviewDecision: 'APPROVED',
+  latestOpinionatedReviews: { nodes: [{ state: 'APPROVED', author: reviewer, commit: { oid } }] } })
+const OWN_APPROVED_BEFORE = approvedAt(OLD_HEAD)
+const ownFile = (name, lines, hunk = '@@ -1 +1 @@') => ({ filename: name, status: 'modified', additions: lines.length, deletions: 0, patch: hunk + '\n' + lines.map(line => '+' + line).join('\n') })
+window.runAskApprovalChecks = async () => {
+  const checks = []
+  const hint = () => text(query('.co-next-hint'))
+  const pill = () => text(query('.co-next-step .co-desk-chip'))
+  const menuItems = () => [...document.querySelectorAll('[role=menuitem]')]
+  const button = label => [...document.querySelectorAll('button')].find(node => text(node) === label)
+  const sideways = () => document.documentElement.scrollWidth <= window.innerWidth
+  const openPage = async () => {
+    await until(() => [...document.querySelectorAll('.co-desk-row')].some(node => text(node).includes('Contribution 7')), 'The Desk did not list the PR')
+    await click([...document.querySelectorAll('.co-desk-row')].find(node => text(node).includes('Contribution 7')))
+    await until(() => query('.co-desk-back') && query('.co-next-hint'), 'The PR page did not open')
+  }
+  try {
+    reviewRuns.length = 0
+    respondChats.length = 0
+    window.fixtureCapabilities = { request_rereview_now: true, ask_approval_now: true, merge_now: true, pr_machine: true }
+    // 1. Looked again, not approved.
+    await mountDeskApp({ pullPatch: OWN_LOOKED_AGAIN })
+    await openPage()
+    ensure(pill() === 'Looked again · not approved', 'The pill said: ' + pill())
+    ensure(hint().startsWith('Your PR · teammate looked again and left a comment, but GitHub still holds their change request'), 'The panel said: ' + hint())
+    ensure(button('Ask teammate to approve'), 'The next step offered no Ask button: ' + [...document.querySelectorAll('button')].map(node => text(node)).join(' | '))
+    ensure(sideways(), 'The PR page scrolls sideways: ' + document.documentElement.scrollWidth + ' of ' + window.innerWidth)
+    checks.push({ name: 'a reviewer who looked again without approving reads as one state, with Ask for approval as the next step', status: 'pass' })
+    await captureShot('ask-approval-page')
+    // The Actions menu puts the Ask first, and dims the re-review ask with the reason.
+    await click(query('[aria-label="Choose an action for PR 7"]'))
+    await until(() => menuItems().length, 'The Actions menu did not open')
+    const titles = menuItems().map(node => text(node.querySelector('strong')))
+    ensure(titles[0] === 'Ask teammate to approve' && titles.includes('Ask for re-review'), 'The menu offered: ' + titles.join(', '))
+    ensure(menuItems().find(node => text(node.querySelector('strong')) === 'Ask for re-review').getAttribute('aria-disabled') === 'true' || menuItems().find(node => text(node.querySelector('strong')) === 'Ask for re-review').disabled, 'Ask for re-review was still offered to someone who already looked')
+    await captureShot('ask-approval-menu')
+    await click(menuItems()[0])
+    await until(() => query('.co-review-window'), 'The confirm sheet did not open')
+    const sheet = text(query('.co-review-window'))
+    ensure(sheet.includes('Ask teammate to approve #7?') && sheet.includes('@teammate you left a comment on this version') && sheet.includes('Posts exactly this note, once.'), 'The sheet said: ' + sheet)
+    ensure(sideways(), 'The sheet scrolls the page sideways')
+    const box = query('.co-review-window').getBoundingClientRect()
+    ensure(box.left >= 0 && box.right <= window.innerWidth, 'The sheet ran off the screen: ' + Math.round(box.left) + ' to ' + Math.round(box.right) + ' of ' + window.innerWidth)
+    await captureShot('ask-approval-sheet')
+    checks.push({ name: 'the Ask sheet shows the exact note and stays on the screen', status: 'pass' })
+    await click(button('Ask for approval'))
+    await until(() => calls.asks.length === 1, 'Nothing was sent to the platform')
+    const asked = calls.asks[0]
+    ensure(asked.repo === 'owner/project' && asked.number === 7 && asked.head_sha === HEAD && asked.people.join() === 'teammate' && asked.note.startsWith('@teammate you left a comment on this version'), 'The platform got: ' + JSON.stringify(asked))
+    ensure(asked.note.match(/@[A-Za-z0-9-]+/g).join() === '@teammate', 'The note named someone who was not asked: ' + asked.note)
+    await until(() => text(query('.co-review-window')).includes('Note posted'), 'The sheet did not say the note was posted: ' + text(query('.co-review-window')))
+    checks.push({ name: 'Ask for approval sends one note naming only the person asked, and says it was posted', status: 'pass' })
+    // The longest GitHub login (39 characters) in the title, the sentence and the note must wrap, never push the screen sideways.
+    const longLogin = 'a-reviewer-with-the-longest-login-1234'
+    ensure(longLogin.length === 38 || longLogin.length === 39, 'The long login fixture is ' + longLogin.length)
+    await click(button('Done'))
+    const longReviewer = { login: longLogin, __typename: 'User' }
+    await mountDeskApp({ pullPatch: { ...OWN_LOOKED_AGAIN,
+      latestOpinionatedReviews: { nodes: [{ state: 'CHANGES_REQUESTED', author: longReviewer, commit: { oid: OLD_HEAD } }] },
+      latestReviews: { nodes: [{ state: 'COMMENTED', author: longReviewer, commit: { oid: HEAD } }] } } })
+    await openPage()
+    ensure(hint().includes(longLogin) && sideways(), 'A long login pushed the PR page sideways: ' + document.documentElement.scrollWidth + ' of ' + window.innerWidth)
+    await click(query('[aria-label="Choose an action for PR 7"]'))
+    await until(() => menuItems().length, 'The Actions menu did not open for the long login')
+    const longBox = query('.co-agent-menu-list').getBoundingClientRect()
+    ensure(longBox.left >= 0 && longBox.right <= window.innerWidth && sideways(), 'The menu with a long login ran off the screen')
+    await click(menuItems()[0])
+    await until(() => query('.co-review-window'), 'The sheet did not open for the long login')
+    const longSheet = query('.co-review-window').getBoundingClientRect()
+    ensure(longSheet.left >= 0 && longSheet.right <= window.innerWidth && sideways(), 'The sheet with a long login ran off the screen')
+    await captureShot('ask-approval-long-login-sheet')
+    checks.push({ name: 'the longest GitHub login wraps in the page, the menu and the sheet without pushing the screen sideways', status: 'pass' })
+    // 2. An approval of an older commit whose work is the same carries over.
+    window.compareAnswers = commit => ({ files: [ownFile('a.js', ['one', 'two'], commit === HEAD ? '@@ -40,0 +41,2 @@' : '@@ -3,0 +3,2 @@')] })
+    await mountDeskApp({ pullPatch: OWN_APPROVED_BEFORE })
+    await openPage()
+    await until(() => pill() === 'Ready to merge', 'The approval did not carry over: ' + pill() + ' / ' + hint())
+    ensure(hint().includes('approved by teammate') && hint().includes('The lines you added and removed are the same as when they approved'), 'The panel said: ' + hint())
+    await captureShot('carried-approval-page')
+    await click(query('[aria-label="Choose an action for PR 7"]'))
+    await until(() => menuItems().length, 'The Actions menu did not open')
+    const merge = menuItems().find(node => text(node.querySelector('strong')) === 'Merge')
+    ensure(merge && merge.getAttribute('aria-disabled') !== 'true' && !merge.disabled, 'Merge was not offered for a carried approval')
+    await click(merge)
+    await until(() => query('.co-review-window'), 'The merge sheet did not open')
+    ensure(text(query('.co-review-window')).includes('Approved by teammate on ' + OLD_HEAD.slice(0, 7) + '. The lines you added and removed have not changed since'), 'The merge sheet said: ' + text(query('.co-review-window')))
+    await captureShot('carried-approval-merge-sheet')
+    checks.push({ name: 'an approval of an older commit whose own work is the same carries over: Ready to merge, and the merge sheet says why', status: 'pass' })
+    // 3. The work changed: the approval is old, and one comparison that cannot be read is treated the same.
+    window.compareAnswers = commit => ({ files: [ownFile('a.js', commit === HEAD ? ['one', 'CHANGED'] : ['one', 'two'])] })
+    await mountDeskApp({ pullPatch: approvedAt('e'.repeat(40)) })
+    await openPage()
+    await until(() => pill() === 'Approval is old', 'A changed PR did not read as an old approval: ' + pill())
+    window.compareAnswers = () => ({ message: 'Not Found' })
+    await mountDeskApp({ pullPatch: approvedAt('f'.repeat(40)) })
+    await openPage()
+    await until(() => pill() === 'Approval is old', 'An unreadable comparison did not read as an old approval: ' + pill())
+    checks.push({ name: 'when the work changed, or the comparison cannot be read, the approval stays old', status: 'pass' })
+    ensure(calls.forbidden.length === 0, 'Unexpected runtime/transport: ' + JSON.stringify(calls.forbidden))
+    return { status: 'pass', checks, forbidden: calls.forbidden }
+  } catch (error) {
+    return { status: 'fail', checks, error: error.stack, dom: text(query('main')).slice(0, 5000), calls, forbidden: calls.forbidden }
+  } finally {
+    delete window.compareAnswers
+    window.fixtureCapabilities = undefined
+  }
+}
+
 // The whole app on a fresh page: a review the owner submits answers its request on
 // GitHub, so the Desk row leaves Review requests when the verdict posts, not at the
 // next Sync. Reads after that (the frame shown again, the hub's probe) keep it honest.
@@ -2372,7 +2493,7 @@ async function main() {
     const protocol = cdp(browser), reports = []
     // Each scenario gets a fresh page, so the whole-app Desk scenario never inherits the project fixture's state.
     // WORKSPACE_BROWSER_ONLY=runDeskFrameChecks runs one scenario.
-    const scenarios = process.env.WORKSPACE_BROWSER_ONLY ? [process.env.WORKSPACE_BROWSER_ONLY] : ['runWorkspaceChecks', 'runPopupFitChecks', 'runDeskFrameChecks', 'runReviewRequestChecks', 'runReviewHelperWaitChecks', 'runRespondAnswerChecks', 'runRespondResultChecks', 'runRespondAgainChecks', 'runSyncChecks', 'runStaleAnswerChecks']
+    const scenarios = process.env.WORKSPACE_BROWSER_ONLY ? [process.env.WORKSPACE_BROWSER_ONLY] : ['runWorkspaceChecks', 'runPopupFitChecks', 'runDeskFrameChecks', 'runReviewRequestChecks', 'runReviewHelperWaitChecks', 'runRespondAnswerChecks', 'runRespondResultChecks', 'runRespondAgainChecks', 'runAskApprovalChecks', 'runSyncChecks', 'runStaleAnswerChecks']
     const viewports = [{ name: 'desktop', width: 1280, height: 900 }, { name: 'phone', width: 390, height: 844 }].filter(size => !process.env.WORKSPACE_BROWSER_VIEWPORT || size.name === process.env.WORKSPACE_BROWSER_VIEWPORT)
     for (const [viewport, scenario] of viewports.flatMap(size => scenarios.map(name => [size, name]))) {
       const { targetId } = await protocol.send('Target.createTarget', { url: 'about:blank' })

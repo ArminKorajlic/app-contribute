@@ -30,16 +30,27 @@ function checksOf(pr) {
   return CHECKS[checkSummary(pr)?.state] || 'unknown'
 }
 
+// One review as the machine reads it. `sameWork` is the fact reader's proof that an approval of an older commit
+// is of the same work (same-work.js marks it on the GitHub answer); absent means nobody asked.
+const reviewOf = node => ({
+  by: node.author?.login || 'ghost', state: node.state, commit: node.commit?.oid || '', bot: isBot(node.author),
+  ...('sameWork' in node ? { sameWork: node.sameWork } : {}),
+})
+
 // Every opinion GitHub lists. A deleted account reads as "ghost" and a review whose
 // commit is gone (a force-push) keeps an empty commit: it still blocks as a change
 // request and never counts as an approval of this version.
 function reviewsOf(pr) {
   const nodes = pr?.latestOpinionatedReviews?.nodes
   if (!Array.isArray(nodes)) return null
-  return nodes.filter(node => node?.state).map(node => ({
-    by: node.author?.login || 'ghost', state: node.state, commit: node.commit?.oid || '', bot: isBot(node.author),
-  }))
+  return nodes.filter(node => node?.state).map(reviewOf)
 }
+
+// The newest review of each person when it was a plain comment: proof they looked at that version,
+// never an opinion. GitHub's opinions skip comments, so a reviewer who comments after asking for changes
+// keeps their request, and this is the only place that says they came back. Not reading them only
+// leaves that unsaid, so they are never a reason to call the PR unread.
+const commentsOf = pr => (pr?.latestReviews?.nodes || []).filter(node => node?.state === 'COMMENTED').map(reviewOf)
 
 // Threads a person other than you spoke last in (a bot's thread is input, never
 // waiting on you). The PR's own conversation counts as one more such thread: a plain
@@ -172,7 +183,7 @@ export function prFacts({ pr, login, runs = [], ignored = null, chats = [], resp
     checks: checksOf(pr),
     mergeable: MERGEABLE[pr?.mergeable] || 'unknown',
     permission: pr?.repository?.viewerPermission || 'unknown',
-    reviews: own ? reviews || [] : withSentVerdict(reviews || [], fromRuns.sent, pr, login),
+    reviews: [...(own ? reviews || [] : withSentVerdict(reviews || [], fromRuns.sent, pr, login)), ...commentsOf(pr)],
     myReview,
     openThreads: threads || 0,
     job: jobFor(fromRuns.job, chats, pr),

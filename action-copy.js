@@ -96,10 +96,18 @@ export const allowedMergeMethods = repository => Object.keys(MERGE_METHODS).filt
 // also what the platform picks. A repository that merges through a queue chooses for itself and refuses a named method.
 export const methodToSend = (repository, choice) => (choice && choice !== allowedMergeMethods(repository)[0] ? choice : '')
 
-// Who approved this exact version (the PR machine's count: never the author, never a bot).
-function approvalFact(standing) {
-  if (!standing) return null
-  return standing.approvedBy?.length ? { tone: 'ok', text: `Approved at this version by ${names(standing.approvedBy)}` } : { tone: 'bad', text: 'Nobody but the author has approved this version' }
+// Who approved this version (the PR machine's count: never the author, never a bot). An approval of an
+// older commit counts only when the PR's own change was proved the same since, and the sheet says so.
+function approvalFacts(standing) {
+  if (!standing) return []
+  const approvedBy = standing.approvedBy || []
+  if (!approvedBy.length) return [{ tone: 'bad', text: 'Nobody but the author has approved this version' }]
+  const carried = standing.carriedFrom || []
+  const exact = approvedBy.filter(name => !carried.some(item => item.by.toLowerCase() === name.toLowerCase()))
+  return [
+    exact.length ? { tone: 'ok', text: `Approved at this version by ${names(exact)}` } : null,
+    ...carried.map(item => ({ tone: 'ok', text: `Approved by ${item.by} on ${short(item.commit)}. The lines you added and removed have not changed since` })),
+  ].filter(Boolean)
 }
 
 // What the owner's own agent review of this exact version said, if there is one.
@@ -121,7 +129,7 @@ export function mergeCopy(pr, { status = null, ignored = null, method = '', stan
     title: `Merge #${pr.number} into ${base}?`,
     confirm: chosen ? MERGE_METHODS[chosen].action : 'Merge',
     working: 'Merging…',
-    facts: [approvalFact(standing), checksFact(pr, { blocking: true }), conflictFact(pr), reviewFact(status, ignored)].filter(Boolean),
+    facts: [...approvalFacts(standing), checksFact(pr, { blocking: true }), conflictFact(pr), reviewFact(status, ignored)].filter(Boolean),
     choices: allowed.length > 1 ? { label: 'How should it land?', value: chosen, options: allowed.map(key => ({ key, label: MERGE_METHODS[key].label, action: MERGE_METHODS[key].action, detail: MERGE_METHODS[key].detail(base) })) } : null,
     footnote: `Merges the version you are looking at (${short(pr.headRefOid)}). If anyone pushes first, nothing is merged and you are told. Contribute cannot undo a merge: to take it back you would open a revert on GitHub.`,
     done: outcome => outcome?.state === 'queued'
@@ -152,6 +160,26 @@ export function askRereviewCopy(pr, { standing = null } = {}) {
   }
 }
 
+// The one short note Ask for approval posts. Shown on the sheet and sent as it is, so it names only the people asked.
+export const approvalNote = (pr, people) => `${people.map(login => `@${login}`).join(' ')} you left a comment on this version (\`${short(pr.headRefOid)}\`), but GitHub still holds your change request from an earlier one. If your points are resolved, please approve, or dismiss the request. Sent from Contribute.`
+
+// Ask for approval: a reviewer who looked at this version and only commented still holds a change request, and GitHub
+// lifts that only when they approve or dismiss it. The note says so, in public, from your account.
+export function askApprovalCopy(pr, { standing = null } = {}) {
+  const people = standing?.lookedAgain || []
+  return {
+    icon: 'person', title: `Ask ${people.length ? names(people) : 'reviewers'} to approve #${pr.number}?`, confirm: NAMES.askApproval, working: 'Posting…',
+    facts: [
+      { tone: 'ok', text: people.length ? `${names(people)} left a comment on this version; GitHub still holds their change request` : 'Nobody has looked again without approving' },
+      { tone: 'warn', text: 'The note is public on the PR, from your GitHub account' },
+    ],
+    says: people.length ? { label: 'The note that will be posted', markdown: approvalNote(pr, people) } : null,
+    footnote: 'Posts exactly this note, once. Nothing else changes: only their approval, or dismissing their request, lifts it.',
+    disabled: !people.length,
+    done: () => ({ title: 'Note posted', text: `${names(people)} ${people.length === 1 ? 'is' : 'are'} asked to approve.` }),
+  }
+}
+
 // Close without merging. It can be reopened on GitHub.
 export function closeCopy(pr) {
   return {
@@ -163,4 +191,4 @@ export function closeCopy(pr) {
 }
 
 // The sheet's words for each of the owner's own actions, by the PR machine's action id.
-export const ACTION_COPY = { open_for_review: openForReviewCopy, merge: mergeCopy, back_to_draft: backToDraftCopy, ask_rereview: askRereviewCopy, close: closeCopy }
+export const ACTION_COPY = { open_for_review: openForReviewCopy, merge: mergeCopy, back_to_draft: backToDraftCopy, ask_rereview: askRereviewCopy, ask_approval: askApprovalCopy, close: closeCopy }

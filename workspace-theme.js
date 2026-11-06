@@ -524,7 +524,7 @@ export const WORKSPACE_CSS = `
 .co-agent-menu { position:relative; display:inline-flex; }
 .co-agent-menu-list { position:absolute; z-index:30; top:calc(100% + 6px); right:0; width:min(340px,calc(100vw - 32px)); padding:6px; border:1.5px solid var(--co-edge); border-radius:var(--co-radius-panel); background:var(--surface); box-shadow:0 12px 32px rgba(0,0,0,.28); }
 .co-agent-menu.is-align-start .co-agent-menu-list { right:auto; left:0; }
-.co-agent-menu-list button { display:flex; align-items:flex-start; gap:10px; width:100%; padding:10px; border:0; border-radius:var(--co-radius-field); background:none; color:var(--text); text-align:left; font:inherit; cursor:pointer; }
+.co-agent-menu-list button { display:flex; align-items:flex-start; gap:10px; width:100%; overflow-wrap:anywhere; padding:10px; border:0; border-radius:var(--co-radius-field); background:none; color:var(--text); text-align:left; font:inherit; cursor:pointer; }
 .co-agent-menu-list button:hover,.co-agent-menu-list button:focus-visible { background:var(--surface-2,var(--surface)); outline:none; }
 .co-agent-menu-list .co-icon { flex:none; margin-top:2px; color:var(--muted); }
 .co-agent-menu-head { margin:0 0 4px; padding:8px 10px; border-bottom:1px solid var(--border); color:var(--muted); font-size:var(--co-text-meta); }
@@ -569,7 +569,7 @@ export const WORKSPACE_CSS = `
 /* The next step: pill, the machine's sentence, then the one filled button. */
 .co-next-step { display:flex; flex-wrap:wrap; align-items:center; gap:8px 12px; margin:12px 0 4px; padding:12px 14px; border:1px solid var(--border); border-radius:var(--co-radius-panel); background:var(--surface); }
 .co-next-step .co-desk-chip { flex:0 0 auto; }
-.co-next-hint { flex:1 1 220px; margin:0; color:var(--text); font-size:var(--co-text-meta); line-height:1.45; }
+.co-next-hint { flex:1 1 220px; margin:0; overflow-wrap:anywhere; color:var(--text); font-size:var(--co-text-meta); line-height:1.45; }
 .co-review-stack { display:grid; gap:12px; }
 .co-next-pointer { display:block; color:var(--muted); }
 .co-next-step .co-btn { flex:0 0 auto; }
@@ -617,7 +617,7 @@ export const WORKSPACE_CSS = `
 .co-review-window { outline:none; }
 .co-rw-head { display:grid; grid-template-columns:44px minmax(0,1fr) auto; gap:14px; align-items:start; padding:20px 20px 16px; border-bottom:1px solid var(--border); }
 .co-rw-icon { display:grid; place-items:center; width:44px; height:44px; border-radius:var(--co-radius-panel); background:var(--accent-dim); color:var(--accent); }
-.co-rw-head h3 { margin:0; font-size:var(--co-text-section); font-weight:680; letter-spacing:-.015em; line-height:1.25; }
+.co-rw-head h3 { margin:0; font-size:var(--co-text-section); font-weight:680; letter-spacing:-.015em; line-height:1.25; overflow-wrap:anywhere; }
 .co-rw-pr { margin:4px 0 0; font-size:var(--co-text-body); line-height:1.45; }
 .co-rw-pr strong { display:block; font-weight:600; overflow-wrap:anywhere; }
 .co-rw-pr span,.co-rw-list li span { display:block; color:var(--muted); font-size:var(--co-text-meta); }

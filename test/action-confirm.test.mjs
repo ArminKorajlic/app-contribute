@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { ACTION_COPY, allowedMergeMethods, mergeCopy, openForReviewCopy, methodToSend, postFindingsCopy } from '../action-copy.js'
+import { ACTION_COPY, allowedMergeMethods, approvalNote, askApprovalCopy, mergeCopy, openForReviewCopy, methodToSend, postFindingsCopy } from '../action-copy.js'
 import { isPersonalDraft } from '../domain.js'
 import { frontendModules, renderModule } from './render-harness.mjs'
 
@@ -289,4 +289,41 @@ test('the lock and globe in a window head, and the files toggle, keep their own 
   assert.match(css, /\.co-btn-quiet \{[^}]*color: var\(--co-btn-tone, var\(--muted\)\)/)
   assert.doesNotMatch(css, /\.co-rw-seen-btn[^{]*\{[^}]*(?:color|background):/)
   assert.match(css, /\.co-btn\.co-project-files-toggle \{ color: var\(--accent\); \}/)
+})
+
+test('Merge says plainly when an approval is of an older commit whose work is the same', () => {
+  const carried = [{ by: 'sam', commit: 'a1b2c3d4e5f6' }]
+  assert.deepEqual(mergeCopy(approved(), { standing: { approvedBy: ['sam'], carriedFrom: carried } }).facts.slice(0, 1).map(fact => `${fact.tone}:${fact.text}`),
+    ['ok:Approved by sam on a1b2c3d. The lines you added and removed have not changed since'])
+  const mixed = mergeCopy(approved(), { standing: { approvedBy: ['kim', 'sam'], carriedFrom: carried } }).facts.slice(0, 2).map(fact => fact.text)
+  assert.deepEqual(mixed, ['Approved at this version by kim', 'Approved by sam on a1b2c3d. The lines you added and removed have not changed since'])
+})
+
+test('Ask for approval shows the exact note it posts, naming only the people asked, and is off when nobody looked again', () => {
+  const standing = { lookedAgain: ['ReviewerOne', 'Kim'] }
+  const copy = askApprovalCopy(pr(), { standing })
+  assert.equal(copy.title, 'Ask ReviewerOne, Kim to approve #9?')
+  assert.equal(copy.says.markdown, approvalNote(pr(), standing.lookedAgain))
+  assert.deepEqual(approvalNote(pr(), standing.lookedAgain).match(/@[A-Za-z0-9-]+/g), ['@ReviewerOne', '@Kim'])
+  assert.match(copy.says.markdown, /\(`abcdef0`\)/)
+  assert.equal(copy.disabled, false)
+  assert.equal(askApprovalCopy(pr(), { standing: { lookedAgain: [] } }).disabled, true)
+  assert.equal(ACTION_COPY.ask_approval, askApprovalCopy)
+})
+
+test('Ask for approval goes to the platform with who and the exact note, and reads an unconfirmed post back', async () => {
+  const sent = []
+  const previous = globalThis.fetch
+  const reply = (status, body) => async (url, options) => { sent.push({ url, body: JSON.parse(options.body) }); return { ok: status < 400, status, json: async () => body } }
+  const note = approvalNote(pr(), ['sam'])
+  try {
+    globalThis.fetch = reply(200, { state: 'asked', observed_head_sha: 'abcdef0123456789' })
+    assert.deepEqual(await pullAction('t', 10, pr(), 'ask-approval', { people: ['sam'], note }), { ok: true, state: 'asked', observedHead: 'abcdef0123456789' })
+    assert.equal(sent[0].url, '/api/github/contributions/10/pulls/ask-approval')
+    assert.deepEqual(sent[0].body, { repo: 'team/repo', number: 9, head_sha: 'abcdef0123456789', people: ['sam'], note })
+    globalThis.fetch = reply(502, { detail: { code: 'approval_unconfirmed', message: 'GitHub may have posted the note. Check the pull request before trying again.' } })
+    assert.deepEqual(await pullAction('t', 10, pr(), 'ask-approval', { people: ['sam'], note }), { pending: true, error: 'GitHub may have posted the note. Check the pull request before trying again.' })
+    globalThis.fetch = reply(409, { detail: 'Ask only people who looked again without approving: nobody.' })
+    assert.deepEqual(await pullAction('t', 10, pr(), 'ask-approval', { people: ['sam'], note }), { error: 'Ask only people who looked again without approving: nobody.' })
+  } finally { globalThis.fetch = previous }
 })

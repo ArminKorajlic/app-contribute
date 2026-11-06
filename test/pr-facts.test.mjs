@@ -210,3 +210,37 @@ test('a plain comment arriving while an agent works leaves it working, then asks
   assert.equal(decideFor(mine(comment), [run({ state: 'reviewing' }, { state: 'running', execution_state: 'running' })]).state, 'working')
   assert.equal(decideFor(mine(comment), [run({ state: 'all_clear' })]).state, 'author.feedback')
 })
+
+const withComments = (reviews, ...nodes) => mine({ reviewDecision: 'CHANGES_REQUESTED', latestOpinionatedReviews: { nodes: reviews }, latestReviews: { nodes } })
+
+test('a reviewer who commented on this version after asking for changes is read as having looked again', () => {
+  const decision = decideFor(withComments([opinion('Sam', 'CHANGES_REQUESTED', OLD)], opinion('Sam', 'COMMENTED', HEAD)))
+  assert.equal(decision.state, 'author.looked_again')
+  assert.deepEqual(decision.lookedAgain, ['Sam'])
+  assert.equal(decision.actions.find(action => action.highlighted).id, 'ask_approval')
+})
+
+test('only a plain comment is read from the newest reviews: an approval or a request there is the opinion list’s to give', () => {
+  const approvedAgain = decideFor(withComments([opinion('Sam', 'CHANGES_REQUESTED', OLD)], opinion('Sam', 'APPROVED', HEAD)))
+  assert.equal(approvedAgain.state, 'author.waiting_rereview', 'an approval that GitHub’s opinions did not list is not counted')
+  assert.equal(decideFor(withComments([opinion('Sam', 'CHANGES_REQUESTED', OLD)], opinion('Sam', 'COMMENTED', OLD))).state, 'author.waiting_rereview', 'a comment on the old version is no sign of looking again')
+})
+
+test('a read without the newest reviews only leaves "looked again" unsaid; the PR still reads', () => {
+  const decision = decideFor(mine({ latestOpinionatedReviews: { nodes: [opinion('Sam', 'CHANGES_REQUESTED', OLD)] } }))
+  assert.equal(decision.state, 'author.waiting_rereview')
+})
+
+test('an approval of an older commit carries the reader’s proof that the work is the same', () => {
+  const carried = decideFor(mine({ latestOpinionatedReviews: { nodes: [{ ...opinion('Sam', 'APPROVED', OLD), sameWork: true }] } }))
+  assert.equal(carried.state, 'author.approved')
+  assert.deepEqual(carried.carriedFrom, [{ by: 'Sam', commit: OLD }])
+  for (const sameWork of [false, null]) {
+    assert.equal(decideFor(mine({ latestOpinionatedReviews: { nodes: [{ ...opinion('Sam', 'APPROVED', OLD), sameWork }] } })).state, 'author.approval_stale')
+  }
+})
+
+test('on someone else’s PR a plain comment in the newest reviews is not mistaken for your own review', () => {
+  const decision = decide(prFacts({ pr: pull({ latestReviews: { nodes: [opinion('alex', 'COMMENTED', HEAD)] } }), login: 'alex' }))
+  assert.equal(decision.state, 'reviewer.to_review')
+})

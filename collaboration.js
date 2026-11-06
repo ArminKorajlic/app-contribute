@@ -311,11 +311,12 @@ export async function mergePull(token, appId, pr, { method = '' } = {}) {
 }
 
 // The owner's own status change on one PR, at this exact version, once: `ready` (open a draft for
-// review), `draft` (back to draft), `close`, or `request-reviewers` (ask for re-review). Same outcome
+// review), `draft` (back to draft), `close`, `request-reviewers` (ask for re-review) or `ask-approval` (a note asking
+// reviewers who looked again to approve). Same outcome
 // shapes as mergePull: { ok } | { pending } (GitHub may have done it; read it back, never repeat) |
 // { error }. GitHub cannot pin a version on these writes, so the platform reports the head it saw
 // afterwards (observedHead) and the sheet says so if it moved.
-const UNCONFIRMED = { ready: 'ready_unconfirmed', draft: 'draft_unconfirmed', close: 'close_unconfirmed', 'request-reviewers': 'reviewers_unconfirmed' }
+const UNCONFIRMED = { ready: 'ready_unconfirmed', draft: 'draft_unconfirmed', close: 'close_unconfirmed', 'request-reviewers': 'reviewers_unconfirmed', 'ask-approval': 'approval_unconfirmed' }
 export async function pullAction(token, appId, pr, action, extra = {}) {
   try {
     const result = await collaborationRequest(token, appId, `pulls/${action}`, {

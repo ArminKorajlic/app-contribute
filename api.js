@@ -7,6 +7,8 @@
 // connect helpers return the raw Response so the connection card can branch
 // on res.ok and surface the server's error detail verbatim.
 
+import { markCarriedApprovals } from './carried-approvals.js'
+
 function authHeaders(token) {
   return { Authorization: 'Bearer ' + token }
 }
@@ -198,6 +200,7 @@ export const PR_FIELDS = `id number title url state headRefOid headRefName baseR
   } } } } }
   reviewDecision mergeable
   latestOpinionatedReviews(first:30, writersOnly:true) { nodes { state author { login __typename } commit { oid } } }
+  latestReviews(first:30) { nodes { state author { login __typename } commit { oid } } }
   viewerLatestReview { state commit { oid } }
   reviewThreads(last:50) { nodes { isResolved comments(last:1) { nodes { author { login __typename } } } } }`
 
@@ -207,6 +210,8 @@ export const PR_FIELDS = `id number title url state headRefOid headRefName baseR
 let githubPointsLeft = null
 export const githubRemainingPoints = () => githubPointsLeft
 
+// Every read of PRs passes through here, so every screen sees the same marks on an approval of an older
+// commit (whether the PR's own work is still the same: same-work.js) and decides alike.
 export async function fetchLiveStates(token, query) {
   try {
     const r = await fetchRead('/api/github/graphql', {
@@ -219,7 +224,7 @@ export async function fetchLiveStates(token, query) {
     const data = body && typeof body === 'object' ? body.data || null : null
     const left = data?.rateLimit?.remaining
     if (Number.isFinite(left)) githubPointsLeft = left
-    return data
+    return data ? await markCarriedApprovals(token, data) : data
   } catch {
     return null
   }

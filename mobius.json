@@ -163,6 +163,8 @@
     "pr-facts.js",
     "pr-standing.js",
     "pull-view.js",
+    "same-work.js",
+    "carried-approvals.js",
     "review-frame.js",
     "pr_block.py",
     "review-prompts.js",

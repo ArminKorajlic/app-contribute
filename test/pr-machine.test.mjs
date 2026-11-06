@@ -12,7 +12,9 @@ const SPACE = {
   role: ['author', 'reviewer'], lifecycle: ['draft', 'open', 'unknown'], checks: ['pass', 'fail', 'pending', 'none', 'unknown'],
   mergeable: ['yes', 'conflict', 'unknown'], permission: ['READ', 'WRITE', 'MAINTAIN'],
   reviews: [[], [{ by: 'sam', state: 'APPROVED', commit: 'h2' }], [{ by: 'sam', state: 'APPROVED', commit: 'h1' }],
-    [{ by: 'sam', state: 'CHANGES_REQUESTED', commit: 'h1' }], [{ by: 'qa-bot', state: 'APPROVED', commit: 'h2', bot: true }]],
+    [{ by: 'sam', state: 'CHANGES_REQUESTED', commit: 'h1' }], [{ by: 'qa-bot', state: 'APPROVED', commit: 'h2', bot: true }],
+    [{ by: 'sam', state: 'APPROVED', commit: 'h1', sameWork: true }], [{ by: 'sam', state: 'APPROVED', commit: 'h1', sameWork: false }],
+    [{ by: 'sam', state: 'CHANGES_REQUESTED', commit: 'h1' }, { by: 'sam', state: 'COMMENTED', commit: 'h2' }], [{ by: 'qa-bot', state: 'COMMENTED', commit: 'h2', bot: true }]],
   myReview: [null, { state: 'APPROVED', commit: 'h2' }, { state: 'CHANGES_REQUESTED', commit: 'h1' }],
   job: [null, { state: 'running' }, { state: 'stalled' }],
   outbox: [null, { head: 'h2', state: 'drafted' }, { head: 'h2', state: 'unconfirmed' }],
@@ -22,10 +24,10 @@ const SPACE = {
 const sweep = () => Object.entries(SPACE).reduce((combos, [key, values]) => combos.flatMap(facts => values.map(value => ({ ...facts, [key]: value }))),
   [{ head: 'h2', openThreads: 0 }]).map(facts => ({ ...facts, author: facts.role === 'author' ? 'alex' : 'sam' }))
 
-const otherApprovedThisVersion = facts => facts.reviews.some(review => review.state === 'APPROVED' && review.commit === facts.head && !review.bot && review.by !== facts.author)
+const otherApprovedThisVersion = facts => facts.reviews.some(review => review.state === 'APPROVED' && (review.commit === facts.head || review.sameWork === true) && !review.bot && review.by !== facts.author)
 const INVARIANTS = {
   'an author never gets a public review action': decision => decision.role !== 'author' || !decision.actions.some(item => ['draft_verdict', 'review', 'take_over'].includes(item.id)),
-  'merge needs someone else’s approval of this version, green or no checks, no conflicts': (decision, facts) => !action(decision, 'merge')?.enabled
+  'merge needs someone else’s approval of this version (or of the same work), green or no checks, no conflicts': (decision, facts) => !action(decision, 'merge')?.enabled
     || (otherApprovedThisVersion(facts) && ['pass', 'none'].includes(facts.checks) && facts.mergeable === 'yes' && facts.lifecycle === 'open'),
   'merge waits while anyone (but a bot) still asks for changes': (decision, facts) => !action(decision, 'merge')?.enabled
     || !facts.reviews.some(review => review.state === 'CHANGES_REQUESTED' && !review.bot && review.by !== facts.author),

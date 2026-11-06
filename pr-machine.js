@@ -12,7 +12,10 @@
 //   - Merging needs an approval of this exact version by someone other than the
 //     author (bots never count), no change request still standing, checks that
 //     pass (or none exist), no conflicts, and nothing unconfirmed on its way out.
-//   - Only new commits bring their PR back for re-review; replies never do.
+//     An approval of an older commit still counts when the fact reader proved the PR's own
+//     change the same (`sameWork`, see same-work.js): a merge of the base is a new commit, not new work.
+//   - Only new commits bring their PR back for re-review; replies never do. A reviewer who looked
+//     again and only commented has not approved: a plain comment never lifts a change request on GitHub.
 //   - One agent job per PR at a time.
 //   - A draft that deals with the open findings (a prepared fix, a ready answer built on them, a verdict
 //     drafted from them) owns them while it waits or is on its way: no agent job starts and the findings are
@@ -31,20 +34,35 @@ function derive(facts) {
   const people = (facts.reviews || []).filter(review => !review.bot && !same(review.by, facts.author))
   const atHead = review => review.commit === facts.head
   const names = test => [...new Map(people.filter(test).map(review => [String(review.by).toLowerCase(), review.by])).values()]
+  // An approval is of this version when it is of this commit, or of the same work (the reader's proof, never guessed here).
+  const approvedHere = review => review.state === 'APPROVED' && (atHead(review) || review.sameWork === true)
   const result = facts.result?.head === facts.head ? facts.result : null
   const outbox = facts.outbox?.head === facts.head ? facts.outbox : null
+  const changesOlder = names(review => review.state === 'CHANGES_REQUESTED' && !atHead(review))
+  const commentedAtHead = names(review => review.state === 'COMMENTED' && atHead(review))
+  // Whose change request is of an older version, but who has looked at this one since and only commented.
+  const lookedAgain = changesOlder.filter(name => commentedAtHead.some(other => same(other, name)))
+  const approvedAtHead = names(approvedHere)
+  const carried = people.filter(review => approvedHere(review) && !atHead(review)).map(review => ({ by: review.by, commit: review.commit }))
+  const approvedOlder = names(review => review.state === 'APPROVED' && !approvedHere(review))
   return {
-    approvedAtHead: names(review => review.state === 'APPROVED' && atHead(review)),
-    approvedOlder: names(review => review.state === 'APPROVED' && !atHead(review)),
+    approvedAtHead,
+    approvedOlder,
+    carried,
+    carriedOnly: approvedAtHead.length > 0 && approvedAtHead.every(name => carried.some(item => same(item.by, name))),
     changesAtHead: names(review => review.state === 'CHANGES_REQUESTED' && atHead(review)),
-    changesOlder: names(review => review.state === 'CHANGES_REQUESTED' && !atHead(review)),
+    changesOlder,
+    lookedAgain,
+    // Who a re-review request can still ask: an older review of theirs that they have not looked past.
+    rereview: [...new Set([...changesOlder, ...approvedOlder])].filter(name => !lookedAgain.includes(name)),
     mine: facts.myReview || null,
     mineAtHead: !!facts.myReview && facts.myReview.commit === facts.head,
     result,
     openFindings: result?.outcome === 'findings' && !result.setAside,
     outbox,
     coveredBy: outbox?.covers ? outbox.kind : '',
-    botFindings: (facts.reviews || []).some(review => review.bot && review.state !== 'APPROVED'),
+    // A bot's change request is something to answer; its plain comment is only conversation, as it always was.
+    botFindings: (facts.reviews || []).some(review => review.bot && !['APPROVED', 'COMMENTED'].includes(review.state)),
   }
 }
 
@@ -67,6 +85,7 @@ export const STATES = {
   'author.blocked': { turn: 'you', label: 'Checks or conflicts', headline: 'Your PR · checks fail or it conflicts. Fix it', next: 'respond' },
   'author.feedback': { turn: 'you', label: 'Feedback to answer', headline: 'Your PR · feedback is waiting. Answer every point', next: 'respond' },
   'author.waiting_rereview': { turn: 'other', label: 'Fixes pushed', headline: 'Your PR · fixes pushed. Waiting on {who} to review again' },
+  'author.looked_again': { turn: 'you', label: 'Looked again · not approved', headline: 'Your PR · {who} looked again and left a comment, but GitHub still holds their change request. Ask for their approval', next: 'ask_approval' },
   'author.approval_stale': { turn: 'other', label: 'Approval is old', headline: 'Your PR · approved on an older version. Waiting on {who} to look again' },
   'author.waiting_review': { turn: 'other', label: 'Waiting on reviewers', headline: 'Your PR · waiting on reviewers' },
   'author.approved_checks': { turn: 'other', label: 'Approved', headline: 'Your PR · approved. {checks}' },
@@ -86,7 +105,12 @@ export const STATES = {
 // A drafted repair is a fix an agent prepared: the same state as any draft, in the words of a push.
 // Only the app sees prepared fixes (the platform's facts never carry an outbox), so this stays here.
 const FIX_WAITING = { label: 'Fix to push', headline: 'A fix is ready. Read it, then push it or don’t' }
-const wordsOf = (key, d) => (key === 'to_confirm' && d.outbox?.kind === 'repair' ? { ...STATES[key], ...FIX_WAITING } : STATES[key])
+// An approval that only carries over says so: "at this version" would be untrue of it.
+const CARRIED_APPROVAL = { headline: 'Your PR · approved by {who}, {green}. The lines you added and removed are the same as when they approved. Merge it' }
+function wordsOf(key, d) {
+  if (key === 'to_confirm' && d.outbox?.kind === 'repair') return { ...STATES[key], ...FIX_WAITING }
+  return key === 'author.approved' && d.carriedOnly ? { ...STATES[key], ...CARRIED_APPROVAL } : STATES[key]
+}
 
 // The state, by a fixed priority: the first match wins.
 function stateOf(facts, d) {
@@ -103,7 +127,7 @@ function authorStanding(facts, d) {
   if (d.openFindings) return 'author.findings'
   if (facts.checks === 'fail' || facts.mergeable === 'conflict') return 'author.blocked'
   if (d.changesAtHead.length || facts.openThreads > 0) return 'author.feedback'
-  if (d.changesOlder.length) return 'author.waiting_rereview'
+  if (d.changesOlder.length) return d.lookedAgain.length ? 'author.looked_again' : 'author.waiting_rereview'
   if (d.approvedAtHead.length) return approvedStanding(facts)
   if (d.approvedOlder.length) return 'author.approval_stale'
   return 'author.waiting_review'
@@ -187,7 +211,10 @@ export const ACTIONS = [
   { id: 'open_for_review', by: 'you', roles: ['author'], title: NAMES.openForReview, when: facts => firstReason(readable(facts), facts.lifecycle === 'draft' ? jobIdle(facts) : 'It is already open for review.') },
   { id: 'back_to_draft', by: 'you', roles: ['author'], title: NAMES.backToDraft, when: facts => firstReason(readable(facts), facts.lifecycle === 'open' ? jobIdle(facts) : 'It is not open for review.') },
   { id: 'ask_rereview', by: 'you', roles: ['author'], title: NAMES.askRereview,
-    when: (facts, d) => (d.changesOlder.length || d.approvedOlder.length ? firstReason(readable(facts), stillOpen(facts)) : 'Nobody reviewed an older version.') },
+    when: (facts, d) => (d.rereview.length ? firstReason(readable(facts), stillOpen(facts))
+      : d.lookedAgain.length ? 'They already looked at this version. Ask them to approve.' : 'Nobody reviewed an older version.') },
+  { id: 'ask_approval', by: 'you', roles: ['author'], title: d => (d.lookedAgain.length ? `Ask ${d.lookedAgain.join(', ')} to approve` : NAMES.askApproval), detail: 'Posts one short note on the PR.',
+    when: (facts, d) => (d.lookedAgain.length ? firstReason(readable(facts), stillOpen(facts)) : 'Nobody has looked again without approving.') },
   { id: 'merge', by: 'you', roles: ['author', 'reviewer'], title: NAMES.merge, when: (facts, d) => mergeBlocker(facts, d) },
   { id: 'close', by: 'you', roles: ['author', 'reviewer'], title: NAMES.closePr, detail: 'Asks you to confirm first.',
     when: facts => firstReason(readable(facts), stillOpen(facts), facts.role === 'author' || mayWrite(facts.permission) ? '' : 'Needs write access.', jobIdle(facts)) },
@@ -197,7 +224,7 @@ export const ACTIONS = [
 ]
 
 // The people a headline names: who approved this version, or whose review is of an older one.
-const headlineWho = (key, d) => ({ 'author.waiting_rereview': d.changesOlder, 'author.approval_stale': d.approvedOlder, 'author.approved': d.approvedAtHead }[key] || [])
+const headlineWho = (key, d) => ({ 'author.waiting_rereview': d.changesOlder, 'author.looked_again': d.lookedAgain, 'author.approval_stale': d.approvedOlder, 'author.approved': d.approvedAtHead }[key] || [])
 
 function headlineFor(key, facts, d) {
   const checks = facts.mergeable === 'yes' ? CHECK_WORDS[facts.checks] || 'Checks are still running.' : CONFLICT_WORDS[facts.mergeable] || CONFLICT_WORDS.unknown
@@ -206,9 +233,10 @@ function headlineFor(key, facts, d) {
 }
 
 // The one entry point: facts in, { role, state, turn, label, headline, next, jobKind, coveredBy, waitingOn, actions,
-// approvedBy, rereviewFrom } out. `jobKind` is the kind of the PR's agent job ('' when none); `coveredBy` the kind of
-// draft that owns the open findings (repair, answer, verdict; '' when none). The last two name people: who approved this version, and
-// whose review is of an older one.
+// approvedBy, carriedFrom, lookedAgain, rereviewFrom } out. `jobKind` is the kind of the PR's agent job ('' when none); `coveredBy` the kind of
+// draft that owns the open findings (repair, answer, verdict; '' when none). The rest name people: who approved this version (carriedFrom:
+// those of them whose approval is of an older commit with the same work, as { by, commit }), who looked again without approving, and whose
+// review is of an older version that they have not looked past.
 export function decide(facts) {
   const d = derive(facts)
   const key = stateOf(facts, d)
@@ -221,7 +249,7 @@ export function decide(facts) {
   const waitingOn = state.turn !== 'other' ? '' : facts.role === 'reviewer' ? facts.author || 'the author' : headlineWho(key, d).join(', ') || 'reviewers'
   const label = state.label.replace('{author}', facts.author || 'the author')
   return { role: facts.role, state: key, turn: state.turn, label, headline: headlineFor(key, facts, d), next: state.next || '', jobKind: facts.job?.kind || '', coveredBy: d.coveredBy, waitingOn, actions,
-    approvedBy: d.approvedAtHead, rereviewFrom: [...new Set([...d.changesOlder, ...d.approvedOlder])] }
+    approvedBy: d.approvedAtHead, carriedFrom: d.carried, lookedAgain: d.lookedAgain, rereviewFrom: d.rereview }
 }
 
 

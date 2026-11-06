@@ -69,9 +69,13 @@ export function PullLabels({ pr }) {
   </>
 }
 
-// Where the PR stands, at the right of its row: draft, and the review decision.
-export function PullStateChips({ pr }) {
-  const decision = { CHANGES_REQUESTED: ['is-blocker', 'Changes requested'], APPROVED: ['is-ready', 'Approved'] }[pr?.reviewDecision]
+// Where the PR stands, at the right of its row: draft, and GitHub's review decision. On your own PR a row says one
+// thing about where it stands: when the PR machine has a chip for it (pr-standing.js chipOf), that chip is the verdict
+// and GitHub's raw decision (which cannot know a reviewer only commented, or that an approval carries over) stays out.
+// The caller passes the chip only for your own PRs: on someone else's, GitHub's decision is information the machine's
+// "Reviewed" does not replace.
+export function PullStateChips({ pr, machineChip = null }) {
+  const decision = machineChip ? null : { CHANGES_REQUESTED: ['is-blocker', 'Changes requested'], APPROVED: ['is-ready', 'Approved'] }[pr?.reviewDecision]
   return <>
     {pr?.isDraft ? <span className="co-desk-chip">Draft</span> : null}
     {decision ? <span className={'co-desk-chip ' + decision[0]}>{decision[1]}</span> : null}

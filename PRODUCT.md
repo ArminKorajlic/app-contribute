@@ -224,8 +224,20 @@ checked over every case and every combination of the facts that matter):
 2. Merge needs an approval of this exact version by someone other than the author (a bot
    never counts), no change request still standing (even on an older version), checks
    that pass or do not exist, no conflicts, nothing unconfirmed on its way to GitHub,
-   and no agent job running. GitHub asking for no review is not an approval.
+   and no agent job running. GitHub asking for no review is not an approval. An approval
+   of an older commit still counts when the PR's own added and removed lines are the same:
+   the fact readers compare each version with the base's current tip (`same-work.js` and
+   `carried-approvals.js` in the app, `contribution_same_work.py` in the platform, held to
+   `test/same-work.cases.json`) and mark the approval `sameWork`. A comparison that cannot say
+   (cut off at 300 files, unreadable, a changed file with no lines) leaves it old; a file
+   with no lines is compared by its content id. Known limit: hunk positions and context are
+   ignored (they move whenever the base does), so a line moved elsewhere in its file still
+   compares as the same, and so does a change only to a file's final newline. Only open PRs in repositories the
+   viewer can write to are compared.
 3. Only new commits bring their PR back for re-review; a reply or a thank-you never does.
+   A reviewer who looked at this version and only commented has not approved: GitHub lifts a
+   change request only on their approval or a dismissal, so the PR reads *Looked again · not
+   approved* and the next step is Ask for approval, one note on the PR naming only them.
 4. One agent job per PR at a time. A job that stalled holds nothing. A Respond to
    feedback conversation counts as the PR's job for as long as it can still move.
 5. Take over is for maintainers only, and needs a reason.
@@ -243,12 +255,12 @@ which pushes the fixes, posts every reply, updates the description and asks for 
 re-review) · Finish it for me (stops before each push for your approval). Their PR:
 Review, which reads Re-review once you reviewed it, with an optional "Merge after I
 approve" switch · Take over, set apart, maintainers only, with a reason. Your own
-actions: Open for review, Back to draft, Ask for re-review, Merge and Close, each
+actions: Open for review, Back to draft, Ask for re-review, Ask for approval, Merge and Close, each
 behind a confirm sheet and each shown only where this Möbius can do it.
 
 **States.** Shared: Merged · Closed · Couldn’t read · Not confirmed · Sending · Draft to
 send · Agent working · Agent asks you · Agent stopped. Your PR: Draft · Ready to open ·
-Findings · Checks or conflicts · Feedback to answer · Waiting on re-review · Approval is
-old · Waiting on reviewers · Approved (checks pending or unknown) · Ready to merge. Their
+Findings · Checks or conflicts · Feedback to answer · Waiting on re-review · Looked again,
+not approved · Approval is old · Waiting on reviewers · Approved (checks pending or unknown) · Ready to merge. Their
 PR: Draft · To review · Review ready · Waiting on the author · New commits · review
 again · Reviewed · Kept private · Ready to merge.

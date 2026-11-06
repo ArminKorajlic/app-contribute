@@ -24,7 +24,7 @@ import { PostFindings } from './PostFindings.jsx'
 import { isPersonalDraft } from '../domain.js'
 import { RunOnce } from './RunOnce.jsx'
 import { YOUR_INTENTS } from '../actions-menu.js'
-import { ACTION_COPY, methodToSend } from '../action-copy.js'
+import { ACTION_COPY, approvalNote, methodToSend } from '../action-copy.js'
 import { projectUpdater } from '../updates.js'
 import { NAMES } from '../names.js'
 import { SearchField } from './SearchField.jsx'
@@ -581,6 +581,10 @@ export function PullRequests({ appId, token, project, conn, onChanged, onReviewP
     back_to_draft: ({ pr }) => pullAction(token, appId, pr, 'draft'),
     close: ({ pr }) => pullAction(token, appId, pr, 'close'),
     ask_rereview: ({ pr }) => pullAction(token, appId, pr, 'request-reviewers', { reviewers: standingOf(pr).rereviewFrom }),
+    ask_approval: ({ pr }) => {
+      const people = standingOf(pr).lookedAgain
+      return pullAction(token, appId, pr, 'ask-approval', { people, note: approvalNote(pr, people) })
+    },
   }
   const closeAction = () => setActing(null)
   // A merge changes the list (the PR leaves it), so it reads again once done.
@@ -675,7 +679,7 @@ export function PullRequests({ appId, token, project, conn, onChanged, onReviewP
           </div>
           <div className="co-pr-labels"><PullLabels pr={pr} /></div>
           <div className="co-row-pills">
-            <PullStateChips pr={pr} />
+            <PullStateChips pr={pr} machineChip={standing.role === 'author' ? review.chip : null} />
             {requestedKeys.has(key) ? <span className="co-pr-requested">Your review requested</span> : null}
             {review.chip ? <button className={'co-pr-agent-state' + CHIP_TONE_CLASS[review.chip.tone]} onClick={() => status && !onOpenPage ? task?.open(`task:run:${status.run.id}`) : onOpenPage ? onOpenPage(pr, 'review') : inspect(pr)}><Icon name="prepare" size={13} />{review.chip.label}</button> : null}
           </div>

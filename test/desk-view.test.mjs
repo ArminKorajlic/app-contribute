@@ -215,7 +215,7 @@ test('list labels are filled pills like the PR page, two at most, and a bot says
       import { renderToStaticMarkup } from 'react-dom/server'
       import { PullLabels, PullStateChips } from './ui/GithubParts.jsx'
       export const labels = pr => renderToStaticMarkup(React.createElement(PullLabels, { pr }))
-      export const chips = pr => renderToStaticMarkup(React.createElement(PullStateChips, { pr }))
+      export const chips = (pr, machineChip) => renderToStaticMarkup(React.createElement(PullStateChips, { pr, machineChip }))
     `)
     return mod
   })()
@@ -232,6 +232,11 @@ test('list labels are filled pills like the PR page, two at most, and a bot says
   const chips = html.chips({ isDraft: true, reviewDecision: 'APPROVED' })
   assert.match(chips, /co-desk-chip">Draft</)
   assert.match(chips, /co-desk-chip is-ready">Approved</)
+  // One verdict per row: once the PR machine has its own chip, GitHub's raw decision is not shown beside it.
+  const contradicting = html.chips({ reviewDecision: 'CHANGES_REQUESTED' }, { label: 'Fixes pushed', tone: 'waiting' })
+  assert.doesNotMatch(contradicting, /Changes requested/)
+  assert.match(html.chips({ reviewDecision: 'CHANGES_REQUESTED' }, null), /co-desk-chip is-blocker">Changes requested</)
+  assert.match(html.chips({ isDraft: true, reviewDecision: 'APPROVED' }, { label: 'Ready to merge', tone: 'owner' }), /co-desk-chip">Draft</)
 })
 
 test('rows keep their checkbox and Assign out of sight until wanted, and the header checkbox stays', () => {
@@ -254,7 +259,7 @@ test('state chips sit beside the title, and the hover Assign is an icon so the r
 
 test('a row reads title, facts, labels, then pills, each on its own line, in list rows and desk rows', () => {
   const list = readFileSync(new URL('../ui/PullRequests.jsx', import.meta.url), 'utf8')
-  assert.match(list, /<div className="co-pr-meta">[\s\S]*?<\/div>\s*<div className="co-pr-labels"><PullLabels pr=\{pr\} \/><\/div>\s*<div className="co-row-pills">\s*<PullStateChips pr=\{pr\} \/>/)
+  assert.match(list, /<div className="co-pr-meta">[\s\S]*?<\/div>\s*<div className="co-pr-labels"><PullLabels pr=\{pr\} \/><\/div>\s*<div className="co-row-pills">\s*<PullStateChips pr=\{pr\} machineChip=\{standing\.role === 'author' \? review\.chip : null\} \/>/)
   const desk = readFileSync(new URL('../ui/DeskViews.jsx', import.meta.url), 'utf8')
   assert.match(desk, /<\/span>\s*<span className="co-pr-labels"><PullLabels pr=\{pr\} \/><\/span>\s*\{chip \|\| standingChip \? <span className="co-row-pills">/)
   // The facts line holds no pill: the chip that says whose turn it is lives on the pills line.

@@ -10,7 +10,7 @@ import { frameOf } from './pr-standing.js'
 // (its confirm sheet or review window); 'review' opens the Review tab, where the
 // verdict card, the draft and the stopped run live; 'sync' reads GitHub again.
 const ROUTES = {
-  check_my_pr: 'menu', respond: 'menu', review: 'menu', open_for_review: 'menu', merge: 'menu',
+  check_my_pr: 'menu', respond: 'menu', review: 'menu', open_for_review: 'menu', merge: 'menu', ask_approval: 'menu',
   rerun_job: 'menu',
   draft_verdict: 'review', send_draft: 'review', check_github: 'review',
   retry: 'sync',
