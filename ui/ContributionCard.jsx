@@ -25,7 +25,7 @@ import {
   isAutopilotResponding,
   needsHuman,
 } from '../autopilot.js'
-import { needsSourceRefresh, reviewIncomplete as recordReviewIncomplete, sendNeedsAttention } from '../send-readiness.js'
+import { needsSourceRefresh, reviewCheckBlocker, reviewIncomplete as recordReviewIncomplete, sendNeedsAttention } from '../send-readiness.js'
 import { FileDiffList } from './FileDiffList.jsx'
 import { MarkdownView } from './MarkdownView.jsx'
 import { useScreenshots } from './useScreenshots.js'
@@ -561,6 +561,7 @@ function ReviewActions({
   const isPr = rec.plan?.action === 'pr' || rec.type === 'pr'
   const isUpdate = rec.plan?.action === 'pr_update'
   const blocked = needsSourceRefresh(reviewState)
+  const checkBlocker = reviewCheckBlocker(reviewState)
   // A failed publication needs the source-aware agent recovery above this
   // action row. Do not offer the same blind GitHub mutation again while its
   // cause is unresolved.
@@ -577,7 +578,7 @@ function ReviewActions({
   }, [confirmingDismiss])
 
   async function send() {
-    if (!isPr || blocked || submitFailed || reviewIncomplete) return
+    if (!isPr || blocked || checkBlocker || submitFailed || reviewIncomplete) return
     setSending(true)
     setAccepted(true)
     setSendNote(null)
@@ -709,7 +710,7 @@ function ReviewActions({
                 <button
                   type="button"
                   className={'co-icon-btn co-send-btn is-primary' + (sending ? ' is-sending' : '')}
-                  disabled={sending}
+                  disabled={sending || Boolean(checkBlocker)}
                   onClick={send}
                   aria-busy={sending}
                   aria-label={sending
@@ -768,6 +769,9 @@ function ReviewActions({
         <p className="co-review-note">
           Requests stay connected to their source conversation, where you can refine or publish them with the full context intact.
         </p>
+      ) : null}
+      {checkBlocker && isPr && !blocked && !reviewIncomplete && !submitFailed ? (
+        <p className="co-review-note" role="status">{checkBlocker}</p>
       ) : null}
       {sendNote && (
         <p className="co-review-note" role="status" aria-live="polite">{sendNote}</p>

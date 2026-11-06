@@ -25,11 +25,13 @@ test('review status indexes only recognized verdicts', () => {
     records: [
       { id: 'ready', state: 'ready' },
       { id: 'stale', state: 'needs_refresh' },
+      { id: 'unchecked', state: 'unavailable', code: 'github_reconnect' },
       { id: 'future', state: 'maybe' },
       null,
     ],
   })
-  assert.deepEqual(Object.keys(indexed.byId), ['ready', 'stale'])
+  assert.deepEqual(Object.keys(indexed.byId), ['ready', 'stale', 'unchecked'])
+  assert.equal(indexed.byId.unchecked.code, 'github_reconnect')
   assert.equal(indexed.checkedAt, '2026-07-15T02:00:00Z')
 })
 

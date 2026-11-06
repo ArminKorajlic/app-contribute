@@ -74,7 +74,7 @@ export function indexReviewStatus(payload) {
   const rows = Array.isArray(payload?.records) ? payload.records : []
   for (const row of rows) {
     if (!row || typeof row.id !== 'string' || !row.id) continue
-    if (row.state !== 'ready' && row.state !== 'needs_refresh') continue
+    if (!['ready', 'needs_refresh', 'unavailable'].includes(row.state)) continue
     byId[row.id] = {
       state: row.state,
       code: typeof row.code === 'string' ? row.code : '',

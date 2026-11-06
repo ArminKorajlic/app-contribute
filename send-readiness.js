@@ -17,6 +17,15 @@ export function publishedPull(record) {
 export const isPublished = record => PUBLIC_STATUSES.has(record?.status) && Boolean(publishedPull(record))
 
 export const needsSourceRefresh = reviewState => reviewState?.state === 'needs_refresh'
+// A source check that could not finish blocks Send without claiming the source
+// changed. Reconnecting GitHub is the owner's to do, so it is named; any other
+// unavailable check clears on a later check.
+export function reviewCheckBlocker(reviewState) {
+  if (reviewState?.state !== 'unavailable') return ''
+  return reviewState.code === 'github_reconnect'
+    ? 'Reconnect GitHub in Möbius Settings → Accounts, then send again.'
+    : 'This review could not be checked right now. Refresh Contribute to try again.'
+}
 export const sendNeedsAttention = record => Boolean(record?.last_submit_error) || record?.needs_attention === true
 export const reviewIncomplete = record => qualityReviewFor(record).state !== 'all_clear'
 
@@ -31,6 +40,8 @@ export function sendBlocker(record, reviewState, { requireCheck = false } = {}) 
   if (needsSourceRefresh(reviewState)) return 'The reviewed source changed. Refresh it in Contribute.'
   if (sendNeedsAttention(record)) return 'The last send needs attention in Contribute.'
   if (reviewIncomplete(record)) return 'This exact version needs review first.'
+  const unchecked = reviewCheckBlocker(reviewState)
+  if (unchecked) return unchecked
   if (requireCheck && reviewState?.state !== 'ready') return 'This contribution needs a current source check in Contribute.'
   return ''
 }
