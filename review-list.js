@@ -9,7 +9,8 @@ import { ownerChipLabel } from './review-frame.js'
 import { prFlow } from './pr-flow.js'
 
 const FINISHED_EXECUTION = new Set(['completed', 'stopped', 'failed', 'interrupted'])
-const MAX_LIVE_READS = 40
+// GitHub answers one query for this many PRs; a longer history is read in batches.
+const LIVE_READ_BATCH = 40
 const sameLogin = (a, b) => !!a && !!b && String(a).toLowerCase() === String(b).toLowerCase()
 
 export const reviewKey = (repo, number) => `${String(repo).toLowerCase()}#${number}`
@@ -79,16 +80,23 @@ export function reviewCounts(entries) {
   return { waiting: count('waiting'), confirm: entries.filter(entry => entry.confirm).length, running: count('running'), stalled: count('stalled'), done: count('done') }
 }
 
-// One read of the live state of the PRs a review could still be waiting on.
-export async function loadReviewPulls(token, refs) {
-  const wanted = refs.filter(ref => /^[\w.-]+\/[\w.-]+$/.test(ref.repo) && Number.isSafeInteger(ref.number) && ref.number > 0).slice(0, MAX_LIVE_READS)
-  if (!wanted.length) return new Map()
-  const reads = wanted.map((ref, index) => {
+// One read of the live state of the PRs a review could still be waiting on: every valid
+// reference, in bounded batches that are combined. A batch GitHub cannot answer fails the whole
+// read, so a long history is never half-read and then treated as complete.
+async function readReviewBatch(token, batch) {
+  const reads = batch.map((ref, index) => {
     const [owner, name] = ref.repo.split('/')
     return `p${index}:repository(owner:${JSON.stringify(owner)},name:${JSON.stringify(name)}) { pullRequest(number:${ref.number}) { state headRefOid author { login } } }`
   })
   const data = await fetchLiveStates(token, `query ContributeReviewPulls { ${reads.join(' ')} }`)
   if (!data) throw new Error('Could not read the pull requests. Try again.')
-  const live = wanted.map((ref, index) => [reviewKey(ref.repo, ref.number), data[`p${index}`]?.pullRequest])
-  return new Map(live.filter(([, pr]) => pr).map(([id, pr]) => [id, { state: pr.state, head: pr.headRefOid, author: pr.author?.login || '' }]))
+  const live = batch.map((ref, index) => [reviewKey(ref.repo, ref.number), data[`p${index}`]?.pullRequest])
+  return live.filter(([, pr]) => pr).map(([id, pr]) => [id, { state: pr.state, head: pr.headRefOid, author: pr.author?.login || '' }])
+}
+
+export async function loadReviewPulls(token, refs) {
+  const wanted = refs.filter(ref => /^[\w.-]+\/[\w.-]+$/.test(ref.repo) && Number.isSafeInteger(ref.number) && ref.number > 0)
+  const found = []
+  for (let from = 0; from < wanted.length; from += LIVE_READ_BATCH) found.push(...await readReviewBatch(token, wanted.slice(from, from + LIVE_READ_BATCH)))
+  return new Map(found)
 }

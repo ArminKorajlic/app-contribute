@@ -100,6 +100,26 @@ test('the live read is one query for valid PRs only, and answers by PR', async (
   } finally { globalThis.fetch = previous }
 })
 
+test('a long review history is read in bounded batches and combined, never cut off after the first 40', async () => {
+  const queries = []
+  const previous = globalThis.fetch
+  // Every alias in a query is answered with its own PR: number n is OPEN at head h<n>.
+  const answer = query => Object.fromEntries([...query.matchAll(/(p\d+):repository\(owner:"o",name:"r"\) \{ pullRequest\(number:(\d+)\)/g)]
+    .map(([, alias, number]) => [alias, { pullRequest: { state: 'OPEN', headRefOid: `h${number}`, author: { login: 'someone-else' } } }]))
+  globalThis.fetch = async (url, options) => { const { query } = JSON.parse(options.body); queries.push(query); return { ok: true, json: async () => ({ data: answer(query) }) } }
+  try {
+    const refs = Array.from({ length: 85 }, (_, index) => ({ repo: 'o/r', number: index + 1 }))
+    const live = await loadReviewPulls('token', refs)
+    assert.deepEqual(queries.map(query => (query.match(/p\d+:repository/g) || []).length), [40, 40, 5], 'bounded batches, no PR dropped')
+    assert.equal(live.size, 85, 'every valid reference has its live state')
+    assert.deepEqual(live.get('o/r#85'), { state: 'OPEN', head: 'h85', author: 'someone-else' }, 'including the ones past the first 40')
+    // One batch GitHub cannot answer fails the whole read: a half-read history is never taken for a complete one.
+    let calls = 0
+    globalThis.fetch = async (url, options) => { calls += 1; return calls === 2 ? { ok: false } : { ok: true, json: async () => ({ data: answer(JSON.parse(options.body).query) }) } }
+    await assert.rejects(() => loadReviewPulls('token', refs), /Could not read/)
+  } finally { globalThis.fetch = previous }
+})
+
 test('PR reviews is a view of its own: its badge counts what waits on you, a spinner marks agents at work', () => {
   assert.ok(DESK_VIEWS.some(view => view.key === 'reviews' && view.label === 'PR reviews'))
   assert.equal(railBadge('reviews', { reviewsWaiting: 2 }), 2)
