@@ -104,6 +104,23 @@ export function reviewStateFor(rec, reviewStatus) {
   return reviewStatus?.byId?.[rec?.id] || null
 }
 
+// A source check that could not finish blocks Send without claiming the source
+// changed or that the work needs another review. Reconnecting GitHub is the
+// owner's to do, so it is named; any other unavailable check clears on its own.
+export function reviewCheckBlocker(reviewState) {
+  if (reviewState?.state !== 'unavailable') return ''
+  return reviewState.code === 'github_reconnect'
+    ? 'Reconnect GitHub in Möbius Settings → Accounts, then send again.'
+    : 'The source could not be checked just now. Try again in a few minutes.'
+}
+
+// Reviewed work whose only gap is a check that could not run. An agent review
+// cannot fix that, so it is never queued for one.
+function awaitingSourceCheck(rec, reviewStatus) {
+  return qualityReviewFor(rec).state === 'all_clear' &&
+    Boolean(reviewCheckBlocker(reviewStateFor(rec, reviewStatus)))
+}
+
 const QUALITY_REVIEW_STATES = new Set([
   'queued', 'reviewing', 'changes_needed', 'all_clear',
 ])
@@ -309,7 +326,7 @@ export function recoveryReviewAction(rec) {
 export function contributionsNeedingReviewAction(records, reviewStatus) {
   return (Array.isArray(records) ? records : []).filter((rec) => {
     if (rec?.type !== 'pr' || rec.status !== 'prepared') return false
-    return !isAllClear(rec, reviewStatus)
+    return !isAllClear(rec, reviewStatus) && !awaitingSourceCheck(rec, reviewStatus)
   })
 }
 
@@ -566,6 +583,7 @@ export function partitionReviewUnits(units, reviewStatus) {
   const readyToSend = []
   const needsReview = []
   const reviewing = []
+  const awaitingCheck = []
   for (const unit of units || []) {
     const records = unit.records || (unit.record ? [unit.record] : [])
     // A prepared child can remain grouped with already-public or merged stack
@@ -580,13 +598,18 @@ export function partitionReviewUnits(units, reviewStatus) {
       needsAttention.push(unit)
     } else if (reviewRecords.some((rec) => ['queued', 'reviewing'].includes(qualityReviewFor(rec).state))) {
       reviewing.push(unit)
-    } else if (!reviewRecords.every((rec) => isAllClear(rec, reviewStatus))) {
-      needsReview.push(unit)
-    } else {
+    } else if (reviewRecords.every((rec) => isAllClear(rec, reviewStatus))) {
       readyToSend.push(unit)
+    } else if (reviewRecords.every((rec) => isAllClear(rec, reviewStatus) || awaitingSourceCheck(rec, reviewStatus))) {
+      // Reviewed work waiting on a check that could not run: name what clears
+      // it instead of queueing a review that cannot help.
+      const unchecked = reviewRecords.find((rec) => awaitingSourceCheck(rec, reviewStatus))
+      awaitingCheck.push({ unit, message: reviewCheckBlocker(reviewStateFor(unchecked, reviewStatus)) })
+    } else {
+      needsReview.push(unit)
     }
   }
-  return { needsAttention, needsReview, reviewing, readyToSend }
+  return { needsAttention, needsReview, reviewing, readyToSend, awaitingCheck }
 }
 
 const REVIEW_INTENT = /^review:([A-Za-z0-9][A-Za-z0-9_.-]{0,127})$/

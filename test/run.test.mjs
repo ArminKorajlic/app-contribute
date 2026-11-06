@@ -352,6 +352,23 @@ test('human-required prepared attention stays in Needs you and outside private w
   assert.equal(run.privateAction, null)
 })
 
+test('reviewed work whose source check could not run names the fix instead of a review', () => {
+  const run = buildContributionRun({
+    records: [prepared('reconnect'), prepared('transient')],
+    reviewStatus: { byId: {
+      reconnect: { state: 'unavailable', code: 'github_reconnect' },
+      transient: { state: 'unavailable', code: 'review_unavailable' },
+    } },
+  })
+
+  assert.deepEqual(run.decisions.map(item => item.kind), ['private_review', 'private_review'])
+  const details = Object.fromEntries(run.decisions.map(item => [item.record.id, item.detail]))
+  assert.match(details.reconnect, /^Reconnect GitHub in Möbius Settings → Accounts/)
+  assert.match(details.transient, /could not be checked just now/)
+  assert.doesNotMatch(Object.values(details).join(' '), /review needed/i)
+  assert.equal(run.privateAction, null)
+})
+
 test('incoming-only project is alignment work, never preparation', () => {
   const run = buildContributionRun({ projects: [{
     key: 'demo', name: 'Demo', canonical_repo: 'owner/demo',

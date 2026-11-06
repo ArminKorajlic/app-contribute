@@ -13,7 +13,7 @@ test('one blocker order serves the workspace card and the chat card', () => {
   assert.equal(sendBlocker(record('a'), { state: 'ready' }, { requireCheck: true }), '')
   assert.match(sendBlocker(record('a'), { state: 'needs_refresh' }), /source changed/)
   assert.match(sendBlocker(record('a'), { state: 'unavailable', code: 'github_reconnect' }), /Reconnect GitHub in Möbius Settings/)
-  assert.match(sendBlocker(record('a'), { state: 'unavailable', code: 'review_unavailable' }, { requireCheck: true }), /could not be checked right now/)
+  assert.match(sendBlocker(record('a'), { state: 'unavailable', code: 'review_unavailable' }, { requireCheck: true }), /could not be checked just now/)
   assert.match(sendBlocker(record('a', { record: { last_submit_error: 'x' } }), null), /last send/)
   assert.match(sendBlocker(record('a', { record: { quality_review: {} } }), null), /needs review first/)
   assert.match(sendBlocker(record('a', { record: { status: 'abandoned' } }), null), /dismissed/)

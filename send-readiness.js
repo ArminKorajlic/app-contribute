@@ -1,7 +1,7 @@
 // One readiness model for every Send surface: which publication unit owns a
 // record, whether its next phase can be sent now, and why not. Pure; the
 // guarded Send handlers in index.jsx remain the only publication path.
-import { qualityReviewFor, reviewStateFor } from './review.js'
+import { qualityReviewFor, reviewCheckBlocker, reviewStateFor } from './review.js'
 import { publicationStackUnit, stackIntent, stackPublicationRecords, stackReadiness } from './stack.js'
 
 const PUBLIC_STATUSES = new Set(['draft', 'open', 'landing', 'merged', 'closed'])
@@ -17,15 +17,6 @@ export function publishedPull(record) {
 export const isPublished = record => PUBLIC_STATUSES.has(record?.status) && Boolean(publishedPull(record))
 
 export const needsSourceRefresh = reviewState => reviewState?.state === 'needs_refresh'
-// A source check that could not finish blocks Send without claiming the source
-// changed. Reconnecting GitHub is the owner's to do, so it is named; any other
-// unavailable check clears on a later check.
-export function reviewCheckBlocker(reviewState) {
-  if (reviewState?.state !== 'unavailable') return ''
-  return reviewState.code === 'github_reconnect'
-    ? 'Reconnect GitHub in Möbius Settings → Accounts, then send again.'
-    : 'This review could not be checked right now. Refresh Contribute to try again.'
-}
 export const sendNeedsAttention = record => Boolean(record?.last_submit_error) || record?.needs_attention === true
 export const reviewIncomplete = record => qualityReviewFor(record).state !== 'all_clear'
 

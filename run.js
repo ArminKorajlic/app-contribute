@@ -419,6 +419,11 @@ export function buildContributionRun({
       detail: `Private review needed · ${unitRepo(unit)}`,
     }))
   }
+  for (const { unit, message } of partition.awaitingCheck) {
+    decisions.push(decision('private_review', unit, byRepo, {
+      detail: `${message} · ${unitRepo(unit)}`,
+    }))
+  }
   for (const { unit, readiness } of structurallyBlocked) {
     decisions.push(decision('private_review', unit, byRepo, {
       detail: `${readiness.message || 'This pull-request chain needs repair.'} · ${unitRepo(unit)}`,

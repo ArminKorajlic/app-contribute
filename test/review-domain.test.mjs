@@ -7,6 +7,7 @@ import {
   indexReviewStatus,
   isContributionCycleChat,
   partitionReviewUnits,
+  progressReviewAction,
   reviewStateFor,
 } from '../review.js'
 
@@ -68,15 +69,40 @@ test('feed and batch actions share one review partition', () => {
       type: 'stack', id: 'stack',
       records: [{ id: 'stack-1', status: 'open' }, clear('stack-2')],
     },
+    { type: 'record', id: 'unchecked', record: clear('unchecked'), records: [clear('unchecked')] },
+    {
+      type: 'stack', id: 'unchecked-stack',
+      records: [clear('unchecked-1'), { ...clear('unchecked-2'), quality_review: {} }],
+    },
   ]
   const partition = partitionReviewUnits(units, { byId: {
     ready: { state: 'ready' },
     blocked: { state: 'needs_refresh' },
     attention: { state: 'ready' },
     'stack-2': { state: 'ready' },
+    unchecked: { state: 'unavailable', code: 'github_reconnect' },
+    'unchecked-1': { state: 'unavailable', code: 'review_unavailable' },
+    'unchecked-2': { state: 'ready' },
   } })
   assert.deepEqual(partition.needsAttention.map((unit) => unit.id), ['blocked', 'attention'])
   assert.deepEqual(partition.readyToSend.map((unit) => unit.id), ['ready', 'stack'])
+  // Only reviewed work waits on the check; a layer still needing review is review work.
+  assert.deepEqual(partition.awaitingCheck.map(({ unit }) => unit.id), ['unchecked'])
+  assert.match(partition.awaitingCheck[0].message, /^Reconnect GitHub/)
+  assert.deepEqual(partition.needsReview.map((unit) => unit.id), ['unchecked-stack'])
+})
+
+test('a check that could not run never starts a review agent', () => {
+  const pr = (id, review) => ({ ...clear(id), type: 'pr', ...(review ? { quality_review: review } : {}) })
+  const status = { byId: {
+    unchecked: { state: 'unavailable', code: 'github_reconnect' },
+    unreviewed: { state: 'unavailable', code: 'review_unavailable' },
+  } }
+  assert.equal(progressReviewAction([pr('unchecked')], status), null)
+  const action = progressReviewAction([pr('unchecked'), pr('unreviewed', {})], status)
+  assert.equal(action.count, 1)
+  assert.match(action.draft, /complete the quality review \(unreviewed\)/)
+  assert.doesNotMatch(action.draft, /\(unchecked\)/)
 })
 
 test('address all includes active blockers, not history or healthy public work', () => {
