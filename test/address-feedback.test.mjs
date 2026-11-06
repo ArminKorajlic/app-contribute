@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { readFileSync } from 'node:fs'
 import { addressBrief, addressItems, RUNGS } from '../address-feedback.js'
 
 const pr = { number: 120, title: 'Put what needs you first', url: 'https://github.com/o/r/pull/120', headRefName: 'feature', baseRefName: 'main', headRefOid: 'abcdef1234567', author: { login: 'owner' }, repository: { nameWithOwner: 'o/r' } }
@@ -93,4 +94,11 @@ test('the Address feedback window names the default agent the way the review win
   assert.match(source, /previewWorkflow\(token, appId, requestOptions\(reviewOptions\(/)
   assert.match(source, /setDefaultChoice\(preview\?\.options\?\.choice \|\| null\)/)
   assert.match(source, /<AgentModelSettings token=\{token\} choice=\{agent\} defaultChoice=\{defaultChoice\}/)
+})
+
+test('the window reads the whole conversation and every thread, never just the first page', () => {
+  const source = readFileSync(new URL('../ui/AddressFeedback.jsx', import.meta.url), 'utf8')
+  assert.match(source, /loadAllPullActivity\(/)
+  assert.match(source, /loadAllPullThreads\(/)
+  assert.doesNotMatch(source, /\bloadPullActivity\(|\bloadPullThreads\(/)
 })
