@@ -71,8 +71,9 @@ Change as its item (Change also names any screenshots the PR will
 publish); nothing is sent before Confirm,
 and the server refuses if a record changed after that snapshot. Independent
 contributions are sent in parallel; a stack's layers are sent in order. A lost
-response keeps that card locked (it reads the result, it never resends) until
-Contribute shows the outcome. The card is not approval: do not describe a
+response keeps that card locked as **Checking GitHub** (it re-reads the
+result by itself, it never resends) until Contribute shows the outcome. Once
+sent, each row links its pull request and the header says what happened. The card is not approval: do not describe a
 printed card as sent or approved, and do not send the same work again yourself
 while the card owns it.
 

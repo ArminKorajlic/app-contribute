@@ -360,11 +360,24 @@ card never sends, including when the binding disappears between Confirm and the
 write.
 The action covers every record the card lists or none: if one listed record
 is neither already published nor in the exact phase Confirm would send (a
-stack layer due in a later phase included), the action stays disabled and its
-note names that record and why. Independent units are sent in parallel; a stack's
+stack layer due in a later phase included), the action becomes **Open Contribute** and its
+one-line note names that record and why. Independent units are sent in parallel; a stack's
 layers in order. Only
 attempts whose outcome is unknown survive a reload, as a bounded checkpoint of
 ids, and lock their unit until a read shows the result.
+
+After Confirm the card reports calm state through the host's row and title
+fields: each row shows **Sending** with a spinner, then its pull request
+(`#123 ↗`, opening GitHub) and state pill (Open, Draft, Merged, Closed), and
+the header changes to "Sending N contributions", "N pull requests opened" (or
+"N contributions sent" when a row updated an existing PR) or "M of N sent".
+An outcome that is not confirmed yet shows **Checking GitHub** on its row and a
+disabled **Checking…**; the card re-reads it by itself (exact reads and the
+app's card refresh, with backoff) for ten minutes after the send, then says
+**Not confirmed** and offers only **Open Contribute**. It never resends. A row
+whose send failed shows **Not sent** and its one-line reason; the action is
+**Retry** when the guarded send path accepts those records again (the sent
+rows are never resent), otherwise **Open Contribute**.
 
 The card (`"expand": false`, so no inline app view) has one item per
 contribution: its title opens that entry (`review:<id>`) and its facts are

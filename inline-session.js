@@ -6,7 +6,13 @@
 // Each Confirm creates immutable attempts, one per independent unit. Units run
 // in parallel; a stack's layers are sent in order by its one stack request.
 // Only attempts whose outcome is unknown cross a reload, and they lock their
-// unit until a read-only observation proves the result.
+// unit until a read-only observation proves the result. While one is unknown
+// the card re-reads on its own (exact reads and the app's refresh), with
+// backoff, for RECHECK_WINDOW_MS after the send; it never sends again.
+//
+// The card reports calm state to the host: a live title, and per row a status
+// pill, the pull request link once published, and one short reason when a
+// send failed (building-apps.md "Passive block sessions").
 import { sendTarget } from './chat-blocks.js'
 import { planScreenshots, screenshotCountText } from './domain.js'
 import { isPublished, publicationUnits, publishedPull, sendBlocker } from './send-readiness.js'
@@ -18,7 +24,17 @@ const text = (value, max = 500) => String(value ?? '').trim().slice(0, max)
 const CHECKPOINT_BYTES = 32768
 const MAX_ATTEMPTS = 24
 const UNRESOLVED = new Set(['sending', 'unknown'])
-const UNKNOWN_NOTE = 'The result is not confirmed yet. Check Contribute before trying again.'
+const UNKNOWN_NOTE = 'GitHub hasn’t confirmed the result yet.'
+// Rechecks of an unknown outcome: quick at first, then once a minute, for ten
+// minutes after the send. After that the row says "Not confirmed" and the
+// card opens Contribute; nothing is ever retried blindly.
+export const RECHECK_DELAYS_MS = [3000, 6000, 12000, 24000, 45000, 60000]
+export const RECHECK_WINDOW_MS = 10 * 60 * 1000
+const PULL_STATUS = { draft: ['Draft', 'neutral'], open: ['Open', 'success'], landing: ['Open', 'success'], merged: ['Merged', 'neutral'], closed: ['Closed', 'neutral'] }
+// A pending recheck never keeps a process alive on its own (Node's unref);
+// in a browser frame it is an ordinary timeout.
+const DEFAULT_TIMERS = { set: (fn, ms) => { const id = setTimeout(fn, ms); id?.unref?.(); return id }, clear: id => clearTimeout(id) }
+const plural = (count, one, many) => `${count} ${count === 1 ? one : many}`
 export const LEDGER_NOTE = 'Could not read every contribution. Open Contribute to send.'
 export const TIMEOUT_NOTE = 'Contribute didn’t answer in time. Try again.'
 export const REFRESH_FAILED_NOTE = 'Contribute couldn’t check this right now. Try again.'
@@ -121,9 +137,8 @@ export const DEFERRED_NOTE = 'It is sent after the layers before it. Open Contri
 export const SIZE_NOTE = 'This contribution needs a fresh check in Contribute before it can be sent: its change size is missing.'
 const confirmable = record => !relayed(record) && sized(record) && identified(record)
 
-const PUBLIC_LABELS = { draft: 'Draft', open: 'Open', landing: 'Open', merged: 'Merged', closed: 'Closed' }
-
-export function createInlineSession({ sessionId, actions, items = null, checkpoint = null, retain = false, recoveryError = false, publish, loadExact, onNeedRuntime }) {
+export function createInlineSession({ sessionId, actions, items = null, checkpoint = null, retain = false, recoveryError = false, publish, loadExact, onNeedRuntime,
+  timers = DEFAULT_TIMERS, now = () => Date.now() }) {
   const advertised = [...new Map((actions || []).filter(item => typeof item?.key === 'string').map(item => [item.key, item])).values()]
   // The card's items name its records; its one action covers exactly them.
   const targets = new Map(advertised.map(item => [item.key, sendTarget(item.key, items)]))
@@ -158,6 +173,11 @@ export function createInlineSession({ sessionId, actions, items = null, checkpoi
   let frozen = null // { key, units } — the exact snapshot the owner confirms
   let ackNonce = null
   let alive = true
+  let recheckTimer = null
+  let rechecks = 0
+  // The host's row intents; a row reports state only for a record it lists.
+  const rowIntents = new Set((Array.isArray(items) ? items : []).map(item => item?.intent).filter(intent => typeof intent === 'string'))
+  const rowOf = id => `review:${id}`
 
   const allIds = () => [...new Set([...advertised.flatMap(item => idsFor(item.key)), ...attempts.flatMap(attempt => attempt.ids)])]
   // Newest saved copy wins between the app's ledger and exact reads.
@@ -239,51 +259,110 @@ export function createInlineSession({ sessionId, actions, items = null, checkpoi
     return `“${name}”: ${reason}`
   }
 
+  // An unknown outcome is still being checked until its window has passed.
+  const checkingAttempt = attempt => attempt.state === 'unknown' && now() - attempt.at < RECHECK_WINDOW_MS
+  const latestAttempt = id => attempts.filter(attempt => attempt.ids.includes(id)).at(-1)
+
   function actionState(item) {
     const key = item.key
     const ids = idsFor(key)
-    const now = current()
-    const records = ids.map(id => now.get(id))
+    const records = ids.map(id => current().get(id))
     const mine = attempts.filter(attempt => attempt.ids.some(id => ids.includes(id)))
     const busy = mine.some(attempt => attempt.state === 'sending')
     const unknown = !busy && mine.some(attempt => attempt.state === 'unknown')
+    // Still checking: a calm, disabled "Checking…". Past the window: Contribute.
+    const checkingResult = unknown && mine.some(checkingAttempt)
     const published = records.length > 0 && records.every(isPublished)
     const failure = published ? null : mine.filter(attempt => ['failed', 'not_attempted'].includes(attempt.state)).at(-1)
     const confirming = frozen?.key === key
     const checking = activating === key
-    const loading = ids.some(id => !now.has(id) && reading.has(id))
+    const loading = ids.some(id => !current().has(id) && reading.has(id))
     // A failed check or read can be retried; retrying only reads again.
     const retry = runtime?.reviewStatus?.state === 'unavailable' || ids.some(id => unreadable.has(id)) || ledgerIncomplete() || checkRetryable(key) || Boolean(refreshNote)
     const reason = fault || blockedReason(key)
-    const label = busy ? 'Contributing…' : checking ? 'Checking…' : loading ? 'Loading…'
-      : unknown && ids.length === 1 ? 'Check again' : retry ? 'Try again' : item.label || 'Contribute'
-    const status = fault ? 'Needs attention' : busy ? 'Contributing' : unknown ? 'Checking result' : failure ? 'Needs attention'
-      : published ? (records.length === 1 ? PUBLIC_LABELS[records[0].status] || 'Sent' : 'Sent')
-      : checking ? 'Checking' : reason ? 'Needs attention' : ''
-    const tone = fault || failure ? 'danger' : unknown || reason ? 'attention' : published ? 'success' : 'neutral'
+    // Nothing can be done from the chat: the control opens Contribute instead.
+    const openOnly = !busy && !checking && !confirming && (Boolean(fault) || unknown && !checkingResult || Boolean(reason) && !retry && !unknown)
+    const label = openOnly ? 'Open Contribute' : busy ? 'Sending…' : checkingResult || checking ? 'Checking…' : loading ? 'Loading…'
+      : retry ? 'Try again' : failure ? 'Retry' : item.label || 'Contribute'
+    // A failure the rows already explain is not repeated under the action.
+    const rowsExplain = ids.some(id => rowIntents.has(rowOf(id)) && rowFailure(id))
     return {
       key, label,
-      disabled: Boolean(fault) || busy || checking || loading || sending() || Boolean(frozen) && !confirming
-        || Boolean(reason) && !retry && !unknown,
-      busy,
+      disabled: !openOnly && (busy || checkingResult || checking || loading || sending() || Boolean(frozen) && !confirming
+        || Boolean(reason) && !retry),
+      busy: busy || checkingResult,
+      open: openOnly,
       confirming,
       confirmation: confirming ? frozen.units.flatMap(unit => unit.ready.map(confirmationItem)) : null,
       hidden: published && !busy && !confirming,
-      note: text(fault || (unknown ? UNKNOWN_NOTE : '') || failure?.note || (activating === key ? '' : refreshNote) || reason),
-      tone, status, statusTone: tone,
-      links: records.filter(isPublished).map(record => ({ label: `View PR #${publishedPull(record).number}`, url: publishedPull(record).url })),
-      badges: records.length === 1 && records[0]?.status === 'prepared' && !reason ? [{ label: 'All clear', tone: 'success' }] : [],
+      // One plain line at most; the row pills carry each contribution's state.
+      note: busy || unknown ? '' : text(fault || (rowsExplain ? '' : failure?.note) || (activating === key ? '' : refreshNote) || reason),
+      tone: 'neutral', status: '', statusTone: 'neutral', links: [], badges: [],
     }
   }
 
-  function summary() {
-    const batch = advertised.find(item => targets.get(item.key)?.kind === 'batch')
-    if (!batch) return ''
+  // This record's last send failed and it is not published.
+  function rowFailure(id) {
+    const attempt = latestAttempt(id)
+    return attempt && ['failed', 'not_attempted'].includes(attempt.state) && !isPublished(current().get(id)) ? attempt : null
+  }
+
+  // One row's live state: sending, checking, its pull request, or why it failed.
+  function rowState(id) {
+    const record = current().get(id)
+    const attempt = latestAttempt(id)
+    if (attempt?.state === 'sending') return { status: 'Sending', busy: true }
+    if (isPublished(record)) {
+      const pull = publishedPull(record)
+      const [status, statusTone] = PULL_STATUS[record.status] || ['Sent', 'success']
+      return { status, statusTone, links: [{ label: `#${pull.number}`, url: pull.url }] }
+    }
+    if (attempt?.state === 'unknown') return checkingAttempt(attempt) ? { status: 'Checking GitHub', busy: true } : { status: 'Not confirmed' }
+    const failed = rowFailure(id)
+    if (failed) return { status: 'Not sent', statusTone: failed.state === 'failed' ? 'danger' : 'neutral', note: text(failed.note, 200) }
+    return null
+  }
+
+  function rows() {
+    return allIds().filter(id => rowIntents.has(rowOf(id)))
+      .flatMap(id => { const state = rowState(id); return state ? [{ intent: rowOf(id), ...state }] : [] }).slice(0, 12)
+  }
+
+  // The header says what happened; until something has, the card keeps its own.
+  function title() {
+    const ids = [...new Set(advertised.flatMap(item => idsFor(item.key)))]
+    if (!ids.length) return ''
     const now = current()
-    const records = idsFor(batch.key).map(id => now.get(id))
+    const records = ids.map(id => now.get(id))
+    if (ids.some(id => ['sending', 'unknown'].includes(latestAttempt(id)?.state) && !isPublished(now.get(id)))) {
+      return `Sending ${plural(ids.length, 'contribution', 'contributions')}`
+    }
     const sent = records.filter(isPublished).length
-    const prepared = records.filter(record => record?.status === 'prepared').length
-    return [sent && `${sent} sent`, prepared && `${prepared} prepared`].filter(Boolean).join(' · ')
+    if (sent < ids.length) return sent ? `${sent} of ${ids.length} sent` : ''
+    // An update to an existing pull request did not open one.
+    if (records.every(record => record.plan?.action === 'pr')) return sent === 1 ? 'Pull request opened' : `${sent} pull requests opened`
+    return sent === 1 ? 'Contribution sent' : `${sent} contributions sent`
+  }
+
+  // Re-read an unknown outcome on a backoff; reads never send.
+  function scheduleRecheck() {
+    if (!alive || recheckTimer !== null) return
+    const open = attempts.filter(checkingAttempt)
+    if (!open.length) return
+    // The last check lands just after the window, so the card then settles on
+    // "Not confirmed" without waiting for another report.
+    const windowLeft = Math.max(0, Math.min(...open.map(attempt => attempt.at + RECHECK_WINDOW_MS - now())))
+    const delay = Math.min(RECHECK_DELAYS_MS[Math.min(rechecks, RECHECK_DELAYS_MS.length - 1)], windowLeft + 50)
+    recheckTimer = timers.set(() => {
+      recheckTimer = null
+      rechecks += 1
+      if (!alive) return
+      const ids = [...new Set(attempts.filter(attempt => attempt.state === 'unknown').flatMap(attempt => attempt.ids))]
+      if (!ids.length) return
+      // The app's own refresh path re-reads the ledger and review status.
+      if (runtime && !runtime.refreshing) Promise.resolve().then(() => runtime.refresh?.()).catch(() => {})
+      void read(ids)
+    }, delay)
   }
 
   function emit() {
@@ -293,10 +372,11 @@ export function createInlineSession({ sessionId, actions, items = null, checkpoi
     if (fault) data = lastCheckpoint?.data ?? null
     if (data !== (lastCheckpoint?.data ?? null)) lastCheckpoint = data ? { id: crypto.randomUUID(), data } : null
     publish({
-      sessionId, actions: advertised.map(actionState), summary: summary(),
+      sessionId, actions: advertised.map(actionState), title: title(), items: rows(),
       retain: Boolean(fault || lastCheckpoint || frozen || activating || sending()),
       checkpoint: lastCheckpoint, checkpointAck, recoveryError: Boolean(fault), ackNonce,
     })
+    scheduleRecheck()
   }
 
   // A preflight that finished without authority: every read for the card is
@@ -373,7 +453,7 @@ export function createInlineSession({ sessionId, actions, items = null, checkpoi
     if (fault || sending() || frozen?.key !== key || !runtime) return
     const approval = frozen
     frozen = null
-    const at = Date.now()
+    const at = now()
     const started = approval.units.map(unit => ({ id: crypto.randomUUID(), unitKey: unit.key, ids: unit.ready.map(record => record.id), at, state: 'sending', note: '' }))
     attempts = [...attempts.filter(attempt => !started.some(next => next.unitKey === attempt.unitKey)), ...started]
     emit() // the unresolved checkpoint is published before any request leaves
@@ -404,6 +484,10 @@ export function createInlineSession({ sessionId, actions, items = null, checkpoi
       emit()
       return true
     },
-    dispose() { alive = false },
+    dispose() {
+      alive = false
+      if (recheckTimer !== null) timers.clear(recheckTimer)
+      recheckTimer = null
+    },
   }
 }
