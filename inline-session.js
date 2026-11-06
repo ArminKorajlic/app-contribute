@@ -201,9 +201,22 @@ export function createInlineSession({ sessionId, actions, items = null, checkpoi
     if (idsFor(key).some(id => relayed(current().get(id)))) return RELAY_NOTE
     const all = units(key)
     if (all.some(unit => unlisted(key, unit))) return UNLISTED_LAYER_NOTE
-    if (readyUnits(key).length) return ''
+    const ready = new Set(readyUnits(key).map(unit => unit.key))
+    // The action covers every record the card lists or none: with some units
+    // ready, one that is neither ready nor already settled holds them all.
+    const held = all.find(unit => !ready.has(unit.key) && (unit.ready.length || unit.reason))
+    if (ready.size) return held ? heldNote(key, held) : ''
     if (all.some(unit => unit.ready.length && !unit.ready.every(sized))) return SIZE_NOTE
     return all.map(unit => unit.reason).find(Boolean) || (all.some(locked) ? UNKNOWN_NOTE : '')
+  }
+
+  // One status line naming the listed item that holds a partly ready card.
+  function heldNote(key, unit) {
+    const record = unit.records.find(member => idsFor(key).includes(member.id) && !isPublished(member)) || unit.records[0]
+    const title = text(record?.plan?.title || record?.title || record?.id, 500)
+    const name = title.length <= 40 ? title : `${title.slice(0, 40).replace(/\s+\S*$/, '')}…`
+    const why = unit.reason || (locked(unit) ? UNKNOWN_NOTE : !unit.ready.every(sized) ? SIZE_NOTE : 'It needs attention in Contribute.')
+    return `“${name}”: ${why}`
   }
 
   function actionState(item) {

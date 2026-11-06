@@ -834,6 +834,31 @@ test('the printed card has one action that reaches Confirm for exactly its items
   assert.deepEqual(one.action(single.actions[0].key).confirmation.map(item => item.title), ['Change one'])
 })
 
+test('Contribute all covers every listed record or none: one that needs attention holds the card and is named', async () => {
+  const ids = ['open-chats', 'media-call']
+  const actions = [{ key: `chat-send-batch:${batchHandle(ids)}`, label: 'Contribute all' }]
+  const blocked = prepared('open-chats', { plan: { title: 'Open chats without duplicate requests from a pull request link' },
+    record: { last_submit_error: 'Push outcome unknown' } })
+  const h = harness({ actions, items: reviewItems(ids), records: [blocked, prepared('media-call')] })
+  await openConfirm(h, actions[0].key)
+  const state = h.action(actions[0].key)
+  assert.equal(state.confirming, false, 'no Confirm for only part of the card')
+  assert.equal(state.confirmation, null)
+  assert.equal(state.disabled, true)
+  assert.equal(state.note, '“Open chats without duplicate requests…”: The last send needs attention in Contribute.')
+  h.fire(actions[0].key, 'confirm'); await tick()
+  assert.equal(h.sends.length, 0, 'nothing is sent')
+
+  // A single-record card keeps its own reason, unnamed.
+  const one = harness({ actions: [{ key: 'chat-send:open-chats' }], records: [blocked] })
+  await openConfirm(one, 'chat-send:open-chats')
+  assert.equal(one.action('chat-send:open-chats').note, 'The last send needs attention in Contribute.')
+  // An already published row does not hold the rest.
+  const sent = harness({ actions, items: reviewItems(ids), records: [published(prepared('open-chats')), prepared('media-call')] })
+  await openConfirm(sent, actions[0].key)
+  assert.deepEqual(sent.action(actions[0].key).confirmation.map(item => item.title), ['Change media-call'])
+})
+
 const SHA = 'e'.repeat(64)
 const shot = (name, alt = name) => ({ name, sha256: SHA, size: 1200, alt })
 

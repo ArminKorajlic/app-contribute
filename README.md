@@ -358,7 +358,10 @@ workspace and passes the confirmed snapshot as `expected_record(s)`; without
 that platform binding the
 card never sends, including when the binding disappears between Confirm and the
 write.
-Independent units are sent in parallel; a stack's layers in order. Only
+The action covers every record the card lists or none: if one listed record
+is neither ready nor already published, the action stays disabled and its note
+names that record and why. Independent units are sent in parallel; a stack's
+layers in order. Only
 attempts whose outcome is unknown survive a reload, as a bounded checkpoint of
 ids, and lock their unit until a read shows the result.
 
