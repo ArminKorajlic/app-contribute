@@ -29,12 +29,15 @@ function checksOf(pr) {
   return CHECKS[checkSummary(pr)?.state] || 'unknown'
 }
 
-// Every opinion GitHub lists. A deleted account reads as "ghost" and a review whose
-// commit is gone (a force-push) keeps an empty commit: it still blocks as a change
-// request and never counts as an approval of this version.
+// Every opinion GitHub lists, or null when the list is not the whole of it: a first page of
+// a longer list could omit a standing change request (which would enable Merge) or the
+// current approval. A deleted account reads as "ghost" and a review whose commit is gone
+// (a force-push) keeps an empty commit: it still blocks as a change request and never
+// counts as an approval of this version.
 function reviewsOf(pr) {
-  const nodes = pr?.latestOpinionatedReviews?.nodes
-  if (!Array.isArray(nodes)) return null
+  const connection = pr?.latestOpinionatedReviews
+  const nodes = connection?.nodes
+  if (!Array.isArray(nodes) || connection.pageInfo?.hasNextPage === true) return null
   return nodes.filter(node => node?.state).map(node => ({
     by: node.author?.login || 'ghost', state: node.state, commit: node.commit?.oid || '', bot: isBot(node.author),
   }))

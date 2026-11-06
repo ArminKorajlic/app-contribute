@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { PR_FIELDS } from '../api.js'
 import { prFacts } from '../pr-facts.js'
 import { decide } from '../pr-machine.js'
 
@@ -82,6 +83,22 @@ test('your own older change request still blocks Merge after a later plain comme
 test('a bot approval never counts, and an unread review list is unknown', () => {
   assert.equal(decideFor(mine({ latestOpinionatedReviews: { nodes: [opinion('qa-bot', 'APPROVED', HEAD, 'Bot')] } })).state, 'author.waiting_review')
   assert.equal(decideFor(mine({ latestOpinionatedReviews: undefined })).state, 'unknown')
+})
+
+test('a review list with another page is unknown: an opinion on the next page must never be missed', () => {
+  const merge = decision => decision.actions.find(action => action.id === 'merge')
+  // The approval is on the first page; a change request from another writer is on the second.
+  const firstPage = { latestOpinionatedReviews: { pageInfo: { hasNextPage: true }, nodes: [opinion('Sam', 'APPROVED')] } }
+  const whole = { latestOpinionatedReviews: { pageInfo: { hasNextPage: false }, nodes: [opinion('Sam', 'APPROVED')] } }
+  assert.equal(decideFor(mine(whole)).state, 'author.approved', 'a list GitHub says is whole is read as it is')
+  assert.equal(merge(decideFor(mine(whole))).enabled, true)
+  for (const pr of [mine(firstPage), pull(firstPage)]) {
+    const decision = decideFor(pr)
+    assert.equal(decision.state, 'unknown', 'a first page of a longer list says nothing about the rest')
+    assert.deepEqual([merge(decision).enabled, merge(decision).reason], [false, 'This PR could not be read. Try again.'])
+  }
+  assert.equal(prFacts({ pr: mine(firstPage), login: 'alex' }).readComplete, false)
+  assert.match(PR_FIELDS, /latestOpinionatedReviews\([^)]*\) \{ pageInfo \{ hasNextPage \}/, 'the read asks GitHub whether the list goes on')
 })
 
 test('open threads on your PR are feedback; a thread you answered last is not', () => {

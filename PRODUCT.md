@@ -224,7 +224,9 @@ checked over every case and every combination of the facts that matter):
    feedback conversation counts as the PR's job for as long as it can still move.
 5. Take over is for maintainers only, and needs a reason.
 6. Unknown stays unknown: missing checks are never green, and a PR that could not be
-   read enables nothing that depends on it.
+   read enables nothing that depends on it. That includes a list of reviews GitHub
+   says goes on past the first page (30 writers): an opinion on the next page could
+   be a change request, so the PR reads as not read.
 
 **Who acts.** Pushing code, merging and changing a PR's status (ready, draft, closed)
 always wait for your own tap. A review verdict waits for your tap ("Draft for me"),
