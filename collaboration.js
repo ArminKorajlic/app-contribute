@@ -280,35 +280,44 @@ export function reviewRunRequest(choice) {
   }
 }
 
+// A public write is only as true as its answer. Of the ways one can end, a decoded receipt for this
+// action proves it happened and a decoded 4xx proves it did not. Everything else may have reached
+// GitHub: the connection dropped before the answer, a gateway or server error, or a "success" whose
+// body is unreadable or is not this action's receipt. That is { pending }, never a plain failure the
+// sheet would offer to retry and never a success it would claim. `receipt` turns the decoded answer
+// into the fields the sheet reads, or null when it is not this action's completion.
+async function publicWrite(token, appId, path, body, { code, words, receipt }) {
+  let result
+  try {
+    result = await collaborationRequest(token, appId, path, body)
+  } catch (error) {
+    if (error.status >= 400 && error.status < 500) return { error: error.message }
+    return { pending: true, error: error.code === code ? error.message : words }
+  }
+  const settled = receipt(result)
+  return settled ? { ok: true, ...settled } : { pending: true, error: words }
+}
+
 // The owner's own Merge: this exact version, by the repository's allowed method.
 // Returns the outcome shape the confirm sheet already reads: { ok } | { pending }
 // (GitHub may have merged; read it back, never repeat) | { error }. The platform
 // re-checks everything at the moment of merging and refuses what GitHub refuses.
-export async function mergePull(token, appId, pr, { method = '' } = {}) {
-  try {
-    const result = await collaborationRequest(token, appId, 'pulls/merge', {
-      repo: pr.repository.nameWithOwner, number: pr.number, head_sha: pr.headRefOid, ...(method ? { method } : {}),
-    })
-    return { ok: true, state: result.state, mergeSha: result.merge_sha || '' }
-  } catch (error) {
-    return error.code === 'merge_unconfirmed' ? { pending: true, error: error.message } : { error: error.message }
-  }
-}
+export const mergePull = (token, appId, pr, { method = '' } = {}) => publicWrite(token, appId, 'pulls/merge', {
+  repo: pr.repository.nameWithOwner, number: pr.number, head_sha: pr.headRefOid, ...(method ? { method } : {}),
+}, {
+  code: 'merge_unconfirmed', words: 'GitHub may have merged it. Check the pull request before trying again.',
+  receipt: result => ['merged', 'queued'].includes(result?.state) ? { state: result.state, mergeSha: result.merge_sha || '' } : null,
+})
 
 // The owner's own "open this draft for review", for a draft Contribute did not open: this exact
-// version, once. Same outcome shapes as mergePull: { ok } | { pending } (GitHub may have done it; read
-// it back, never repeat) | { error }. GitHub cannot pin a version on this write, so the platform reports
-// the head it saw afterwards (observedHead) and the sheet says so if it moved.
-export async function markReadyPull(token, appId, pr) {
-  try {
-    const result = await collaborationRequest(token, appId, 'pulls/ready', {
-      repo: pr.repository.nameWithOwner, number: pr.number, head_sha: pr.headRefOid,
-    })
-    return { ok: true, state: result.state, observedHead: result.observed_head_sha || '' }
-  } catch (error) {
-    return error.code === 'ready_unconfirmed' ? { pending: true, error: error.message } : { error: error.message }
-  }
-}
+// version, once. Same outcome shapes as mergePull. GitHub cannot pin a version on this write, so the
+// platform reports the head it saw afterwards (observedHead) and the sheet says so if it moved.
+export const markReadyPull = (token, appId, pr) => publicWrite(token, appId, 'pulls/ready', {
+  repo: pr.repository.nameWithOwner, number: pr.number, head_sha: pr.headRefOid,
+}, {
+  code: 'ready_unconfirmed', words: 'GitHub may have marked it ready. Check the pull request before trying again.',
+  receipt: result => result?.state === 'ready' && typeof result.observed_head_sha === 'string' ? { state: 'ready', observedHead: result.observed_head_sha } : null,
+})
 
 // What a finished private review would say on GitHub, word for word, with the hash that binds the
 // post to it. Read-only: the platform writes nothing here.
@@ -318,15 +327,12 @@ export const previewPostedFindings = (token, appId, run, item) =>
 
 // Post exactly the previewed words, once, as a plain comment review at the reviewed version. Same
 // outcome shapes as mergePull.
-export async function postFindings(token, appId, run, item, preview) {
-  try {
-    const result = await collaborationRequest(token, appId, `review-runs/${encodeURIComponent(run.id)}/post`,
-      { repo: item.repo, number: item.number, head_sha: item.head_sha, preview_sha256: preview.preview_sha256 })
-    return { ok: true, state: result.state, url: result.url || '' }
-  } catch (error) {
-    return error.code === 'post_unconfirmed' ? { pending: true, error: error.message } : { error: error.message }
-  }
-}
+export const postFindings = (token, appId, run, item, preview) => publicWrite(token, appId,
+  `review-runs/${encodeURIComponent(run.id)}/post`,
+  { repo: item.repo, number: item.number, head_sha: item.head_sha, preview_sha256: preview.preview_sha256 }, {
+    code: 'post_unconfirmed', words: 'GitHub may have posted it. Check the pull request before trying again.',
+    receipt: result => result?.state === 'posted' ? { state: 'posted', url: result.url || '' } : null,
+  })
 
 // Assignment is additive on GitHub. Return each outcome so partial batches
 // never look like an all-or-nothing success or silently retry failed requests.

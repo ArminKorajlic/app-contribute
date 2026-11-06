@@ -511,8 +511,10 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
     merge_now: ({ pr, choice }) => mergePull(token, appId, pr, { method: methodToSend(pr.repository, choice) }),
   }
   const closeAction = () => setActing(null)
-  // A merge changes the list (the PR leaves it), so it reads again once done.
-  const actionDialog = acting ? <ReviewDialog onClose={closeAction}><ActionConfirm pr={acting.pr} copy={ACTION_COPY[acting.intent](acting.pr, { status: statusFor(acting.pr), ignored: ignoredReviews })} onConfirm={({ choice }) => actionHandlers[acting.intent]({ ...acting, choice })} onDone={() => { if (acting.intent === 'merge_now' || !isPersonalDraft(acting.record)) { void load(); void onChanged?.() } }} onClose={closeAction} /></ReviewDialog> : null
+  // A merge changes the list (the PR leaves it), so it reads again once done. A write GitHub may have
+  // taken reads it again too, and the sheet waits for that read before it lets the owner back to the list.
+  const readAgain = () => Promise.allSettled([load(), onChanged?.()])
+  const actionDialog = acting ? <ReviewDialog onClose={closeAction}><ActionConfirm pr={acting.pr} copy={ACTION_COPY[acting.intent](acting.pr, { status: statusFor(acting.pr), ignored: ignoredReviews })} onConfirm={({ choice }) => actionHandlers[acting.intent]({ ...acting, choice })} onDone={() => { if (acting.intent === 'merge_now' || !isPersonalDraft(acting.record)) void readAgain() }} onUnconfirmed={readAgain} onClose={closeAction} /></ReviewDialog> : null
   const assignPane = <TaskPane id="task:assign" dock={false}>{assigning ? <AssigneePicker key={assigning.map(prKey).join(',')} pulls={assigning} appId={appId} token={token} ownLogin={conn.login} onClose={() => { setAssigning(null); task?.close() }} onAssigned={(login, keys) => {
       viewRef.current = acknowledgeAssignment(viewRef.current, keys, login, ++generation.current)
       setView(viewRef.current)
