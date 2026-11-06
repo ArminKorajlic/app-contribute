@@ -44,10 +44,12 @@ function reviewsOf(pr) {
 }
 
 // Threads a person other than you spoke last in (a bot's thread is input, never
-// waiting on you). Null when the threads were not read.
+// waiting on you). Null when the threads were not read, or are only the last page of a
+// longer list: a missed open thread would hide feedback and disable Respond.
 function openThreadsOf(pr, login) {
-  const nodes = pr?.reviewThreads?.nodes
-  if (!Array.isArray(nodes)) return null
+  const connection = pr?.reviewThreads
+  const nodes = connection?.nodes
+  if (!Array.isArray(nodes) || connection.pageInfo?.hasPreviousPage === true) return null
   return nodes.filter(thread => {
     const last = thread?.comments?.nodes?.at(-1)?.author
     return thread && thread.isResolved === false && !isBot(last) && lower(last?.login) !== lower(login)
@@ -172,6 +174,7 @@ export function prFacts({ pr, login, runs = [], ignored = null, chats = [] }) {
     job: jobFor(fromRuns.job, chats, pr),
     result: fromRuns.result,
     outbox: fromRuns.outbox,
-    readComplete: reviews !== null && threads !== null,
+    // Without the connected account, whose PR this is cannot be told: nothing is decided.
+    readComplete: !!login && reviews !== null && threads !== null,
   }
 }

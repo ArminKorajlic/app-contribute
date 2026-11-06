@@ -199,7 +199,7 @@ export const PR_FIELDS = `id number title url state headRefOid headRefName baseR
   reviewDecision mergeable
   latestOpinionatedReviews(first:30, writersOnly:true) { pageInfo { hasNextPage } nodes { state author { login __typename } commit { oid } } }
   viewerLatestReview { state commit { oid } }
-  reviewThreads(last:50) { nodes { isResolved comments(last:1) { nodes { author { login __typename } } } } }`
+  reviewThreads(last:50) { pageInfo { hasPreviousPage } nodes { isResolved comments(last:1) { nodes { author { login __typename } } } } }`
 
 export async function fetchLiveStates(token, query) {
   try {

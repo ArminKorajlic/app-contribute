@@ -131,6 +131,22 @@ test('open threads on your PR are feedback; a thread you answered last is not', 
   assert.equal(decideFor(mine({ reviewThreads: { nodes: [thread('Alex')] } })).state, 'author.waiting_review')
 })
 
+test('threads GitHub says go on are not read as the whole, and neither is a PR with no known viewer', () => {
+  const thread = login => ({ isResolved: false, comments: { nodes: [{ author: { login } }] } })
+  const lastPage = { reviewThreads: { pageInfo: { hasPreviousPage: true }, nodes: [thread('Alex')] } }
+  const whole = { reviewThreads: { pageInfo: { hasPreviousPage: false }, nodes: [thread('Sam')] } }
+  const unread = decideFor(mine(lastPage))
+  assert.equal(unread.state, 'unknown', 'older threads could be waiting on you')
+  assert.equal(unread.actions.find(action => action.id === 'respond').reason, 'This PR could not be read. Try again.')
+  assert.equal(decideFor(mine(whole)).state, 'author.feedback')
+  assert.match(PR_FIELDS, /reviewThreads\([^)]*\) \{ pageInfo \{ hasPreviousPage \}/, 'the read asks GitHub whether the list goes on')
+  for (const login of ['', null, undefined]) {
+    const decision = decide(prFacts({ pr: mine(), login }))
+    assert.equal(decision.state, 'unknown', 'your own PR is never decided as someone else’s')
+    assert.equal(decision.actions.find(action => action.id === 'merge').enabled, false)
+  }
+})
+
 test('a running review on an older version is still the one job on the PR', () => {
   const decision = decideFor(pull(), [run({ state: 'reviewing', head_sha: OLD }, { state: 'running', execution_state: 'running' })])
   assert.equal(decision.state, 'working')
