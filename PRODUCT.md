@@ -160,9 +160,9 @@ the owner, and folds apps with nothing to do.
   Done. Merge asks how it lands only when the repository
   allows more than one way, merges exactly the version shown, and is never
   repeated after an unconfirmed answer. **Only a decoded receipt for the action
-  is a success and only a decoded refusal (a 4xx) is a plain failure.** A lost
-  connection, a server error, an unreadable answer or the wrong receipt may have
-  reached GitHub, so the sheet reads that as unconfirmed: it has the view read
+  is a success and only a decoded refusal (a 4xx whose body can be read) is a plain
+  failure.** A lost connection, a server error, an answer that cannot be read
+  (whatever its status) or the wrong receipt may have reached GitHub, so the sheet reads that as unconfirmed: it has the view read
   GitHub again first, and its button stays off, so another attempt can only
   start from that fresh read. This holds for Merge, Open for review and Post to
   GitHub alike.
@@ -184,8 +184,8 @@ the owner, and folds apps with nothing to do.
   while work is in progress.
 - **PR reviews** (side menu) lists the reviews the owner started, by project, in
   two tabs: **In progress** (waiting on the owner first, then agents at work, then
-  anything stuck) and **Done**. Every PR whose review is not merged is read live,
-  when the list changes and again on every Sync with GitHub, so a closed PR is
+  anything stuck) and **Done**. Every PR whose review is not merged is read live
+  (all of them, in batches of 40), when the list changes and again on every Sync with GitHub, so a closed PR is
   history, a pushed PR comes back as new commits (after a clear or approved
   review too: it belongs to the version it read, though on the owner's own PR it
   is only an older version), and a stale finding is never counted as waiting on

@@ -301,9 +301,9 @@ found problems offers **Fix these findings**, **Ignore…** (one reason, for tha
 exact version, stored in the app settings as `ignored_reviews`, nothing posted),
 **Review again** and **Ask the reviewer something**. **PR reviews** in the side
 menu lists the reviews you started by project (In progress, Done); it reads the
-live state of every PR whose review is not merged, again on each Sync with
-GitHub. A write whose answer is lost or unreadable is unconfirmed: it is read
-back and never repeated from the sheet.
+live state of every PR whose review is not merged (in batches of 40), again on
+each Sync with GitHub. A write whose answer is lost or unreadable, whatever its
+status, is unconfirmed: it is read back and never repeated from the sheet.
 
 ## Continuous Project Desk: private PR review runs
 
