@@ -88,6 +88,13 @@ const FINISHED_ANSWERS = new Set(['posted', 'stale'])
 const reviewIsNewer = (status, response) => !!status && FINISHED_ANSWERS.has(response?.status)
   && (Date.parse(status.run.created_at) || 0) > (Date.parse(response.result.created_at) || 0)
 
+// What the answer that covers these findings is doing decides what the card says: the machine's own state names it.
+const COVERED_NOTE = {
+  to_confirm: 'Your ready answer above covers these findings. Post or discard it first.',
+  sending: 'Your answer above covers these findings and is being posted.',
+  unconfirmed: 'Your answer above covers these findings. Check GitHub before anything else.',
+}
+
 // The run's kind in the words of the action that started it.
 const runKind = (run, own) => (run.mode === 'review_fix_merge' ? (own ? NAMES.finishIt : NAMES.takeOver) : reviewRunTitle(run))
 
@@ -132,7 +139,7 @@ function SavedReview({ quiet = false, pr, status, response = null, standing = nu
       onDecide={onVerdict ? (proposal, decision, extra) => onVerdict(item, proposal, decision, extra) : null} onCheck={onCheck || null} /> : null}
     <RepairProposal item={item} busy={busy} onDecide={onRepair && !readOnly ? (attempt, decision) => onRepair(item, attempt, decision) : null} />
     {posted ? <a className="co-btn co-btn-quiet" href={item.public_review.url} target="_blank" rel="noopener noreferrer">View the posted review on GitHub</a> : null}
-    {standing?.coveredBy === 'answer' && ['findings', 'changes'].includes(tone.key) ? <p className="co-review-note" role="status">Your ready answer above covers these findings. Post or discard it first.</p> : null}
+    {standing?.coveredBy === 'answer' && ['findings', 'changes'].includes(tone.key) && COVERED_NOTE[standing.state] ? <p className="co-review-note" role="status">{COVERED_NOTE[standing.state]}</p> : null}
     {item.tests ? <details className="co-task-details"><summary>What it ran</summary><p className="co-review-note">{item.tests}</p></details> : null}
     <p className="co-review-note">{savedVersion(item, pulls, listState)}</p>
     {error ? <p role="alert">{error}</p> : null}

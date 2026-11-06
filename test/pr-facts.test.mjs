@@ -196,11 +196,13 @@ test('a prepared fix waiting on this version is a fix to push, not open findings
   assert.match(decision.headline, /A fix is ready/)
 })
 
-test('a plain comment from someone else on your PR is feedback to answer until you reply; a bot’s is not', () => {
-  const said = (login, typename = 'User') => ({ comments: { totalCount: 3, nodes: [{ author: { login, __typename: typename } }] } })
-  assert.equal(decideFor(mine(said('Sam'))).state, 'author.feedback')
-  assert.notEqual(decideFor(mine(said('alex'))).state, 'author.feedback', 'your own reply answers it')
-  assert.notEqual(decideFor(mine(said('ci-bot', 'Bot'))).state, 'author.feedback')
+test('a plain comment from someone else on your PR is feedback until you reply; a bot’s is not, and a bot’s update after a person’s does not hide it', () => {
+  const said = (...voices) => ({ comments: { totalCount: voices.length, nodes: voices.map(([login, typename = 'User']) => ({ author: { login, __typename: typename } })) } })
+  assert.equal(decideFor(mine(said(['Sam']))).state, 'author.feedback')
+  assert.notEqual(decideFor(mine(said(['Sam'], ['alex']))).state, 'author.feedback', 'your own reply answers it')
+  assert.notEqual(decideFor(mine(said(['ci-bot', 'Bot']))).state, 'author.feedback')
+  assert.equal(decideFor(mine(said(['Sam'], ['ci-bot', 'Bot']))).state, 'author.feedback', 'a bot posting after Sam leaves Sam unanswered')
+  assert.notEqual(decideFor(mine(said(['Sam'], ['alex'], ['ci-bot', 'Bot']))).state, 'author.feedback', 'and after your reply, it stays answered')
 })
 
 test('a plain comment arriving while an agent works leaves it working, then asks for an answer once the run is done', () => {

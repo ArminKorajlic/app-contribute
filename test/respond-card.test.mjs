@@ -237,3 +237,15 @@ test('under a ready answer that took the check’s findings on, the check card k
   assert.doesNotMatch(other, /covers these findings/)
   assert.match(other, /Fix these findings/)
 })
+
+test('a posted answer on the same version never owns the findings: their buttons stay and nothing says to post it', async t => {
+  const check = { run: { id: 'r1', state: 'needs_you', execution_state: 'completed', mode: 'review_fix_merge', chat_id: 'c1', created_at: '2026-11-06T07:00:00Z' },
+    item: { repo: 'owner/repo', number: 7, head_sha: HEAD, base_ref: 'main', state: 'needs_you', summary: 'Two problems.' } }
+  const view = response('posted', { commits: [], tip_sha: HEAD, points: [{ ...example().points[0], reviewer: 'Agent review' }] }, approval('approved'))
+  assert.equal(view.status, 'posted')
+  const standing = standingFor({ pr: livePr, login: 'me', runs: [{ ...check.run, items: [check.item] }], responses: [{ slug: view.slug, result: view.result, decision: view.decision }] })
+  const html = await render(t, 'ReviewTab', { pr, own: true, status: check, standing, response: view, onFix() {}, onIgnore() {}, onStart() {} })
+  if (!html) return
+  assert.match(html, /Fix these findings/)
+  assert.doesNotMatch(html, /Post or discard it first/)
+})
