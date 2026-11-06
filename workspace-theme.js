@@ -526,7 +526,7 @@ export const WORKSPACE_CSS = `
 .co-agent-menu-button > .co-icon:last-child { transition:transform .15s; }
 .co-agent-menu-button[aria-expanded=true] > .co-icon:last-child { transform:rotate(180deg); }
 .co-agent-menu { position:relative; display:inline-flex; }
-.co-agent-menu-list { position:absolute; z-index:30; top:calc(100% + 6px); right:0; width:min(340px,calc(100vw - 32px)); padding:6px; border:1px solid var(--border); border-radius:var(--co-radius-panel); background:var(--surface); box-shadow:0 12px 32px rgba(0,0,0,.28); }
+.co-agent-menu-list { position:absolute; z-index:30; top:calc(100% + 6px); right:0; width:min(340px,calc(100vw - 32px)); padding:6px; border:1.5px solid var(--co-edge); border-radius:var(--co-radius-panel); background:var(--surface); box-shadow:0 12px 32px rgba(0,0,0,.28); }
 .co-agent-menu.is-align-start .co-agent-menu-list { right:auto; left:0; }
 .co-agent-menu-list button { display:flex; align-items:flex-start; gap:10px; width:100%; padding:10px; border:0; border-radius:var(--co-radius-field); background:none; color:var(--text); text-align:left; font:inherit; cursor:pointer; }
 .co-agent-menu-list button:hover,.co-agent-menu-list button:focus-visible { background:var(--surface-2,var(--surface)); outline:none; }

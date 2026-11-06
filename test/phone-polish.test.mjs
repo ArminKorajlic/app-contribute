@@ -47,8 +47,9 @@ test('on a phone the Actions menu is a bottom sheet with a dimmed page and Cance
   assert.match(CSS, /\.co-agent-menu-list \.co-agent-menu-cancel \{ display:flex;/)
 })
 
-test('on a phone the Actions button has the strong edge, in the one sheet that owns button borders', async () => {
+test('the Actions button has the strong edge on every width, in the one sheet that owns button borders', async () => {
   const { BUTTON_CSS } = await import('../button-theme.js')
-  assert.match(BUTTON_CSS, /@media \(max-width: 680px\) \{ \.co-agent-menu-button \{ border-color: var\(--co-edge\); \} \}/)
+  assert.match(BUTTON_CSS, /\n\.co-agent-menu-button \{ border-color: var\(--co-edge\); \}/)
+  assert.match(CSS, /\.co-agent-menu-list \{ position:absolute;[^}]*border:1\.5px solid var\(--co-edge\)/, 'the desktop popup has the same edge as the phone sheet')
   assert.match(CSS, /--co-edge: color-mix\(in srgb, var\(--text\) 32%, var\(--border\)\)/)
 })
