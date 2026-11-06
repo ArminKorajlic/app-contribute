@@ -158,6 +158,23 @@ test('an approving review or a recorded all-clear turns the flag green', async t
   assert.match(viaRun, /is-clear/)
 })
 
+test('an all-clear run turns the flag green only for the review it posted, never for a later comment', async t => {
+  const pr = { number: 9, repository: { nameWithOwner: 'team/repo' }, headRefOid: 'a'.repeat(40), baseRefOid: 'b'.repeat(40), baseRefName: 'main', url: 'https://github.com/team/repo/pull/9' }
+  const run = { item: { state: 'all_clear', public_review: { state: 'posted', url: 'https://github.com/team/repo/pull/9#pullrequestreview-888' } } }
+  const later = [{ kind: 'comment', id: 999, user: { login: 'irfan' }, date: '2026-11-02T10:00:00Z', body: 'There is still a bug in the diff view.' }]
+  const afterwards = await render(t, 'PullRequestDetail', { pr, cacheStore: loadedConversation(later), status: run,
+    record: { attention: { type: 'github_activity', url: 'https://github.com/team/repo/pull/9#issuecomment-999' } } })
+  if (!afterwards) return
+  assert.doesNotMatch(afterwards, /is-clear/)
+  assert.match(afterwards, /class="co-pr-feedback-flag is-news"/)
+  assert.match(afterwards, /New feedback/)
+  // An all-clear run that posted nothing public cannot vouch for a GitHub event either.
+  const unposted = await render(t, 'PullRequestDetail', { pr, cacheStore: loadedConversation(), status: { item: { state: 'all_clear', public_review: null } },
+    record: { attention: { type: 'github_activity', url: 'https://github.com/team/repo/pull/9#pullrequestreview-888' } } })
+  assert.doesNotMatch(unposted, /is-clear/)
+  assert.match(unposted, /New feedback/)
+})
+
 test('a PR without your tracked record, or with answered feedback, carries no feedback flag', async t => {
   const pr = { number: 9, repository: { nameWithOwner: 'team/repo' }, headRefOid: 'a'.repeat(40), baseRefOid: 'b'.repeat(40), baseRefName: 'main', url: 'https://github.com/team/repo/pull/9' }
   const bare = await render(t, 'PullRequestDetail', { pr })
