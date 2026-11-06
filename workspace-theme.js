@@ -1027,6 +1027,10 @@ a.co-related-row:hover { border-color:color-mix(in srgb,var(--accent) 36%,var(--
  .co-pr-detail .co-gh-labels { margin-top:8px; }
  .co-pr-detail-actions { flex-wrap:wrap; margin:12px 0 10px; }
  .co-pr-detail .co-markdown { font-size:var(--co-text-body); line-height:1.5; }
+ /* The PR description reads smaller on a phone than the rest of the page: 13px text, 12px code. Nothing else may use these two tokens. */
+ .co-desc-content .co-markdown { font-size:var(--co-text-reading); line-height:1.5; }
+ .co-desc-content .co-markdown h1,.co-desc-content .co-markdown h2,.co-desc-content .co-markdown h3 { font-size:var(--co-text-meta); }
+ .co-desc-content .co-markdown code,.co-desc-content .co-branch-flow code { font-size:var(--co-text-code); }
  .co-gh-comment > .co-markdown, .co-gh-comment > div { padding:10px 12px; }
  .co-gh-comment > header { padding:6px 8px 6px 12px; }
  .co-pr-title { font-size:var(--co-text-body); line-height:1.38; }

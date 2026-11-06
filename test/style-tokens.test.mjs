@@ -26,12 +26,23 @@ test('every corner radius and type size names a token, never a raw value', () =>
   assert.deepEqual(raw, [])
 })
 
-test('the token sheet holds exactly five radii and four type sizes', () => {
+test('the token sheet holds five radii and six type sizes: four of 14px and up, two for the phone PR description', () => {
   const theme = readFileSync(new URL('theme.js', root), 'utf8')
   const radii = [...theme.matchAll(/--co-radius-[a-z]+:\s*(\d+)px/g)].map(match => Number(match[1]))
   const sizes = [...theme.matchAll(/--co-text-[a-z]+:\s*(\d+)px/g)].map(match => Number(match[1]))
   assert.deepEqual(radii, [6, 8, 10, 12, 999])
-  assert.deepEqual(sizes, [14, 16, 22, 28])
+  assert.deepEqual(sizes, [14, 16, 22, 28, 13, 12])
+})
+
+// The Readable Floor Rule (DESIGN.md) has one owner-approved exception: the PR description on a phone.
+test('the two sizes under 14px are used by the PR description only', () => {
+  const found = []
+  for (const [file, text] of sheets) {
+    for (const line of text.split('\n')) {
+      if (/var\(--co-text-(reading|code)\)/.test(line) && !line.includes('.co-desc-content')) found.push(`${file}: ${line.trim().slice(0, 80)}`)
+    }
+  }
+  assert.deepEqual(found, [])
 })
 
 // The old per-screen button looks; a button now takes one of the three types in button-theme.js.

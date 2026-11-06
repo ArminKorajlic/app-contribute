@@ -145,9 +145,9 @@ The palette is semantic and theme-responsive. Accent identifies actions, selecti
 
 ## Typography
 
-Use the inherited shell font and monospace stack. There are four sizes: 28px titles, 22px section headings, 16px body and row titles, and 14px for metadata and controls. Nothing is smaller. Long titles, labels, versions, and paths wrap rather than forcing the viewport wider.
+Use the inherited shell font and monospace stack. There are four sizes: 28px titles, 22px section headings, 16px body and row titles, and 14px for metadata and controls. Nothing is smaller, with one exception the owner chose on 2026-11-06: a PR's description on a phone is 13px text and 12px code (`--co-text-reading`, `--co-text-code`), and nothing else may use those two. Long titles, labels, versions, and paths wrap rather than forcing the viewport wider.
 
-**The Readable Floor Rule.** Never shrink workflow copy to fit the phone. Keep practical control targets at least 44px; prompt tabs are 48px tall.
+**The Readable Floor Rule.** Never shrink workflow copy to fit the phone. A PR's own description is the author's reading text, not workflow copy, and on a phone it is the one place that reads smaller (13px, code 12px). Keep practical control targets at least 44px; prompt tabs are 48px tall.
 
 ## Layout
 
@@ -213,7 +213,7 @@ A single flat prompt editor groups Review, Fix and Merge decision. Tabs have gen
 
 **The One Name Rule.** One name for one meaning, everywhere. Every button, menu row, hint, pill and test reads its words from `names.js`; to rename something, change it there. A pill says what is true, a hint is one sentence, a button says what you do. Three agent jobs stay separate on purpose (Fix these findings, Finish it for me, Respond to feedback); a stopped fix job starts again as Run it again, a stopped review as Review again. `test/names.test.mjs` keeps retired names out of screen text.
 
-**The Token Sheet Rule.** Five corner radii (6, 8, 10, 12 and round) and four type sizes (14, 16, 22, 28), none under 14px, named as custom properties in `theme.js`; no rule carries a raw value (`test/style-tokens.test.mjs`). Buttons come in three types: primary (filled), secondary (bordered) and quiet (text), plus a danger modifier and an icon-only shape, all 44px (`button-theme.js`). A class that only adds layout may sit beside them; none sets its own border, fill, colour, corner or height. Purple text on its tinted fill is mixed toward the text colour so it reads at 4.5:1 and above.
+**The Token Sheet Rule.** Five corner radii (6, 8, 10, 12 and round) and four type sizes (14, 16, 22, 28; plus 13 and 12 for the phone PR description only), none under 14px except the two phone-description sizes above, named as custom properties in `theme.js`; no rule carries a raw value (`test/style-tokens.test.mjs`). Buttons come in three types: primary (filled), secondary (bordered) and quiet (text), plus a danger modifier and an icon-only shape, all 44px (`button-theme.js`). A class that only adds layout may sit beside them; none sets its own border, fill, colour, corner or height. Purple text on its tinted fill is mixed toward the text colour so it reads at 4.5:1 and above.
 
 **The Four Views Rule.** The rail has four views: Needs you, Review requests, My PRs and Agent runs, then Repositories as a block of its own (a heading, a divider, More repositories folded, Add repository last). Older places live inside them (`deskViewKey`). “Projects” is the Möbius shell's own word, so the app's list is Repositories and its settings popover is Contribute settings.
 
@@ -247,5 +247,5 @@ The four views are one segmented bar with every segment on screen, the word firs
 - **Don't** equate passing checks with a review verdict or queued work with merged work.
 - **Don't** start agent work merely from selecting a PR or assigning a person.
 - **Don't** hide changed-version removal, scope drift, or ambiguous outcomes.
-- **Don't** shrink 14px metadata, 16px body copy, or 44px controls to fit the phone.
+- **Don't** shrink 14px metadata, 16px body copy, or 44px controls to fit the phone. The one exception is the PR description's reading text on a phone (13px, code 12px), by the owner's choice.
 - **Don't** invent fixed colors, fonts, icons, approval states, or product permissions outside the shell and implemented contract.

@@ -19,6 +19,9 @@ export const CSS = `
   --co-text-body: 16px;
   --co-text-section: 22px;
   --co-text-title: 28px;
+  /* The two sizes under the 14px floor: a PR description on a phone only (owner's choice, 2026-11-06; DESIGN.md). */
+  --co-text-reading: 13px;
+  --co-text-code: 12px;
   --co-control-height: 44px;
   /* The edge of a control that must read as a control on a dark phone screen: a plain --border is too faint. */
   --co-edge: color-mix(in srgb, var(--text) 32%, var(--border));
