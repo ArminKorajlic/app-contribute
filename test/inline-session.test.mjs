@@ -859,6 +859,35 @@ test('Contribute all covers every listed record or none: one that needs attentio
   assert.deepEqual(sent.action(actions[0].key).confirmation.map(item => item.title), ['Change media-call'])
 })
 
+// A stack whose existing-PR prefix is updated first and whose new child opens
+// in a later phase, listed with an unrelated ready contribution.
+function mixedStack({ topError = null } = {}) {
+  const base = layer('base', 1, '')
+  base.plan.action = 'pr_update'
+  Object.assign(base, { number: 41 })
+  const top = layer('top', 2, 'base')
+  top.plan.base_sha = base.plan.head_sha
+  if (topError) top.last_submit_error = topError
+  return [base, top, prepared('solo')]
+}
+for (const [label, topError, reason] of [
+  ['a blocked deferred child', 'Needs attention', 'The last send needs attention in Contribute.'],
+  ['an otherwise ready deferred child', null, 'It is sent after the layers before it. Open Contribute to send them in order.'],
+]) {
+  test(`a listed stack layer outside the phase being confirmed holds the card: ${label}`, async () => {
+    const ids = ['base', 'top', 'solo']
+    const actions = [{ key: `chat-send-batch:${batchHandle(ids)}`, label: 'Contribute all' }]
+    const h = harness({ actions, items: reviewItems(ids), records: mixedStack({ topError }) })
+    await openConfirm(h, actions[0].key)
+    const state = h.action(actions[0].key)
+    assert.equal(state.confirming, false, 'Confirm never covers only the update phase')
+    assert.equal(state.disabled, true)
+    assert.equal(state.note, `“Change top”: ${reason}`, 'the held layer itself is named')
+    h.fire(actions[0].key, 'confirm'); await tick()
+    assert.equal(h.sends.length, 0, 'nothing freezes or sends for an incomplete listed set')
+  })
+}
+
 const SHA = 'e'.repeat(64)
 const shot = (name, alt = name) => ({ name, sha256: SHA, size: 1200, alt })
 

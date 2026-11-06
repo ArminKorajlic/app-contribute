@@ -9,8 +9,8 @@
 // unit until a read-only observation proves the result.
 import { sendTarget } from './chat-blocks.js'
 import { planScreenshots, screenshotCountText } from './domain.js'
-import { isPublished, publicationUnits, publishedPull } from './send-readiness.js'
-import { RETRY_CHECK_REASON } from './review.js'
+import { isPublished, publicationUnits, publishedPull, sendBlocker } from './send-readiness.js'
+import { RETRY_CHECK_REASON, reviewStateFor } from './review.js'
 import { stackMeta } from './stack.js'
 
 const copy = value => JSON.parse(JSON.stringify(value))
@@ -115,6 +115,7 @@ const sized = record => Boolean(changeSize(record?.plan))
 const identified = record => [record.plan?.repo || record.repo, record.plan?.branch || record.branch,
   record.plan?.head_sha, record.plan?.diff_sha256].every(Boolean)
 export const UNLISTED_LAYER_NOTE = 'This card doesn’t list every layer of the stack. Open Contribute to send it.'
+export const DEFERRED_NOTE = 'It is sent after the layers before it. Open Contribute to send them in order.'
 export const SIZE_NOTE = 'This contribution needs a fresh check in Contribute before it can be sent: its change size is missing.'
 const confirmable = record => !relayed(record) && sized(record) && identified(record)
 
@@ -201,22 +202,32 @@ export function createInlineSession({ sessionId, actions, items = null, checkpoi
     if (idsFor(key).some(id => relayed(current().get(id)))) return RELAY_NOTE
     const all = units(key)
     if (all.some(unit => unlisted(key, unit))) return UNLISTED_LAYER_NOTE
-    const ready = new Set(readyUnits(key).map(unit => unit.key))
+    const ready = readyUnits(key)
     // The action covers every record the card lists or none: with some units
-    // ready, one that is neither ready nor already settled holds them all.
-    const held = all.find(unit => !ready.has(unit.key) && (unit.ready.length || unit.reason))
-    if (ready.size) return held ? heldNote(key, held) : ''
+    // ready, each listed record must be published or in the exact phase this
+    // Confirm would send. A deferred stack layer holds the card too.
+    if (ready.length) {
+      const confirmed = new Set(ready.flatMap(unit => unit.ready.map(record => record.id)))
+      const held = idsFor(key).filter(id => !confirmed.has(id) && !isPublished(current().get(id)))
+      return held.length ? heldNote(key, held) : ''
+    }
     if (all.some(unit => unit.ready.length && !unit.ready.every(sized))) return SIZE_NOTE
     return all.map(unit => unit.reason).find(Boolean) || (all.some(locked) ? UNKNOWN_NOTE : '')
   }
 
-  // One status line naming the listed item that holds a partly ready card.
-  function heldNote(key, unit) {
-    const record = unit.records.find(member => idsFor(key).includes(member.id) && !isPublished(member)) || unit.records[0]
-    const title = text(record?.plan?.title || record?.title || record?.id, 500)
+  // One status line naming the listed record that holds a partly ready card:
+  // the first with a blocker of its own, else the first held at all.
+  function heldNote(key, held) {
+    const now = current()
+    const own = id => now.has(id)
+      ? sendBlocker(now.get(id), reviewStateFor(now.get(id), runtime.reviewStatus), { requireCheck: true })
+      : 'This contribution is no longer in Contribute.'
+    const id = held.find(own) || held[0]
+    const unit = units(key).find(member => member.records.some(record => record.id === id))
+    const reason = own(id) || (unit && locked(unit) ? UNKNOWN_NOTE : !sized(now.get(id)) ? SIZE_NOTE : unit?.reason || DEFERRED_NOTE)
+    const title = text(now.get(id)?.plan?.title || now.get(id)?.title || id, 500)
     const name = title.length <= 40 ? title : `${title.slice(0, 40).replace(/\s+\S*$/, '')}…`
-    const why = unit.reason || (locked(unit) ? UNKNOWN_NOTE : !unit.ready.every(sized) ? SIZE_NOTE : 'It needs attention in Contribute.')
-    return `“${name}”: ${why}`
+    return `“${name}”: ${reason}`
   }
 
   function actionState(item) {
