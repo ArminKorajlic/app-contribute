@@ -933,6 +933,23 @@ class PostTests(RespondWorld):
   def test_post_never_forces_so_a_branch_whose_head_was_rewritten_is_left_as_it_is(self):
     self.check_a_moved_branch_is_never_overwritten(rewrite=True)
 
+  def test_post_pushes_a_result_that_merged_in_the_base_branch(self):
+    # The base gained a commit that is not on the PR branch; its parent is older than the PR head.
+    root = self.git(self.work, "rev-parse", f"{self.base}^")
+    self.git(self.work, "checkout", "-q", "-b", "base-branch", root)
+    base_fix = self.commit("A fix on the base branch", {"base.txt": "base fix\n"})
+    self.git(self.work, "checkout", "-q", "-")
+    self.git(self.work, "merge", "-q", "--no-edit", "base-branch")
+    merge = self.git(self.work, "rev-parse", "HEAD")
+    after = self.commit("Work after the merge", {"app.js": modified_app((3, "line three, fixed"))})
+    self.assertEqual(self.save(self.input_for([merge, after])).code, 0)
+    result = self.saved_result()
+    self.assertIn(base_fix, [commit["sha"] for commit in result["commits"]])
+    self.decide(result)
+    outcome = self.post(result["id"])
+    self.assertEqual(outcome.code, 0, outcome.err)
+    self.assertEqual(self.remote_branch(), after)
+
   def test_post_resumes_after_a_failure_and_repeats_no_step(self):
     shas, _, result = self.approved_result()
     self.fake(fail_at=2)  # the second write, reply 2, fails once

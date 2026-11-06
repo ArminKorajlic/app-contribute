@@ -759,8 +759,9 @@ def push_bundle(bundle: Path, remote: str, pr: dict[str, Any], tip: str, commits
     work = Path(scratch)
     git(work, "init", "-q")
     # By SHA, not by branch: if the branch has moved on, its old head is still fetchable and
-    # the push below is what rejects it, with Git's own explanation.
-    git(work, "fetch", "-q", "--depth", "1", remote, pr["head_sha"])
+    # the push below is what rejects it, with Git's own explanation. With its history, not
+    # shallow: a result that merged in the base needs commits older than the PR head.
+    git(work, "fetch", "-q", remote, pr["head_sha"])
     git(work, "fetch", "-q", str(bundle), "HEAD:refs/respond/tip")
     if git(work, "rev-parse", "--verify", "refs/respond/tip^{commit}").strip() != tip:
       raise CommandError("the saved bundle does not end at the approved tip, so nothing was pushed")
