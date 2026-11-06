@@ -155,13 +155,6 @@ export const WORKSPACE_CSS = `
 .co-workspace .co-run-row-main small { white-space:normal; }
 
 .co-workspace .co-run-fold { background:none; }
-.co-directory { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:start; gap:16px; }
-.co-directory .co-project-search { margin:0; }
-.co-directory > :not(.co-project-search):not(.co-directory-filters) { grid-column:1/-1; }
-.co-directory-filters { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
-.co-directory-filters button { display:inline-flex; align-items:center; gap:7px; min-height:44px; padding:8px 14px; border:1px solid var(--border); border-radius:var(--co-radius-panel); background:var(--surface); color:var(--muted); font:600 var(--co-text-meta) var(--font); cursor:pointer; }
-.co-directory-filters button[aria-pressed=true],.co-directory-filters button:hover { color:var(--text); border-color:color-mix(in srgb,var(--accent) 34%,var(--border)); background:var(--accent-dim); }
-.co-directory-filters button span { min-width:20px; padding:1px 6px; border-radius:var(--co-radius-control); background:var(--bg); color:var(--muted); font-variant-numeric:tabular-nums; }
 .co-task-dock:focus-visible,.co-task-dock [tabindex="-1"]:focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
 /* Inline panes take focus only so keyboard users land in them; their border
    already marks them, so the browser ring would trace a second, tight frame. */
@@ -184,8 +177,6 @@ export const WORKSPACE_CSS = `
  .co-pr-detail { padding:12px 0; }
  .co-workspace .co-task-dock { left:8px; right:8px; width:auto; bottom:max(8px,env(safe-area-inset-bottom)); border-radius:var(--co-radius-panel); transform:none; }
  .co-workspace .co-task-dock { padding:20px; max-height:76dvh; animation-name:co-dock-arrive-mobile; }
- .co-directory { grid-template-columns:1fr; }
- .co-directory-filters { width:100%; }
 }
 .co-other-repositories { margin-top:28px; border-top:1px solid var(--border); }
 .co-other-repositories > summary { display:flex; align-items:center; gap:12px; min-height:56px; font-size:var(--co-text-body); cursor:pointer; }
@@ -555,11 +546,15 @@ export const WORKSPACE_CSS = `
 .co-commit { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px 16px; padding:12px 14px; }
 .co-commit + .co-commit, .co-commit-seen + .co-commit { border-top:1px solid var(--border); }
 .co-commit-main { flex:1 1 320px; min-width:0; }
-.co-commit-title { display:inline; overflow-wrap:anywhere; font-size:var(--co-text-body); font-weight:600; }
-.co-commit-body { display:inline-block; margin-left:6px; vertical-align:middle; }
-.co-commit-body > summary { display:inline-grid; place-items:center; width:32px; height:24px; border-radius:var(--co-radius-pill); background:var(--surface-2); color:var(--muted); cursor:pointer; list-style:none; }
+.co-commit-title { display:block; overflow-wrap:anywhere; font-size:var(--co-text-body); font-weight:600; }
+.co-commit-body > summary { display:flex; align-items:flex-start; min-height:var(--co-control-height); gap:10px; cursor:pointer; list-style:none; }
 .co-commit-body > summary::-webkit-details-marker { display:none; }
-.co-commit-body > div { margin-top:8px; padding:10px 12px; border-radius:var(--co-radius-field); background:var(--bg); color:var(--muted); font-size:var(--co-text-meta); white-space:pre-wrap; overflow-wrap:anywhere; }
+.co-commit-body > summary .co-commit-title { flex:1; min-width:0; }
+.co-commit-toggle { flex:none; display:grid; place-items:center; width:36px; height:36px; margin:-4px 0 0; border:1px solid var(--co-edge); border-radius:var(--co-radius-control); background:var(--surface); color:var(--text); }
+.co-commit-toggle > .co-icon { transition:transform .15s; }
+.co-commit-body[open] .co-commit-toggle { border-color:var(--accent); background:var(--accent-dim,var(--surface-2)); }
+.co-commit-body[open] .co-commit-toggle > .co-icon { transform:rotate(180deg); }
+.co-commit-body > div { margin:10px 0 8px; padding:10px 12px; border-left:3px solid var(--accent); border-radius:var(--co-radius-pill) var(--co-radius-control) var(--co-radius-control) var(--co-radius-pill); background:var(--bg); color:var(--muted); font-size:var(--co-text-meta); white-space:pre-wrap; overflow-wrap:anywhere; }
 .co-commit-meta { display:flex; flex-wrap:wrap; align-items:center; gap:2px 10px; margin:4px 0 0; color:var(--muted); font-size:var(--co-text-meta); }
 .co-commit-agent { display:inline-flex; align-items:center; gap:4px; padding:0 8px; border-radius:var(--co-radius-pill); background:var(--accent-dim,var(--surface-2)); color:var(--co-you-text); font-weight:600; }
 .co-commit-checks.is-ok { color:var(--green,#10b981); }
@@ -603,6 +598,18 @@ export const WORKSPACE_CSS = `
 .co-agent-menu-list button.is-off:hover { background:none; }
 .co-agent-menu-list strong { display:block; font-size:var(--co-text-body); font-weight:600; }
 .co-agent-menu-list small { display:block; margin-top:2px; color:var(--muted); font-size:var(--co-text-meta); line-height:1.45; }
+/* On a phone the Actions menu is a sheet from the bottom edge, not a popup hanging from its button: it cannot
+   run off a side or hide behind the screen's edge, and the dimmed page behind it makes its edge plain. */
+.co-agent-menu-scrim,.co-agent-menu-list .co-agent-menu-cancel { display:none; }
+@media(max-width:680px) {
+  .co-agent-menu-scrim { display:block; position:fixed; inset:0; z-index:29; background:rgba(0,0,0,.6); }
+  .co-agent-menu .co-agent-menu-list,.co-agent-menu.is-align-start .co-agent-menu-list { position:fixed; top:auto; left:0; right:0; bottom:0; width:auto; max-height:min(86dvh,640px); overflow-y:auto; overscroll-behavior:contain; padding:10px 12px max(14px,env(safe-area-inset-bottom)); border:0; border-top:2px solid var(--accent); border-radius:var(--co-radius-panel) var(--co-radius-panel) 0 0; box-shadow:0 -18px 44px rgba(0,0,0,.55); }
+  .co-agent-menu-list::before { content:''; display:block; width:44px; height:5px; margin:0 auto 10px; border-radius:var(--co-radius-round); background:var(--co-edge); }
+  .co-agent-menu-list button:not(.co-agent-menu-cancel) { min-height:48px; margin:5px 0; border:1px solid var(--border); }
+  .co-agent-menu-list button.is-rec { border-color:var(--accent); }
+  .co-agent-menu-list .co-agent-menu-cancel { display:flex; width:100%; margin-top:8px; border:1.5px solid var(--co-edge); font-weight:700; }
+  .co-agent-menu-apart { margin-top:0; padding-top:0; border-top:0; }
+}
 
 /* The agent review window: protected focus for a consent with public effects. */
 .co-dialog-backdrop { position:fixed; inset:0; z-index:100; display:flex; align-items:center; justify-content:center; padding:20px; background:rgba(0,0,0,.6); }
@@ -784,7 +791,6 @@ input[type=checkbox].co-switch:focus-visible { outline:2px solid var(--accent); 
 .co-rail-head { margin:0; padding:14px 10px 6px; color:var(--muted); font:700 var(--co-text-meta) var(--font); letter-spacing:.05em; text-transform:uppercase; }
 .co-rail-add { margin-top:6px; }
 .co-rail-add .co-repository-trigger { width:100%; justify-content:flex-start; padding-inline:10px; }
-.co-desk-counts button[aria-pressed=true] { border-color:var(--accent); background:var(--accent-dim, var(--surface-2)); }
 .co-desk-quiet-line { display:flex; flex-wrap:wrap; align-items:center; gap:4px 8px; margin:0 0 12px; color:var(--muted); font-size:var(--co-text-meta); }
 .co-rail-quiet > summary { display:flex; align-items:center; gap:8px; min-height:38px; padding:6px 10px; border-radius:var(--co-radius-control); color:var(--muted); font:500 var(--co-text-meta) var(--font); cursor:pointer; list-style:none; }
 .co-rail-quiet > summary::-webkit-details-marker { display:none; }
@@ -793,20 +799,34 @@ input[type=checkbox].co-switch:focus-visible { outline:2px solid var(--accent); 
 .co-rail-quiet > summary b { font-weight:600; }
 .co-rail-item.is-all { color:var(--muted); font-size:var(--co-text-meta); }
 /* Phone only: the four views as one segmented bar, all on screen, count above the word. */
-.co-desk-chips { display:none; grid-template-columns:repeat(4,minmax(0,1fr)); gap:4px; position:sticky; top:0; z-index:5; margin:0 0 14px; padding:6px 0; background:var(--bg); }
-.co-desk-chips button { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; min-height:var(--co-control-height); padding:4px 2px; border:1px solid var(--border); border-radius:var(--co-radius-control); background:var(--surface); color:var(--text); font:500 var(--co-text-meta) var(--font); cursor:pointer; }
-.co-desk-chips button span { max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.co-desk-chips button[aria-pressed=true] { border-color:var(--accent); background:var(--accent-dim, var(--surface-2)); color:var(--co-you-text); font-weight:600; }
-.co-desk-chips button b { min-height:1.5em; font-weight:650; font-variant-numeric:tabular-nums; }
-.co-desk-chips .co-desk-chips-projects { grid-column:1 / -1; flex-direction:row; gap:8px; min-height:36px; border-color:transparent; background:transparent; color:var(--muted); }
-.co-desk-counts { display:flex; flex-wrap:wrap; gap:8px; margin:2px 0 10px; }
-.co-desk-counts button { display:inline-flex; align-items:center; gap:8px; min-height:var(--co-control-height); padding:6px 12px; border:1px solid var(--border); border-radius:var(--co-radius-control); background:var(--surface); color:var(--text); font:500 var(--co-text-meta) var(--font); cursor:pointer; }
-.co-desk-counts button:hover { border-color:var(--accent); }
-.co-desk-counts button b { color:var(--accent); font-weight:700; font-variant-numeric:tabular-nums; }
+/* The filters of Needs you and Repositories: plain text, the count first in the accent colour, the
+   chosen word underlined. Every tap area stays the full control height. */
+.co-filter-line { display:flex; flex-wrap:wrap; gap:0 18px; margin:2px 0 8px; }
+.co-filter-line button { display:inline-flex; align-items:center; gap:7px; min-height:var(--co-control-height); padding:0; border:0; background:none; color:var(--muted); font:600 var(--co-text-meta) var(--font); cursor:pointer; }
+.co-filter-line button b { color:var(--accent); font-variant-numeric:tabular-nums; }
+.co-filter-line button:hover,.co-filter-line button[aria-pressed=true] { color:var(--text); }
+.co-filter-line button[aria-pressed=true] span { text-decoration:underline 2px var(--accent); text-underline-offset:7px; }
+/* Phone only: the four views as one segmented bar, all on screen, the word first and its count after it.
+   Under it the repository list is a button of its own: project icons, the word, a count and a chevron. */
+.co-desk-chips { display:none; position:sticky; top:0; z-index:5; margin:0 0 10px; padding:6px 0; background:var(--bg); }
+.co-desk-seg { display:flex; flex-wrap:wrap; gap:2px; padding:3px; border:1px solid var(--co-edge); border-radius:var(--co-radius-panel); background:var(--surface); }
+.co-desk-seg button { flex:1 1 auto; min-width:0; display:inline-flex; align-items:center; justify-content:center; gap:5px; min-height:var(--co-control-height); padding:0 4px; border:0; border-radius:var(--co-radius-control); background:none; color:var(--muted); font:600 var(--co-text-meta) var(--font); white-space:nowrap; cursor:pointer; }
+.co-desk-seg button[aria-pressed=true] { background:var(--accent-dim, var(--surface-2)); color:var(--text); box-shadow:inset 0 0 0 1px var(--accent); }
+.co-desk-seg button b { color:var(--accent); font-variant-numeric:tabular-nums; }
+/* Four words and their counts do not fit one row at 14 px on the narrowest phones: two by two, never overlapping. */
+@media(max-width:400px) { .co-desk-seg button { flex:1 1 calc(50% - 2px); } }
+.co-desk-chips .co-desk-chips-projects { display:flex; align-items:center; gap:10px; width:100%; margin-top:8px; min-height:var(--co-control-height); padding:0 12px 0 10px; border:1px solid var(--co-edge); border-radius:var(--co-radius-panel); background:linear-gradient(90deg,var(--accent-dim, var(--surface-2)),var(--surface)); color:var(--text); font:600 var(--co-text-meta) var(--font); text-align:left; cursor:pointer; }
+.co-desk-chips .co-desk-chips-projects[aria-pressed=true] { border-color:var(--accent); }
+.co-desk-chips-label { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.co-desk-chips-projects b { color:var(--muted); font-weight:500; font-variant-numeric:tabular-nums; }
+.co-desk-chips-projects > .co-icon { color:var(--muted); }
+.co-desk-avatars { display:flex; }
+.co-desk-avatars .co-desk-glyph { width:24px; height:24px; margin-left:-8px; border:2px solid var(--surface); border-radius:var(--co-radius-pill); box-sizing:content-box; }
+.co-desk-avatars .co-desk-glyph:first-child { margin-left:0; }
 .co-desk-legend { display:none; align-items:center; gap:7px; margin:0 0 14px; color:var(--muted); font-size:var(--co-text-meta); }
 .co-desk-pane:has(.co-desk-row .co-newdot) .co-desk-legend { display:flex; }
 .co-newdot { display:inline-block; flex:0 0 auto; width:7px; height:7px; border-radius:50%; background:var(--accent); }
-.co-desk-search { display:flex; align-items:center; gap:9px; margin:0 0 16px; padding:0 12px; min-height:42px; border:1px solid var(--border); border-radius:var(--co-radius-control); background:var(--surface); color:var(--muted); }
+.co-desk-search { display:flex; align-items:center; gap:9px; margin:0 0 16px; padding:0 12px; min-height:var(--co-control-height); border:1px solid var(--border); border-radius:var(--co-radius-control); background:var(--surface); color:var(--muted); }
 .co-desk-search input { flex:1; min-width:0; border:0; background:none; color:var(--text); font:400 var(--co-text-body) var(--font); outline:none; }
 .co-desk-envelopes { display:flex; flex-direction:column; gap:16px; }
 .co-envelope { border:1px solid var(--border); border-radius:var(--co-radius-panel); background:var(--surface); overflow:hidden; }
@@ -946,7 +966,7 @@ a.co-related-row:hover { border-color:color-mix(in srgb,var(--accent) 36%,var(--
 @keyframes co-pane-in { from { opacity:0; transform:translateY(5px); } to { opacity:1; transform:none; } }
 .co-workspace,.co-pull-page,.co-desk-envelopes,.co-directory,.co-stage-empty { animation:co-pane-in .16s ease-out; }
 @media(prefers-reduced-motion:reduce) { .co-skel span { animation:none; } .co-workspace,.co-pull-page,.co-desk-envelopes,.co-directory,.co-stage-empty { animation:none; } }
-@media(prefers-reduced-motion:reduce) { .co-desc-title .co-icon { transition:none; } }
+@media(prefers-reduced-motion:reduce) { .co-desc-title .co-icon,.co-commit-toggle > .co-icon { transition:none; } }
 .co-pull-page .co-gh-pr-title { font-size:var(--co-text-section); letter-spacing:-.015em; }
 .co-gh-labels { margin-top:8px; }
 /* The comet frame: a faint base frame, with one comet travelling along it while an agent works. */
@@ -980,15 +1000,15 @@ a.co-related-row:hover { border-color:color-mix(in srgb,var(--accent) 36%,var(--
 @media(max-width:980px) {
   .co-desk { display:block; }
   .co-rail { display:none; }
-  .co-desk-chips { display:grid; }
-  .co-view-heading { flex-wrap:wrap; }
-  .co-view-heading h2 { white-space:normal; }
+  .co-desk-chips { display:block; }
+  /* The lit segment already names the view, so the heading only stays for screen readers. */
+  .co-view-heading { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0, 0, 0, 0); white-space:nowrap; border:0; } /* the .co-visually-hidden recipe, on a phone only */
 }
 
 /* Phone layout: full titles at a calmer size, details on one line, and edges
    that look scrollable on purpose. Rules above 680px are untouched. */
 .co-pr-sub-num { display:none; }
-.co-branch-to { display:inline-flex; align-items:center; flex:none; gap:7px; white-space:nowrap; }
+.co-branch-to { display:inline-flex; align-items:center; flex:0 1 auto; min-width:0; max-width:100%; gap:7px; }
 .co-flag-text { display:flex; flex-wrap:wrap; align-items:baseline; gap:0 8px; min-width:0; }
 .co-pr-feedback-flag { align-items:flex-start; }
 .co-pr-feedback-flag > .co-icon { margin-top:3px; flex:0 0 auto; }

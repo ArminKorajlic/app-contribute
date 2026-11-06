@@ -516,9 +516,11 @@ window.runWorkspaceChecks = async () => {
   try {
     await until(() => query('.co-source-row'), 'Project list did not render')
     await check('project directory uses wrapped filter buttons instead of a dropdown or scroller', async () => {
-      const filters=query('.co-directory-filters'), filterButtons=[...filters.querySelectorAll('button')]
+      const filters=query('.co-directory .co-filter-line'), filterButtons=[...filters.querySelectorAll('button')]
       ensure(filters && !query('.co-directory-filter select') && !query('.co-lens-nav'), 'Project filters did not use the compact button group')
-      ensure(filterButtons.map(node => text(node)).join('|')==='All|With local changes2|Behind GitHub0', 'Project filter choices or counts drifted')
+      ensure(filterButtons.map(node => text(node)).join('|')==='All|2With local changes|0Behind GitHub', 'Project filter choices or counts drifted')
+      const search=query('.co-directory .co-desk-search')
+      ensure(search && search.querySelector('svg') && filters.compareDocumentPosition(search) & Node.DOCUMENT_POSITION_FOLLOWING, 'The project search is not the shared search field under the filters')
       ensure(button('All',filters).getAttribute('aria-pressed')==='true', 'The active project filter is not exposed')
       await click(query('.co-source-row'))
       await until(() => document.querySelectorAll('.co-pr-row').length === 2 && button('Make PRs from local changes') && !button('Make PRs from local changes').disabled, 'Project did not settle')
@@ -578,7 +580,9 @@ window.runWorkspaceChecks = async () => {
       const item=[...row.querySelectorAll('[role=menuitem]')].at(-1)
       item.scrollIntoView({ block: 'nearest' }); await frame()
       const rect=item.getBoundingClientRect()
-      ensure(rect.bottom > query('.co-pr-box').getBoundingClientRect().bottom, 'Fixture: the menu no longer reaches past the list box')
+      // On a phone the menu is a sheet on the screen's own edge, so it need not reach past the box; it must still not be clipped by it.
+      const sheet = getComputedStyle(row.querySelector('.co-agent-menu-list')).position === 'fixed'
+      ensure(sheet || rect.bottom > query('.co-pr-box').getBoundingClientRect().bottom, 'Fixture: the menu no longer reaches past the list box')
       ensure(item.contains(document.elementFromPoint(rect.left + rect.width / 2, rect.bottom - 6)), 'The PR list box clipped the Agent menu')
       await click(trigger)
       await until(() => !row.querySelector('[role=menuitem]'), 'Row Agent menu did not close')
@@ -590,8 +594,10 @@ window.runWorkspaceChecks = async () => {
       const detail=query('.co-pr-detail'), trigger=detail.querySelector('.co-agent-menu-button')
       await click(trigger)
       await until(() => detail.querySelector('[role=menuitem]'), 'Detail Agent menu did not open')
-      const menu=detail.querySelector('.co-agent-menu-list').getBoundingClientRect(), box=detail.getBoundingClientRect()
-      ensure(menu.left >= box.left - 1 && menu.right <= window.innerWidth + 1, 'The detail Agent menu ran past the pane edge: menu ' + Math.round(menu.left) + ' to ' + Math.round(menu.right) + ', pane ' + Math.round(box.left) + ' to ' + Math.round(box.right) + ', screen ' + window.innerWidth + 'px')
+      const list=detail.querySelector('.co-agent-menu-list'), menu=list.getBoundingClientRect(), box=detail.getBoundingClientRect()
+      // A popup hangs inward from its trigger, inside the pane; a phone's sheet spans the whole screen instead.
+      const sheet=getComputedStyle(list).position === 'fixed'
+      ensure((sheet ? menu.left >= 0 : menu.left >= box.left - 1) && menu.right <= window.innerWidth + 1, 'The detail Agent menu ran past the pane edge: menu ' + Math.round(menu.left) + ' to ' + Math.round(menu.right) + ', pane ' + Math.round(box.left) + ' to ' + Math.round(box.right) + ', screen ' + window.innerWidth + 'px')
       await click(trigger)
       await until(() => !detail.querySelector('[role=menuitem]'), 'Detail Agent menu did not close')
     })
@@ -1689,12 +1695,31 @@ window.runPopupFitChecks = async () => {
   const checks = []
   async function staysOnScreen(name, scope) {
     const trigger = scope.querySelector('.co-agent-menu-button')
+    // A page sliding in is a transformed ancestor, and a fixed sheet would hang from it instead of the screen. This harness
+    // never advances that 0.16 s entrance, so the menus are measured with it switched off.
+    const still = document.createElement('style')
+    still.textContent = '.co-workspace,.co-pull-page,.co-desk-envelopes,.co-directory,.co-stage-empty { animation: none !important; }'
+    document.head.append(still)
     await click(trigger)
     await until(() => scope.querySelector('.co-agent-menu-list'), 'The ' + name + ' Actions menu did not open')
     const box = scope.querySelector('.co-agent-menu-list').getBoundingClientRect()
     ensure(box.left >= 0 && box.right <= window.innerWidth, 'The ' + name + ' Actions menu ran off the screen: ' + Math.round(box.left) + ' to ' + Math.round(box.right) + ' of ' + window.innerWidth + 'px')
-    await click(trigger)
+    if (window.innerWidth <= 680) {
+      // On a phone the menu is a sheet on the bottom edge. Its scrim covers the trigger, so the scrim (or Cancel) closes it.
+      ensure(box.left === 0 && Math.round(box.right) === window.innerWidth && Math.abs(box.bottom - window.innerHeight) < 2, 'The ' + name + ' Actions menu is not a sheet on the bottom edge: ' + Math.round(box.left) + ' to ' + Math.round(box.right) + ', bottom ' + Math.round(box.bottom) + ' of ' + window.innerHeight)
+      const cancel = scope.querySelector('.co-agent-menu-cancel')
+      ensure(cancel && cancel.offsetParent && text(cancel) === 'Cancel', 'The ' + name + ' Actions sheet shows no Cancel on a phone')
+      await click(scope.querySelector('.co-agent-menu-scrim'))
+      await until(() => !scope.querySelector('.co-agent-menu-list'), 'Pressing outside did not close the ' + name + ' Actions sheet')
+      await click(trigger)
+      await until(() => scope.querySelector('.co-agent-menu-cancel'), 'The ' + name + ' Actions sheet did not open again')
+      await click(scope.querySelector('.co-agent-menu-cancel'))
+    } else {
+      ensure(!scope.querySelector('.co-agent-menu-cancel').offsetParent, 'The ' + name + ' Actions popup shows a Cancel on a desktop')
+      await click(trigger)
+    }
     await until(() => !scope.querySelector('.co-agent-menu-list'), 'The ' + name + ' Actions menu did not close')
+    still.remove()
     checks.push({ name: 'the ' + name + ' Actions menu stays on the screen', status: 'pass' })
   }
   try {

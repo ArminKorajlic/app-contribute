@@ -73,7 +73,7 @@ test('count chips name next steps, filter the list, and skip empty ones; drafts 
   if (!api) return
   const html = api.counts({ counts: countsFixture, filter: 'merge', onFilter: () => {}, onView: () => {} })
   assert.match(html, />Review</)
-  assert.match(html, /aria-pressed="true"><b>3<\/b>Merge</)
+  assert.match(html, /aria-pressed="true"><b>3<\/b><span>Merge<\/span></)
   assert.doesNotMatch(html, /files|Local changes/)
   assert.doesNotMatch(html, /co-desk-quiet-line/)
   const drafts = api.counts({ counts: { ...countsFixture, drafts: 4 }, onFilter: () => {}, onView: () => {} })
@@ -285,7 +285,7 @@ test('attention rows and the show-more control stay inside the bar', () => {
   assert.match(css, /\.co-attn-more \{ box-sizing:border-box;/)
 })
 
-test('on a phone the four views are one segmented bar with every segment on screen, and the repository list is one quiet link', async t => {
+test('on a phone the four views are one segmented bar with every segment on screen, and the repository list is a button of its own', async t => {
   if (!frontendModules) return t.skip('MOBIUS_FRONTEND_NODE_MODULES is required')
   const { renderToStaticMarkup, React, DeskChips } = await (await renderModule(`
     import React from 'react'
@@ -295,11 +295,15 @@ test('on a phone the four views are one segmented bar with every segment on scre
   `))
   const html = renderToStaticMarkup(React.createElement(DeskChips, { view: 'needs', counts: { questions: 1, requests: 2, merge: 3, fix: 1, mine: 17, reviewsRunning: 0 }, onView() {} }))
   assert.equal((html.match(/<button/g) || []).length, 5, 'four views plus the project link, no scrolling row of nine')
-  assert.match(html, /aria-pressed="true" aria-label="Needs you, 7"><b>7<\/b><span>Needs you<\/span>/)
-  assert.match(html, /aria-label="Review requests, 2"><b>2<\/b><span>Requests<\/span>/)
-  assert.match(html, /<b><\/b><span>Agent runs<\/span>/, 'a zero is an empty spacer that keeps the bar aligned, not a stray dot')
+  assert.match(html, /aria-pressed="true" aria-label="Needs you, 7"><span>Needs you<\/span><b>7<\/b>/)
+  assert.match(html, /aria-label="Review requests, 2"><span>Requests<\/span><b>2<\/b>/)
+  assert.match(html, /aria-label="Agent runs"><span>Agent runs<\/span><\/button>/, 'a zero shows no number at all, not a stray 0 or dot')
   assert.doesNotMatch(html, /·/)
   assert.match(html, /co-desk-chips-projects[^>]*>.*?All repositories/)
+  const withProjects = renderToStaticMarkup(React.createElement(DeskChips, { view: 'projects', counts: { mine: 1 }, projects: [{ key: 'a', name: 'Alpha' }, { key: 'b', name: 'Beta' }, { key: 'c', name: 'Gamma' }, { key: 'd', name: 'Delta' }], onView() {} }))
+  assert.match(withProjects, /class="co-desk-chips-projects" aria-pressed="true"/, 'the button is lit while the repositories are shown')
+  assert.equal((withProjects.match(/co-project-icon/g) || []).length, 3, 'three project icons, never more')
+  assert.match(withProjects, /All repositories<\/span><b>4<\/b>/, 'it says how many repositories there are')
   assert.doesNotMatch(html, /To confirm|Merged this week|PR reviews|My work|Your edits/)
 })
 
@@ -313,4 +317,14 @@ test('the phone keeps Sync and Settings labelled, a sticky review footer and dec
   assert.match(work, /\.co-decision-bar \{ display:flex; position:sticky; bottom:0;/)
   assert.match(work, /\.co-envelope-head \.co-project-icon,\.co-envelope-head \.co-source-tag,\.co-envelope-head \.co-rail-count \{ flex:none; \}/)
   assert.match(work, /\.co-envelope-head strong \{ min-width:0;/)
+})
+
+// Needs you and Repositories are one layout: a filter line, then the same search field, then the list.
+test('Needs you and Repositories share one filter line and one search field, in the same order', () => {
+  const source = readFileSync(new URL('../ui/SourceMap.jsx', import.meta.url), 'utf8')
+  assert.equal((source.match(/<DeskSearch /g) || []).length, 2, 'both screens use the one search component')
+  assert.doesNotMatch(source, /type="search"/, 'no screen draws its own search field')
+  const directory = source.slice(source.indexOf('<div className="co-directory">'))
+  assert.ok(directory.indexOf('<FilterLine') > -1 && directory.indexOf('<FilterLine') < directory.indexOf('<DeskSearch'), 'Repositories: filters, then search')
+  assert.ok(source.indexOf('<DeskCounts') < source.indexOf('<DeskSearch label="Find a PR'), 'Needs you: filters, then search')
 })

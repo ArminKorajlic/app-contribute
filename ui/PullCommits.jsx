@@ -28,8 +28,14 @@ function CommitRow({ commit }) {
   const body = String(commit.messageBody || '').trim()
   return <li className="co-commit">
     <div className="co-commit-main">
-      <strong className="co-commit-title">{commit.messageHeadline}</strong>
-      {body ? <details className="co-commit-body"><summary aria-label="Show the full message"><Icon name="more" size={16} /></summary><div>{body}</div></details> : null}
+      {body ? (
+        // The whole title row opens the rest of the message; the chevron box only says so. The message then
+        // takes the card's full width below the title, never a box squeezed beside a button.
+        <details className="co-commit-body">
+          <summary><strong className="co-commit-title">{commit.messageHeadline}<span className="co-visually-hidden"> — {NAMES.showFullMessage}</span></strong><span className="co-commit-toggle" aria-hidden="true"><Icon name="chevron" size={16} /></span></summary>
+          <div>{body}</div>
+        </details>
+      ) : <strong className="co-commit-title">{commit.messageHeadline}</strong>}
       <p className="co-commit-meta">
         {names.length ? <span>{authorLine(names)} committed </span> : null}<CommitTime value={commit.committedDate} />
         {madeWithAgent(commit) ? <span className="co-commit-agent" title="Written with the Möbius agent"><Icon name="prepare" size={14} />Agent</span> : null}

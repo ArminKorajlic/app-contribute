@@ -83,7 +83,8 @@ test('the Commits tab shows title, authors, time, checks in words, short hash an
   const list = [commit('a', { messageBody: 'Because of the thing.', authors: { nodes: [{ name: 'octocat', user: { login: 'octocat' } }, { name: 'Möbius Agent', user: { login: 'mobius-agent' } }] } }), commit('b', { statusCheckRollup: null })]
   const html = commits({ data: { commits: list, hasMore: false } })
   assert.match(html, /Commits on /)
-  assert.match(html, /<strong class="co-commit-title">Commit a<\/strong>/)
+  assert.match(html, /<summary><strong class="co-commit-title">Commit a<span class="co-visually-hidden"> — Show the full message<\/span><\/strong>/, 'a commit with a message opens it from the title row')
+  assert.match(html, /<strong class="co-commit-title">Commit b<\/strong>/, 'a commit with no message body has a plain title, no button')
   assert.match(html, /octocat and mobius-agent committed <\/span><time/)
   assert.match(html, /checks pass/)
   assert.match(html, /aria-label="Copy hash aaaaaaa"[^>]*>.*?<span>Copy hash<\/span>/)

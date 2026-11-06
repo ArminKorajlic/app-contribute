@@ -1,5 +1,6 @@
 import { DESK_VIEWS, NEEDS_CHIPS, railBadge, splitProjects } from '../desk.js'
 import { Icon } from './Icons.jsx'
+import { FilterLine } from './FilterLine.jsx'
 import { ProjectIcon } from './ProjectIcon.jsx'
 import { NAMES } from '../names.js'
 
@@ -80,20 +81,28 @@ export function DeskRail({ view, counts, projects, attention, selectedKey, onVie
   )
 }
 
-// The same four views as the rail, as one four-segment bar for phones: every segment is on screen at
-// once (nothing scrolls out of sight), the count above its word. The project list is one quiet link.
-export function DeskChips({ view, counts, onView }) {
+// The same four views as the rail, as one segmented bar for phones: every segment is on screen at
+// once (nothing scrolls out of sight), the word first and its count after it. Under it the repository
+// list is a button of its own, with a few project icons and a chevron, so it reads as a place you go to.
+export function DeskChips({ view, counts, projects = [], onView }) {
   return (
-    <div className="co-desk-chips" role="group" aria-label="Contribute views">
-      {DESK_VIEWS.map(item => {
-        const badge = railBadge(item.key, counts)
-        return (
-          <button key={item.key} type="button" aria-pressed={view === item.key} aria-label={badge ? `${item.label}, ${badge}` : item.label} onClick={() => onView(item.key)}>
-            <b>{badge || ''}</b><span>{item.short}</span>
-          </button>
-        )
-      })}
-      <button type="button" className="co-desk-chips-projects" aria-pressed={view === 'projects'} onClick={() => onView('projects')}><Icon name="search" size={15} />{NAMES.allRepositories}</button>
+    <div className="co-desk-chips">
+      <div className="co-desk-seg" role="group" aria-label="Contribute views">
+        {DESK_VIEWS.map(item => {
+          const badge = railBadge(item.key, counts)
+          return (
+            <button key={item.key} type="button" aria-pressed={view === item.key} aria-label={badge ? `${item.label}, ${badge}` : item.label} onClick={() => onView(item.key)}>
+              <span>{item.short}</span>{badge ? <b>{badge}</b> : null}
+            </button>
+          )
+        })}
+      </div>
+      <button type="button" className="co-desk-chips-projects" aria-pressed={view === 'projects'} onClick={() => onView('projects')}>
+        <span className="co-desk-avatars">{projects.slice(0, 3).map(project => <ProjectIcon key={project.key} project={project} className="co-desk-glyph" />)}</span>
+        <span className="co-desk-chips-label">{NAMES.allRepositories}</span>
+        {projects.length ? <b>{projects.length}</b> : null}
+        <Icon name="right" size={16} />
+      </button>
     </div>
   )
 }
@@ -104,15 +113,7 @@ export function DeskChips({ view, counts, onView }) {
 export function DeskCounts({ counts, filter = '', onFilter, onView }) {
   const chips = NEEDS_CHIPS.map(chip => ({ ...chip, value: chip.count(counts) })).filter(chip => chip.value)
   return <>
-    {chips.length ? (
-      <div className="co-desk-counts" role="group" aria-label="What needs you, by next step">
-        {chips.map(chip => (
-          <button key={chip.key} type="button" aria-pressed={filter === chip.key} onClick={() => onFilter(filter === chip.key ? '' : chip.key)}>
-            <b>{chip.value}</b>{chip.label}
-          </button>
-        ))}
-      </div>
-    ) : null}
+    {chips.length ? <FilterLine label="What needs you, by next step" items={chips.map(chip => ({ key: chip.key, label: chip.label, count: chip.value }))} active={filter} onPick={key => onFilter(filter === key ? '' : key)} /> : null}
     {counts.drafts ? (
       <p className="co-desk-quiet-line">
         {counts.drafts === 1 ? 'One draft is ready to open for review.' : `${counts.drafts} drafts are ready to open for review.`}

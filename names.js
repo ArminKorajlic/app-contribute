@@ -52,6 +52,8 @@ export const NAMES = Object.freeze({
   discard: 'Discard',
   openChat: 'Open chat',
   copyHash: 'Copy hash',
+  cancel: 'Cancel',
+  showFullMessage: 'Show the full message',
   viewOnGitHub: 'View on GitHub',
   settings: 'Contribute settings',
 

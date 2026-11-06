@@ -32,5 +32,8 @@ export const BUTTON_CSS = `
   .co-btn-quiet:not(:disabled):hover { border-color: transparent; background: var(--co-btn-tone-fill, var(--surface-2, var(--surface))); color: var(--co-btn-tone, var(--text)); }
   .co-btn-danger:not(:disabled):hover { background: color-mix(in srgb, var(--danger) 8%, var(--surface)); color: var(--danger); }
 }
+/* The Actions button is on every PR. On a phone its edge is the strong one (--co-edge), so a quiet one in a row still
+   reads as a button; the Actions menu and its sheet are drawn in workspace-theme.js. */
+@media (max-width: 680px) { .co-agent-menu-button { border-color: var(--co-edge); } }
 /* /mobius-ui:Button */
 `
