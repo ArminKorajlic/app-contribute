@@ -136,13 +136,16 @@ export async function collaborationRequest(token, appId, path, body) {
     headers: { Authorization: `Bearer ${token}`, ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   })
-  const data = await response.json().catch(() => ({}))
+  // A body that cannot be decoded reads as empty, and the error says so (`unreadable`), so a caller
+  // that needs the platform's own word can tell "refused" from "the answer was lost".
+  let unreadable = false
+  const data = await response.json().catch(() => { unreadable = true; return {} })
   // A route that does not exist answers a bare 404; a 404 that explains itself (a PR GitHub cannot show) is the platform's own word.
   const routeMissing = response.status === 404 && (!data.detail || data.detail === 'Not Found')
   if (!response.ok) throw Object.assign(new Error(routeMissing
     ? 'These controls need the companion Möbius update to be activated.'
     : typeof data.detail === 'string' ? data.detail : data.detail?.message || 'Could not complete this action. Refresh before retrying.'),
-  { status: response.status, ...(typeof data.detail?.code === 'string' ? { code: data.detail.code } : {}) })
+  { status: response.status, ...(unreadable ? { unreadable } : {}), ...(typeof data.detail?.code === 'string' ? { code: data.detail.code } : {}) })
   return data
 }
 
@@ -282,16 +285,16 @@ export function reviewRunRequest(choice) {
 
 // A public write is only as true as its answer. Of the ways one can end, a decoded receipt for this
 // action proves it happened and a decoded 4xx proves it did not. Everything else may have reached
-// GitHub: the connection dropped before the answer, a gateway or server error, or a "success" whose
-// body is unreadable or is not this action's receipt. That is { pending }, never a plain failure the
-// sheet would offer to retry and never a success it would claim. `receipt` turns the decoded answer
+// GitHub: the connection dropped before the answer, a gateway or server error, an answer whose body
+// cannot be read (whatever its status) or a "success" that is not this action's receipt. That is
+// { pending }, never a plain failure the sheet would offer to retry and never a success it would claim. `receipt` turns the decoded answer
 // into the fields the sheet reads, or null when it is not this action's completion.
 async function publicWrite(token, appId, path, body, { code, words, receipt }) {
   let result
   try {
     result = await collaborationRequest(token, appId, path, body)
   } catch (error) {
-    if (error.status >= 400 && error.status < 500) return { error: error.message }
+    if (error.status >= 400 && error.status < 500 && !error.unreadable) return { error: error.message }
     return { pending: true, error: error.code === code ? error.message : words }
   }
   const settled = receipt(result)

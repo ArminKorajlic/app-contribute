@@ -263,6 +263,8 @@ for (const write of writes) {
       for (const status of [400, 403, 404, 409, 422]) {
         answer(status, async () => ({ detail: 'Refused for a reason.' }))
         assert.deepEqual(await write.send(), { error: 'Refused for a reason.' }, `a decoded ${status} proves nothing was written`)
+        answer(status, async () => { throw new SyntaxError('Unexpected end of JSON input') })
+        assert.deepEqual(await write.send(), { pending: true, error: write.words }, `an unreadable ${status} is no platform refusal: the write may still have happened`)
       }
     } finally { globalThis.fetch = previous }
   })
