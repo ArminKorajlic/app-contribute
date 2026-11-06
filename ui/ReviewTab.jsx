@@ -7,6 +7,7 @@ import { ClampedMarkdown } from './ClampedMarkdown.jsx'
 import { CopyId, commentReference } from './CopyId.jsx'
 import { ReviewFrame } from './ReviewFrame.jsx'
 import { RespondJobBox } from './RespondJobBox.jsx'
+import { ResponseCard } from './ResponseCard.jsx'
 import { TimeAgo } from './GithubParts.jsx'
 import { RepairProposal, VerdictProposal, savedVersion } from './RunDetail.jsx'
 import { NAMES } from '../names.js'
@@ -50,14 +51,21 @@ export function reviewContent(status, ctx) {
 const allowed = (standing, ...ids) => !!standing?.actions?.some(action => ids.includes(action.id) && action.enabled)
 
 // The Review tab of a PR: nothing yet, a running review, or what the last review
-// found. It reuses the run's own verdict and conversation actions. While a Respond-to-feedback
-// conversation holds the PR (`respondChat`, which the machine's `jobKind` confirms) its box comes
-// first; an older saved review stays below it, but "No review yet" would contradict the page.
+// found. It reuses the run's own verdict and conversation actions. Above that come the Respond-to-feedback
+// conversation's own box while it holds the PR (`respondChat`, which the machine's `jobKind` confirms) and a saved
+// answer from it (`response`, with Post and Discard). An older saved review stays below them, but "No review yet"
+// would contradict them.
 export function ReviewTab(props) {
-  const { pr, status, earlier, standing, respondChat } = props
-  if (!respondChat || standing?.jobKind !== 'respond') return <SavedReview {...props} />
+  const { pr, status, earlier, standing, respondChat, response } = props
+  // While the helper posts, the chat is not "working on feedback": the answer's own card says what it is doing.
+  const posting = ['approved', 'posting'].includes(response?.status)
+  const job = respondChat && standing?.jobKind === 'respond' && !posting ? <RespondJobBox chat={respondChat} pr={pr} standing={standing} /> : null
+  const answer = response ? <ResponseCard pr={pr} response={response} chat={respondChat} busy={props.respondBusy} error={props.respondError} readOnly={props.readOnly}
+    onPost={props.onPostResponse} onDiscard={props.onDiscardResponse} onRespondAgain={allowed(standing, 'respond') ? props.onRespondAgain : undefined} /> : null
+  if (!job && !answer) return <SavedReview {...props} />
   return <div className="co-review-stack">
-    <RespondJobBox chat={respondChat} pr={pr} standing={standing} />
+    {job}
+    {answer}
     {status || earlier ? <SavedReview {...props} quiet /> : null}
   </div>
 }

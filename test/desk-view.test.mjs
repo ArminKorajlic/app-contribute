@@ -338,7 +338,7 @@ test('every search in the app is the one SearchField, with Clear while there is 
   const own = readdirSync(ui).filter(name => name.endsWith('.jsx') && name !== 'SearchField.jsx')
     .filter(name => /type=["']search["']/.test(readFileSync(new URL(name, ui), 'utf8')))
   assert.deepEqual(own, [], 'a screen draws its own search input')
-  for (const [file, label] of [['PullRequests.jsx', 'Find a person'], ['PullRequests.jsx', 'Find a pull request'], ['PullRequestDetail.jsx', 'Filter files by name']]) {
+  for (const [file, label] of [['PullRequests.jsx', 'Find a person'], ['PullRequests.jsx', 'Find a pull request'], ['PullFiles.jsx', 'Filter files by name']]) {
     assert.match(readFileSync(new URL(file, ui), 'utf8'), new RegExp(`<SearchField [^>]*label="${label}"`), `${label} uses SearchField`)
   }
   if (!frontendModules) return t.skip('MOBIUS_FRONTEND_NODE_MODULES is required')

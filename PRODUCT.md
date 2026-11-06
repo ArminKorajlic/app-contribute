@@ -177,6 +177,15 @@ the owner, and folds apps with nothing to do.
   reviewer something** as a plain button. "Answer in review conversation" is
   only for a conversation that really asked something, and "Stop review" only
   while work is in progress.
+- **A saved Respond to feedback answer comes first on the Review tab**: each point and
+  how it ended, the replies word for word, the new description, the commits and changed
+  files, the tests, and what Post will do in order, with **Post**, **Reply in chat** and
+  **Discard**. Post saves the owner's approval for exactly that answer and tells the chat
+  to run one checked command; nothing is pushed or posted before it. The PR reads **Draft
+  to send** while the answer waits, **Sending** while it posts and **Not confirmed** if it
+  stops part-way (a retry skips what already went out). When the PR moves after the
+  answer, the card says it is out of date and offers **Respond again** or **Discard**, and
+  while the chat waits on a card of its own, its box asks first and Post says why it is off.
 - **PR reviews** (side menu) lists the reviews the owner started, by project, in
   two tabs: **In progress** (waiting on the owner first, then agents at work, then
   anything stuck or unreadable) and **Done**. Every PR is read live, in batches of
@@ -222,9 +231,10 @@ always wait for your own tap. A review verdict waits for your tap ("Draft for me
 unless you chose "Agent posts" for that review.
 
 **Agent jobs.** Your PR: Check my PR (private) · Respond to feedback (every point ends
-fixed with its commit, not valid with the reason and an @mention, or out of scope; one
-approval sheet sends the fixes, every reply, the description and the re-review
-requests) · Finish it for me (stops before each push for your approval). Their PR:
+fixed with its commit, not valid with the reason and an @mention, or out of scope; it
+never reviews again, and its result waits in the PR's Review tab until you press Post,
+which pushes the fixes, posts every reply, updates the description and asks for the
+re-review) · Finish it for me (stops before each push for your approval). Their PR:
 Review, which reads Re-review once you reviewed it, with an optional "Merge after I
 approve" switch · Take over, set apart, maintainers only, with a reason. Your own
 actions: Open for review, Back to draft, Ask for re-review, Merge and Close, each

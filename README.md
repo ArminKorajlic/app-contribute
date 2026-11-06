@@ -467,6 +467,22 @@ detail's **From** line links the local preparation and the source, review and
 fix conversations for that exact repository and number. The block declares no
 executable capability and grants nothing.
 
+### Respond to feedback: the saved answer
+
+A Respond-to-feedback chat never reviews the PR again and never publishes. When it
+finishes it runs `respond_result.py save`, which records what Git and GitHub say (the
+commits as a bundle, the changed files, the PR head) beside the agent's own part (each
+point and how it ended, the exact replies, the description, who to ask again, the tests)
+in `respond-results/<owner>__<repo>__<number>.json`. The PR's Review tab shows it with
+**Post**, **Reply in chat** and **Discard**. Post writes the owner's approval
+(`respond-decisions/<slug>.json`) for that exact result and its digest, then tells the
+same chat to run `respond_result.py post`, the only command that publishes. It refuses
+unless the approval names this result, its content is unchanged and the PR is still
+where the work was built; then it pushes the commits (a fast-forward, never forced, so
+they keep their ids), posts the replies, updates the description and asks for the
+re-review, recording each step so a second run repeats nothing. The files, rules, exit
+codes and the app side are in `respond-result.md`.
+
 ## How the screens stay in sync
 
 The app gets no push from Möbius or GitHub, so one sync hub (`refresh.js`, `createSyncHub`) decides when anything is read again; no screen keeps a timer or a focus handler of its own. The one exception is the legacy relay-submission check in `index.jsx`, which polls every 30 s only while a relay-submitted PR is still being confirmed. A pane tiled beside a chat is shown without ever being focused, so the hub follows the shell's visibility signal (`window.mobius.onVisibilityChange`, with the page's visibility on an older Möbius), not window focus.

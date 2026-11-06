@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { loadPullActivity, loadPullChecks, loadPullCommits, loadPullDescription, loadPullFiles, loadPullRelated, loadPullThreads, pullFileDiff, safeDetailLink } from '../pull-details.js'
+import { loadPullActivity, loadPullChecks, loadPullCommits, loadPullDescription, loadPullFiles, loadPullRelated, loadPullThreads, safeDetailLink } from '../pull-details.js'
 import { MarkdownView } from './MarkdownView.jsx'
 import { ClampedMarkdown } from './ClampedMarkdown.jsx'
 import { CopyId, commentReference } from './CopyId.jsx'
-import DiffView from './diff/DiffView.jsx'
 import { Icon } from './Icons.jsx'
 import { ActionsMenu } from './ActionsMenu.jsx'
 import { useTipDismiss } from './useTipDismiss.js'
@@ -19,7 +18,8 @@ import { showOpenTab } from './stripScroll.js'
 import { NextStep, StateLine } from './NextStep.jsx'
 import { nextStepModel } from '../next-step.js'
 import { PullCommits } from './PullCommits.jsx'
-import { SearchField } from './SearchField.jsx'
+import { PullFiles } from './PullFiles.jsx'
+export { PullFiles }
 
 export function DateLabel({ value, prefix = '', time = false }) {
   if (!value || !Number.isFinite(Date.parse(value))) return null
@@ -188,30 +188,6 @@ function ReadErrors({ errors, onRetry }) {
 export function PullFileTotals({ totals, label = 'Total change' }) {
   if (!totals || Object.values(totals).every(value => value === null)) return null
   return <p className="co-detail-stats" aria-label={label}><span>{label}</span>{totals.files !== null ? <span>{totals.files} {totals.files === 1 ? 'file' : 'files'}</span> : null}{totals.additions !== null ? <span className="co-file-add">+{totals.additions} lines</span> : null}{totals.deletions !== null ? <span className="co-file-del">−{totals.deletions} lines</span> : null}</p>
-}
-const FILTER_AFTER = 10
-
-export function PullFiles({ data }) {
-  const [filter, setFilter] = useState('')
-  const [expanded, setExpanded] = useState(false)
-  const totals = data?.totals
-  const counts = [
-    Number.isInteger(totals?.additions) ? `${totals.additions} additions` : null,
-    Number.isInteger(totals?.deletions) ? `${totals.deletions} deletions` : null,
-  ].filter(Boolean).join(' and ')
-  const needle = filter.trim().toLowerCase()
-  const shownFiles = (data?.files || []).filter(file => !needle || file.filename.toLowerCase().includes(needle))
-  return <>
-    {Number.isInteger(totals?.files) ? <p className="co-pr-note">Showing {totals.files} changed {totals.files === 1 ? 'file' : 'files'}{counts ? ` with ${counts}` : ''}{data?.page > 1 ? ` · page ${data.page}` : ''}. GitHub may omit or shorten large patches.</p> : null}
-    {(data?.files || []).length > FILTER_AFTER ? <div className="co-file-tools">
-      <SearchField className="co-file-search" label="Filter files by name" value={filter} onChange={setFilter} />
-      <button type="button" className="co-btn co-btn-quiet" aria-pressed={expanded} onClick={() => setExpanded(value => !value)}>{expanded ? 'Collapse all' : 'Expand all'}</button>
-    </div> : null}
-    {shownFiles.map(file => <details key={`${file.filename}:${expanded}`} className="co-file-disclosure" open={expanded}><summary><span className="co-file-name">{file.filename}</span>{file.status && file.status !== 'modified' ? <em className="co-file-status">{file.status}</em> : null}<span className="co-file-stat"><b className="co-file-add">+{file.additions}</b><b className="co-file-del">−{file.deletions}</b></span></summary>{file.previous_filename ? <p>Previously {file.previous_filename}</p> : null}{file.patch ? <DiffView file={pullFileDiff(file)} /> : <p>No text patch is available for this file; it may be binary or too large.</p>}</details>)}
-    {!data?.files?.length ? <p>No changed files returned on this page.</p> : null}
-    {data?.files?.length && !shownFiles.length ? <p>No file on this page matches “{filter}”.</p> : null}
-    {data?.capped ? <p>GitHub’s 3,000-file limit has been reached. More files may be omitted; open the review chat for the full source.</p> : null}
-  </>
 }
 export function PullChecks({ data }) {
   return <>

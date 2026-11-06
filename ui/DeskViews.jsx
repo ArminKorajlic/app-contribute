@@ -26,9 +26,9 @@ function NewDot({ value, lastLooked }) {
 // One PR under its project's card. The whole row opens the PR on its own page;
 // a PR with a review running or waiting wears the comet frame, says so in a chip,
 // and opens on its Review tab.
-function DeskPullRow({ project, pr, chip, order, lastLooked, runs, chats, onOpenPull, login, ignored }) {
+function DeskPullRow({ project, pr, chip, order, lastLooked, runs, chats, responses, onOpenPull, login, ignored }) {
   const comments = conversationCount(pr)
-  const standing = standingFor({ pr, login, runs: runs || [], chats: chats || [], ignored })
+  const standing = standingFor({ pr, login, runs: runs || [], chats: chats || [], responses: responses || [], ignored })
   const framed = frameOf(standing)
   // While an agent works the travelling frame says it; a move of yours also gets its words.
   const standingChip = framed === 'verdict' ? chipOf(standing) : null
@@ -86,10 +86,10 @@ const requestChip = { label: 'Asks for your review', tone: 'you' }
 // Rows per project and view, each tagged with the Needs you chip that counts it
 // (desk.js NEEDS_CHIPS): review requests first, then the owner's saved-work
 // decisions, their own PRs with a step, and agent runs that wait on them.
-function projectRows(view, project, { login, decisionsFor, lastLooked, query, runs, chats, ignored, reviewEntries, onOpenPull, onOpenRecord }) {
+function projectRows(view, project, { login, decisionsFor, lastLooked, query, runs, chats, responses, ignored, reviewEntries, onOpenPull, onOpenRecord }) {
   const rows = []
   const pull = (pr, chip, order, chipKey = '') => {
-    rows.push({ chip: chipKey, el: <DeskPullRow key={`pr:${pr.number}`} project={project} pr={pr} chip={chip} order={order} lastLooked={lastLooked} runs={runs} chats={chats} onOpenPull={onOpenPull} login={login} ignored={ignored} /> })
+    rows.push({ chip: chipKey, el: <DeskPullRow key={`pr:${pr.number}`} project={project} pr={pr} chip={chip} order={order} lastLooked={lastLooked} runs={runs} chats={chats} responses={responses} onOpenPull={onOpenPull} login={login} ignored={ignored} /> })
   }
   const requests = view === 'needs' || view === 'requests'
     ? (project.reviewRequests || []).filter(pr => matches(query, pr.title, String(pr.number), pr.author?.login)) : []
@@ -185,9 +185,9 @@ function viewEnvelopes(view, projects, { records, query, lastLooked, needsFilter
 }
 
 // The selected side view: one card per app, in the projects list's own order.
-export function DeskView({ view, projects, records, login, decisionsFor, lastLooked, query, runs = [], chats = [], ignored = null, reviews = null, counts = {}, needsFilter = '', onOpenProject, onOpenPull, onOpenRecord }) {
+export function DeskView({ view, projects, records, login, decisionsFor, lastLooked, query, runs = [], chats = [], responses = [], ignored = null, reviews = null, counts = {}, needsFilter = '', onOpenProject, onOpenPull, onOpenRecord }) {
   const [mineFilter, setMineFilter] = useState('open')
-  const context = { login, decisionsFor, lastLooked, query, runs, chats, ignored, reviewEntries: reviews?.entries || [], onOpenPull, onOpenRecord }
+  const context = { login, decisionsFor, lastLooked, query, runs, chats, responses, ignored, reviewEntries: reviews?.entries || [], onOpenPull, onOpenRecord }
   if (view === 'runs') return <AgentRunsView reviews={reviews} projects={projects} query={query} decisionsFor={decisionsFor} renderWork={project => projectRows('work', project, context).map(row => row.el)} onOpenProject={onOpenProject} onOpenPull={onOpenPull} />
   const shownView = view === 'mine' && mineFilter === 'merged' ? 'merged' : view
   const envelopes = viewEnvelopes(shownView, projects, { records, query, lastLooked, needsFilter: view === 'needs' ? needsFilter : '', context, onOpenProject })

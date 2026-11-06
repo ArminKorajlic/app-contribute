@@ -420,7 +420,7 @@ export function SourceMap({
         desk.view !== 'projects' ? (
           <>
             <SearchField label="Find a PR, person or repository" value={deskQuery} onChange={setDeskQuery} />
-            <DeskView view={desk.view} projects={orderedProjects} records={desk.records} login={desk.login} decisionsFor={desk.decisionsFor} lastLooked={desk.lastLooked} query={deskQuery} runs={desk.runs} chats={desk.respondChats} ignored={desk.ignored} reviews={desk.reviews} counts={desk.counts} needsFilter={needsFilter} onOpenProject={openProject} onOpenPull={desk.onOpenPull} onOpenRecord={openRecordFromDesk} />
+            <DeskView view={desk.view} projects={orderedProjects} records={desk.records} login={desk.login} decisionsFor={desk.decisionsFor} lastLooked={desk.lastLooked} query={deskQuery} runs={desk.runs} chats={desk.respondChats} responses={desk.responses} ignored={desk.ignored} reviews={desk.reviews} counts={desk.counts} needsFilter={needsFilter} onOpenProject={openProject} onOpenPull={desk.onOpenPull} onOpenRecord={openRecordFromDesk} />
           </>
         ) : (
         <>

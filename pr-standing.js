@@ -2,8 +2,18 @@
 // and the chip. Pure, so rows, the desk and the PR page cannot disagree.
 import { prFacts } from './pr-facts.js'
 import { decide } from './pr-machine.js'
+import { responseView } from './respond-result.js'
+import { NAMES } from './names.js'
 
-export const standingFor = ({ pr, login, runs = [], ignored = null, chats = [] }) => decide(prFacts({ pr, login, runs, ignored, chats }))
+// A saved answer makes Respond to feedback a second pass: the action says so and what it replaces. The machine's own decision is
+// otherwise untouched; this only words the one action, so the menu and the panel stay in agreement.
+function secondPass(decision, view) {
+  if (!['ready', 'stale'].includes(view?.status)) return decision
+  const again = { title: NAMES.respondAgain, detail: 'Replaces the waiting answer. It does not review again.' }
+  return { ...decision, actions: decision.actions.map(action => (action.id === 'respond' ? { ...action, ...again } : action)) }
+}
+
+export const standingFor = ({ pr, login, runs = [], ignored = null, chats = [], responses = [] }) => secondPass(decide(prFacts({ pr, login, runs, ignored, chats, responses })), responseView(responses, pr))
 
 // States that exist because of a Contribute review: they hold the amber frame.
 const REVIEW_MOVES = new Set(['to_confirm', 'unconfirmed', 'needs_answer', 'stalled', 'author.findings', 'reviewer.result_ready', 'reviewer.re_review'])

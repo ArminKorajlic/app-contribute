@@ -199,6 +199,8 @@ Every agent and confirm window opens with the same three lines (one shared head)
 
 The Review tab picks its buttons by what happened: **Fix these findings** is the one tinted button on the owner's own PR, then **Ignore…**, **Review again** and **Ask the reviewer something**, all plain buttons. The row beside a PR in the list carries one chip for whose turn it is: amber only for the owner's own move, quiet grey for "Waiting on <author>" or "Ignored".
 
+A saved Respond-to-feedback answer sits first on the Review tab in the same amber frame while it waits on the owner: each point wears a Desk chip for how it ended (green Fixed, plain Not valid, amber Out of scope), the replies show word for word, **Post** is the one tinted button with **Reply in chat** and **Discard** plain, and the steps Post will take are numbered, then ticked (a check in a ring, never colour alone) as the chat does them. Its box goes plain while the conversation's own box above it asks first, and once posted it is a quiet summary with links.
+
 **Agent runs** is a desk view like Needs you: project cards in the desk's order, two tabs named for what they hold (Running, Finished), rows that open the PR on its Review tab. A run that waits on the owner counts in Needs you, not here; in the rail only a small spinner and “N running” show agents at work. Merged PRs are a filter on My PRs, and local changes are a banner on each project page.
 
 ### Contribution detail

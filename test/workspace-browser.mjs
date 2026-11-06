@@ -5,7 +5,9 @@
 // runDeskFrameChecks (the whole app: a review started on a PR page frames its Desk row),
 // runReviewRequestChecks (the whole app: a review you submit takes its row out of Review requests) and
 // runReviewHelperWaitChecks (the whole app: a review waiting on its helper reads as at work, not stopped) and
-// runRespondAnswerChecks (the whole app: a Respond-to-feedback chat that asks you is answered from the Review tab, with no Answer-the-agent button).
+// runRespondAnswerChecks (the whole app: a Respond-to-feedback chat that asks you is answered from the Review tab, with no Answer-the-agent button),
+// runRespondResultChecks (the whole app: a saved Respond-to-feedback answer is a draft to send in the Review tab, and Post, Discard and its stale and busy states work) and
+// runRespondAgainChecks (the whole app: Respond again is delivered into the PR's existing conversation as a message).
 // Run one with WORKSPACE_BROWSER_ONLY=runDeskFrameChecks (and one viewport with WORKSPACE_BROWSER_VIEWPORT=desktop), for example while
 // runWorkspaceChecks is red, so the Desk check can still show green.
 // Actual app components, native Chromium DOM, and no live app/backend. The
@@ -75,7 +77,7 @@ const prepared = {
     head_sha: HEAD, branch: 'fix/fixture' },
   quality_review: { state: 'all_clear', reviewed_head_sha: HEAD },
 }
-const calls = { exactRuns: [], restores: [], diffs: [], requests: [], starts: [], publications: [], status: [], forbidden: [], opened: [], releases: [], stops: [], githubRetries: 0 }
+const calls = { exactRuns: [], restores: [], diffs: [], requests: [], starts: [], publications: [], status: [], forbidden: [], opened: [], releases: [], stops: [], messages: [], appChatStarts: [], githubRetries: 0 }
 const values = new Map(), versions = new Map(), navigation = [], reviewRuns = [], respondChats = []
 let versionCounter = 0
 const pulls = [pull(7), pull(8, { headRefOid: SECOND_HEAD, assignees: { nodes: [{ login: 'teammate' }] } })]
@@ -108,6 +110,9 @@ function forbidden(kind) {
 window.fetch = async (url, options = {}) => {
   const call = { url: String(url), method: options.method || 'GET', body: options.body ? JSON.parse(options.body) : null, at: Date.now() }
   calls.requests.push(call)
+  // A conversation of the app: the platform returns the PR's existing one for its scope, and takes a message into any chat the app made.
+  if (call.method === 'POST' && call.url === '/api/app-chats/start') { calls.appChatStarts.push(call.body); return response({ chat_id: 'respond-chat-fixture', outcome: 'reused' }) }
+  if (call.method === 'POST' && /^\/api\/chats\/[\w-]+\/messages$/.test(call.url)) { calls.messages.push({ chatId: call.url.split('/')[3], ...call.body }); return response({ status: 'started' }) }
   if (call.url === '/api/models') return response({providers:{codex:[{id:'fixture-model',label:'Fixture model',available:true,effort_levels:['none','minimal','low','medium','high','xhigh'],default_effort:'low'}]}})
   if (call.url === '/api/owner/model-prefs') return response({hidden_ids:[]})
   if (call.url === '/api/auth/providers/status') return response({codex:{configured:true,available:true,name:'OpenAI Codex'}})
@@ -1679,15 +1684,16 @@ window.runWorkspaceChecks = async () => {
 
 // The whole app on a fresh page: a review the owner starts from a PR's own page
 // must show on that PR's Desk row without pressing Sync with GitHub.
-async function mountDeskApp() {
+async function mountDeskApp({ pullPatch = {} } = {}) {
   root.render(null)
   await frame(); await frame()
   window.fullAppFixture = true; window.fullAppConnected = true; window.fullAppDesk = true
   values.set('followed-repositories.json', ['owner/project'])
-  window.mobius.storage.listWithStatus = async () => ({ complete: true, entries: [] })
+  // Only the saved Respond answers and decisions are ever listed; every other folder is empty.
+  window.mobius.storage.listWithStatus = async prefix => ({ complete: true, entries: !prefix.startsWith('respond-') ? [] : [...values].filter(([key]) => key.startsWith(prefix)).map(([key, value]) => ({ type: 'file', name: key.slice(prefix.length), path: key, content: structuredClone(value) })) })
   // A PR GitHub read completely: without these facts its standing is "couldn't read" and nothing frames it.
   Object.assign(pulls[0], { mergeable: 'MERGEABLE', reviewDecision: null, commits: { nodes: [{ commit: { statusCheckRollup: null } }] },
-    latestOpinionatedReviews: { nodes: [] }, reviewThreads: { nodes: [] } })
+    latestOpinionatedReviews: { nodes: [] }, reviewThreads: { nodes: [] }, ...pullPatch })
   root.render(<ContributeApp appId="fixture-app" token="fixture-only" />)
 }
 // A popup menu must stay on the screen whichever button opens it: on a phone a row's Actions button sits well
@@ -1871,6 +1877,125 @@ window.runRespondAnswerChecks = async () => {
     ensure(!reviewBody().includes('No review yet') && !query('.co-next-pointer'), 'A working chat still showed the question state: ' + reviewBody())
     checks.push({ name: 'a Respond chat at work is shown as working, with its conversation one button away', status: 'pass' })
     ensure(document.documentElement.scrollWidth <= window.innerWidth, 'The page scrolls sideways: ' + document.documentElement.scrollWidth + ' of ' + window.innerWidth)
+    ensure(calls.forbidden.length === 0, 'Unexpected runtime/transport: ' + JSON.stringify(calls.forbidden))
+    return { status: 'pass', checks, forbidden: calls.forbidden }
+  } catch (error) {
+    return { status: 'fail', checks, error: error.stack, dom: text(query('main')).slice(0, 5000), calls, forbidden: calls.forbidden }
+  }
+}
+
+// A Respond-to-feedback answer the helper saved: the PR reads "Draft to send", the Review tab shows the replies, and Post, Discard,
+// an out-of-date answer and a busy chat each do what the card says. Nothing is posted by the app: it writes the owner's decision and
+// tells the chat to run the helper.
+const OWN_PULL_WITH_FEEDBACK = { author: { login: 'reconnected-owner' }, reviewDecision: 'CHANGES_REQUESTED',
+  latestOpinionatedReviews: { nodes: [{ state: 'CHANGES_REQUESTED', author: { login: 'teammate', __typename: 'User' }, commit: { oid: HEAD } }] } }
+const savedResponse = (patch = {}) => ({ version: 1, id: 'r-3f9a1c2b04d5', repo: 'owner/project', number: 7, chat_id: 'respond-chat-fixture', created_at: '2026-11-06T08:41:00Z', state: 'ready',
+  pr: { head_sha: HEAD, head_ref: 'fix/fixture', base_ref: 'main', head_repo: 'owner/project' }, tip_sha: HEAD,
+  points: [{ reviewer: 'teammate', title: 'A lost answer is unresolved', ending: 'fixed', commit: null, answer: 'Fixed.' }, { reviewer: 'teammate', title: 'Rename the helper', ending: 'not_valid', commit: null, answer: 'It matches its siblings.' }],
+  replies: [{ body: 'Both points are answered.', reply_to: null }], description: null, rerequest: ['teammate'], tests: '10 pass, 0 fail',
+  commits: [], files: [], bundle: null, digest: 'd'.repeat(64), receipts: { push: null, replies: [], description: null, rerequest: null }, error: null, ...patch })
+const RESPONSE_KEY = 'respond-results/owner__project__7.json', DECISION_KEY = 'respond-decisions/owner__project__7.json'
+window.runRespondResultChecks = async () => {
+  const checks = []
+  const deskFrame = title => [...document.querySelectorAll('.co-frame')].find(node => text(node).includes(title))?.dataset.frame
+  const button = label => [...document.querySelectorAll('button')].find(node => text(node) === label)
+  const reviewBody = () => text(query('.co-pr-detail-body'))
+  const hint = () => text(query('.co-next-hint'))
+  const answer = async (patch, decision) => {
+    values.set(RESPONSE_KEY, savedResponse(patch))
+    decision ? values.set(DECISION_KEY, decision) : values.delete(DECISION_KEY)
+    shownAgain()
+  }
+  try {
+    reviewRuns.length = 0
+    respondChats.length = 0
+    values.set(RESPONSE_KEY, savedResponse())
+    await mountDeskApp({ pullPatch: OWN_PULL_WITH_FEEDBACK })
+    await until(() => deskFrame('Contribution 7') === 'verdict', 'The Desk row of a PR with a saved answer did not hold the amber frame: ' + deskFrame('Contribution 7'))
+    ensure([...document.querySelectorAll('.co-desk-row')].some(node => text(node).includes('Contribution 7') && text(node).includes('Draft to send')), 'The Desk row did not say Draft to send')
+    await click([...document.querySelectorAll('.co-desk-row')].find(node => text(node).includes('Contribution 7')))
+    await until(() => query('.co-desk-back') && query('.co-next-hint'), 'The PR page did not open')
+    ensure(hint().startsWith('A draft is ready. Read it, then send it or throw it away'), 'The panel said: ' + hint())
+    await until(() => reviewBody().includes('Replies ready'), 'The Review tab did not show the saved answer: ' + reviewBody())
+    ensure(reviewBody().includes('Both points are answered.') && reviewBody().includes('A lost answer is unresolved') && reviewBody().includes('Ask teammate to review again'), 'The card is missing its content: ' + reviewBody())
+    ensure(!reviewBody().includes('No review yet'), 'The tab still said No review yet')
+    ensure(button(NAMES.postAnswer) && !button(NAMES.postAnswer).disabled, 'Post is not offered')
+    checks.push({ name: 'a saved answer is a draft to send: the row, the panel and the Review tab all say so', status: 'pass' })
+    // Post: the owner's approval is written for exactly this answer, and the chat is told to run the helper.
+    await click(button(NAMES.postAnswer))
+    await until(() => values.get(DECISION_KEY)?.decision === 'approved', 'Post wrote no approval')
+    ensure(values.get(DECISION_KEY).result_id === 'r-3f9a1c2b04d5' && values.get(DECISION_KEY).digest === 'd'.repeat(64), 'The approval named another answer: ' + JSON.stringify(values.get(DECISION_KEY)))
+    await until(() => calls.messages.length === 1, 'Post sent the chat nothing')
+    const sent = calls.messages[0]
+    ensure(sent.chatId === 'respond-chat-fixture' && sent.cid === 'respond-post-r-3f9a1c2b04d5', 'The message went to ' + sent.chatId + ' as ' + sent.cid)
+    ensure(sent.content.includes('python3 /data/apps/contribute/respond_result.py post --pr owner/project#7 --id r-3f9a1c2b04d5'), 'The message did not name the command: ' + sent.content)
+    await until(() => reviewBody().includes('Approved. Waiting for the chat to post it'), 'The card did not follow the approval: ' + reviewBody())
+    ensure(hint() === 'Sending to GitHub…', 'The panel said: ' + hint())
+    checks.push({ name: 'Post writes the approval for this answer and tells the chat to run the helper', status: 'pass' })
+    // The helper at work and done.
+    await answer({ state: 'posting' }, values.get(DECISION_KEY))
+    await until(() => reviewBody().includes('Posting'), 'The card did not show posting: ' + reviewBody())
+    const pullReads = () => calls.requests.filter(call => call.url === '/api/github/graphql' && call.body?.query.includes('ContributePullRequests')).length
+    const readsBefore = pullReads()
+    await answer({ state: 'posted', receipts: { push: null, replies: [{ index: 0, url: 'https://example.test/c/1', at: '2026-11-06T09:40:00Z' }], description: null, rerequest: { at: '2026-11-06T09:40:05Z', reviewers: ['teammate'] } } }, values.get(DECISION_KEY))
+    await until(() => reviewBody().includes('Posted') && query('.co-pr-detail-body a[href="https://example.test/c/1"]'), 'The card did not show what was posted: ' + reviewBody())
+    await until(() => pullReads() > readsBefore, 'The PR was not read again once the answer was posted')
+    checks.push({ name: 'posting and posted follow what the helper saved, and the PR is read again once it is posted', status: 'pass' })
+    // Discard.
+    await answer({}, null)
+    await until(() => button(NAMES.discard), 'The answer did not come back to be discarded: ' + reviewBody())
+    await click(button(NAMES.discard))
+    await until(() => values.get(DECISION_KEY)?.decision === 'discarded', 'Discard wrote no decision')
+    await until(() => !reviewBody().includes('Replies ready') && hint().startsWith('Your PR · feedback is waiting'), 'The PR did not go back to Feedback to answer: ' + hint())
+    checks.push({ name: 'Discard takes the answer off the PR, which reads Feedback to answer again', status: 'pass' })
+    // The PR moved after the answer: nothing to post, a second pass instead.
+    await answer({ pr: { head_sha: 'e'.repeat(40), head_ref: 'fix/fixture', base_ref: 'main', head_repo: 'owner/project' } }, null)
+    await until(() => reviewBody().includes('Out of date'), 'The card did not say it is out of date: ' + reviewBody())
+    ensure(!button(NAMES.postAnswer) && button(NAMES.respondAgain), 'An out-of-date answer offered the wrong buttons')
+    // A chat that waits on a card of its own cannot take the message, so Post says why instead of failing.
+    respondChats.push({ repo: 'owner/project', number: 7, state: 'needs_answer', chat_id: 'respond-chat-fixture' })
+    await answer({}, null)
+    await until(() => button(NAMES.postAnswer) && button(NAMES.postAnswer).disabled && reviewBody().includes('waiting for your answer to its own card'), 'Post was not held back for the chat’s own card: ' + reviewBody())
+    checks.push({ name: 'an out-of-date answer and a chat with a card of its own each hold Post back, in words', status: 'pass' })
+    ensure(document.documentElement.scrollWidth <= window.innerWidth, 'The page scrolls sideways: ' + document.documentElement.scrollWidth + ' of ' + window.innerWidth)
+    ensure(calls.forbidden.length === 0, 'Unexpected runtime/transport: ' + JSON.stringify(calls.forbidden))
+    return { status: 'pass', checks, forbidden: calls.forbidden }
+  } catch (error) {
+    return { status: 'fail', checks, error: error.stack, dom: text(query('main')).slice(0, 5000), calls, forbidden: calls.forbidden }
+  }
+}
+
+// Respond again is delivered into the PR's conversation as a message: the platform hands back the conversation it already has for the
+// PR's scope without sending the job, so a plain start would only reopen it.
+window.runRespondAgainChecks = async () => {
+  const checks = []
+  const button = label => [...document.querySelectorAll('button')].find(node => text(node) === label)
+  const reviewBody = () => text(query('.co-pr-detail-body'))
+  try {
+    reviewRuns.length = 0
+    respondChats.length = 0
+    values.set(RESPONSE_KEY, savedResponse())
+    await mountDeskApp({ pullPatch: OWN_PULL_WITH_FEEDBACK })
+    await until(() => [...document.querySelectorAll('.co-desk-row')].some(node => text(node).includes('Contribution 7')), 'The Desk did not list the PR')
+    await click([...document.querySelectorAll('.co-desk-row')].find(node => text(node).includes('Contribution 7')))
+    await until(() => query('[aria-label="Choose an action for PR 7"]') && reviewBody().includes('Replies ready'), 'The PR page did not open on its answer')
+    await click(query('[aria-label="Choose an action for PR 7"]'))
+    const item = [...document.querySelectorAll('[role=menuitem]')].find(node => text(node.querySelector('strong')) === NAMES.respondAgain)
+    ensure(item, 'The Actions menu did not offer Respond again: ' + [...document.querySelectorAll('[role=menuitem]')].map(node => text(node.querySelector('strong'))).join(', '))
+    await click(item)
+    await until(() => query('.co-review-window'), 'The Respond window did not open')
+    const window_ = text(query('.co-review-window'))
+    ensure(window_.includes('This replaces the answer that is waiting') && window_.includes('It does not review the PR again') && !window_.includes('How far should it go'), 'The window said: ' + window_)
+    await until(() => button(NAMES.respondAgain) && !button(NAMES.respondAgain).disabled, 'Respond again is not ready: ' + window_)
+    await click(button(NAMES.respondAgain))
+    await until(() => calls.messages.length === 1, 'Respond again sent the conversation nothing')
+    const sent = calls.messages[0]
+    ensure(sent.chatId === 'respond-chat-fixture' && /^respond-/.test(sent.cid), 'The message went to ' + sent.chatId + ' as ' + sent.cid)
+    ensure(sent.content.includes('respond_result.py save --pr owner/project#7') && !/approval card/.test(sent.content), 'The brief was: ' + sent.content.slice(0, 400))
+    ensure(calls.appChatStarts.length === 1 && calls.appChatStarts[0].scope === 'contribute-address:owner/project#7', 'The start used another scope: ' + JSON.stringify(calls.appChatStarts))
+    ensure(!calls.requests.some(call => call.method === 'PATCH' && call.url.startsWith('/api/app-chats/')), 'A second pass changed the conversation’s agent')
+    await until(() => text(query('.co-review-window')).includes('The agent is on it'), 'The window did not confirm: ' + text(query('.co-review-window')))
+    checks.push({ name: 'Respond again goes into the PR’s own conversation as one message, with the new brief', status: 'pass' })
     ensure(calls.forbidden.length === 0, 'Unexpected runtime/transport: ' + JSON.stringify(calls.forbidden))
     return { status: 'pass', checks, forbidden: calls.forbidden }
   } catch (error) {
@@ -2191,7 +2316,7 @@ async function main() {
     const protocol = cdp(browser), reports = []
     // Each scenario gets a fresh page, so the whole-app Desk scenario never inherits the project fixture's state.
     // WORKSPACE_BROWSER_ONLY=runDeskFrameChecks runs one scenario.
-    const scenarios = process.env.WORKSPACE_BROWSER_ONLY ? [process.env.WORKSPACE_BROWSER_ONLY] : ['runWorkspaceChecks', 'runPopupFitChecks', 'runDeskFrameChecks', 'runReviewRequestChecks', 'runReviewHelperWaitChecks', 'runRespondAnswerChecks', 'runSyncChecks', 'runStaleAnswerChecks']
+    const scenarios = process.env.WORKSPACE_BROWSER_ONLY ? [process.env.WORKSPACE_BROWSER_ONLY] : ['runWorkspaceChecks', 'runPopupFitChecks', 'runDeskFrameChecks', 'runReviewRequestChecks', 'runReviewHelperWaitChecks', 'runRespondAnswerChecks', 'runRespondResultChecks', 'runRespondAgainChecks', 'runSyncChecks', 'runStaleAnswerChecks']
     const viewports = [{ name: 'desktop', width: 1280, height: 900 }, { name: 'phone', width: 390, height: 844 }].filter(size => !process.env.WORKSPACE_BROWSER_VIEWPORT || size.name === process.env.WORKSPACE_BROWSER_VIEWPORT)
     for (const [viewport, scenario] of viewports.flatMap(size => scenarios.map(name => [size, name]))) {
       const { targetId } = await protocol.send('Target.createTarget', { url: 'about:blank' })

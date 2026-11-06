@@ -15,6 +15,8 @@ import { ActionsMenu } from './ActionsMenu.jsx'
 import { ReviewDialog } from './ReviewDialog.jsx'
 import { AddressFeedbackWindow } from './AddressFeedback.jsx'
 import { savedFindings } from '../address-feedback.js'
+import { responseView } from '../respond-result.js'
+import { approveResponse, discardResponse } from '../respond-flow.js'
 import { ReviewConfirmation } from './ReviewConfirmation.jsx'
 import { ActionConfirm } from './ActionConfirm.jsx'
 import { IgnoreReview } from './IgnoreReview.jsx'
@@ -169,7 +171,7 @@ const runAnchor = run => run.items?.length === 1 ? `${run.items[0].repo.toLowerC
 // `onRunsChanged` asks the hub to read it again, so every screen shows the change.
 // `onReviewPosted(repo, number)` tells it the owner's review of a PR reached GitHub,
 // so the row leaves Review requests without waiting for the next read.
-export function PullRequests({ appId, token, project, conn, onChanged, onReviewPosted, runs = NO_LIST, respondChats = NO_LIST, runsError = '', onRunsChanged, onRunPatched, records = [], onRecord, refreshKey, focusPull, focusRun, onFocusRelease, scope = 'all', onScope, onTotal, presentation = 'list', onOpenPage = null, onStartAgent = null, onOpenForReview = null, ignoredReviews = null, onIgnoreReview = null, onUndoIgnore = null, defaultAgent = null }) {
+export function PullRequests({ appId, token, project, conn, onChanged, onReviewPosted, runs = NO_LIST, respondChats = NO_LIST, responses = NO_LIST, runsError = '', onRunsChanged, onResponsesChanged, onRunPatched, records = [], onRecord, refreshKey, focusPull, focusRun, onFocusRelease, scope = 'all', onScope, onTotal, presentation = 'list', onOpenPage = null, onStartAgent = null, onOpenForReview = null, ignoredReviews = null, onIgnoreReview = null, onUndoIgnore = null, defaultAgent = null }) {
   const repo = project?.canonical_repo || ''
   const publicRevision = records.filter(record => record.url).map(record => `${record.id}:${record.status}:${record.number}:${record.last_updated_pr_at || ''}`).sort().join('|')
   const session = sessionEntry(repo, `${refreshKey}|${publicRevision}`)
@@ -205,6 +207,9 @@ export function PullRequests({ appId, token, project, conn, onChanged, onReviewP
   const [assigning, setAssigning] = useState(null)
   // Address feedback has its own window: it starts an agent conversation, not a review run.
   const [addressing, setAddressing] = useState(null)
+  // Post and Discard on a saved answer: the PR it is working on, and the failure the card of that PR shows.
+  const [respondBusy, setRespondBusy] = useState('')
+  const [respondFailure, setRespondFailure] = useState(null)
   // One of the owner's own actions (Open for review, Merge) waiting on its confirm sheet.
   const [acting, setActing] = useState(null)
   const [posting, setPosting] = useState(null)
@@ -328,6 +333,16 @@ export function PullRequests({ appId, token, project, conn, onChanged, onReviewP
     // Opening a project's list or a PR page shows the runs as they are now, not as the last cadence read had them.
     void runsChangedRef.current?.()
   }, [conn.state, publicRevision, refreshKey, load])
+  // An answer the chat has just posted left new commits, replies and a re-review request on GitHub: read the PR again, so this page
+  // does not keep saying "Feedback to answer" beside a card that says Posted. Answers already posted when the page opened are history.
+  const postedKey = responses.filter(entry => entry.result.state === 'posted').map(entry => entry.result.id).sort().join('|')
+  const postedSeen = useRef(postedKey)
+  useEffect(() => {
+    if (postedKey === postedSeen.current) return
+    postedSeen.current = postedKey
+    void load()
+    void onChanged?.()
+  }, [postedKey, load, onChanged])
   useEffect(() => {
     task?.setPublicKeys(new Set(view.inventory))
     return () => task?.setPublicKeys(new Set())
@@ -411,7 +426,7 @@ export function PullRequests({ appId, token, project, conn, onChanged, onReviewP
   const relevantRuns = [...linkedRun, ...runs].filter(run => !repo || run.items?.some(item => item.repo.toLowerCase() === repo.toLowerCase()))
   const statusFor = pr => reviewForPull(relevantRuns, pr)
   // Where each PR stands and what may happen next: the PR machine's decision.
-  const standingOf = pr => standingFor({ pr, login: conn.login, runs: relevantRuns, chats: respondChats, ignored: ignoredReviews })
+  const standingOf = pr => standingFor({ pr, login: conn.login, runs: relevantRuns, chats: respondChats, responses, ignored: ignoredReviews })
   const detailPr = pulls.find(pr => prKey(pr) === opened)
   function inspect(pr) {
     // While a review runs, the frame on the row is the signal; opening it lands on the Review tab.
@@ -422,7 +437,7 @@ export function PullRequests({ appId, token, project, conn, onChanged, onReviewP
   // A launch or assignment opened from one PR stays beside that PR; a batch
   // opens under the list header. `anchor` is only placement, never scope.
   function choose(pulls, job, anchor = '') {
-    if (job === 'respond') { setAssigning(null); setAddressing({ pr: { ...pulls[0], repository: { ...pulls[0].repository } }, findings: savedFindings(statusFor(pulls[0]), ignoredReviews) }); return }
+    if (job === 'respond') { setAssigning(null); setAddressing({ pr: { ...pulls[0], repository: { ...pulls[0].repository } }, findings: savedFindings(statusFor(pulls[0]), ignoredReviews), response: responseView(responses, pulls[0]) }); return }
     if (YOUR_INTENTS.has(job)) { setAssigning(null); setActing({ intent: job, pr: { ...pulls[0], repository: { ...pulls[0].repository } }, record: recordsForPull(records, pulls[0])[0] }); return }
     const { mode, intent, options } = reviewIntent(job)
     setResolved(null)
@@ -489,9 +504,23 @@ export function PullRequests({ appId, token, project, conn, onChanged, onReviewP
   const RETRY_JOBS = { author: { review_fix_merge: 'finish_it' }, reviewer: { review_fix_merge: 'take_over' } }
   const retryJob = (run, pr) => RETRY_JOBS[standingOf(pr).role]?.[run.mode] || (standingOf(pr).role === 'author' ? 'check_my_pr' : 'review')
   const retryPulls = run => (run.items || []).map(item => pulls.find(pr => prKey(pr) === `${item.repo.toLowerCase()}#${item.number}`)).filter(pr => pr && isOpenPull(pr))
+  // Post and Discard act on the answer on screen, one at a time. Either way the saved answers and the runs are read again: an approval
+  // may be written even when the chat could not be told, and the card must say where things stand.
+  async function answerAction(pr, act) {
+    const key = prKey(pr)
+    setRespondBusy(key)
+    setRespondFailure(null)
+    const outcome = await act().catch(() => ({ ok: false, error: 'This did not go through. Try again.' }))
+    if (!alive.current) return
+    setRespondBusy('')
+    if (!outcome.ok) setRespondFailure({ key, message: outcome.error })
+    void onResponsesChanged?.()
+    void onRunsChanged?.()
+  }
   // What a PR's Review tab needs: the run's own actions and whether you wrote the PR.
   const reviewProps = pr => {
     const run = statusFor(pr)?.run
+    const answer = responseView(responses, pr)
     return {
       own: isOwnPull(pr, conn.login), standing: standingOf(pr), respondChat: respondChatOf(respondChats, pr), earlier: run ? null : earlierReviewForPull(relevantRuns, pr), busy, error: runError, pulls, listState: data,
       ignored: ignoredReviews,
@@ -499,6 +528,12 @@ export function PullRequests({ appId, token, project, conn, onChanged, onReviewP
       onPost: ({ run: postRun, item }) => setPosting({ pr, run: postRun, item, own: isOwnPull(pr, conn.login) }),
       onStart: job => choose([pr], job, prKey(pr)),
       onFix: onStartAgent ? () => choose([pr], 'respond', prKey(pr)) : undefined,
+      response: answer,
+      respondBusy: respondBusy === prKey(pr),
+      respondError: respondFailure?.key === prKey(pr) ? respondFailure.message : '',
+      onPostResponse: answer && (again => answerAction(pr, () => approveResponse({ slug: answer.slug, digest: answer.result.digest, pr, chat: respondChatOf(respondChats, pr), token, again }))),
+      onDiscardResponse: answer && (() => answerAction(pr, () => discardResponse({ slug: answer.slug, digest: answer.result.digest }))),
+      onRespondAgain: onStartAgent ? () => choose([pr], 'respond', prKey(pr)) : undefined,
       onIgnore: onIgnoreReview ? item => setIgnoring({ pr, item }) : undefined,
       onUndoIgnore: onUndoIgnore || undefined,
       onStop: run ? () => stopRun(run) : undefined,
@@ -515,7 +550,7 @@ export function PullRequests({ appId, token, project, conn, onChanged, onReviewP
     </TaskPane>
   const closeReview = () => { setChoice(null); task?.close() }
   const reviewDialog = task?.activeId === 'task:review' && choice ? <ReviewDialog onClose={closeReview}><ReviewConfirmation appId={appId} token={token} ownLogin={conn.login} defaultAgent={defaultAgent} bindCurrentTarget onResolved={value => { setResolved(value); if (value?.capabilities) setCapabilities(value.capabilities) }} disabled={!resolved} onOptionsChange={options => { setResolved(null); setChoice(old => ({ ...old, options, request_id:crypto.randomUUID() })) }} onAgentChange={agent => { setResolved(null); setChoice(old => ({ ...old, agent, request_id:crypto.randomUUID() })) }} choice={choice} busy={busy} error={error} onConfirm={start} onCancel={closeReview} onModeChange={mode => { setError(''); setResolved(null); setChoice(old => ({ ...old, mode, confirmation_scope: undefined, ...scopeFor(mode), request_id: crypto.randomUUID() })) }} onReasonChange={takeover_reason => setChoice(old => ({ ...old, takeover_reason }))} capabilities={capabilities} /></ReviewDialog> : null
-  const addressDialog = addressing && onStartAgent ? <ReviewDialog onClose={() => setAddressing(null)}><AddressFeedbackWindow pr={addressing.pr} findings={addressing.findings} token={token} appId={appId} defaultAgent={defaultAgent} onStart={onStartAgent} onClose={() => setAddressing(null)} /></ReviewDialog> : null
+  const addressDialog = addressing && onStartAgent ? <ReviewDialog onClose={() => setAddressing(null)}><AddressFeedbackWindow pr={addressing.pr} findings={addressing.findings} response={addressing.response} token={token} appId={appId} defaultAgent={defaultAgent} onStart={onStartAgent} onClose={() => setAddressing(null)} /></ReviewDialog> : null
   const closeIgnore = () => setIgnoring(null)
   // A posted review changes what the run shows (a link to it, and whose turn it is), so the runs are read again.
   const refreshRuns = () => onRunsChanged?.()

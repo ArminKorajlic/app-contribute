@@ -593,3 +593,14 @@ test('a project view without a sync hub still observes the conversation once', a
   f.render(); await f.restore()
   assert.equal(f.render().cycle.phase, 'running')
 })
+
+test('a conversation that waits on a card of its own refuses a message, and delivery says so in words, with the status', async () => {
+  const response = (status, body) => ({ ok: status < 400, status, json: async () => body })
+  const request = { title: 'T', draft: 'D', scope: 's', cid: 's:1', chatId: 'c', applyModel: false }
+  const waiting = await deliverCycleMessage('t', request, async () => response(409, { detail: { code: 'pending_question_open', message: 'Answer the pending question, or Stop the turn, before sending.' } }))
+  assert.equal(waiting.ok, false)
+  assert.equal(waiting.status, 409)
+  assert.match(waiting.error, /waiting for your answer to its own card\. Answer or dismiss that card first/)
+  const other = await deliverCycleMessage('t', request, async () => response(409, { detail: { code: 'something_else' } }))
+  assert.equal(other.error, 'Möbius did not accept this message. Send again.')
+})

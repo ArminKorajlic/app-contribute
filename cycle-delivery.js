@@ -57,6 +57,9 @@ export async function deliverCycleMessage(token, request, fetcher = globalThis.f
   try { sent = await fetcher(`/api/chats/${encodeURIComponent(chatId)}/messages`, { method: 'POST', headers, body: JSON.stringify({ content: draft, cid, timezone }) }) }
   catch { return failed('Could not reach Möbius. Send again.', { chatId, modelApplied }) }
   if (sent.status === 404) return failed('This conversation was deleted.', { chatId, gone: true, modelApplied })
+  if (sent.status === 409 && (await sent.json().catch(() => null))?.detail?.code === 'pending_question_open') {
+    return failed('This conversation is waiting for your answer to its own card. Answer or dismiss that card first.', { chatId, status: 409, modelApplied })
+  }
   if (!sent.ok) return failed('Möbius did not accept this message. Send again.', { chatId, status: sent.status, modelApplied })
   const body = await sent.json().catch(() => null)
   if (body?.status === 'rejected') return failed('Möbius rejected this message.', { chatId, modelApplied })

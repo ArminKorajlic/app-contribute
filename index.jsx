@@ -77,6 +77,7 @@ import { ScreenshotLoaderContext } from './ui/useScreenshots.js'
 import { Icon } from './ui/Icons.jsx'
 import { SourceMap } from './ui/SourceMap.jsx'
 import { SyncHubContext, useDeskReviewRuns, useReviewList } from './ui/useReviewList.js'
+import { useRespondResults } from './ui/useRespondResults.js'
 import { SyncNote } from './ui/GithubParts.jsx'
 import { ProjectEdits } from './ui/ProjectEdits.jsx'
 import { NAMES } from './names.js'
@@ -597,6 +598,8 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
   const { runs: reviewRuns, respondChats, error: runsError, ready: runsReady, refresh: refreshReviewRuns, patch: patchReviewRun } = useDeskReviewRuns({
     hub, token, appId, connState: conn.state, sendOnly, pullPageOpen: !!pullPage, onReviewsMoved,
   })
+  // The answers Respond to feedback saved: the Review tab shows them and the PR logic knows a draft is waiting.
+  const { responses, refresh: refreshResponses } = useRespondResults({ hub, enabled: !sendOnly && conn.state === 'connected' })
   // Review requests count toward the first full sync, so the workspace never
   // opens with an empty inbox that fills in a beat later.
   const [incomingReady, setIncomingReady] = useState(false)
@@ -1562,7 +1565,7 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
   }, [appId, token, applyRecordUpdates, replaceFeed, refreshReviewStatus])
 
   // Reviews you started: one row per PR for the Agent runs page, counted in the rail.
-  const reviewList = useReviewList({ hub, enabled: !sendOnly && conn.state === 'connected', token, runs: reviewRuns, chats: respondChats, ignored: ignoredReviews, login: conn.login || '' })
+  const reviewList = useReviewList({ hub, enabled: !sendOnly && conn.state === 'connected', token, runs: reviewRuns, chats: respondChats, responses, ignored: ignoredReviews, login: conn.login || '' })
   reviewListRef.current = reviewList
 
   // A linked repository outside the owner's lists still opens as a project.
@@ -1615,6 +1618,7 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
     records,
     runs: reviewRuns,
     respondChats,
+    responses,
     ignored: ignoredReviews,
     reviews: reviewList,
     lastLooked,
@@ -1648,7 +1652,7 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
     if (page) {
       return <PullRequests key={`page:${page.repo}#${page.number}`} appId={appId} token={token}
         project={project} conn={conn} refreshKey={refreshKey} onChanged={refreshIncomingReviews} onReviewPosted={settleIncomingReview}
-        runs={reviewRuns} respondChats={respondChats} runsError={runsError} onRunsChanged={refreshReviewRuns} onRunPatched={patchReviewRun}
+        runs={reviewRuns} respondChats={respondChats} responses={responses} onResponsesChanged={refreshResponses} runsError={runsError} onRunsChanged={refreshReviewRuns} onRunPatched={patchReviewRun}
         presentation="page" focusPull={page} onFocusRelease={() => {}} defaultAgent={reviewAgent} onStartAgent={startAgentTask} onOpenForReview={onMarkReady} ignoredReviews={ignoredReviews} onIgnoreReview={onIgnoreReview} onUndoIgnore={onUndoIgnore}
         records={recordsForProject(records, project)} onRecord={record => {
           setPullPage(null)
@@ -1657,7 +1661,7 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
     }
     return <PullRequests key={`pulls:${project?.key || 'all'}`} appId={appId} token={token}
       project={project} conn={conn} refreshKey={refreshKey} onChanged={refreshIncomingReviews} onReviewPosted={settleIncomingReview}
-      runs={reviewRuns} respondChats={respondChats} runsError={runsError} onRunsChanged={refreshReviewRuns} onRunPatched={patchReviewRun}
+      runs={reviewRuns} respondChats={respondChats} responses={responses} onResponsesChanged={refreshResponses} runsError={runsError} onRunsChanged={refreshReviewRuns} onRunPatched={patchReviewRun}
       scope={view?.scope || 'all'} onScope={view?.onScope} onTotal={view?.onTotal} defaultAgent={reviewAgent} onStartAgent={startAgentTask} onOpenForReview={onMarkReady} ignoredReviews={ignoredReviews} onIgnoreReview={onIgnoreReview} onUndoIgnore={onUndoIgnore}
       onOpenPage={(pr, tab) => openPullPage(project, pr, tab)}
       focusPull={pullFocus?.number ? pullFocus : null} focusRun={pullFocus?.runId ? pullFocus : null} onFocusRelease={releasePullFocus}

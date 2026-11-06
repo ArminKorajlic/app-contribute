@@ -1005,6 +1005,29 @@ a.co-related-row:hover { border-color:color-mix(in srgb,var(--accent) 36%,var(--
 .co-review-box.is-changes { border-color:color-mix(in srgb,var(--danger) 40%,var(--border)); }
 .co-review-box.is-verdict { border-color:color-mix(in srgb,var(--co-warn,#b38235) 45%,var(--border)); }
 .co-tab-dot.is-waiting { background:var(--co-warn,#b38235); }
+/* A saved Respond-to-feedback answer (ResponseCard): each point and how it ended, the replies word for word, the steps Post takes. */
+.co-response-points .co-desk-chip { justify-self:start; white-space:nowrap; }
+.co-response-points { display:grid; gap:10px; margin:0; padding:0; list-style:none; }
+.co-response-points li { display:grid; grid-template-columns:6.5rem minmax(0,1fr); gap:4px 10px; align-items:start; }
+.co-response-point { display:grid; gap:2px; min-width:0; padding-top:1px; font-size:var(--co-text-body); line-height:1.45; overflow-wrap:anywhere; }
+.co-response-point small { color:var(--muted); font-size:var(--co-text-meta); line-height:1.45; }
+.co-response-point code, .co-response-commits code { font:var(--co-text-meta) var(--mono,monospace); }
+.co-response-reply { margin-top:10px; padding:10px 12px; border:1px solid var(--border); border-radius:var(--co-radius-panel); background:var(--bg); }
+.co-response-reply > small { display:block; margin-bottom:6px; color:var(--muted); font-size:var(--co-text-meta); }
+.co-response-commits { display:grid; gap:4px; margin:10px 0; padding:0; list-style:none; font-size:var(--co-text-meta); }
+.co-response-plan h5 { margin:0 0 6px; color:var(--muted); font-size:var(--co-text-meta); font-weight:650; }
+.co-response-steps { display:grid; gap:4px; margin:0; padding-left:22px; font-size:var(--co-text-body); line-height:1.45; }
+.co-response-steps.is-going { padding-left:0; list-style:none; }
+.co-response-steps.is-going li { display:flex; align-items:flex-start; gap:8px; }
+.co-step-mark { display:grid; place-items:center; flex:none; width:18px; height:18px; margin-top:2px; border:1.5px solid var(--border); border-radius:50%; }
+.co-response-steps li.is-done .co-step-mark { border-color:var(--green); color:var(--green); }
+.co-response-steps li.is-todo { color:var(--muted); }
+.co-response-links { display:flex; flex-wrap:wrap; gap:6px 14px; margin:8px 0 0; padding:0; list-style:none; font-size:var(--co-text-meta); }
+.co-response-fresh { margin:0; font-size:var(--co-text-meta); }
+.co-response .co-task-details { margin-top:6px; }
+@media(max-width:680px) { .co-response-points li { grid-template-columns:1fr; } }
+.co-response.is-posted, .co-response.is-stale { background:var(--bg); }
+.co-rw-note.co-rw-callout { border-style:solid; color:var(--text); }
 
 @media(max-width:980px) {
   .co-desk { display:block; }

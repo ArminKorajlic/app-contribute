@@ -74,7 +74,7 @@ const mergePulls = (old, { everything, pulls, answered }) => ({
 // The owner's reviews for the PR reviews page and the rail's badge. Until the
 // first live read of the set has answered they are "checking", and a PR GitHub did
 // not return is unknown, so a stale finding never shows up as waiting on you.
-export function useReviewList({ hub, enabled = true, token, runs, chats = [], ignored, login }) {
+export function useReviewList({ hub, enabled = true, token, runs, chats = [], responses = [], ignored, login }) {
   const raw = useMemo(() => reviewEntries(runs), [runs])
   const refs = useMemo(() => raw.map(entry => ({ repo: entry.item.repo, number: entry.item.number })), [raw])
   const refsKey = refs.map(ref => reviewKey(ref.repo, ref.number)).sort().join('|')
@@ -85,10 +85,10 @@ export function useReviewList({ hub, enabled = true, token, runs, chats = [], ig
   return useMemo(() => {
     const done = live.answered === `${refsKey}@${attempt}`
     const entries = raw.map(entry => (done
-      ? { ...entry, ...classifyReview(entry, { login, ignored, runs, chats, live: live.pulls.get(entry.id) }) }
+      ? { ...entry, ...classifyReview(entry, { login, ignored, runs, chats, responses, live: live.pulls.get(entry.id) }) }
       : { ...entry, bucket: 'checking', chips: [] }))
     return { entries, counts: reviewCounts(entries), checking: entries.some(entry => entry.bucket === 'checking'), retry, pullsMoved, syncPulls: readAll }
-  }, [raw, live, refsKey, attempt, login, ignored, runs, chats, retry, pullsMoved, readAll])
+  }, [raw, live, refsKey, attempt, login, ignored, runs, chats, responses, retry, pullsMoved, readAll])
 }
 
 // Leaving a PR page re-reads the runs: whatever happened there shows on the Desk at once.
