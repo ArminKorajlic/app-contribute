@@ -9,7 +9,7 @@
 // unit until a read-only observation proves the result.
 import { sendTarget } from './chat-blocks.js'
 import { planScreenshots, screenshotCountText } from './domain.js'
-import { isPublished, publicationUnits, publishedPull } from './send-readiness.js'
+import { isPublished, publicationUnits, publishedPull, sendBlocker } from './send-readiness.js'
 import { RETRY_CHECK_REASON } from './review.js'
 import { stackMeta } from './stack.js'
 
@@ -23,6 +23,9 @@ export const LEDGER_NOTE = 'Could not read every contribution. Open Contribute t
 export const TIMEOUT_NOTE = 'Contribute didn’t answer in time. Try again.'
 export const REFRESH_FAILED_NOTE = 'Contribute couldn’t check this right now. Try again.'
 export const NEWER_NOTE = 'Sending from chat needs a newer Möbius. Open Contribute to send.'
+// A card whose action does not match its items only points to Contribute.
+export const UNMATCHED_NOTE = 'Open Contribute to send them.'
+export const LEGACY_NOTE = 'Open Contribute to send it.'
 export const RECOVERY_NOTE = 'The previous result from this card could not be restored. Open Contribute to check it; nothing will be sent from here.'
 
 // ---- Recovery checkpoint: unresolved attempt identities only, never records,
@@ -159,6 +162,9 @@ export function createInlineSession({ sessionId, actions, items = null, checkpoi
   // The card's items name its records; its one action covers exactly them.
   const targets = new Map(advertised.map(item => [item.key, sendTarget(item.key, items)]))
   const idsFor = key => targets.get(key)?.ids || []
+  // The records whose status a card shows: its send set, or the one record a
+  // legacy card names, which is read for status only.
+  const shownIds = key => targets.get(key)?.legacy ? [targets.get(key).legacy] : idsFor(key)
   let attempts = []
   let fault = ''
   try {
@@ -190,7 +196,7 @@ export function createInlineSession({ sessionId, actions, items = null, checkpoi
   let ackNonce = null
   let alive = true
 
-  const allIds = () => [...new Set([...advertised.flatMap(item => idsFor(item.key)), ...attempts.flatMap(attempt => attempt.ids)])]
+  const allIds = () => [...new Set([...advertised.flatMap(item => shownIds(item.key)), ...attempts.flatMap(attempt => attempt.ids)])]
   // Newest saved copy wins between the app's ledger and exact reads.
   const current = () => {
     const merged = new Map()
@@ -220,7 +226,8 @@ export function createInlineSession({ sessionId, actions, items = null, checkpoi
     // A host that does not send the card's items cannot say which records the
     // action covers, so nothing is confirmable from here.
     if (targets.get(key)?.needsItems) return NEWER_NOTE
-    if (targets.get(key)?.invalid) return 'This card no longer matches its listed contributions. Open Contribute to send them.'
+    if (targets.get(key)?.legacy) return legacyNote(targets.get(key).legacy)
+    if (targets.get(key)?.invalid) return UNMATCHED_NOTE
     if (!runtime) return ''
     if (runtime.reviewStatus?.state === 'unavailable') return 'Could not verify the current review. Try again; nothing was sent.'
     if (idsFor(key).some(id => unreadable.has(id)) && !reading.size) return 'Could not read this contribution. Try again; nothing was sent.'
@@ -240,11 +247,20 @@ export function createInlineSession({ sessionId, actions, items = null, checkpoi
     return all.map(unit => unit.reason).find(Boolean) || (all.some(locked) ? UNKNOWN_NOTE : '')
   }
 
+  // How a legacy card's record stands, once read: nothing when it is
+  // published (its status and link show it), else where to send or check it.
+  function legacyNote(id) {
+    const record = current().get(id)
+    if (!record) return unreadable.has(id) ? sendBlocker(null) : ''
+    if (isPublished(record)) return ''
+    return record.status === 'prepared' ? LEGACY_NOTE : sendBlocker(record)
+  }
+
   function actionState(item) {
     const key = item.key
     const ids = idsFor(key)
     const now = current()
-    const records = ids.map(id => now.get(id))
+    const records = shownIds(key).map(id => now.get(id))
     const mine = attempts.filter(attempt => attempt.ids.some(id => ids.includes(id)))
     const busy = mine.some(attempt => attempt.state === 'sending')
     const unknown = !busy && mine.some(attempt => attempt.state === 'unknown')
@@ -252,7 +268,10 @@ export function createInlineSession({ sessionId, actions, items = null, checkpoi
     const failure = published ? null : mine.filter(attempt => ['failed', 'not_attempted'].includes(attempt.state)).at(-1)
     const confirming = frozen?.key === key
     const checking = activating === key
-    const loading = ids.some(id => !now.has(id) && reading.has(id))
+    const loading = shownIds(key).some(id => !now.has(id) && reading.has(id))
+    // A card that does not match its items never reaches Confirm; it shows
+    // status and points to Contribute, which is not a warning.
+    const passive = Boolean(targets.get(key)?.invalid)
     // A failed check or read can be retried; retrying only reads again.
     const retry = runtime?.reviewStatus?.state === 'unavailable' || ids.some(id => unreadable.has(id)) || ledgerIncomplete() || checkRetryable(key) || Boolean(refreshNote)
     const reason = fault || blockedReason(key)
@@ -260,12 +279,12 @@ export function createInlineSession({ sessionId, actions, items = null, checkpoi
       : unknown && ids.length === 1 ? 'Check again' : retry ? 'Try again' : item.label || 'Contribute'
     const status = fault ? 'Needs attention' : busy ? 'Contributing' : unknown ? 'Checking result' : failure ? 'Needs attention'
       : published ? (records.length === 1 ? PUBLIC_LABELS[records[0].status] || 'Sent' : 'Sent')
-      : checking ? 'Checking' : reason ? 'Needs attention' : ''
-    const tone = fault || failure ? 'danger' : unknown || reason ? 'attention' : published ? 'success' : 'neutral'
+      : checking ? 'Checking' : reason && !passive ? 'Needs attention' : ''
+    const tone = fault || failure ? 'danger' : unknown || reason && !passive ? 'attention' : published ? 'success' : 'neutral'
     return {
       key, label,
       disabled: Boolean(fault) || busy || checking || loading || sending() || Boolean(frozen) && !confirming
-        || Boolean(reason) && !retry && !unknown,
+        || passive || Boolean(reason) && !retry && !unknown,
       busy,
       confirming,
       confirmation: confirming ? frozen.units.flatMap(unit => unit.ready.map(confirmationItem)) : null,

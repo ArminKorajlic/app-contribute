@@ -7,7 +7,7 @@ import { join } from 'node:path'
 import { batchHandle, cardRecordIds, itemRecordIds, sendTarget } from '../chat-blocks.js'
 import { readBlockSession } from '../block-protocol.js'
 import { reviewAddressFor } from '../send-readiness.js'
-import { attemptOutcome, confirmationItem, descriptionExcerpt, LEDGER_NOTE, NEWER_NOTE, UNLISTED_LAYER_NOTE, REFRESH_FAILED_NOTE, SIZE_NOTE, TIMEOUT_NOTE, createInlineSession, decodeCheckpoint, encodeCheckpoint, observeAttempt, RECOVERY_NOTE } from '../inline-session.js'
+import { attemptOutcome, confirmationItem, descriptionExcerpt, LEDGER_NOTE, LEGACY_NOTE, NEWER_NOTE, UNMATCHED_NOTE, UNLISTED_LAYER_NOTE, REFRESH_FAILED_NOTE, SIZE_NOTE, TIMEOUT_NOTE, createInlineSession, decodeCheckpoint, encodeCheckpoint, observeAttempt, RECOVERY_NOTE } from '../inline-session.js'
 
 const HEAD = 'a'.repeat(40), NEXT = 'c'.repeat(40)
 function prepared(id, extra = {}) {
@@ -328,7 +328,62 @@ test('a stale or forged batch card offers nothing to send', async () => {
   h.session.start(); await tick()
   const batch = h.action(actions[0].key)
   assert.equal(batch.disabled, true)
-  assert.match(batch.note, /no longer matches/)
+  assert.equal(batch.note, UNMATCHED_NOTE)
+  assert.equal(batch.tone, 'neutral', 'a mismatch points to Contribute without a warning')
+  assert.equal(batch.status, '')
+})
+
+test('a card printed before its items named records shows only its record status and never sends', async () => {
+  // Such a card has no `review:` items; its one action names the record.
+  assert.deepEqual(sendTarget('chat-send:a', []), { kind: 'record', ids: [], invalid: true, legacy: 'a' })
+  assert.deepEqual(sendTarget('chat-send:a', [{ intent: 'pull-request:owner/repo#7' }]), { kind: 'record', ids: [], invalid: true, legacy: 'a' })
+  assert.deepEqual(sendTarget('chat-send:a', reviewItems(['b'])), { kind: 'record', ids: [], invalid: true }, 'a new card that does not match is not legacy')
+  assert.deepEqual(sendTarget(`chat-send-batch:${batchHandle(['a', 'b'])}`, []), { kind: 'batch', ids: [], invalid: true })
+  assert.deepEqual(cardRecordIds(['chat-send:a'], []), [], 'nothing is addressed for sending')
+  const actions = [{ key: 'chat-send:one', label: 'Contribute' }]
+  const show = async record => {
+    const h = harness({ actions, items: [], records: record ? [record] : [] })
+    h.session.start(); await tick()
+    const state = h.action('chat-send:one')
+    h.fire('chat-send:one', 'activate'); h.provide(); await tick()
+    h.fire('chat-send:one', 'confirm'); await tick()
+    assert.equal(h.action('chat-send:one').confirming, false)
+    assert.equal(h.sends.length, 0, 'a legacy card is never confirmable from chat')
+    return state
+  }
+  const sent = await show(published(prepared('one')))
+  assert.equal(sent.hidden, true)
+  assert.equal(sent.status, 'Open')
+  assert.equal(sent.tone, 'success')
+  assert.equal(sent.note, '')
+  assert.deepEqual(sent.links, [{ label: 'View PR #7', url: 'https://github.com/owner/repo/pull/7' }])
+  const waiting = await show(prepared('one'))
+  assert.deepEqual([waiting.note, waiting.tone, waiting.status, waiting.disabled, waiting.badges], [LEGACY_NOTE, 'neutral', '', true, []])
+  const missing = await show(null)
+  assert.deepEqual([missing.note, missing.tone, missing.status, missing.disabled], ['This contribution is no longer in Contribute.', 'neutral', '', true])
+  const dismissed = await show(prepared('one', { record: { status: 'abandoned' } }))
+  assert.deepEqual([dismissed.note, dismissed.tone, dismissed.status], ['This contribution was dismissed.', 'neutral', ''])
+})
+
+test('a legacy batch card and a mismatched new card stay closed with a neutral note', async () => {
+  const ids = ['one', 'two']
+  for (const [actions, items] of [[[{ key: `chat-send-batch:${batchHandle(ids)}`, label: 'Contribute all' }], []],
+    [[{ key: 'chat-send:one' }], reviewItems(['two'])]]) {
+    const h = harness({ actions, items, records: ids.map(id => prepared(id)) })
+    h.session.start(); await tick()
+    const state = h.last().actions[0]
+    assert.deepEqual([state.note, state.tone, state.status, state.disabled, state.hidden], [UNMATCHED_NOTE, 'neutral', '', true, false])
+    h.fire(actions[0].key, 'activate'); h.provide(); await tick()
+    h.fire(actions[0].key, 'confirm'); await tick()
+    assert.equal(h.last().actions[0].confirming, false)
+    assert.equal(h.sends.length, 0)
+  }
+  // The matching card for the same record is unchanged: it reaches Confirm and sends once.
+  const h = harness({ actions: [{ key: 'chat-send:one' }], records: [prepared('one')] })
+  await openConfirm(h, 'chat-send:one')
+  assert.equal(h.action('chat-send:one').confirming, true)
+  h.fire('chat-send:one', 'confirm'); await tick()
+  assert.deepEqual(h.sends.map(send => send.ids), [['one']])
 })
 
 test('a broken or missing recovery checkpoint never resurrects Send', async () => {
