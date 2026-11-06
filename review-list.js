@@ -27,9 +27,10 @@ export function reviewEntries(runs) {
   return [...newest.values()].sort((a, b) => b.at - a.at)
 }
 
-// Whether the PR itself is worth reading: a clear or merged review is settled
-// whatever happened to its PR since.
-export const needsLiveRead = entry => !['all_clear', 'merged'].includes(entry.item.state)
+// Whether the PR itself is worth reading: only a merged review is settled for
+// good. A clear review belongs to the version it read, so its PR is read too: a
+// push since then puts it back in front of the reviewer (pr-flow rule 4).
+export const needsLiveRead = entry => entry.item.state !== 'merged'
 
 const done = (...chips) => ({ bucket: 'done', chips })
 const chip = (label, tone) => ({ label, tone })
@@ -67,6 +68,9 @@ export function classifyReview({ run, item }, { login = '', ignored = null, live
     if (moved && requested) return { bucket: 'waiting', chips: [chip('New commits · review again', 'owner')] }
     return done(chip(progress.label, requested ? 'blocker' : 'quiet'), chip(`Waiting on ${live?.author || 'the author'}`, 'quiet'))
   }
+  // A clear or approved review is of the version it read. Pushed since, the PR needs another review;
+  // on your own PR the clear check is only an older version, which you never asked to be nagged about.
+  if (moved && item.state === 'all_clear') return own === true ? done(chip('Older version', 'quiet')) : { bucket: 'waiting', chips: [chip('New commits · review again', 'owner')] }
   return done(...finishedChips(item, progress))
 }
 

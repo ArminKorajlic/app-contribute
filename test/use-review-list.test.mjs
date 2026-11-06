@@ -110,3 +110,12 @@ test('a Sync that cannot read GitHub keeps what the last read said, and does not
   first.reads[0].reject(new Error('offline')); await first.flush()
   assert.deepEqual(first.rows(), ['done:Changes requested+Waiting on the author'], 'with nothing read yet, only the saved review speaks')
 })
+
+test('a clear review is read live too, so a push after it puts the PR back to review', async () => {
+  const h = harness()
+  h.render({ ...base, runs: runsOf(review('all_clear')) })
+  assert.equal(h.reads.length, 1, 'a clear review is no longer settled without a look at its PR')
+  assert.deepEqual(h.rows(), ['checking:'])
+  h.reads[0].resolve(live({ head: head('b') })); await h.flush()
+  assert.deepEqual(h.rows(), ['waiting:New commits · review again'])
+})

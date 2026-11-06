@@ -64,11 +64,24 @@ test('finished reviews read as what they ended in', () => {
   assert.deepEqual(labels(read(item('needs_you', { head_sha: 'c'.repeat(40) }), { live: open() })), ['Older version'], 'findings on a version the PR left behind are old news')
 })
 
-test('only reviews that could still wait on someone need the PR read live; counts follow the buckets', () => {
-  assert.equal(needsLiveRead({ item: item('all_clear') }), false)
+test('only a merged review is settled without a look at its PR; counts follow the buckets', () => {
+  assert.equal(needsLiveRead({ item: item('all_clear') }), true, 'a clear review is of one version, and the PR may have been pushed since')
   assert.equal(needsLiveRead({ item: item('merged') }), false)
   assert.equal(needsLiveRead({ item: item('needs_you') }), true)
   assert.deepEqual(reviewCounts([{ bucket: 'waiting' }, { bucket: 'waiting' }, { bucket: 'running' }, { bucket: 'done' }, { bucket: 'checking' }]), { waiting: 2, confirm: 0, running: 1, stalled: 0, done: 1 })
+})
+
+test('a clear or approved review is of the version it read: a push puts the PR back to review, history stays history', () => {
+  const pushed = open({ head: 'b'.repeat(40) })
+  for (const clear of [item('all_clear'), item('all_clear', { verdict_proposal: { state: 'posted', event: 'APPROVE' } })]) {
+    assert.deepEqual([read(clear, { live: open() }).bucket, labels(read(clear, { live: open() }))], ['done', [clear.verdict_proposal ? 'Approved' : 'Review clear']], 'the version it read is still the PR\'s')
+    assert.deepEqual([read(clear, { login: 'owner', live: pushed }).bucket, labels(read(clear, { login: 'owner', live: pushed }))], ['waiting', ['New commits · review again']])
+    assert.deepEqual(labels(read(clear)), [clear.verdict_proposal ? 'Approved' : 'Review clear'], 'before the PR is read only the saved review speaks')
+    assert.deepEqual(labels(read(clear, { live: { ...pushed, state: 'MERGED' } })), ['Merged'], 'a merged PR is history however it moved')
+    assert.deepEqual(labels(read(clear, { live: { ...pushed, state: 'CLOSED' } })), ['Closed'])
+  }
+  assert.deepEqual(labels(read(item('all_clear'), { login: 'someone-else', live: open({ head: 'b'.repeat(40), author: 'Someone-Else' }) })), ['Older version'], 'your own PR: a clear check of an older version is not a reason to be asked again')
+  assert.equal(read(item('all_clear'), { login: 'someone-else', live: open({ head: 'b'.repeat(40), author: 'Someone-Else' }) }).bucket, 'done')
 })
 
 test('the live read is one query for valid PRs only, and answers by PR', async () => {
