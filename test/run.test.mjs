@@ -385,6 +385,22 @@ test('a failed status request never turns reviewed work into review work', () =>
   assert.equal(run.privateAction, null)
 })
 
+test('a status request still loading keeps reviewed work out of review work', () => {
+  const loading = buildContributionRun({
+    records: [prepared('reviewed')],
+    reviewStatus: { state: 'loading', byId: {} },
+  })
+  assert.deepEqual(loading.decisions, [])
+  assert.deepEqual(loading.working.map(item => item.kind), ['checking_source'])
+  assert.equal(loading.privateAction, null)
+  // A reload keeps the previous answer meanwhile.
+  const reloading = buildContributionRun({
+    records: [prepared('reviewed')],
+    reviewStatus: { state: 'loading', byId: { reviewed: { state: 'unavailable', code: 'review_unavailable' } } },
+  })
+  assert.deepEqual(reloading.decisions.map(item => item.kind), ['check_attention'])
+})
+
 test('incoming-only project is alignment work, never preparation', () => {
   const run = buildContributionRun({ projects: [{
     key: 'demo', name: 'Demo', canonical_repo: 'owner/demo',

@@ -380,6 +380,33 @@ test('SSR reviewed work waiting on a source check asks the owner, with the reaso
   }
 })
 
+test('SSR a selected source check stays in focus while it is checked again and once it recovers', async t => {
+  const ui = await rendered(t)
+  if (!ui) return
+  const records = [{
+    id: 'one', type: 'pr', status: 'prepared', repo: 'owner/project', title: 'Change one',
+    plan: { action: 'pr', repo: 'owner/project', title: 'Change one', head_sha: HEAD },
+    quality_review: { state: 'all_clear', reviewed_head_sha: HEAD },
+  }]
+  const failed = { state: 'unavailable', byId: {} }
+  const [item] = buildContributionRun({ records, reviewStatus: failed }).decisions
+  assert.equal(item.kind, 'check_attention')
+  const focusFor = reviewStatus => ui.render('ContributionRun', {
+    run: buildContributionRun({ records, reviewStatus }), reviewStatus,
+    githubState: 'connected', onRefresh: async () => {}, selectedId: item.id,
+  }, { activeId: item.id, host: null })
+  for (const [label, reviewStatus, expected] of [
+    ['checking', { state: 'loading', byId: {} }, /Checking the reviewed source…/],
+    ['recovered', { state: 'ready', byId: { one: { state: 'ready' } } }, /Change one/],
+  ]) {
+    const html = focusFor(reviewStatus)
+    assert.doesNotMatch(html, /This contribution moved/, label)
+    assert.match(html, /class="co-task-content"[\s\S]*Change one/, label)
+    assert.match(html, expected, label)
+    assert.doesNotMatch(html, /Private review needed|Review all|>Review</, label)
+  }
+})
+
 test('SSR public review inventory replaces duplicate public rows but retains private and accepted work', async t => {
   const ui = await rendered(t)
   if (!ui) return

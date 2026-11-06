@@ -10,6 +10,7 @@
 import { sendTarget } from './chat-blocks.js'
 import { planScreenshots, screenshotCountText } from './domain.js'
 import { isPublished, publicationUnits, publishedPull } from './send-readiness.js'
+import { RETRY_CHECK_REASON } from './review.js'
 import { stackMeta } from './stack.js'
 
 const copy = value => JSON.parse(JSON.stringify(value))
@@ -208,12 +209,8 @@ export function createInlineSession({ sessionId, actions, items = null, checkpoi
   // never confirmed, partly or expanded.
   const unlisted = (key, unit) => unit.ready.some(record => !idsFor(key).includes(record.id))
   const readyUnits = key => units(key).filter(unit => unit.ready.length && !unlisted(key, unit) && !locked(unit) && unit.ready.every(confirmable))
-  // A source check that could not finish for one of these records (other than
-  // a reconnect, which only the owner can clear) is read again by Try again.
-  const checkRetryable = key => units(key).some(unit => unit.records.some(record => {
-    const check = runtime?.reviewStatus?.byId?.[record.id]
-    return check?.state === 'unavailable' && check.code !== 'github_reconnect'
-  }))
+  // A unit blocked only by a check that can be retried is read again by Try again.
+  const checkRetryable = key => units(key).some(unit => unit.reason === RETRY_CHECK_REASON)
   // Readiness is decided only from a complete ledger, a current review check,
   // a known connection and finished exact reads of everything this card names.
   const authoritative = key => Boolean(runtime?.ledgerReady) && runtime.reviewStatus?.state === 'ready'

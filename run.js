@@ -438,6 +438,12 @@ export function buildContributionRun({
       detail: `${message || 'The earlier public result needs reconciliation.'} · ${unitRepo(unit)}`,
     }))
   }
+  for (const unit of partition.checkingSource) {
+    working.push(decision('checking_source', unit, byRepo, {
+      message: 'Checking the reviewed source…',
+      detail: `Checking the source · ${unitRepo(unit)}`,
+    }))
+  }
   for (const unit of partition.reviewing) {
     working.push(decision('review_in_progress', unit, byRepo, {
       detail: `Private review in progress · ${unitRepo(unit)}`,

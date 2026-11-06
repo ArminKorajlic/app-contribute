@@ -1,7 +1,7 @@
 // One readiness model for every Send surface: which publication unit owns a
 // record, whether its next phase can be sent now, and why not. Pure; the
 // guarded Send handlers in index.jsx remain the only publication path.
-import { qualityReviewFor, reviewCheckBlocker, reviewStateFor } from './review.js'
+import { leadingReason, qualityReviewFor, reviewCheckBlocker, reviewStateFor } from './review.js'
 import { publicationStackUnit, stackIntent, stackPublicationRecords, stackReadiness } from './stack.js'
 
 const PUBLIC_STATUSES = new Set(['draft', 'open', 'landing', 'merged', 'closed'])
@@ -48,7 +48,7 @@ export function publicationUnit(record, records, reviewStatus, options) {
   const unit = publicationStackUnit(record, records)
   const readiness = stackReadiness(unit)
   const phase = readiness.ok ? stackPublicationRecords(unit) : []
-  const reason = readiness.ok ? phase.map(blocker).find(Boolean) || '' : readiness.code === 'settled' ? '' : readiness.message
+  const reason = readiness.ok ? leadingReason(phase.map(blocker)) : readiness.code === 'settled' ? '' : readiness.message
   return { key: `stack:${unit.id}`, stack: true, records: unit.records, ready: reason ? [] : phase, reason }
 }
 
