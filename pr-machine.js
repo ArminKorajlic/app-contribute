@@ -104,7 +104,7 @@ function authorStanding(facts, d) {
 }
 
 function approvedStanding(facts) {
-  if (!['pass', 'none'].includes(facts.checks) || facts.mergeable !== 'yes') return 'author.approved_checks'
+  if (!['pass', 'none'].includes(facts.checks) || facts.mergeable !== 'yes' || facts.gate === 'review_required') return 'author.approved_checks'
   return mayWrite(facts.permission) ? 'author.approved' : 'author.approved_no_rights'
 }
 
@@ -120,6 +120,7 @@ function reviewerStanding(facts, d) {
 }
 
 const CHECK_WORDS = { pass: '', none: '', fail: 'Checks are failing.', pending: 'Checks are still running.', unknown: 'Checks could not be read. Try again.' }
+const GATE_WORDS = 'GitHub still needs a review.'
 const CONFLICT_WORDS = { yes: '', conflict: 'It has merge conflicts.', unknown: 'GitHub hasn’t worked out conflicts yet. Try again.' }
 const firstReason = (...reasons) => reasons.find(Boolean) || ''
 // A stalled job holds nothing: starting again (or another job) is the way out of it.
@@ -138,6 +139,7 @@ export function mergeBlocker(facts, d = derive(facts)) {
     mayWrite(facts.permission) ? '' : 'Needs merge rights.',
     d.approvedAtHead.length ? '' : d.approvedOlder.length ? 'The approval is for an older version.' : 'Nobody but the author has approved it yet.',
     standing.length ? `${standing.join(', ')} asked for changes and hasn’t approved since.` : '',
+    facts.gate === 'review_required' ? GATE_WORDS : '',
     CHECK_WORDS[facts.checks] ?? CHECK_WORDS.unknown,
     CONFLICT_WORDS[facts.mergeable] ?? CONFLICT_WORDS.unknown,
     nothingInFlight(d),
@@ -187,7 +189,9 @@ export const ACTIONS = [
 const headlineWho = (key, d) => ({ 'author.waiting_rereview': d.changesOlder, 'author.approval_stale': d.approvedOlder, 'author.approved': d.approvedAtHead }[key] || [])
 
 function headlineFor(key, facts, d) {
-  const checks = facts.mergeable === 'yes' ? CHECK_WORDS[facts.checks] || 'Checks are still running.' : CONFLICT_WORDS[facts.mergeable] || CONFLICT_WORDS.unknown
+  const clean = ['pass', 'none'].includes(facts.checks) && facts.mergeable === 'yes'
+  const checks = clean && facts.gate === 'review_required' ? GATE_WORDS
+    : facts.mergeable === 'yes' ? CHECK_WORDS[facts.checks] || 'Checks are still running.' : CONFLICT_WORDS[facts.mergeable] || CONFLICT_WORDS.unknown
   return STATES[key].headline.replace('{who}', headlineWho(key, d).join(', ') || 'reviewers').replace('{author}', facts.author || 'the author')
     .replace('{checks}', checks).replace('{green}', facts.checks === 'none' ? 'no checks' : 'checks green')
 }

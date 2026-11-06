@@ -100,6 +100,8 @@ test('a missing approval, failing checks or a conflict show as blockers, and you
   const tones = (extra, people = ['sam']) => mergeCopy(approved(extra), approvedBy(people)).facts.filter(fact => fact.tone !== 'ok').map(fact => `${fact.tone}:${fact.text}`)
   assert.deepEqual(tones({}, []), ['bad:Nobody but the author has approved this version'], 'an approval of an older version, or none, is not one')
   assert.deepEqual(tones({ reviewDecision: null }, []), ['bad:Nobody but the author has approved this version'], 'GitHub asking for no review is not an approval')
+  assert.deepEqual(tones({ reviewDecision: 'REVIEW_REQUIRED' }), ['bad:GitHub still needs a review'], 'GitHub’s own gate is named even when someone approved this version')
+  assert.deepEqual(tones({ reviewDecision: 'APPROVED' }), [], 'GitHub satisfied adds nothing')
   assert.deepEqual(tones({ ...rollup('FAILURE', 2) }), ['bad:2 checks are failing'])
   assert.deepEqual(tones({ mergeable: 'CONFLICTING' }), ['bad:It conflicts with main'])
   const status = (state, extra = {}) => ({ run: { state: 'complete', execution_state: 'completed' }, item: { state, ...extra } })

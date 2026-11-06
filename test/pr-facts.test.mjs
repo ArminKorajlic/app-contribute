@@ -37,6 +37,20 @@ test('Merge on your PR needs someone else’s approval of this version (bug 3)',
   assert.equal(merge(decideFor(mine({ reviewDecision: 'APPROVED', latestOpinionatedReviews: { nodes: [opinion('Sam', 'APPROVED', OLD)] } }))).reason, 'The approval is for an older version.')
 })
 
+test('GitHub’s own review gate keeps Merge off even when someone approved this version', () => {
+  const merge = decision => decision.actions.find(action => action.id === 'merge')
+  // Someone other than the PR's author (Sam) approved it, at this version.
+  const approved = reviewer => ({ latestOpinionatedReviews: { nodes: [opinion(reviewer, 'APPROVED')] } })
+  for (const [pr, reviewer] of [[mine, 'Sam'], [pull, 'Bob']]) {
+    const gated = decideFor(pr({ ...approved(reviewer), reviewDecision: 'REVIEW_REQUIRED' }))
+    assert.deepEqual([merge(gated).enabled, merge(gated).reason], [false, 'GitHub still needs a review.'])
+    assert.notEqual(gated.state, 'author.approved', 'it is not "Merge it"')
+    assert.notEqual(gated.state, 'reviewer.mergeable')
+    for (const reviewDecision of ['APPROVED', null, undefined]) assert.equal(merge(decideFor(pr({ ...approved(reviewer), reviewDecision }))).enabled, true, String(reviewDecision))
+  }
+  assert.match(decideFor(mine({ ...approved('Sam'), reviewDecision: 'REVIEW_REQUIRED' })).headline, /approved\. GitHub still needs a review\./)
+})
+
 test('a verdict GitHub did not confirm asks you to check, never to send again (bug 4)', () => {
   const decision = decideFor(pull(), [run({ state: 'verdict_unknown', verdict_proposal: { state: 'unknown', event: 'APPROVE', head_sha: HEAD } })])
   assert.equal(decision.state, 'unconfirmed')

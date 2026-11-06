@@ -176,6 +176,8 @@ export function prFacts({ pr, login, runs = [], ignored = null, chats = [] }) {
     checks: checksOf(pr),
     mergeable: MERGEABLE[pr?.mergeable] || 'unknown',
     permission: pr?.repository?.viewerPermission || 'unknown',
+    // GitHub's own gate: a branch rule that still needs a review no approval here can satisfy.
+    gate: pr?.reviewDecision === 'REVIEW_REQUIRED' ? 'review_required' : null,
     reviews: own ? reviews || [] : withSentVerdict(reviews || [], fromRuns.sent, pr, login),
     myReview,
     openThreads: threads || 0,
