@@ -92,6 +92,7 @@
     "ui/AgentModelSettings.jsx",
     "ui/MarkdownView.jsx",
     "ui/ClampedMarkdown.jsx",
+    "ui/watchOverflow.js",
     "ui/CopyId.jsx",
     "ui/FileDiffList.jsx",
     "ui/ContributionCard.jsx",
