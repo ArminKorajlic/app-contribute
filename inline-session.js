@@ -87,56 +87,20 @@ export function changeSize(plan) {
   return `${files} ${files === 1 ? 'file' : 'files'} · +${stat[2] || 0} −${stat[3] || 0}`
 }
 
-// The first line of prose in a PR description (headings skipped), as plain
-// bounded text.
-export function descriptionExcerpt(body, max = 160) {
-  // Skip HTML comments (also across lines) and fenced code blocks; prefer
-  // prose over headings.
-  // Image-only lines and table rows are skipped and inline images become their
-  // alt text, so a before/after screenshot never shows as raw
-  // ![...](screenshot:...) markup.
-  let fenced = false
-  const lines = String(body || '').replace(/<!--[\s\S]*?(-->|$)/g, '').split('\n').map(value => value.trim())
-    .filter(value => {
-      if (/^(```|~~~)/.test(value)) { fenced = !fenced; return false }
-      return !fenced
-    })
-    .map(value => /^\|.*\|$/.test(value) || /^(\s*!\[[^\]]*\]\([^)]*\))+\s*$/.test(value) ? ''
-      : value.replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1').trim())
-    .filter(Boolean)
-  const prose = lines.find(value => !/^#+\s/.test(value)) || lines[0] || ''
-  // Strip a block marker only when it is one (followed by whitespace), so
-  // emphasis such as **Summary** stays intact.
-  const line = prose.replace(/^(#+|[-*+>]|\d+\.)\s+/, '').trim()
-  return line.length <= max ? line : line.slice(0, max - 1).trimEnd() + '…'
-}
-
-// ---- The app-sourced identity Confirm shows for each frozen record.
+// ---- The row Confirm shows for each frozen record. The host draws these rows
+// in place of the card's own, so they carry the card's facts with the same
+// values (prepared_block.py prepared_item), plus the layer for a stack. What
+// Confirm sends is the frozen snapshot, which the server binds exactly.
 export function confirmationItem(record) {
   const plan = record.plan || {}
   const meta = stackMeta(record)
-  // The card's own per-contribution facts (Project, Change) come first, with
-  // the same values, then the exact identity this Confirm binds.
+  const screenshots = planScreenshots(plan).length
+  const change = [changeSize(plan), screenshots ? screenshotCountText(screenshots) : ''].filter(Boolean).join(' · ')
   const facts = [
     ['Project', plan.repo || record.repo],
-    ...(changeSize(plan) ? [['Change', changeSize(plan)]] : []),
+    ...(change ? [['Change', change]] : []),
     ...(meta ? [['Stack', `Layer ${meta.position} of ${meta.total} · ${meta.name}`]] : []),
-    ['Action', plan.action === 'pr_update' ? `Update pull request #${record.number}` : 'Open a new pull request'],
-    ['Branch', meta ? `${plan.branch || record.branch} → ${meta.baseBranch}` : plan.branch || record.branch],
-    ['Version', String(plan.head_sha || '').slice(0, 12)],
-    ['Reviewed diff', String(plan.diff_sha256 || '').slice(0, 12)],
-    ['Review', 'All clear for this version'],
   ]
-  // Screenshots are published with the PR, so Confirm always names them, on
-  // the Change line: the fact budget stays free for the description excerpt.
-  const screenshots = planScreenshots(plan).length
-  const change = facts.findIndex(([label]) => label === 'Change')
-  if (screenshots && change >= 0) facts[change] = ['Change', `${facts[change][1]} · ${screenshotCountText(screenshots)}`]
-  else if (screenshots) facts.splice(1, 0, ['Change', screenshotCountText(screenshots)]) // after Project, as on the card
-  // The public text the owner publishes: the PR title is the item's heading,
-  // and the description's first line is shown when the 8-fact limit allows.
-  const excerpt = descriptionExcerpt(plan.body_draft)
-  if (excerpt && facts.length < 8) facts.splice(facts.length - 1, 0, ['Description', excerpt])
   return { title: text(plan.title || record.title || record.id, 240), facts: facts.map(([label, value]) => ({ label, value: text(value) })) }
 }
 // A record sent through Möbius's relay (submission_mode 'mobius-bot') uses a
@@ -148,9 +112,11 @@ export const RELAY_NOTE = 'This contribution is sent through the Möbius relay, 
 // The owner must see how big each change is, so a record without a readable
 // diff stat is never confirmable (staging always records one from Git).
 const sized = record => Boolean(changeSize(record?.plan))
+const identified = record => [record.plan?.repo || record.repo, record.plan?.branch || record.branch,
+  record.plan?.head_sha, record.plan?.diff_sha256].every(Boolean)
 export const UNLISTED_LAYER_NOTE = 'This card doesn’t list every layer of the stack. Open Contribute to send it.'
 export const SIZE_NOTE = 'This contribution needs a fresh check in Contribute before it can be sent: its change size is missing.'
-const confirmable = record => !relayed(record) && sized(record) && confirmationItem(record).facts.every(fact => fact.value)
+const confirmable = record => !relayed(record) && sized(record) && identified(record)
 
 const PUBLIC_LABELS = { draft: 'Draft', open: 'Open', landing: 'Open', merged: 'Merged', closed: 'Closed' }
 
