@@ -4,7 +4,8 @@
 // runPopupFitChecks (the project fixture: its Actions menus stay on a phone screen),
 // runDeskFrameChecks (the whole app: a review started on a PR page frames its Desk row),
 // runReviewRequestChecks (the whole app: a review you submit takes its row out of Review requests) and
-// runReviewHelperWaitChecks (the whole app: a review waiting on its helper reads as at work, not stopped).
+// runReviewHelperWaitChecks (the whole app: a review waiting on its helper reads as at work, not stopped) and
+// runRespondAnswerChecks (the whole app: a Respond-to-feedback chat that asks you is answered from the Review tab, with no Answer-the-agent button).
 // Run one with WORKSPACE_BROWSER_ONLY=runDeskFrameChecks (and one viewport with WORKSPACE_BROWSER_VIEWPORT=desktop), for example while
 // runWorkspaceChecks is red, so the Desk check can still show green.
 // Actual app components, native Chromium DOM, and no live app/backend. The
@@ -75,7 +76,7 @@ const prepared = {
   quality_review: { state: 'all_clear', reviewed_head_sha: HEAD },
 }
 const calls = { exactRuns: [], restores: [], diffs: [], requests: [], starts: [], publications: [], status: [], forbidden: [], opened: [], releases: [], stops: [], githubRetries: 0 }
-const values = new Map(), versions = new Map(), navigation = [], reviewRuns = []
+const values = new Map(), versions = new Map(), navigation = [], reviewRuns = [], respondChats = []
 let versionCounter = 0
 const pulls = [pull(7), pull(8, { headRefOid: SECOND_HEAD, assignees: { nodes: [{ login: 'teammate' }] } })]
 // Reachable only by exact read, as a closed PR is absent from open search.
@@ -207,7 +208,7 @@ window.fetch = async (url, options = {}) => {
       // Snapshot at request time; a held answer lands later, as a slow network may deliver it.
       const snapshot = structuredClone(reviewRuns)
       if (window.holdRunsRead) { window.holdRunsRead = false; await new Promise(resolve => { window.releaseRunsRead = resolve }) }
-      return response({ runs: snapshot })
+      return response({ runs: snapshot, respond_chats: structuredClone(respondChats) })
     }
     if (call.method !== 'POST') return forbidden('unexpected review method')(call.method)
     if (window.failReview) return new Response(JSON.stringify({detail:'Fixture review error'}), {status:503})
@@ -1833,6 +1834,50 @@ window.runReviewHelperWaitChecks = async () => {
   }
 }
 
+// A Respond-to-feedback conversation is no review run: the platform lists it beside the runs. When it asks you
+// something the PR page must not offer a button for it (the Review tab is the one place to answer), must say where,
+// and the Review tab must offer the conversation instead of "No review yet".
+window.runRespondAnswerChecks = async () => {
+  const checks = []
+  const deskFrame = title => [...document.querySelectorAll('.co-frame')].find(node => text(node).includes(title))?.dataset.frame
+  const button = label => [...document.querySelectorAll('button')].find(node => text(node) === label)
+  const reviewBody = () => text(query('.co-pr-detail-body'))
+  try {
+    reviewRuns.length = 0
+    respondChats.length = 0
+    respondChats.push({ repo: 'owner/project', number: 7, state: 'needs_answer', chat_id: 'respond-chat-fixture' })
+    await mountDeskApp()
+    await until(() => deskFrame('Contribution 7') === 'verdict', 'The Desk row of a Respond chat that asks you did not hold the amber frame: ' + deskFrame('Contribution 7'))
+    await click([...document.querySelectorAll('.co-desk-row')].find(node => text(node).includes('Contribution 7')))
+    await until(() => query('.co-desk-back') && query('.co-next-hint'), 'The PR page did not open')
+    ensure(text(query('.co-next-hint')).startsWith('The agent has a question for you'), 'The panel said: ' + text(query('.co-next-hint')))
+    ensure(text(query('.co-next-pointer')) === 'Answer it in the Review tab.', 'The panel did not say where to answer: ' + text(query('.co-next-pointer')))
+    ensure(!button('Answer the agent') && !query('.co-decision-bar'), 'A button for the question is still offered')
+    checks.push({ name: 'a question has no button on the PR page, only a pointer to the Review tab', status: 'pass' })
+    // The Desk opens a PR whose frame is not idle on its Review tab.
+    await until(() => button('Answer in chat'), 'The Review tab did not offer Answer in chat: ' + reviewBody())
+    ensure(reviewBody().includes('Waiting for your answer') && !reviewBody().includes('No review yet'), 'The Review tab said: ' + reviewBody())
+    ensure(query('.co-gh-chat-link'), 'The PR header has no link to the Respond conversation')
+    const sent = []
+    Object.defineProperty(window, 'parent', { configurable: true, value: { postMessage(message, target) { sent.push([message, target]) } } })
+    await click(button('Answer in chat'))
+    ensure(sent.length === 1 && sent[0][0].type === 'moebius:open-chat' && sent[0][0].chatId === 'respond-chat-fixture' && sent[0][1] === '*', 'Answer in chat sent: ' + JSON.stringify(sent))
+    checks.push({ name: 'the Review tab answers a Respond chat that asks you through its own conversation', status: 'pass' })
+    // The same chat at work: nothing to answer, but the tab still says an agent is on it.
+    respondChats[0].state = 'running'
+    shownAgain()
+    await until(() => text(query('.co-next-hint')) === 'An agent is working on it', 'The panel did not follow the chat to working: ' + text(query('.co-next-hint')))
+    await until(() => reviewBody().includes('Working on feedback'), 'The Review tab did not follow the chat to working: ' + reviewBody())
+    ensure(!reviewBody().includes('No review yet') && !query('.co-next-pointer'), 'A working chat still showed the question state: ' + reviewBody())
+    checks.push({ name: 'a Respond chat at work is shown as working, with its conversation one button away', status: 'pass' })
+    ensure(document.documentElement.scrollWidth <= window.innerWidth, 'The page scrolls sideways: ' + document.documentElement.scrollWidth + ' of ' + window.innerWidth)
+    ensure(calls.forbidden.length === 0, 'Unexpected runtime/transport: ' + JSON.stringify(calls.forbidden))
+    return { status: 'pass', checks, forbidden: calls.forbidden }
+  } catch (error) {
+    return { status: 'fail', checks, error: error.stack, dom: text(query('main')).slice(0, 5000), calls, forbidden: calls.forbidden }
+  }
+}
+
 // The whole app on a fresh page: a review the owner submits answers its request on
 // GitHub, so the Desk row leaves Review requests when the verdict posts, not at the
 // next Sync. Reads after that (the frame shown again, the hub's probe) keep it honest.
@@ -2146,7 +2191,7 @@ async function main() {
     const protocol = cdp(browser), reports = []
     // Each scenario gets a fresh page, so the whole-app Desk scenario never inherits the project fixture's state.
     // WORKSPACE_BROWSER_ONLY=runDeskFrameChecks runs one scenario.
-    const scenarios = process.env.WORKSPACE_BROWSER_ONLY ? [process.env.WORKSPACE_BROWSER_ONLY] : ['runWorkspaceChecks', 'runPopupFitChecks', 'runDeskFrameChecks', 'runReviewRequestChecks', 'runReviewHelperWaitChecks', 'runSyncChecks', 'runStaleAnswerChecks']
+    const scenarios = process.env.WORKSPACE_BROWSER_ONLY ? [process.env.WORKSPACE_BROWSER_ONLY] : ['runWorkspaceChecks', 'runPopupFitChecks', 'runDeskFrameChecks', 'runReviewRequestChecks', 'runReviewHelperWaitChecks', 'runRespondAnswerChecks', 'runSyncChecks', 'runStaleAnswerChecks']
     const viewports = [{ name: 'desktop', width: 1280, height: 900 }, { name: 'phone', width: 390, height: 844 }].filter(size => !process.env.WORKSPACE_BROWSER_VIEWPORT || size.name === process.env.WORKSPACE_BROWSER_VIEWPORT)
     for (const [viewport, scenario] of viewports.flatMap(size => scenarios.map(name => [size, name]))) {
       const { targetId } = await protocol.send('Target.createTarget', { url: 'about:blank' })

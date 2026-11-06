@@ -138,7 +138,7 @@ function PullStickyTitle({ pr, targetRef, tone }) {
 const COMMENT_PREVIEW = 4
 
 // Which job a chat belongs to. Every chat button is Open chat; the kind tells several apart.
-const PROVENANCE_KINDS = { source: 'where it started', review: 'review', fix: 'fix' }
+const PROVENANCE_KINDS = { source: 'where it started', review: 'review', fix: 'fix', respond: 'feedback' }
 
 // One icon button per kind of conversation. Several chats of the same kind fold
 // into one dropdown listing Review #1, #2, … with each chat's own title

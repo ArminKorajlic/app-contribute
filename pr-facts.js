@@ -123,9 +123,11 @@ function withSentVerdict(reviews, sent, pr, login) {
 }
 
 // A Respond-to-feedback conversation is no review run, yet while it can still move it is
-// the PR's one agent job. The platform lists those chats beside the runs.
+// the PR's one agent job. The platform lists those chats beside the runs; the PR page also
+// needs the chat itself (its id) to offer it, so this one finder serves both.
+export const respondChatOf = (chats, pr) => (chats || []).find(candidate => samePr(candidate, pr)) || null
 const respondJobOf = (chats, pr) => {
-  const chat = (chats || []).find(candidate => samePr(candidate, pr))
+  const chat = respondChatOf(chats, pr)
   return chat ? { kind: 'respond', state: chat.state } : null
 }
 

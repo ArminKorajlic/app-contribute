@@ -40,6 +40,17 @@ test('provenance names one link per conversation for the exact repository and PR
   assert.deepEqual(pullConversations([{ repo: 'owner/repo', number: 7, chat_id: 'bad id!' }], [], pr(7)), [])
 })
 
+test('a live Respond conversation is one of the PR’s conversations, for that exact repository and PR only', () => {
+  const chats = [{ repo: 'owner/repo', number: 7, state: 'needs_answer', chat_id: 'respond-1' }, { repo: 'owner/repo', number: 8, state: 'running', chat_id: 'other-pr' },
+    { repo: 'other/repo', number: 7, state: 'running', chat_id: 'other-repo' }]
+  const links = pullConversations([], [], pr(7), chats)
+  assert.deepEqual(links.map(link => [link.chat_id, link.role]), [['respond-1', 'respond']])
+  assert.equal(links[0].title, 'Respond conversation')
+  assert.deepEqual(pullConversations([], [], pr(7), []), [])
+  // One link per conversation: the same chat is never listed twice.
+  assert.equal(pullConversations([{ repo: 'owner/repo', number: 7, chat_id: 'respond-1' }], [], pr(7), chats).length, 1)
+})
+
 test('newest-issued read owns a PR regardless of reader or completion order', () => {
   let view = emptyPullView()
   // A list read issued first completes after a newer exact read.

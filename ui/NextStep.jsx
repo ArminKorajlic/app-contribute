@@ -22,7 +22,7 @@ export function NextStep({ decision, record, capabilities, disabled = false, bar
   if (bar) return model.primary ? <div className="co-decision-bar" role="group" aria-label="Next step"><button type="button" className="co-btn co-btn-primary" disabled={disabled} onClick={run[model.primary.route]}>{model.primary.title}</button></div> : null
   return <section className="co-next-step" data-turn={decision.turn} aria-label="Next step">
     <span className={'co-desk-chip is-' + model.pill.tone}>{model.pill.label}</span>
-    <p className="co-next-hint">{model.hint}</p>
+    <p className="co-next-hint">{model.hint}{model.pointer ? <span className="co-next-pointer">{model.pointer}</span> : null}</p>
     {model.primary ? <button type="button" className="co-btn co-btn-primary" disabled={disabled} onClick={run[model.primary.route]}>{model.primary.title}</button> : null}
   </section>
 }

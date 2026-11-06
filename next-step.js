@@ -12,11 +12,16 @@ import { frameOf } from './pr-standing.js'
 const ROUTES = {
   check_my_pr: 'menu', respond: 'menu', review: 'menu', open_for_review: 'menu', merge: 'menu',
   rerun_job: 'menu',
-  draft_verdict: 'review', send_draft: 'review', check_github: 'review', open_job: 'review',
+  draft_verdict: 'review', send_draft: 'review', check_github: 'review',
   retry: 'sync',
 }
 // Where the machine's own action title would be a sentence, the button says the job.
 const TITLES = { draft_verdict: 'See the review', send_draft: 'Read the draft', retry: NAMES.sync }
+
+// A next step answered on another tab, with no button here. An agent's question is answered in the Review tab,
+// the one place its conversation is offered, so the panel only says where. The pointer is its own line: the
+// hint stays the machine's sentence, which its twin in the platform must read the same.
+const POINTERS = { open_job: 'Answer it in the Review tab.' }
 
 // A stopped job starts over as the same job through the Actions menu's own window: the machine lets
 // a stalled job be run again, and nothing else is working on the PR. Which menu action that is depends
@@ -40,7 +45,7 @@ export function pillTone(decision) {
   return decision.turn === 'you' ? 'you' : 'quiet'
 }
 
-// { pill, hint, primary } for the panel under the facts line. `primary` is null when the
+// { pill, hint, pointer, primary } for the panel under the facts line. `primary` is null when the
 // next step is not yours to take, cannot run yet (the menu says why), or this Möbius
 // cannot run it for you.
 export function nextStepModel(decision, { record = null, capabilities = null } = {}) {
@@ -53,6 +58,7 @@ export function nextStepModel(decision, { record = null, capabilities = null } =
   return {
     pill: { label: decision.label, tone: pillTone(decision) },
     hint: decision.headline,
+    pointer: POINTERS[decision.next] || '',
     primary: allowed ? { intent: action.id, route, title } : null,
   }
 }

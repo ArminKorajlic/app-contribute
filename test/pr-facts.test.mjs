@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { prFacts } from '../pr-facts.js'
+import { prFacts, respondChatOf } from '../pr-facts.js'
 import { decide } from '../pr-machine.js'
 
 const HEAD = 'b'.repeat(40)
@@ -176,4 +176,12 @@ test('a PR without its state, or your PR without its threads, is unknown', () =>
 test('no checks at all reads as no checks, never green', () => {
   const pr = mine({ latestOpinionatedReviews: { nodes: [opinion('Sam', 'APPROVED')] }, ...rollup(null) })
   assert.match(decideFor(pr).headline, /no checks\. Merge it/)
+})
+
+test('the Respond conversation of a PR is found by its exact repository (any case) and number, and by nothing else', () => {
+  const chats = [respond({ repo: 'o/other' }), respond({ number: 8 }), respond({ repo: 'O/R', chat_id: 'c-here' })]
+  assert.equal(respondChatOf(chats, pull()).chat_id, 'c-here')
+  assert.equal(respondChatOf([respond({ number: 8 })], pull()), null)
+  assert.equal(respondChatOf([], pull()), null)
+  assert.equal(respondChatOf(undefined, pull()), null)
 })

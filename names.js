@@ -51,6 +51,7 @@ export const NAMES = Object.freeze({
   sync: 'Sync',
   discard: 'Discard',
   openChat: 'Open chat',
+  answerInChat: 'Answer in chat',
   copyHash: 'Copy hash',
   cancel: 'Cancel',
   clearSearch: 'Clear search',

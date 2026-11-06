@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
-import { OWNER_ITEM_STATES, ignoredNote, reviewItemProgress, reviewRunHalted } from '../collaboration.js'
+import { OWNER_ITEM_STATES, REVIEW_STATE_NAMES, ignoredNote, reviewItemProgress, reviewRunHalted } from '../collaboration.js'
 import { postableFindings, reviewActionPlan, reviewStoppable } from '../review-actions.js'
 import { frameOf } from '../pr-standing.js'
 import { openAgentConversation } from './BatchAction.jsx'
 import { ClampedMarkdown } from './ClampedMarkdown.jsx'
 import { CopyId, commentReference } from './CopyId.jsx'
 import { ReviewFrame } from './ReviewFrame.jsx'
+import { RespondJobBox } from './RespondJobBox.jsx'
 import { TimeAgo } from './GithubParts.jsx'
 import { RepairProposal, VerdictProposal, savedVersion } from './RunDetail.jsx'
 import { NAMES } from '../names.js'
@@ -38,7 +39,10 @@ export function reviewContent(status, ctx) {
   if (ignoredNote(item, ctx?.ignored)) return { key: 'ignored', title: 'Ignored' }
   if (item.state === 'needs_you' && item.verdict_proposal?.event === 'REQUEST_CHANGES') return { key: 'changes', title: 'Changes found', box: 'changes' }
   if (item.state === 'needs_you' && !progress.waiting) return { key: 'findings', title: ctx?.own ? 'Your check found problems' : 'Problems found', box: 'verdict' }
-  if (OWNER_ITEM_STATES.has(item.state)) return { key: 'needs', title: progress.label, box: 'verdict' }
+  // A conversation that asked you something is answered first, whatever the review itself is doing. A step whose
+  // outcome GitHub has not confirmed keeps its own words: that is the more urgent thing to read.
+  const asks = progress.waiting && (item.state === 'needs_you' || !OWNER_ITEM_STATES.has(item.state))
+  if (asks || OWNER_ITEM_STATES.has(item.state)) return { key: 'needs', title: asks ? REVIEW_STATE_NAMES.awaiting_owner : progress.label, box: 'verdict' }
   if (item.state === 'all_clear') return { key: 'clear', title: 'Review clear', box: 'clear' }
   return { key: 'settled', title: progress.label }
 }
@@ -46,8 +50,20 @@ export function reviewContent(status, ctx) {
 const allowed = (standing, ...ids) => !!standing?.actions?.some(action => ids.includes(action.id) && action.enabled)
 
 // The Review tab of a PR: nothing yet, a running review, or what the last review
-// found. It reuses the run's own verdict and conversation actions.
-export function ReviewTab({ pr, status, standing = null, earlier = null, own = null, ignored = null, canPost = false, readOnly = false, busy = false, error = '', onStart, onStop, onRetry, onVerdict, onRepair, onCheck, onFix, onIgnore, onUndoIgnore, onPost, pulls = [], listState = {} }) {
+// found. It reuses the run's own verdict and conversation actions. While a Respond-to-feedback
+// conversation holds the PR (`respondChat`, which the machine's `jobKind` confirms) its box comes
+// first; an older saved review stays below it, but "No review yet" would contradict the page.
+export function ReviewTab(props) {
+  const { pr, status, earlier, standing, respondChat } = props
+  if (!respondChat || standing?.jobKind !== 'respond') return <SavedReview {...props} />
+  return <div className="co-review-stack">
+    <RespondJobBox chat={respondChat} pr={pr} standing={standing} />
+    {status || earlier ? <SavedReview {...props} quiet /> : null}
+  </div>
+}
+
+// `quiet`: another box above already holds the amber "needs you" frame, so this saved review stays plain.
+function SavedReview({ quiet = false, pr, status, standing = null, earlier = null, own = null, ignored = null, canPost = false, readOnly = false, busy = false, error = '', onStart, onStop, onRetry, onVerdict, onRepair, onCheck, onFix, onIgnore, onUndoIgnore, onPost, pulls = [], listState = {} }) {
   const tone = reviewContent(status, { own, ignored })
   const running = tone.key === 'running'
   const elapsed = useElapsed(status?.run?.created_at, running)
@@ -94,7 +110,7 @@ export function ReviewTab({ pr, status, standing = null, earlier = null, own = n
       {plan.map(action => <button key={action.key} type="button" disabled={busy && action.key !== 'ask'} className={action.primary ? 'co-btn co-btn-primary' : action.quiet ? 'co-btn co-btn-quiet' : 'co-btn'} onClick={handlers[action.key]}>{action.label}</button>)}
     </div>
   </div>
-  return <ReviewFrame state={standing ? frameOf(standing) : 'idle'} radius={12}>{body}</ReviewFrame>
+  return <ReviewFrame state={standing && !quiet ? frameOf(standing) : 'idle'} radius={12}>{body}</ReviewFrame>
 }
 
 // The PR changed after its last review, so that review is of an earlier version:

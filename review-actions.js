@@ -34,7 +34,7 @@ export function reviewActionPlan({ tone, own = false, chat = false, asked = fals
     case 'halted':
       return [...(can.retry ? [{ key: 'retry', label: NAMES.reviewAgain }] : []), ...ask(NAMES.openChat)]
     case 'needs':
-      return [...ask(asked ? 'Answer in chat' : NAMES.openChat).map(primary), ...stop]
+      return [...ask(asked ? NAMES.answerInChat : NAMES.openChat).map(primary), ...stop]
     case 'findings':
     case 'changes':
       return [

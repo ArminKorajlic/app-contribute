@@ -217,3 +217,98 @@ test('a private finding offers Post to GitHub only when the platform can post it
   assert.doesNotMatch(afterwards, /Post to GitHub/, 'once it is on GitHub there is nothing left to post')
   assert.match(afterwards, /View the posted review on GitHub/)
 })
+
+// ---- an agent that waits on you is answered here, whatever kind of job it is
+const asking = (itemState, run = {}) => status(itemState, {}, { state: 'running', execution_state: 'awaiting_owner', ...run })
+
+test('a review that asked you something says "Waiting for your answer" with Answer in chat, whatever it was doing', async t => {
+  for (const itemState of ['reviewing', 'repairing', 'pushing', 'needs_you']) {
+    const html = await render(t, 'ReviewTab', { pr, status: asking(itemState), onStop: () => {} })
+    if (!html) return
+    assert.match(html, /<h4>Waiting for your answer<\/h4>/, itemState)
+    assert.match(html, /co-btn co-btn-primary">Answer in chat</, itemState)
+    assert.match(html, />Stop review</, `${itemState}: a question can still be stopped`)
+    assert.doesNotMatch(html, /Ask the reviewer something|<h4>Reviewing<\/h4>|<h4>Needs you<\/h4>/, itemState)
+  }
+  for (const mode of ['review_merge', 'review_fix_merge']) {
+    assert.match(await render(t, 'ReviewTab', { pr, status: asking('reviewing', { mode }) }), /Answer in chat/, mode)
+  }
+})
+
+test('a step whose outcome GitHub has not confirmed keeps saying so while a question also waits', async t => {
+  const html = await render(t, 'ReviewTab', { pr, status: asking('merge_unknown') })
+  if (!html) return
+  assert.match(html, /<h4>Outcome needs checking<\/h4>/, 'the unconfirmed outcome is the more urgent thing to read')
+  assert.match(html, /Answer in chat/)
+})
+
+test('a review that works, stopped or is settled reads as before, even if its conversation once asked', async t => {
+  const working = await render(t, 'ReviewTab', { pr, status: status('reviewing') })
+  if (!working) return
+  assert.match(working, /<h4>Reviewing<\/h4>/)
+  assert.match(working, />Open chat</)
+  assert.doesNotMatch(working, /Waiting for your answer|Answer in chat/)
+  const stopped = await render(t, 'ReviewTab', { pr, status: status('reviewing', {}, { state: 'reviewing', execution_state: 'interrupted' }), onRetry: () => {} })
+  assert.match(stopped, /<h4>Not finished<\/h4>/)
+  assert.doesNotMatch(stopped, /Waiting for your answer|Answer in chat/)
+  const clear = await render(t, 'ReviewTab', { pr, status: status('all_clear', {}, { state: 'complete', execution_state: 'awaiting_owner' }) })
+  assert.match(clear, /<h4>Review clear<\/h4>/, 'a settled review has nothing left to answer')
+  assert.doesNotMatch(clear, /Waiting for your answer/)
+})
+
+// ---- a Respond-to-feedback conversation is no review run: the Review tab still has to say what the agent is doing
+const livePr = { ...pr, state: 'OPEN', author: { login: 'me' }, mergeable: 'MERGEABLE', repository: { nameWithOwner: 'team/repo', viewerPermission: 'WRITE' },
+  latestOpinionatedReviews: { nodes: [] }, viewerLatestReview: null, reviewThreads: { nodes: [] }, commits: { nodes: [{ commit: { statusCheckRollup: null } }] } }
+const respondChat = (state, extra = {}) => ({ repo: 'team/repo', number: 9, state, chat_id: 'respond-chat-1', ...extra })
+const respondProps = (state, extra = {}) => {
+  const chat = respondChat(state)
+  const runs = extra.status ? [{ ...extra.status.run, items: [extra.status.item] }] : []
+  return { pr, status: null, own: true, respondChat: chat, standing: standingFor({ pr: livePr, login: 'me', runs, chats: [chat] }), ...extra }
+}
+
+test('a Respond conversation that waits on you has its own box with Answer in chat, never "No review yet"', async t => {
+  const html = await render(t, 'ReviewTab', respondProps('needs_answer'))
+  if (!html) return
+  assert.match(html, /<h4>Waiting for your answer<\/h4>/)
+  assert.match(html, /Respond to feedback on #9/)
+  assert.match(html, /co-btn co-btn-primary">Answer in chat</)
+  assert.match(html, /data-frame="verdict"/, 'the same amber frame the Desk gives this state')
+  assert.doesNotMatch(html, /No review yet|Use Agent above/, 'the Agent menu is off while an agent holds the PR, so this would be false')
+})
+
+test('a Respond conversation at work says so and offers its conversation', async t => {
+  const html = await render(t, 'ReviewTab', respondProps('running'))
+  if (!html) return
+  assert.match(html, /<h4>Working on feedback<\/h4>/)
+  assert.match(html, /co-btn co-btn-primary">Open chat</)
+  assert.match(html, /data-frame="reviewing"/)
+  assert.doesNotMatch(html, /No review yet|Answer in chat/)
+})
+
+test('an older saved review stays below the Respond box, and an earlier-version review does too', async t => {
+  const older = status('all_clear', {}, { state: 'complete', execution_state: 'completed' })
+  const html = await render(t, 'ReviewTab', respondProps('needs_answer', { status: older }))
+  if (!html) return
+  assert.ok(html.indexOf('Waiting for your answer') > -1 && html.indexOf('Waiting for your answer') < html.indexOf('Review clear'), 'the live job comes first')
+  assert.equal((html.match(/data-frame="verdict"/g) || []).length, 1, 'one box asks for you; the finished review below it stays plain')
+  const earlier = { run: { id: 'r0', created_at: '2026-11-01T10:00:00Z', chat_id: 'old-chat' }, item: { repo: 'team/repo', number: 9, head_sha: 'c'.repeat(40), base_ref: 'main', summary: 'No blockers at the old commit.' } }
+  const withEarlier = await render(t, 'ReviewTab', respondProps('needs_answer', { earlier }))
+  assert.ok(withEarlier.indexOf('Waiting for your answer') < withEarlier.indexOf('Reviewed an earlier version'))
+})
+
+test('the Respond box appears only while that conversation holds the PR', async t => {
+  // No conversation: nothing changes.
+  const none = await render(t, 'ReviewTab', { pr, status: null })
+  if (!none) return
+  assert.match(none, /No review yet/)
+  // A conversation that is not on this PR never reaches the tab (the PR list only hands over its own).
+  const elsewhere = await render(t, 'ReviewTab', { pr, status: null, respondChat: null })
+  assert.match(elsewhere, /No review yet/)
+  // A live review run holds the PR before a Respond conversation does: the run's box shows, not a second job.
+  const running = status('reviewing')
+  const chat = respondChat('needs_answer')
+  const standing = standingFor({ pr: livePr, login: 'me', runs: [{ ...running.run, items: [running.item] }], chats: [chat] })
+  const html = await render(t, 'ReviewTab', { pr, status: running, own: true, respondChat: chat, standing })
+  assert.match(html, /<h4>Reviewing<\/h4>/)
+  assert.doesNotMatch(html, /Working on feedback|Waiting for your answer/)
+})

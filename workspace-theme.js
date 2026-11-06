@@ -569,6 +569,8 @@ export const WORKSPACE_CSS = `
 .co-next-step { display:flex; flex-wrap:wrap; align-items:center; gap:8px 12px; margin:12px 0 4px; padding:12px 14px; border:1px solid var(--border); border-radius:var(--co-radius-panel); background:var(--surface); }
 .co-next-step .co-desk-chip { flex:0 0 auto; }
 .co-next-hint { flex:1 1 220px; margin:0; color:var(--text); font-size:var(--co-text-meta); line-height:1.45; }
+.co-review-stack { display:grid; gap:12px; }
+.co-next-pointer { display:block; color:var(--muted); }
 .co-next-step .co-btn { flex:0 0 auto; }
 /* Phone: the button leaves the panel and pins to the foot of the page, above the safe area. */
 .co-decision-bar { display:none; }

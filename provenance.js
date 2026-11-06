@@ -1,8 +1,10 @@
 // Conversations that created, reviewed or fixed one exact public PR. Both the
 // repository and the number must match: equal numbers in other repositories
 // are unrelated work.
+import { respondChatOf } from './pr-facts.js'
+
 const CHAT_ID = /^[A-Za-z0-9_-]{1,128}$/
-export const ROLE_TITLES = { source: 'Source conversation', review: 'Review conversation', fix: 'Fix conversation' }
+export const ROLE_TITLES = { source: 'Source conversation', review: 'Review conversation', fix: 'Fix conversation', respond: 'Respond conversation' }
 
 const recordRepo = record => (record.repo || record.plan?.repo || '').toLowerCase()
 
@@ -11,7 +13,7 @@ export function recordsForPull(records, pr) {
   return (records || []).filter(record => recordRepo(record) === repo && record.number === pr.number)
 }
 
-export function pullConversations(records, runs, pr) {
+export function pullConversations(records, runs, pr, respondChats = []) {
   const links = new Map()
   function add(chatId, role, title) {
     if (typeof chatId !== 'string' || !CHAT_ID.test(chatId) || links.has(chatId)) return
@@ -28,5 +30,6 @@ export function pullConversations(records, runs, pr) {
   for (const run of runs || []) {
     if (run.items?.some(item => item.repo?.toLowerCase() === repo && item.number === pr.number)) add(run.chat_id, 'review')
   }
+  add(respondChatOf(respondChats, pr)?.chat_id, 'respond')
   return [...links.values()]
 }

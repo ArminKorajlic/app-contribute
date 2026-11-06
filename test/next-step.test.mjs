@@ -90,3 +90,56 @@ test('a stopped job starts over as the same job, through the menu action it came
   // Someone else's take over needs maintainer rights: without them there is no button to press.
   assert.equal(again({ role: 'reviewer', permission: 'WRITE', job: { kind: 'review_fix_merge', state: 'stalled' } }), null)
 })
+
+// A question from an agent is answered where its conversation is offered (the Review tab), so the panel has no button for it.
+// The hint stays the machine's own sentence; the pointer is a separate line owned by this panel.
+const ASKS = [
+  ['your PR, a review run asks', { role: 'author', job: { kind: 'review', state: 'needs_answer' } }],
+  ['their PR, a review run asks', { role: 'reviewer', job: { kind: 'review', state: 'needs_answer' } }],
+  ['your PR, Finish it asks', { role: 'author', job: { kind: 'review_fix_merge', state: 'needs_answer' } }],
+  ['their PR, Take over asks', { role: 'reviewer', permission: 'ADMIN', job: { kind: 'review_fix_merge', state: 'needs_answer' } }],
+  ['your PR, a Respond conversation asks', { role: 'author', job: { kind: 'respond', state: 'needs_answer' } }],
+]
+for (const [name, extra] of ASKS) {
+  test(`an agent's question, ${name}: no button, the machine's sentence, and a pointer to the Review tab`, () => {
+    const decision = decide(facts(extra))
+    const model = nextStepModel(decision, { capabilities })
+    assert.equal(decision.state, 'needs_answer')
+    assert.equal(model.pill.label, 'Agent asks you')
+    assert.equal(model.hint, decision.headline, 'the sentence is the machine’s own, so its twin in the platform stays the single source')
+    assert.equal(model.primary, null)
+    assert.equal(model.pointer, 'Answer it in the Review tab.')
+  })
+}
+
+test('only a question carries a pointer: every other state keeps its own button or none, and the Review-tab buttons stay', () => {
+  const jumps = [
+    ['a draft to send', { role: 'reviewer', result: { head: 'h', outcome: 'findings' }, outbox: { kind: 'verdict', head: 'h', state: 'drafted', event: 'APPROVE' } }, 'Read the draft'],
+    ['GitHub did not confirm', { role: 'reviewer', outbox: { kind: 'verdict', head: 'h', state: 'unconfirmed', event: 'APPROVE' } }, 'Check GitHub'],
+    ['a review is ready', { role: 'reviewer', result: { head: 'h', outcome: 'findings', setAside: false } }, 'See the review'],
+  ]
+  for (const [name, extra, button] of jumps) {
+    const model = step(extra)
+    assert.equal(model.primary?.route, 'review', name)
+    assert.equal(model.primary?.title, button, name)
+    assert.equal(model.pointer, '', name)
+  }
+  for (const [, extra] of GALLERY) assert.equal(nextStepModel(decide(facts(extra)), { capabilities }).pointer, '')
+})
+
+test('the panel shows the question without a button, and the phone bar has nothing to repeat', async t => {
+  if (!frontendModules) return t.skip('MOBIUS_FRONTEND_NODE_MODULES is required')
+  const { render } = await renderModule(`
+    import React from 'react'
+    import { renderToStaticMarkup } from 'react-dom/server'
+    import { NextStep } from './ui/NextStep.jsx'
+    export const render = props => renderToStaticMarkup(React.createElement(NextStep, props))
+  `)
+  const decision = decide(facts({ job: { kind: 'respond', state: 'needs_answer' } }))
+  const panel = render({ decision, capabilities })
+  assert.match(panel, /co-desk-chip is-waiting">Agent asks you/)
+  assert.match(panel, /The agent has a question for you/)
+  assert.match(panel, /Answer it in the Review tab\./)
+  assert.doesNotMatch(panel, /<button|Answer the agent/, 'one place to answer: the Review tab')
+  assert.equal(render({ decision, capabilities, bar: true }), '', 'no bottom bar on a phone for a state with no button')
+})
