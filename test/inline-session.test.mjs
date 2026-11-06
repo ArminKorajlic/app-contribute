@@ -5,9 +5,10 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { batchHandle, cardRecordIds, itemRecordIds, sendTarget } from '../chat-blocks.js'
+import { frontendModules, renderModule } from './render-harness.mjs'
 import { readBlockSession } from '../block-protocol.js'
 import { reviewAddressFor } from '../send-readiness.js'
-import { attemptOutcome, confirmationItem, descriptionExcerpt, LEDGER_NOTE, LEGACY_NOTE, NEWER_NOTE, UNMATCHED_NOTE, UNLISTED_LAYER_NOTE, REFRESH_FAILED_NOTE, SIZE_NOTE, TIMEOUT_NOTE, createInlineSession, decodeCheckpoint, encodeCheckpoint, observeAttempt, RECOVERY_NOTE } from '../inline-session.js'
+import { attemptOutcome, confirmationItem, descriptionExcerpt, LEDGER_NOTE, LEGACY_NOTE, NEWER_NOTE, UNCHECKED_NOTE, UNMATCHED_NOTE, UNLISTED_LAYER_NOTE, REFRESH_FAILED_NOTE, SIZE_NOTE, TIMEOUT_NOTE, createInlineSession, decodeCheckpoint, encodeCheckpoint, observeAttempt, RECOVERY_NOTE } from '../inline-session.js'
 
 const HEAD = 'a'.repeat(40), NEXT = 'c'.repeat(40)
 function prepared(id, extra = {}) {
@@ -352,10 +353,8 @@ test('a card printed before its items named records shows only its record status
     return state
   }
   const sent = await show(published(prepared('one')))
-  assert.equal(sent.hidden, true)
-  assert.equal(sent.status, 'Open')
-  assert.equal(sent.tone, 'success')
-  assert.equal(sent.note, '')
+  // A legacy card has no item rows, so the action itself stays visible.
+  assert.deepEqual([sent.hidden, sent.disabled, sent.label, sent.status, sent.tone, sent.note], [false, true, 'Sent', 'Open', 'success', ''])
   assert.deepEqual(sent.links, [{ label: 'View PR #7', url: 'https://github.com/owner/repo/pull/7' }])
   const waiting = await show(prepared('one'))
   assert.deepEqual([waiting.note, waiting.tone, waiting.status, waiting.disabled, waiting.badges], [LEGACY_NOTE, 'neutral', '', true, []])
@@ -363,6 +362,23 @@ test('a card printed before its items named records shows only its record status
   assert.deepEqual([missing.note, missing.tone, missing.status, missing.disabled], ['This contribution is no longer in Contribute.', 'neutral', '', true])
   const dismissed = await show(prepared('one', { record: { status: 'abandoned' } }))
   assert.deepEqual([dismissed.note, dismissed.tone, dismissed.status], ['This contribution was dismissed.', 'neutral', ''])
+})
+
+test('a legacy card that could not check its record offers Try again, which only reads again', async () => {
+  let reachable = false
+  const h = harness({ actions: [{ key: 'chat-send:one' }], items: [], records: [published(prepared('one'))],
+    loadExact: async (id, store) => { if (!reachable) throw new Error('offline'); return structuredClone(store.get(id)) } })
+  h.session.start(); await tick()
+  let state = h.action('chat-send:one')
+  assert.deepEqual([state.note, state.tone, state.status, state.label, state.disabled], [UNCHECKED_NOTE, 'neutral', '', 'Try again', false],
+    'an unavailable read is not reported as a missing contribution')
+  reachable = true
+  h.fire('chat-send:one', 'activate'); await tick()
+  state = h.action('chat-send:one')
+  assert.deepEqual([state.status, state.label, state.disabled, state.note], ['Open', 'Sent', true, ''])
+  assert.deepEqual(state.links, [{ label: 'View PR #7', url: 'https://github.com/owner/repo/pull/7' }])
+  assert.equal(h.needs.length, 0, 'a legacy card never asks for the publication runtime')
+  assert.equal(h.sends.length, 0)
 })
 
 test('a legacy batch card and a mismatched new card stay closed with a neutral note', async () => {
@@ -965,4 +981,48 @@ test('the B2 host accepts a confirmation that names screenshots', async t => {
   assert.equal(parsed[0].facts.find(fact => fact.label === 'Change').value, '1 file · +2 −0 · 2 screenshots')
   assert.equal(parsed[0].facts.find(fact => fact.label === 'Description').value, 'Fix.')
   assert.match(parsed[1].facts.find(fact => fact.label === 'Change').value, /1 screenshot$/)
+})
+
+test('the host shows a legacy card\'s published status and PR link, and a neutral note while prepared', async t => {
+  const BLOCKS = process.env.MOBIUS_BLOCKS_FRONTEND || ''
+  if (!BLOCKS || !frontendModules) return t.skip('set MOBIUS_BLOCKS_FRONTEND and MOBIUS_FRONTEND_NODE_MODULES to render the real host block')
+  const markdown = `${BLOCKS}/src/components/ChatView/markdown`
+  // Host modules only: stylesheets and the hidden app canvas are not rendered.
+  const stub = { name: 'stub-host', load(id) {
+    if (id.endsWith('.css')) return { code: '', moduleType: 'js' }
+    if (/AppCanvas\/AppCanvas\.jsx$|useAppBlockSession\.js$/.test(id)) return { code: 'export default function Stub() { return null }', moduleType: 'js' }
+    return null
+  } }
+  const host = await renderModule(`
+import { createElement } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
+import { PassiveBlockView } from '${markdown}/PassiveAppBlock.jsx'
+import { appBlockFromToken, blockActions, blockItems } from '${markdown}/appBlock.js'
+import { sessionState } from '${markdown}/appBlockSession.js'
+export const parse = text => appBlockFromToken({ type: 'code', lang: 'mobius-app', text })
+export const init = block => ({ actions: blockActions(block), items: blockItems(block) })
+export function render(block, message) {
+  const state = sessionState(message, message.sessionId, new Set(blockActions(block).map(action => action.key)))
+  return renderToStaticMarkup(createElement(PassiveBlockView, { block, app: { id: 1, name: 'Contribute', slug: 'contribute' },
+    state, locked: false, onEvent() {}, onInternalNav() {} }))
+}`, [stub])
+  // A card as printed before #116: root facts and one action, no items.
+  const block = host.parse(JSON.stringify({ app: 'contribute', intent: 'review:one', title: 'Change one', interaction: 'inline',
+    facts: [{ label: 'Repository', value: 'owner/repo' }, { label: 'Action', value: 'Open a new pull request' }],
+    action: { label: 'Contribute', intent: 'chat-send:one' } }))
+  const rendered = async record => {
+    const { actions, items } = host.init(block)
+    const h = harness({ actions, items, records: [record] })
+    h.session.start(); await tick()
+    const { sessionId, ...body } = h.last()
+    return host.render(block, { type: 'moebius:app-block-state', sessionId, ...body })
+  }
+  const sent = await rendered(published(prepared('one')))
+  assert.match(sent, /<span class="md-app-block__status is-success">Open<\/span>/)
+  assert.match(sent, /<a href="https:\/\/github.com\/owner\/repo\/pull\/7"[^>]*>View PR #7<\/a>/)
+  assert.match(sent, /<button[^>]*disabled=""[^>]*>Sent<\/button>/)
+  const waiting = await rendered(prepared('one'))
+  assert.match(waiting, /<p class="md-app-block__note is-neutral" role="status">Open Contribute to send it.<\/p>/)
+  assert.match(waiting, /<button[^>]*disabled=""[^>]*>Contribute<\/button>/)
+  for (const markup of [sent, waiting]) assert.doesNotMatch(markup, /Needs attention|no longer matches|is-attention/)
 })

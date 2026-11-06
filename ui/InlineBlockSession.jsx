@@ -18,7 +18,7 @@ export function InlineBlockSession({ blockSession, runtime, onNeedRuntime }) {
         && (init.generation === null || init.generation === blockSession.generation) ? blockSession : init
       if (session.current?.sessionId === init.sessionId) { session.current.start(); return }
       session.current?.dispose()
-      session.current = createInlineSession({ ...init, publish: state => publishBlockState(state, target.current), loadExact: loadFreshContributionRecord,
+      session.current = createInlineSession({ ...init, publish: state => publishBlockState(state, target.current), loadExact: id => loadFreshContributionRecord(id, { strict: true }),
         onNeedRuntime: () => latest.current.onNeedRuntime?.() })
       if (latest.current.runtime) session.current.updateRuntime(latest.current.runtime)
       session.current.start()

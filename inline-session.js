@@ -26,6 +26,7 @@ export const NEWER_NOTE = 'Sending from chat needs a newer Möbius. Open Contrib
 // A card whose action does not match its items only points to Contribute.
 export const UNMATCHED_NOTE = 'Open Contribute to send them.'
 export const LEGACY_NOTE = 'Open Contribute to send it.'
+export const UNCHECKED_NOTE = 'Couldn’t check this contribution right now.'
 export const RECOVERY_NOTE = 'The previous result from this card could not be restored. Open Contribute to check it; nothing will be sent from here.'
 
 // ---- Recovery checkpoint: unresolved attempt identities only, never records,
@@ -178,6 +179,7 @@ export function createInlineSession({ sessionId, actions, items = null, checkpoi
   const generations = new Map()
   const reading = new Set()
   const unreadable = new Set()
+  const absent = new Set() // unreadable because the read found no record
   let runtime = null
   let activating = ''
   // The app's refresh completion count an activation is waiting for. The app
@@ -251,7 +253,7 @@ export function createInlineSession({ sessionId, actions, items = null, checkpoi
   // published (its status and link show it), else where to send or check it.
   function legacyNote(id) {
     const record = current().get(id)
-    if (!record) return unreadable.has(id) ? sendBlocker(null) : ''
+    if (!record) return absent.has(id) ? sendBlocker(null) : unreadable.has(id) ? UNCHECKED_NOTE : ''
     if (isPublished(record)) return ''
     return record.status === 'prepared' ? LEGACY_NOTE : sendBlocker(record)
   }
@@ -272,11 +274,14 @@ export function createInlineSession({ sessionId, actions, items = null, checkpoi
     // A card that does not match its items never reaches Confirm; it shows
     // status and points to Contribute, which is not a warning.
     const passive = Boolean(targets.get(key)?.invalid)
+    const legacy = targets.get(key)?.legacy
+    // A legacy record that could not be checked is read again by Try again.
+    const recheck = Boolean(legacy) && unreadable.has(legacy) && !absent.has(legacy)
     // A failed check or read can be retried; retrying only reads again.
-    const retry = runtime?.reviewStatus?.state === 'unavailable' || ids.some(id => unreadable.has(id)) || ledgerIncomplete() || checkRetryable(key) || Boolean(refreshNote)
+    const retry = recheck || runtime?.reviewStatus?.state === 'unavailable' || ids.some(id => unreadable.has(id)) || ledgerIncomplete() || checkRetryable(key) || Boolean(refreshNote)
     const reason = fault || blockedReason(key)
     const label = busy ? 'Contributing…' : checking ? 'Checking…' : loading ? 'Loading…'
-      : unknown && ids.length === 1 ? 'Check again' : retry ? 'Try again' : item.label || 'Contribute'
+      : unknown && ids.length === 1 ? 'Check again' : retry ? 'Try again' : legacy && published ? 'Sent' : item.label || 'Contribute'
     const status = fault ? 'Needs attention' : busy ? 'Contributing' : unknown ? 'Checking result' : failure ? 'Needs attention'
       : published ? (records.length === 1 ? PUBLIC_LABELS[records[0].status] || 'Sent' : 'Sent')
       : checking ? 'Checking' : reason && !passive ? 'Needs attention' : ''
@@ -284,11 +289,13 @@ export function createInlineSession({ sessionId, actions, items = null, checkpoi
     return {
       key, label,
       disabled: Boolean(fault) || busy || checking || loading || sending() || Boolean(frozen) && !confirming
-        || passive || Boolean(reason) && !retry && !unknown,
+        || passive && !recheck || Boolean(reason) && !retry && !unknown,
       busy,
       confirming,
       confirmation: confirming ? frozen.units.flatMap(unit => unit.ready.map(confirmationItem)) : null,
-      hidden: published && !busy && !confirming,
+      // A legacy card has no item rows, so its action keeps showing the
+      // published status and PR link.
+      hidden: published && !legacy && !busy && !confirming,
       note: text(fault || (unknown ? UNKNOWN_NOTE : '') || failure?.note || (activating === key ? '' : refreshNote) || reason),
       tone, status, statusTone: tone,
       links: records.filter(isPublished).map(record => ({ label: `View PR #${publishedPull(record).number}`, url: publishedPull(record).url })),
@@ -354,18 +361,23 @@ export function createInlineSession({ sessionId, actions, items = null, checkpoi
   // Newest-issued exact read wins per record; reads never send.
   async function read(ids) {
     const issued = ids.map(id => { const generation = (generations.get(id) || 0) + 1; generations.set(id, generation); reading.add(id); return generation })
-    const results = await Promise.all(ids.map(id => Promise.resolve().then(() => loadExact(id)).catch(() => null)))
+    const results = await Promise.all(ids.map(id => Promise.resolve().then(() => loadExact(id)).then(record => ({ record }), () => ({ failed: true }))))
     if (!alive) return
     ids.forEach((id, index) => {
       if (generations.get(id) !== issued[index]) return
       reading.delete(id)
-      if (results[index]?.id === id) { exact.set(id, results[index]); unreadable.delete(id) } else unreadable.add(id)
+      const { record, failed } = results[index]
+      if (record?.id === id) { exact.set(id, record); unreadable.delete(id); absent.delete(id); return }
+      unreadable.add(id)
+      if (failed) absent.delete(id); else absent.add(id)
     })
     settle(); emit()
   }
 
   function activate(key) {
     if (fault || sending() || frozen) return
+    // A legacy card only reads its record again; it never needs the runtime.
+    if (targets.get(key)?.legacy) { void read(shownIds(key)); return }
     activating = key
     awaitDone = -1
     awaitLegacy = false
