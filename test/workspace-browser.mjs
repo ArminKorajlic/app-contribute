@@ -519,7 +519,7 @@ window.runWorkspaceChecks = async () => {
       const filters=query('.co-directory .co-filter-line'), filterButtons=[...filters.querySelectorAll('button')]
       ensure(filters && !query('.co-directory-filter select') && !query('.co-lens-nav'), 'Project filters did not use the compact button group')
       ensure(filterButtons.map(node => text(node)).join('|')==='All|2With local changes|0Behind GitHub', 'Project filter choices or counts drifted')
-      const search=query('.co-directory .co-desk-search')
+      const search=query('.co-directory .co-search')
       ensure(search && search.querySelector('svg') && filters.compareDocumentPosition(search) & Node.DOCUMENT_POSITION_FOLLOWING, 'The project search is not the shared search field under the filters')
       ensure(button('All',filters).getAttribute('aria-pressed')==='true', 'The active project filter is not exposed')
       await click(query('.co-source-row'))
@@ -753,7 +753,7 @@ window.runWorkspaceChecks = async () => {
       await click(button('Assign',query('.co-pr-box-head')))
       await until(() => query('[aria-label="Assign to me"]'),'People did not load')
       ensure(mutationRequests().length === 0,'Opening picker assigned prematurely')
-      ensure(document.activeElement === query('.co-person-search'),'People search did not receive focus')
+      ensure(document.activeElement === query('.co-person-search input'),'People search did not receive focus')
       // #98 intentionally replaces the fixed dock with an inline region.
       // Opening it may scroll it into view; selection itself must not scroll.
       const assignmentRect=query('.co-person-search').getBoundingClientRect()

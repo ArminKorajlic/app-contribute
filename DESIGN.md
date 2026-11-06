@@ -237,6 +237,7 @@ The four views are one segmented bar with every segment on screen, the word firs
 - **Do** keep selection independent from row detail and route agent action through the review window.
 - **Do** name every control by its result, from `names.js`; an icon-only button always carries an accessible name and the same words in its tooltip.
 - **Do** distinguish assignment, private review, legacy merge scope, and scoped takeover.
+- **Do** use the one search field (`ui/SearchField.jsx`) for every search: filled surface, thin edge, magnifier, Clear while there is text, one purple edge and soft ring on focus, 44px tall, a 16px input so phones do not zoom. Never draw a screen's own search input.
 - **Do** keep detail controls stable while context loads and scrolls below them.
 - **Do** show paused work by name and preserve its remaining steps without automatic restart.
 - **Do** keep editable prompts separate from frozen run snapshots and immutable safety instructions.

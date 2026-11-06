@@ -54,7 +54,7 @@
     "button-theme.js",
     "desk.js",
     "ui/Desk.jsx",
-    "ui/DeskSearch.jsx",
+    "ui/SearchField.jsx",
     "ui/FilterLine.jsx",
     "ui/DeskViews.jsx",
     "domain.js",

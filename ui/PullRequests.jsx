@@ -24,6 +24,7 @@ import { YOUR_INTENTS } from '../actions-menu.js'
 import { ACTION_COPY, methodToSend } from '../action-copy.js'
 import { projectUpdater } from '../updates.js'
 import { NAMES } from '../names.js'
+import { SearchField } from './SearchField.jsx'
 
 // A takeover's one scope: repairs to the named PR, each push approved by the owner.
 const scopeFor = mode => mode === 'review_fix_merge' ? { confirmation_scope: TAKEOVER_SCOPE } : {}
@@ -122,7 +123,7 @@ function AssigneePicker({ pulls, token, appId, ownLogin, onAssigned, onClose }) 
   return <div ref={picker} tabIndex={-1} className="co-pr-assignment" role="region" aria-label="Assign selected PRs">
     <h3>Assign {pulls.length === 1 ? `#${pr.number}` : `${pulls.length} PRs`}</h3>
     <p className="co-pr-assignment-note">The assignee is the person responsible for {pulls.length === 1 ? 'this PR' : 'these PRs'} on GitHub. This does not change the author, and it does not ask anyone for a review.</p>
-    <input type="search" className="co-person-search" aria-label="Find a person" placeholder="Find a person…" value={query} onChange={event => setQuery(event.target.value)} disabled={busy} />
+    <SearchField className="co-person-search" label="Find a person" value={query} onChange={setQuery} disabled={busy} />
     {people.loading ? <Skeleton lines={3} label="Loading people" /> : null}
     <div className="co-person-list">
       {own && !query ? <PersonOption label="Assign to me" login={own.login} ariaLabel="Assign to me" disabled={busy || !people.can_assign} onPick={assign} /> : null}
@@ -585,7 +586,7 @@ export function PullRequests({ appId, token, project, conn, onChanged, onReviewP
   const assignAnchor = assigning?.anchor && visibleKeys.has(assigning.anchor) ? assigning.anchor : ''
   return <section className="co-public-work" aria-label="Pull requests">
     <div className={'co-pr-list-controls' + (searchOpen ? ' is-searching' : '')}>
-      <label className="co-pr-search"><Icon name="search" size={16} /><input ref={searchField} type="search" aria-label="Find a pull request" placeholder="Search pull requests" value={query} onChange={event => setQuery(event.target.value)} /></label>
+      <SearchField className="co-pr-search" label="Find a pull request" placeholder="Search pull requests" value={query} onChange={setQuery} inputRef={searchField} />
       <button type="button" className="co-btn co-btn-quiet co-btn-icon co-pr-search-toggle" aria-label={query ? `Search PRs: ${query}` : 'Search pull requests'} aria-expanded={searchOpen} onClick={() => setSearchOpen(value => !value)}><Icon name="search" size={18} /></button>
     </div>
     {scope === 'all' ? <div className="co-pr-filters" role="group" aria-label="Filter pull requests">{FILTERS.map(([key, label]) => <button key={key} type="button" aria-pressed={filter === key} onClick={() => setFilter(key)}>{label}{key !== 'all' && !data.hasNextPage && !data.loading ? <span className="co-pr-filter-count">{matchingPulls(pulls.filter(isOpenPull), key, conn.login).length}</span> : null}</button>)}</div> : null}

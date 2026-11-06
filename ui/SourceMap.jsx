@@ -14,7 +14,7 @@ import { TaskContext, TaskPane } from './TaskPane.jsx'
 import { DESK_VIEWS, deskViewKey, splitProjects } from '../desk.js'
 import { NAMES } from '../names.js'
 import { DeskChips, DeskCounts, DeskRail } from './Desk.jsx'
-import { DeskSearch } from './DeskSearch.jsx'
+import { SearchField } from './SearchField.jsx'
 import { FilterLine } from './FilterLine.jsx'
 import { DeskView } from './DeskViews.jsx'
 import { openGithubSettings } from '../github-connection.js'
@@ -419,14 +419,14 @@ export function SourceMap({
       {!selectedProject ? (
         desk.view !== 'projects' ? (
           <>
-            <DeskSearch label="Find a PR, person or repository" value={deskQuery} onChange={setDeskQuery} />
+            <SearchField label="Find a PR, person or repository" value={deskQuery} onChange={setDeskQuery} />
             <DeskView view={desk.view} projects={orderedProjects} records={desk.records} login={desk.login} decisionsFor={desk.decisionsFor} lastLooked={desk.lastLooked} query={deskQuery} runs={desk.runs} chats={desk.respondChats} ignored={desk.ignored} reviews={desk.reviews} counts={desk.counts} needsFilter={needsFilter} onOpenProject={openProject} onOpenPull={desk.onOpenPull} onOpenRecord={openRecordFromDesk} />
           </>
         ) : (
         <>
           <div className="co-directory">
           <FilterLine label="Filter projects" items={FILTERS.map(([key, label]) => ({ key, label, count: key === 'all' ? null : filterCounts[key] }))} active={filter} onPick={setFilter} />
-          <DeskSearch label="Find a project" value={query} onChange={setQuery} />
+          <SearchField label="Find a project" value={query} onChange={setQuery} />
 
           {filtered.length === 0 ? (
             <div className="co-stage-empty">

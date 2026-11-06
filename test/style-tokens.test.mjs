@@ -63,9 +63,9 @@ test('the segment bar, filter chips, count chips, rail rows and lens tabs take t
 })
 
 const SHORTER_THAN_A_CONTROL = ['.co-source-group-label', '.co-agent-chat-link', '.co-prior-work-details > summary', '.co-plan-label', '.co-files-head',
-  '.co-review-project > header', '.co-review-default', '.co-pr-search', '.co-workspace .co-pr-search input', '.co-pr-select', '.co-pr-agent-state',
+  '.co-review-project > header', '.co-review-default', '.co-pr-select', '.co-pr-agent-state',
   '.co-pr-requested', '.co-split .co-split-main', '.co-rail-quiet > summary', '.co-desk-back',
-  '.co-file-tools input', '.co-set-row .co-btn', '.co-prompt-choices button', '.co-alert']
+  '.co-set-row .co-btn', '.co-prompt-choices button', '.co-alert']
 test('no new rule gives a control a min-height under 44 px', () => {
   const found = []
   for (const [file, text] of sheets) {

@@ -95,7 +95,6 @@ export const WORKSPACE_CSS = `
    The grid scrolls when it is long, without showing a scrollbar. */
 .co-pr-assignment h3 { margin:0; }
 .co-task-content .co-pr-assignment-note { margin:4px 0 0; font-size:var(--co-text-body); line-height:1.5; }
-.co-person-search { width:100%; margin:16px 0 12px; }
 .co-person-list { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:4px 12px; max-height:248px; overflow-y:auto; scrollbar-width:none; }
 .co-person-list::-webkit-scrollbar { display:none; }
 .co-person-option { display:flex; align-items:center; gap:12px; width:100%; min-width:0; min-height:56px; padding:8px 10px; background:none; border:0; border-radius:var(--co-radius-field); color:var(--text); text-align:left; cursor:pointer; font-size:var(--co-text-body); }
@@ -332,10 +331,6 @@ export const WORKSPACE_CSS = `
    and quiet right-hand actions. Detail follows GitHub's PR page. */
 .co-workspace .co-public-work { margin-top:20px; }
 .co-pr-list-controls { display:flex; align-items:center; gap:8px; margin-bottom:12px; }
-.co-pr-search { display:flex; align-items:center; gap:8px; flex:1; min-width:0; min-height:40px; padding:0 12px; border:1px solid var(--border); border-radius:var(--co-radius-field); background:var(--surface); color:var(--muted); }
-.co-pr-search:focus-within { border-color:var(--accent); }
-.co-workspace .co-pr-search input { flex:1; min-width:0; min-height:38px; padding:0; border:0; background:none; font-size:var(--co-text-meta); }
-.co-pr-search input:focus { outline:none; }
 /* The search field is always on screen, so its icon toggle stays out of sight (it must outrank .co-btn's own display). */
 .co-pr-list-controls .co-pr-search-toggle { display:none; }
 /* The box does not clip, so an Agent menu can open past its bottom edge even
@@ -826,8 +821,19 @@ input[type=checkbox].co-switch:focus-visible { outline:2px solid var(--accent); 
 .co-desk-legend { display:none; align-items:center; gap:7px; margin:0 0 14px; color:var(--muted); font-size:var(--co-text-meta); }
 .co-desk-pane:has(.co-desk-row .co-newdot) .co-desk-legend { display:flex; }
 .co-newdot { display:inline-block; flex:0 0 auto; width:7px; height:7px; border-radius:50%; background:var(--accent); }
-.co-desk-search { display:flex; align-items:center; gap:9px; margin:0 0 16px; padding:0 12px; min-height:var(--co-control-height); border:1px solid var(--border); border-radius:var(--co-radius-control); background:var(--surface); color:var(--muted); }
-.co-desk-search input { flex:1; min-width:0; border:0; background:none; color:var(--text); font:400 var(--co-text-body) var(--font); outline:none; }
+/* The one search field (ui/SearchField.jsx): a filled surface, a thin edge, the magnifier, Clear while there is text;
+   one purple edge and soft ring on focus. Classes beside .co-search only place it. */
+.co-search { display:flex; align-items:center; gap:8px; min-width:0; min-height:var(--co-control-height); margin:0 0 16px; padding:0 4px 0 12px; border:1px solid var(--border); border-radius:var(--co-radius-control); background:var(--surface); color:var(--muted); transition:border-color .12s, box-shadow .12s; }
+.co-search:focus-within { border-color:var(--accent); box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 28%, transparent); color:var(--co-you-text); }
+.co-search input { flex:1; min-width:0; height:calc(var(--co-control-height) - 2px); padding:0; border:0; background:none; color:var(--text); font:400 var(--co-text-body) var(--font); outline:none; appearance:none; }
+.co-search input::placeholder { color:var(--muted); }
+.co-search input::-webkit-search-cancel-button { display:none; }
+.co-search:has(input:disabled) { opacity:.5; }
+.co-search-clear { flex:none; display:grid; place-items:center; width:36px; height:36px; padding:0; border:0; border-radius:var(--co-radius-round); background:none; color:var(--muted); cursor:pointer; }
+.co-search-clear:hover,.co-search-clear:focus-visible { background:var(--surface-2,var(--bg)); color:var(--text); outline:none; }
+.co-pr-list-controls .co-search,.co-file-tools .co-search { margin:0; flex:1; }
+.co-person-search { margin:16px 0 12px; }
+@media(prefers-reduced-motion:reduce) { .co-search { transition:none; } }
 .co-desk-envelopes { display:flex; flex-direction:column; gap:16px; }
 .co-envelope { border:1px solid var(--border); border-radius:var(--co-radius-panel); background:var(--surface); overflow:hidden; }
 .co-envelope-head { display:flex; align-items:center; gap:10px; padding:10px 14px; }
@@ -922,7 +928,6 @@ input[type=checkbox].co-switch:focus-visible { outline:2px solid var(--accent); 
 .co-pr-detail .co-detail-tabs button { font-size:var(--co-text-body); }
 .co-desc-content > .co-branch-flow { margin:0 0 10px; }
 .co-file-tools { display:flex; align-items:center; gap:10px; margin:8px 0 6px; }
-.co-file-tools input { flex:1; min-width:0; min-height:40px; padding:0 12px; border:1px solid var(--border); border-radius:var(--co-radius-field); background:var(--surface); color:var(--text); font:inherit; font-size:var(--co-text-meta); }
 .co-file-disclosure > summary { display:flex; align-items:center; gap:10px; }
 .co-file-name { flex:1; min-width:0; overflow-wrap:anywhere; }
 .co-file-status { flex:0 0 auto; color:var(--muted); font-size:var(--co-text-meta); font-style:normal; }

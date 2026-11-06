@@ -322,9 +322,35 @@ test('the phone keeps Sync and Settings labelled, a sticky review footer and dec
 // Needs you and Repositories are one layout: a filter line, then the same search field, then the list.
 test('Needs you and Repositories share one filter line and one search field, in the same order', () => {
   const source = readFileSync(new URL('../ui/SourceMap.jsx', import.meta.url), 'utf8')
-  assert.equal((source.match(/<DeskSearch /g) || []).length, 2, 'both screens use the one search component')
+  assert.equal((source.match(/<SearchField /g) || []).length, 2, 'both screens use the one search component')
   assert.doesNotMatch(source, /type="search"/, 'no screen draws its own search field')
   const directory = source.slice(source.indexOf('<div className="co-directory">'))
-  assert.ok(directory.indexOf('<FilterLine') > -1 && directory.indexOf('<FilterLine') < directory.indexOf('<DeskSearch'), 'Repositories: filters, then search')
-  assert.ok(source.indexOf('<DeskCounts') < source.indexOf('<DeskSearch label="Find a PR'), 'Needs you: filters, then search')
+  assert.ok(directory.indexOf('<FilterLine') > -1 && directory.indexOf('<FilterLine') < directory.indexOf('<SearchField'), 'Repositories: filters, then search')
+  assert.ok(source.indexOf('<DeskCounts') < source.indexOf('<SearchField label="Find a PR'), 'Needs you: filters, then search')
+})
+
+// Every search in the app is one component, so none looks like a different control (the Assign window's field once was a bare browser input).
+test('every search in the app is the one SearchField, with Clear while there is text', async t => {
+  const { readdirSync } = await import('node:fs')
+  const ui = new URL('../ui/', import.meta.url)
+  const own = readdirSync(ui).filter(name => name.endsWith('.jsx') && name !== 'SearchField.jsx')
+    .filter(name => /type=["']search["']/.test(readFileSync(new URL(name, ui), 'utf8')))
+  assert.deepEqual(own, [], 'a screen draws its own search input')
+  for (const [file, label] of [['PullRequests.jsx', 'Find a person'], ['PullRequests.jsx', 'Find a pull request'], ['PullRequestDetail.jsx', 'Filter files by name']]) {
+    assert.match(readFileSync(new URL(file, ui), 'utf8'), new RegExp(`<SearchField [^>]*label="${label}"`), `${label} uses SearchField`)
+  }
+  if (!frontendModules) return t.skip('MOBIUS_FRONTEND_NODE_MODULES is required')
+  const { renderToStaticMarkup, React, SearchField } = await (await renderModule(`
+    import React from 'react'
+    import { renderToStaticMarkup } from 'react-dom/server'
+    import { SearchField } from './ui/SearchField.jsx'
+    export { React, renderToStaticMarkup, SearchField }
+  `))
+  const empty = renderToStaticMarkup(React.createElement(SearchField, { label: 'Find a person', value: '', onChange() {} }))
+  assert.match(empty, /placeholder="Find a person"[^>]*aria-label="Find a person"|aria-label="Find a person"[^>]*placeholder="Find a person"/)
+  assert.doesNotMatch(empty, /co-search-clear/, 'no Clear on an empty field')
+  const typed = renderToStaticMarkup(React.createElement(SearchField, { label: 'Find a person', value: 'ada', onChange() {} }))
+  assert.match(typed, /co-search-clear" aria-label="Clear search"/)
+  const off = renderToStaticMarkup(React.createElement(SearchField, { label: 'Find a person', value: 'ada', disabled: true, onChange() {} }))
+  assert.doesNotMatch(off, /co-search-clear/, 'a disabled field cannot be cleared')
 })
