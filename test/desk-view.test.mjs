@@ -148,6 +148,30 @@ test('the search filters rows and an empty view explains itself', async t => {
   assert.match(api.view({ ...base, query: 'zzz' }), /Nothing matches your search/)
 })
 
+test('a project name in the search keeps that project’s rows in every view, and an author name finds their PRs', async t => {
+  const api = await ui(t)
+  if (!api) return
+  const authored = pullFixture(5, { author: { login: 'owner' }, reviewDecision: 'CHANGES_REQUESTED' })
+  const project = projectFixture('kanban', {
+    canonical_repo: 'o/r', incomingReviews: [authored, pullFixture(6, { author: { login: 'owner' }, reviewDecision: 'CHANGES_REQUESTED' })], reviewRequests: [pullFixture(7, { author: { login: 'reviewer-person' } })],
+  })
+  const other = projectFixture('pages', { incomingReviews: [pullFixture(8, { author: { login: 'owner' }, reviewDecision: 'CHANGES_REQUESTED' })] })
+  const feedback = { id: 'f5', kind: 'public_attention', label: 'Feedback on five', record: { repo: 'o/r', number: 5 } }
+  const merged = { id: 'm1', repo: 'o/r', status: 'merged', title: 'Landed work', number: 3, updated_at: new Date().toISOString() }
+  const base = { projects: [project, other], records: [merged], login: 'owner', decisionsFor: item => (item === project ? [feedback] : []), lastLooked: '', onOpenProject: () => {}, onOpenPull: () => {}, onOpenRecord: () => {} }
+  const found = { requests: /Improve thing 7/, needs: /Feedback on five[\s\S]*Improve thing 6/, mine: /Improve thing 5/, work: /Feedback on five/, merged: /Landed work/ }
+  for (const [view, expected] of Object.entries(found)) {
+    const html = api.view({ ...base, view, query: 'kanban' })
+    assert.match(html, expected, view)
+    // The other project's rows stay out: the name narrows the list.
+    assert.doesNotMatch(html, /Improve thing 8/, view)
+  }
+  // The advertised person search reaches a PR's displayed author.
+  assert.match(api.view({ ...base, view: 'requests', query: 'reviewer-person' }), /Improve thing 7/)
+  assert.match(api.view({ ...base, view: 'mine', query: 'owner' }), /Improve thing 5/)
+  assert.match(api.view({ ...base, view: 'needs', query: 'nobody-here' }), /Nothing matches your search/)
+})
+
 test('each app card folds with a chevron: down means open it, up means fold it', async t => {
   const api = await ui(t)
   if (!api) return
