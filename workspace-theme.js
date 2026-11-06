@@ -1000,6 +1000,11 @@ a.co-related-row:hover { border-color:color-mix(in srgb,var(--accent) 36%,var(--
 .co-review-head .co-review-version { margin-left:auto; color:var(--muted); font:var(--co-text-meta) var(--mono,monospace); }
 .co-review-elapsed { color:var(--muted); font-variant-numeric:tabular-nums; font-size:var(--co-text-meta); }
 .co-review-note { margin:0; color:var(--muted); font-size:var(--co-text-meta); }
+.co-run-tag { margin:0 0 2px; color:var(--muted); font-size:var(--co-text-meta); font-weight:600; letter-spacing:.01em; }
+.co-review-steps { list-style:none; display:flex; flex-wrap:wrap; gap:6px; margin:0 0 12px; padding:0; font-size:var(--co-text-meta); }
+.co-review-steps li { padding:3px 10px; border-radius:var(--co-radius-pill); border:1px solid var(--border); color:var(--muted); }
+.co-review-steps li.is-passed { opacity:.7; }
+.co-review-steps li.is-current { border-color:var(--accent); color:var(--accent); font-weight:600; }
 .co-review-actions { display:flex; flex-wrap:wrap; justify-content:flex-start; gap:8px; }
 .co-review-box > .co-btn, .co-review-box .co-review-actions .co-btn { margin-left:0; }
 .co-review-box.is-clear { border-color:color-mix(in srgb,var(--green) 40%,var(--border)); }

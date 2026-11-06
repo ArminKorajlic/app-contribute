@@ -2,7 +2,7 @@
 // what Contribute's own review runs hold for that PR. A fact that could not be
 // read is 'unknown' (or readComplete is false), never a guess from older data.
 // Pure: no DOM, no network.
-import { checkSummary, ignoredNote, isBotAuthor, reviewItemProgress } from './collaboration.js'
+import { checkSummary, ignoredNote, isBotAuthor, reviewItemProgress, waitingRepair } from './collaboration.js'
 import { isOwnPull } from './pull-view.js'
 import { responseFor, responseOutbox } from './respond-result.js'
 
@@ -42,14 +42,14 @@ function reviewsOf(pr) {
 }
 
 // Threads a person other than you spoke last in (a bot's thread is input, never
-// waiting on you). Null when the threads were not read.
+// waiting on you). The PR's own conversation counts as one more such thread: a plain
+// comment is feedback too, until you answer it. Null when the threads were not read.
+const waitsOnYou = (author, login) => !!author && !isBot(author) && lower(author.login) !== lower(login)
 function openThreadsOf(pr, login) {
   const nodes = pr?.reviewThreads?.nodes
   if (!Array.isArray(nodes)) return null
-  return nodes.filter(thread => {
-    const last = thread?.comments?.nodes?.at(-1)?.author
-    return thread && thread.isResolved === false && !isBot(last) && lower(last?.login) !== lower(login)
-  }).length
+  const threads = nodes.filter(thread => thread && thread.isResolved === false && waitsOnYou(thread.comments?.nodes?.at(-1)?.author, login)).length
+  return threads + (waitsOnYou(pr.comments?.nodes?.at(-1)?.author, login) ? 1 : 0)
 }
 
 // The newest Contribute review of this PR (any version), with its run.
@@ -81,8 +81,8 @@ const COMMENT_OUTBOX = { posting: 'sending', unknown: 'unconfirmed' }
 function outboxOf(item) {
   const proposal = item.verdict_proposal
   if (VERDICT_OUTBOX[proposal?.state]) return { kind: 'verdict', event: proposal.event, head: proposal.head_sha || item.head_sha, state: VERDICT_OUTBOX[proposal.state] }
-  const repair = (item.repair_attempts || []).find(attempt => attempt.state === 'proposed')
-  if (repair) return { kind: 'push', head: repair.head_sha || item.head_sha, state: 'drafted', attempt: repair.id }
+  const repair = waitingRepair(item)
+  if (repair) return { kind: 'repair', head: repair.base, state: 'drafted', attempt: repair.id }
   if (COMMENT_OUTBOX[item.public_review?.state]) return { kind: 'comment', head: item.head_sha, state: COMMENT_OUTBOX[item.public_review.state] }
   const [kind, state] = ITEM_OUTBOX[item.state] || []
   return kind ? { kind, head: item.head_sha, state } : null

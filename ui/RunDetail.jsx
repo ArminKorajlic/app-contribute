@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { baseTip, prKey, reviewItemProgress, reviewRunHalted, reviewRunStateLabel, reviewRunTitle, runDetailsElsewhere } from '../collaboration.js'
+import { baseTip, prKey, reviewItemProgress, reviewRunHalted, reviewRunStateLabel, reviewRunTitle, runDetailsElsewhere, waitingRepair } from '../collaboration.js'
 import { verdictCopy } from '../review-copy.js'
 import { openAgentConversation } from './BatchAction.jsx'
 import { Icon } from './Icons.jsx'
@@ -49,17 +49,17 @@ export function VerdictProposal({ proposal, mode, busy, onDecide, onCheck = null
 // Fixes an agent prepared for a PR's branch (Finish it for me, Take over): nothing
 // is pushed until the owner taps Push here; Discard tells the agent no.
 export function RepairProposal({ item, busy, onDecide }) {
-  const attempt = (item.repair_attempts || []).find(entry => entry.state === 'proposed')
-  if (!attempt) return null
-  const files = Array.isArray(attempt.files) ? attempt.files : []
+  const repair = waitingRepair(item)
+  if (!repair) return null
+  const short = sha => String(sha || '').slice(0, 7) || 'unknown'
   return <div className="co-verdict is-changes">
     <p className="co-verdict-status" role="status">Fixes are ready to push to this PR’s branch. Nothing is pushed until you approve.</p>
-    {attempt.summary ? <MarkdownView markdown={attempt.summary} /> : null}
-    {files.length ? <details className="co-task-details"><summary>{files.length === 1 ? '1 file' : `${files.length} files`}</summary><ul>{files.map(file => <li key={file.path || file}><code>{file.path || file}</code></li>)}</ul></details> : null}
-    <p className="co-task-footnote">Pushes commit <code>{String(attempt.commit_sha || attempt.candidate_sha || '').slice(0, 7) || 'unknown'}</code> on top of <code>{String(attempt.head_sha || item.head_sha || '').slice(0, 7)}</code>. If the branch moved, nothing is pushed.</p>
+    {repair.summary ? <MarkdownView markdown={repair.summary} /> : null}
+    {repair.files.length ? <details className="co-task-details"><summary>{repair.files.length === 1 ? '1 file' : `${repair.files.length} files`}</summary><ul>{repair.files.map(file => <li key={file.path || file}><code>{file.path || file}</code></li>)}</ul></details> : null}
+    <p className="co-task-footnote">Pushes commit <code>{short(repair.commit)}</code> on top of <code>{short(repair.base || item.head_sha)}</code>. If the branch moved, nothing is pushed.</p>
     {onDecide ? <div className="co-verdict-actions">
-      <button type="button" className="co-btn co-btn-primary" disabled={busy} onClick={() => onDecide(attempt, 'push')}>{busy ? 'Working…' : 'Push'}</button>
-      <button type="button" className="co-btn" disabled={busy} onClick={() => onDecide(attempt, 'discard')}>Don’t push</button>
+      <button type="button" className="co-btn co-btn-primary" disabled={busy} onClick={() => onDecide(repair, 'push')}>{busy ? 'Working…' : 'Push fix'}</button>
+      <button type="button" className="co-btn" disabled={busy} onClick={() => onDecide(repair, 'discard')}>Don’t push</button>
     </div> : null}
   </div>
 }

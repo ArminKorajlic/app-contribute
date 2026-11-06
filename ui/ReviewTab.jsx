@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { OWNER_ITEM_STATES, REVIEW_STATE_NAMES, ignoredNote, reviewItemProgress, reviewRunHalted } from '../collaboration.js'
+import { OWNER_ITEM_STATES, REVIEW_STATE_NAMES, ignoredNote, reviewItemProgress, reviewRunHalted, reviewRunTitle, reviewStartedAt, waitingRepair } from '../collaboration.js'
 import { postableFindings, reviewActionPlan, reviewStoppable } from '../review-actions.js'
 import { frameOf } from '../pr-standing.js'
 import { openAgentConversation } from './BatchAction.jsx'
@@ -10,6 +10,8 @@ import { RespondJobBox } from './RespondJobBox.jsx'
 import { ResponseCard } from './ResponseCard.jsx'
 import { TimeAgo } from './GithubParts.jsx'
 import { RepairProposal, VerdictProposal, savedVersion } from './RunDetail.jsx'
+import { RunTag } from './RunTag.jsx'
+import { ReviewSteps } from './ReviewSteps.jsx'
 import { NAMES } from '../names.js'
 
 // Seconds since the run started, ticking once a second while `running`.
@@ -36,6 +38,8 @@ export function reviewContent(status, ctx) {
   if (progress.halted || item.state === 'failed') return { key: 'halted', title: progress.label, box: 'changes' }
   if (progress.turn === 'agent') return { key: 'running', title: progress.label }
   if (item.state === 'verdict_pending') return { key: 'verdict', title: 'Verdict waiting for you', box: 'verdict' }
+  // A prepared fix is the one decision while it waits: the findings' own buttons come back after Don't push.
+  if (waitingRepair(item)) return { key: 'fix_ready', title: 'A fix is ready to push', box: 'verdict' }
   if (progress.turn === 'author') return { key: 'waiting', title: progress.label }
   if (ignoredNote(item, ctx?.ignored)) return { key: 'ignored', title: 'Ignored' }
   if (item.state === 'needs_you' && item.verdict_proposal?.event === 'REQUEST_CHANGES') return { key: 'changes', title: 'Changes found', box: 'changes' }
@@ -56,6 +60,13 @@ const allowed = (standing, ...ids) => !!standing?.actions?.some(action => ids.in
 // answer from it (`response`, with Post and Discard). An older saved review stays below them, but "No review yet"
 // would contradict them.
 export function ReviewTab(props) {
+  return <>
+    <ReviewSteps standing={props.standing} fixWaiting={!!waitingRepair(props.status?.item)} itemState={props.status?.item?.state} />
+    <ReviewCards {...props} />
+  </>
+}
+
+function ReviewCards(props) {
   const { pr, status, earlier, standing, respondChat, response } = props
   // While the helper posts, the chat is not "working on feedback": the answer's own card says what it is doing.
   const posting = ['approved', 'posting'].includes(response?.status)
@@ -63,6 +74,8 @@ export function ReviewTab(props) {
   const answer = response ? <ResponseCard pr={pr} response={response} chat={respondChat} busy={props.respondBusy} error={props.respondError} readOnly={props.readOnly}
     onPost={props.onPostResponse} onDiscard={props.onDiscardResponse} onRespondAgain={allowed(standing, 'respond') ? props.onRespondAgain : undefined} /> : null
   if (!job && !answer) return <SavedReview {...props} />
+  // A finished answer that is older than the saved review steps below it: the newer review is what needs you now.
+  if (!job && reviewIsNewer(status, response)) return <div className="co-review-stack"><SavedReview {...props} />{answer}</div>
   return <div className="co-review-stack">
     {job}
     {answer}
@@ -70,11 +83,18 @@ export function ReviewTab(props) {
   </div>
 }
 
+const FINISHED_ANSWERS = new Set(['posted', 'stale'])
+const reviewIsNewer = (status, response) => !!status && FINISHED_ANSWERS.has(response?.status)
+  && (Date.parse(status.run.created_at) || 0) > (Date.parse(response.result.created_at) || 0)
+
+// The run's kind in the words of the action that started it.
+const runKind = (run, own) => (run.mode === 'review_fix_merge' ? (own ? NAMES.finishIt : NAMES.takeOver) : reviewRunTitle(run))
+
 // `quiet`: another box above already holds the amber "needs you" frame, so this saved review stays plain.
 function SavedReview({ quiet = false, pr, status, standing = null, earlier = null, own = null, ignored = null, canPost = false, readOnly = false, busy = false, error = '', onStart, onStop, onRetry, onVerdict, onRepair, onCheck, onFix, onIgnore, onUndoIgnore, onPost, pulls = [], listState = {} }) {
   const tone = reviewContent(status, { own, ignored })
   const running = tone.key === 'running'
-  const elapsed = useElapsed(status?.run?.created_at, running)
+  const elapsed = useElapsed(status ? reviewStartedAt(status.run, status.item) : null, running)
   if (!status && earlier) return <EarlierReview earlier={earlier} readOnly={readOnly} onStart={onStart} role={standing?.role} />
   if (!status) {
     // The Agent button above already starts a review, so there is nothing to offer here.
@@ -96,6 +116,7 @@ function SavedReview({ quiet = false, pr, status, standing = null, earlier = nul
   const reviewId = item.verdict_proposal?.review_id || commentReference(item.public_review?.url)
   const posted = item.public_review?.state === 'posted' && item.public_review.url
   const body = <div className={'co-review-box' + (tone.box ? ' is-' + tone.box : '')} aria-label="Review">
+    <RunTag kind={runKind(run, own === true)} at={run.created_at} />
     <div className="co-review-head">
       {running ? <span className="co-arc" aria-hidden="true" /> : null}
       <h4>{tone.title}</h4>
@@ -105,7 +126,7 @@ function SavedReview({ quiet = false, pr, status, standing = null, earlier = nul
     </div>
     {running ? <p className="co-review-note">The agent is reading the PR. Its findings appear here when it finishes. You can leave this page: the frame on the list shows when it is done.</p> : null}
     {tone.key === 'halted' && run.summary ? <p className="co-review-note">{run.summary}</p> : null}
-    {item.summary ? <ClampedMarkdown markdown={item.summary} /> : null}
+    {item.summary && tone.key !== 'fix_ready' ? <ClampedMarkdown markdown={item.summary} /> : null}
     {item.verdict_proposal ? <VerdictProposal proposal={item.verdict_proposal} mode={run.mode} busy={busy} own={own}
       onDecide={onVerdict ? (proposal, decision, extra) => onVerdict(item, proposal, decision, extra) : null} onCheck={onCheck || null} /> : null}
     <RepairProposal item={item} busy={busy} onDecide={onRepair && !readOnly ? (attempt, decision) => onRepair(item, attempt, decision) : null} />

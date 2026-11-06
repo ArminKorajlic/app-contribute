@@ -215,6 +215,20 @@ export function withoutIgnoreNote(notes, item) {
 }
 // The owner's note setting aside this review's findings, if there is one for them.
 export const ignoredNote = (item, ignored) => (item.state === 'needs_you' ? ignored?.[ignoreKey(item)] || null : null)
+// When the review now on screen began: a run that pushed a fix reviews the new version
+// from the moment you pressed Push, not from when the run itself started.
+export function reviewStartedAt(run, item) {
+  const pushes = (item?.repair_attempts || []).filter(entry => entry.state === 'pushed').map(entry => entry.decided_at)
+  return [run?.created_at, ...pushes].filter(Boolean).sort((a, b) => (Date.parse(b) || 0) - (Date.parse(a) || 0))[0] || null
+}
+// The fix an agent prepared that waits for the owner's Push. The platform saves the
+// fix's new commit as `head_sha` and the PR version it builds on as `from_sha`
+// (contribution_reviews.py, propose repair), so `base` is the version it answers to.
+export function waitingRepair(item) {
+  const attempt = (item?.repair_attempts || []).find(entry => entry.state === 'proposed')
+  if (!attempt) return null
+  return { id: attempt.id, commit: attempt.head_sha || '', base: attempt.from_sha || '', files: Array.isArray(attempt.files) ? attempt.files : [], summary: attempt.summary || '' }
+}
 export const reviewRunHalted = run => run.state !== 'complete' && HALTED_RUNS.has(run.execution_state)
 
 // Public outcomes a run saved before GitHub settled them. The server's observe

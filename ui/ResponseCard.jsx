@@ -3,6 +3,7 @@ import { MarkdownView } from './MarkdownView.jsx'
 import { PullFiles } from './PullFiles.jsx'
 import { openAgentConversation } from './BatchAction.jsx'
 import { Icon } from './Icons.jsx'
+import { RunTag } from './RunTag.jsx'
 import { NAMES } from '../names.js'
 import { chatStarting, planSteps, stepDone } from '../respond-result.js'
 
@@ -124,10 +125,11 @@ export function ResponseCard({ pr, response: view, chat = null, busy = false, er
   const asks = ['ready', 'approved', 'failed'].includes(status) && !held && !starting
   return <ReviewFrame state={held ? 'idle' : starting ? 'reviewing' : FRAMES[status]} radius={12}>
     <div className={'co-review-box co-response is-' + status + (asks ? ' is-verdict' : '')} aria-label="Answer to the feedback">
+      <RunTag kind={NAMES.respond} at={result.created_at} />
       <div className="co-review-head">
         {status === 'posting' || starting ? <span className="co-arc" aria-hidden="true" /> : null}
         <h4>{starting ? STARTING.heading : HEADINGS[status]}</h4>
-        <span className="co-review-version">{short(result.pr.head_sha)}</span>
+        <span className="co-review-version">{short(result.pr.head_sha)}{status === 'posted' && result.tip_sha ? ` → ${short(result.tip_sha)}` : ''}</span>
       </div>
       <p className="co-review-note">{statusLine(view, pr, starting)}</p>
       {status === 'ready' ? <p className="co-response-fresh">The PR has not changed since this answer.</p> : null}

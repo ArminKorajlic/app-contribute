@@ -46,6 +46,8 @@ export function reviewActionPlan({ tone, own = false, chat = false, asked = fals
         ...(can.again ? [{ key: 'again', label: NAMES.reviewAgain }] : []),
         ...ask('Ask the reviewer something'),
       ]
+    case 'fix_ready':
+      return ask('Ask the agent')
     case 'ignored':
       return [...(can.undo ? [{ key: 'undo', label: 'Undo ignore' }] : []), ...ask('Ask the reviewer something')]
     default: // a verdict card carries its own buttons; clear, waiting and settled reviews only offer the question

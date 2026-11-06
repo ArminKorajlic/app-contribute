@@ -320,3 +320,10 @@ test('drafts, failing checks and bots are filters of their own', () => {
   for (const person of ['abbot', 'talbot', 'robot']) assert.equal(isBotAuthor(person), false, person)
   for (const bot of ['qa-bot', 'review_bot', 'copilot[bot]']) assert.equal(isBotAuthor(bot), true, bot)
 })
+
+test('the review clock of a run that pushed a fix starts when you pressed Push', async () => {
+  const { reviewStartedAt } = await import('../collaboration.js')
+  const run = { created_at: '2026-11-06T13:46:00Z' }
+  assert.equal(reviewStartedAt(run, { repair_attempts: [] }), '2026-11-06T13:46:00Z')
+  assert.equal(reviewStartedAt(run, { repair_attempts: [{ state: 'pushed', decided_at: '2026-11-06T15:01:00Z' }, { state: 'discarded', decided_at: '2026-11-06T15:30:00Z' }] }), '2026-11-06T15:01:00Z')
+})

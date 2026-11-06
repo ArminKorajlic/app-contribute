@@ -79,6 +79,11 @@ export const STATES = {
   'reviewer.mergeable': { turn: 'you', label: 'Ready to merge', headline: 'Their PR · approved at this version, {green}. Merge it', next: 'merge' },
 }
 
+// A drafted repair is a fix an agent prepared: the same state as any draft, in the words of a push.
+// Only the app sees prepared fixes (the platform's facts never carry an outbox), so this stays here.
+const FIX_WAITING = { label: 'Fix to push', headline: 'A fix is ready. Read it, then push it or don’t' }
+const wordsOf = (key, d) => (key === 'to_confirm' && d.outbox?.kind === 'repair' ? { ...STATES[key], ...FIX_WAITING } : STATES[key])
+
 // The state, by a fixed priority: the first match wins.
 function stateOf(facts, d) {
   if (facts.lifecycle === 'merged' || facts.lifecycle === 'closed') return facts.lifecycle
@@ -184,7 +189,7 @@ const headlineWho = (key, d) => ({ 'author.waiting_rereview': d.changesOlder, 'a
 
 function headlineFor(key, facts, d) {
   const checks = facts.mergeable === 'yes' ? CHECK_WORDS[facts.checks] || 'Checks are still running.' : CONFLICT_WORDS[facts.mergeable] || CONFLICT_WORDS.unknown
-  return STATES[key].headline.replace('{who}', headlineWho(key, d).join(', ') || 'reviewers').replace('{author}', facts.author || 'the author')
+  return wordsOf(key, d).headline.replace('{who}', headlineWho(key, d).join(', ') || 'reviewers').replace('{author}', facts.author || 'the author')
     .replace('{checks}', checks).replace('{green}', facts.checks === 'none' ? 'no checks' : 'checks green')
 }
 
@@ -194,7 +199,7 @@ function headlineFor(key, facts, d) {
 export function decide(facts) {
   const d = derive(facts)
   const key = stateOf(facts, d)
-  const state = STATES[key]
+  const state = wordsOf(key, d)
   const actions = ACTIONS.filter(action => action.roles.includes(facts.role)).map(action => {
     const reason = action.when(facts, d)
     const title = typeof action.title === 'function' ? action.title(d, facts) : action.title

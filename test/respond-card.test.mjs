@@ -207,3 +207,17 @@ test('a running conversation shows its own box above a card that cannot be poste
   assert.ok(html.indexOf('Working on feedback') > -1 && html.indexOf('Working on feedback') < html.indexOf('Replies ready'))
   assert.match(html, new RegExp(`disabled="">${NAMES.postAnswer}<`))
 })
+
+test('a posted answer older than the newest check steps below it, and each card names the run it came from', async t => {
+  const receipts = { push: { sha: TIP, at: '2026-11-06T09:31:00Z' }, replies: [{ index: 0, url: 'https://example.test/c/1', at: 'x' }], description: { at: 'x' }, rerequest: null }
+  const view = response('posted', { receipts }, approval('approved'), { headRefOid: TIP })
+  const newer = { run: { id: 'r2', state: 'needs_you', execution_state: 'completed', mode: 'review_fix_merge', chat_id: 'chat-2', created_at: '2026-11-06T10:00:00Z' },
+    item: { repo: 'owner/repo', number: 7, head_sha: TIP, base_ref: 'main', state: 'needs_you', summary: 'Two problems.' } }
+  const html = await render(t, 'ReviewTab', { pr: { ...pr, headRefOid: TIP }, status: newer, own: true, standing: standingWith(view, { headRefOid: TIP }), response: view, onPostResponse() {}, onDiscardResponse() {} })
+  if (!html) return
+  const page = texts(html)
+  assert.ok(page.indexOf('Your check found problems') < page.indexOf('Posted'), 'the newer check comes first')
+  assert.match(page, new RegExp(`${NAMES.finishIt} ·`), 'the check names its run')
+  assert.match(page, new RegExp(`${NAMES.respond} ·`), 'the answer names its run')
+  assert.match(page, /bbbbbbb → 2222222/, 'a posted answer shows the version it moved the PR to')
+})

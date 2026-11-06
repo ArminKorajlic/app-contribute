@@ -312,3 +312,23 @@ test('the Respond box appears only while that conversation holds the PR', async 
   assert.match(html, /<h4>Reviewing<\/h4>/)
   assert.doesNotMatch(html, /Working on feedback|Waiting for your answer/)
 })
+
+test('a fix waiting for Push is the one decision on the card, naming its commit on top of the PR version', async t => {
+  const repair = { id: 'a1', state: 'proposed', head_sha: 'e'.repeat(40), from_sha: 'a'.repeat(40), files: ['api.js'], summary: 'Fixed two findings.' }
+  const html = await render(t, 'ReviewTab', { pr, own: true, status: status('needs_you', { repair_attempts: [repair], summary: 'A repair is ready for you.' }, { state: 'needs_you', execution_state: 'completed', mode: 'review_fix_merge' }),
+    onRepair: () => {}, onFix: () => {}, onIgnore: () => {}, onStart: () => {} })
+  if (!html) return
+  assert.match(html, /<h4>A fix is ready to push<\/h4>/)
+  assert.match(html, /Pushes commit <code>eeeeeee<\/code> on top of <code>aaaaaaa<\/code>/)
+  assert.match(html, /Push fix/)
+  assert.match(html, /Don’t push/)
+  for (const gone of ['Fix these findings', 'Ignore…', 'Review again', 'A repair is ready for you']) assert.doesNotMatch(html, new RegExp(gone), gone)
+})
+
+test('your PR’s Review tab starts with where it is in its cycle', async t => {
+  const repair = { id: 'a1', state: 'proposed', head_sha: 'e'.repeat(40), from_sha: 'a'.repeat(40), files: [] }
+  const html = await render(t, 'ReviewTab', { pr, own: true, status: status('needs_you', { repair_attempts: [repair] }, { state: 'needs_you', execution_state: 'completed', mode: 'review_fix_merge' }), onRepair: () => {} })
+  if (!html) return
+  assert.match(html, /<li class="is-current" aria-current="step">Fix ready: push\?<\/li>/)
+  assert.ok(html.indexOf('co-review-steps') < html.indexOf('A fix is ready to push'), 'the strip comes first')
+})
