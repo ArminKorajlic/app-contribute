@@ -836,12 +836,14 @@ input[type=checkbox].co-switch:focus-visible { outline:2px solid var(--accent); 
 @media(prefers-reduced-motion:reduce) { .co-search { transition:none; } }
 .co-desk-envelopes { display:flex; flex-direction:column; gap:16px; }
 .co-envelope { border:1px solid var(--border); border-radius:var(--co-radius-panel); background:var(--surface); overflow:hidden; }
-.co-envelope-head { display:flex; align-items:center; gap:10px; padding:10px 14px; }
+.co-envelope-head { display:flex; align-items:center; gap:10px; padding:6px 8px 6px 10px; }
 .co-envelope-head strong { min-width:0; font-size:var(--co-text-body); font-weight:650; overflow-wrap:anywhere; }
 .co-envelope-head .co-project-icon,.co-envelope-head .co-source-tag,.co-envelope-head .co-rail-count { flex:none; }
+.co-envelope-open { flex:0 1 auto; }
+/* A long name keeps the pill's shape and ends in an ellipsis; its full name is the button's title. */
+.co-envelope-open strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; overflow-wrap:normal; }
 .co-envelope-head .co-rail-count { margin-left:2px; }
-.co-envelope-head .co-btn-quiet:not(.co-envelope-toggle) { margin-left:auto; }
-.co-envelope-toggle { display:inline-flex; align-items:center; justify-content:center; width:44px; margin:-6px -8px -6px 0; padding:0; }
+.co-envelope-toggle { display:inline-flex; align-items:center; justify-content:center; width:44px; margin:0 0 0 auto; padding:0; }
 .co-envelope-toggle .co-icon { transition:transform .15s; }
 .co-envelope-toggle[aria-expanded="true"] .co-icon { transform:rotate(180deg); }
 @media (prefers-reduced-motion:reduce) { .co-envelope-toggle .co-icon { transition:none; } }

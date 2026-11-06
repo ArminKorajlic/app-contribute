@@ -82,7 +82,7 @@ test('count chips name next steps, filter the list, and skip empty ones; drafts 
   assert.equal(none, '')
 })
 
-test('a side view keeps each app inside one card with its own name and Open', async t => {
+test('a side view keeps each app inside one card whose icon and name open it', async t => {
   const api = await ui(t)
   if (!api) return
   const asked = pullFixture(1915, { updatedAt: '2026-11-02T08:00:00Z' })
@@ -93,6 +93,8 @@ test('a side view keeps each app inside one card with its own name and Open', as
     onOpenProject: () => {}, onOpenPull: () => {}, onOpenRecord: () => {},
   })
   assert.match(html, /co-envelope/)
+  assert.match(html, /class="co-btn co-btn-chip co-envelope-open" aria-label="Open [^"]+" title="[^"]+"><span class="co-project-icon[^>]*>.*?<strong>/, 'the icon and name are one button that opens the project')
+  assert.doesNotMatch(html, /<button[^>]*>Open<svg/, 'no separate Open word button on a card header')
   assert.match(html, /Möbius/)
   assert.match(html, /Improve thing 1915/)
   assert.match(html, /Asks for your review/)
