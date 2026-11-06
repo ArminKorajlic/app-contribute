@@ -159,7 +159,13 @@ the owner, and folds apps with nothing to do.
   Address feedback windows work the same way); a finished action swaps it for
   Done. Merge asks how it lands only when the repository
   allows more than one way, merges exactly the version shown, and is never
-  repeated after an unconfirmed answer.
+  repeated after an unconfirmed answer. **Only a decoded receipt for the action
+  is a success and only a decoded refusal (a 4xx) is a plain failure.** A lost
+  connection, a server error, an unreadable answer or the wrong receipt may have
+  reached GitHub, so the sheet reads that as unconfirmed: it has the view read
+  GitHub again first, and its button stays off, so another attempt can only
+  start from that fresh read. This holds for Merge, Open for review and Post to
+  GitHub alike.
 - **Open as draft / Open for review** is one split button on the prepared-PR
   card; the arrow offers the other stage for that send. The stage is part of the
   exact approval, the confirmation text and the chat Send card (which freezes it
@@ -178,9 +184,12 @@ the owner, and folds apps with nothing to do.
   while work is in progress.
 - **PR reviews** (side menu) lists the reviews the owner started, by project, in
   two tabs: **In progress** (waiting on the owner first, then agents at work, then
-  anything stuck) and **Done**. The PRs a review could still wait on are read
-  live once, so a closed PR is history, a pushed PR comes back as new commits,
-  and a stale finding is never counted as waiting on the owner.
+  anything stuck) and **Done**. Every PR whose review is not merged is read live,
+  when the list changes and again on every Sync with GitHub, so a closed PR is
+  history, a pushed PR comes back as new commits (after a clear or approved
+  review too: it belongs to the version it read, though on the owner's own PR it
+  is only an older version), and a stale finding is never counted as waiting on
+  the owner.
 
 ## The PR flow: roles, turns and hard rules (owner direction, 2026-11-04)
 
