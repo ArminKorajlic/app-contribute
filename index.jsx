@@ -1656,7 +1656,7 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
               onSend={onSend} onSendStack={onSendStack} onMarkReady={onMarkReady}
               onFeedback={onFeedback} onReview={startAgentTask} onDismiss={onDismiss} onRestore={onRestore}
               onSetAutopilot={onSetAutopilot} onWithdraw={onWithdraw}
-              onAssignIncomingReview={onAssignIncomingReview} loadDiff={loadFullDiff}
+              onAssignIncomingReview={onAssignIncomingReview} onRefresh={refreshReviewStatus} loadDiff={loadFullDiff}
               focusTarget={(project?.key || '') === focusedProjectKey ? reviewFocus : null}
               focusReady={focusedReviewReady && !sourceLoading}
               onFocusConsumed={consumeReviewFocus}

@@ -10,6 +10,7 @@
 import { sendTarget } from './chat-blocks.js'
 import { planScreenshots, screenshotCountText } from './domain.js'
 import { isPublished, publicationUnits, publishedPull } from './send-readiness.js'
+import { RETRY_CHECK_REASON } from './review.js'
 import { stackMeta } from './stack.js'
 
 const copy = value => JSON.parse(JSON.stringify(value))
@@ -208,6 +209,8 @@ export function createInlineSession({ sessionId, actions, items = null, checkpoi
   // never confirmed, partly or expanded.
   const unlisted = (key, unit) => unit.ready.some(record => !idsFor(key).includes(record.id))
   const readyUnits = key => units(key).filter(unit => unit.ready.length && !unlisted(key, unit) && !locked(unit) && unit.ready.every(confirmable))
+  // A unit blocked only by a check that can be retried is read again by Try again.
+  const checkRetryable = key => units(key).some(unit => unit.reason === RETRY_CHECK_REASON)
   // Readiness is decided only from a complete ledger, a current review check,
   // a known connection and finished exact reads of everything this card names.
   const authoritative = key => Boolean(runtime?.ledgerReady) && runtime.reviewStatus?.state === 'ready'
@@ -251,7 +254,7 @@ export function createInlineSession({ sessionId, actions, items = null, checkpoi
     const checking = activating === key
     const loading = ids.some(id => !now.has(id) && reading.has(id))
     // A failed check or read can be retried; retrying only reads again.
-    const retry = runtime?.reviewStatus?.state === 'unavailable' || ids.some(id => unreadable.has(id)) || ledgerIncomplete() || Boolean(refreshNote)
+    const retry = runtime?.reviewStatus?.state === 'unavailable' || ids.some(id => unreadable.has(id)) || ledgerIncomplete() || checkRetryable(key) || Boolean(refreshNote)
     const reason = fault || blockedReason(key)
     const label = busy ? 'Contributing…' : checking ? 'Checking…' : loading ? 'Loading…'
       : unknown && ids.length === 1 ? 'Check again' : retry ? 'Try again' : item.label || 'Contribute'
@@ -351,7 +354,7 @@ export function createInlineSession({ sessionId, actions, items = null, checkpoi
     if (!runtime) onNeedRuntime?.()
     // A failed check or an incomplete ledger is read again by the app (one
     // refresh at a time); the card waits until that refresh completes.
-    else if (runtime.reviewStatus?.state === 'unavailable' || ledgerIncomplete()) {
+    else if (runtime.reviewStatus?.state === 'unavailable' || ledgerIncomplete() || checkRetryable(key)) {
       if ('refreshDone' in runtime) awaitDone = (Number(runtime.refreshDone) || 0) + 1
       else awaitLegacy = true
       // A failed refresh is reported through refreshDone; never leave its
