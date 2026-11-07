@@ -398,8 +398,9 @@ intent is `chat:contributions`:
   action covers every record waiting to be sent or none: if one is not in
   the exact phase Confirm would send (a stack layer due later included) or
   cannot be sent, its row gets a short pill (Needs review, Not sent, Needs a
-  fresh check, Source changed, Stack incomplete, Sent after its stack, Send in
-  Contribute) and the action becomes **Open Contribute**. Confirm calls the
+  fresh check, Source changed, Conflicts, Upstream moved, Wrong author, Stack
+  incomplete, Sent after its stack, Send in Contribute) and the action becomes
+  **Fix in chat** (below), or **Open Contribute** where it cannot be. Confirm calls the
   same guarded Send handlers as the workspace and passes the confirmed snapshot
   as `expected_record(s)`; without that platform binding the card never sends,
   including when the binding disappears between Confirm and the write. A set
@@ -408,11 +409,35 @@ intent is `chat:contributions`:
   attempts whose outcome is unknown survive a reload, as a bounded checkpoint
   of ids, and lock their unit until a read shows the result. An unknown outcome
   is re-read on a backoff for ten minutes after the send (exact reads and the
-  app's card refresh), then shows **Not confirmed** and opens Contribute; it is
-  never resent. A row whose send failed shows **Not sent**, with the reason as
-one line beside the action; the action is
-  **Retry** when the guarded send path accepts those records again (sent rows
-  are never resent), otherwise **Open Contribute**.
+  app's card refresh), then shows **Not confirmed** and asks the agent to check
+  it; it is never resent. A row whose send failed shows **Not sent**, with the
+  reason as one line beside the action; the action is **Retry** when the
+  guarded send path accepts those records again (sent rows are never resent),
+  otherwise **Fix in chat**.
+- **Fix in chat.** On a host that draws asks (`ask-v1`, which needs the
+  owner's `chat.blocks.ask` grant), a held or failed row the agent can repair
+  turns the action into **Fix in chat** (`card-asks.js`). The card reports
+  only the record id, a code and `rev`, a digest of the code and exactly the
+  fields that define that cause (the reviewed source for source causes, plus
+  the title and body for text and review causes, the review verdict, the
+  attention type and key, or the failed attempt's own stamp), never a
+  record-wide timestamp; one tap
+  sends the host's own visible owner message into this chat, a fixed sentence
+  and a `contribute · <record id> · <code>` line. The host posts one ask per
+  state once, so a repeated tap says "Already asked" until the agent
+  restages. Its codes are `commit_identity_mismatch`, `invalid_pr_text`,
+  `publication_destination_unavailable`, `needs_review`, `changes_needed`,
+  `upstream_conflict`, `upstream_base_moved`, `source_changed`, `send_failed`,
+  `needs_attention`, `not_in_contribute`, `couldnt_check`, `restage`,
+  `stack_incomplete` and `result_unknown`; the contributing skill's "Card
+  asks" says what the agent does for each, ending with a fresh card. No
+  title, template or GitHub error text is in the message. The app gets no event from the tap and nothing is
+  sent to GitHub; only Confirm sends. A GitHub connection problem is the
+  owner's, so the action names the account (**Connect GitHub** or
+  **Reconnect GitHub**) and opens it in Contribute instead. A relay record, a
+  stack layer waiting for its turn, a retryable check (**Try again**) and an
+  unrestorable result keep their earlier action. Without `ask-v1` the action
+  opens Contribute, exactly as before.
 
 On a host that attests its chat, a card printed before this design (a block
 intent other than `chat:contributions`) never sends: it shows its records as

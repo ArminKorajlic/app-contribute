@@ -27,11 +27,18 @@
 // The card reports calm state to the host: a live title, and per row a status
 // pill, the pull request link once published, and one short reason when a
 // send failed (building-apps.md "Passive block sessions").
+//
+// When a held or failed row needs something only this chat's agent can do,
+// a host that draws asks (`ask-v1`) gets "Fix in chat" in place of the
+// action: the held record's id and a stable code (card-asks.js), which the
+// host sends in its own words as the owner's message. A GitHub connection problem opens the
+// account instead. Without `ask-v1` the action opens Contribute, as before.
 import { cardKind, CHAT_INTENT, inChat, validRecordId } from './chat-blocks.js'
 import { planScreenshots, screenshotCountText } from './domain.js'
 import { isPublished, publicationUnits, publishedPull, reviewIncomplete, sendBlocker } from './send-readiness.js'
 import { RETRY_CHECK_REASON, reviewStateFor } from './review.js'
 import { stackMeta } from './stack.js'
+import { ACCOUNT_CODES, askRev, cardAsk, holdCode } from './card-asks.js'
 
 const copy = value => JSON.parse(JSON.stringify(value))
 const text = (value, max = 500) => String(value ?? '').trim().slice(0, max)
@@ -41,7 +48,8 @@ const UNRESOLVED = new Set(['sending', 'unknown'])
 const UNKNOWN_NOTE = 'GitHub hasn’t confirmed the result yet.'
 // Rechecks of an unknown outcome: quick at first, then once a minute, for ten
 // minutes after the send. After that the row says "Not confirmed" and the
-// card opens Contribute; nothing is ever retried blindly.
+// card asks the agent to check it (or, without `ask-v1`, opens Contribute);
+// nothing is ever retried blindly.
 export const RECHECK_DELAYS_MS = [3000, 6000, 12000, 24000, 45000, 60000]
 export const RECHECK_WINDOW_MS = 10 * 60 * 1000
 const PULL_STATUS = { draft: ['Draft', 'neutral'], open: ['Open', 'success'], landing: ['Open', 'success'], merged: ['Merged', 'accent'], closed: ['Closed', 'neutral'] }
@@ -139,8 +147,8 @@ export function confirmationItem(record) {
 const relayed = record => record?.submission_mode === 'mobius-bot'
 export const RELAY_NOTE = 'This contribution is sent through the Möbius relay, which chat cannot send with a confirmed snapshot. Open Contribute to send it.'
 // A ready card names nothing; a held one marks the row that holds it with one
-// short pill (and its own action opens Contribute until the agent can be
-// asked from the card). Only a reason no row explains is a line of text.
+// short pill, and its action asks the agent to fix it (`ask-v1`) or opens
+// Contribute. Only a reason no row explains is a line of text.
 export const LEDGER_NOTE = 'Could not read every contribution. Try again; nothing was sent.'
 export const HOLD = Object.freeze({ review: 'Needs review', notSent: 'Not sent', attention: 'Needs attention', check: 'Needs a fresh check',
   source: 'Source changed', later: 'Sent after its stack', stack: 'Stack incomplete', relay: 'Send in Contribute', sending: 'Sending',
@@ -161,6 +169,11 @@ const sized = record => Boolean(changeSize(record?.plan))
 const identified = record => [record.plan?.repo || record.repo, record.plan?.branch || record.branch,
   record.plan?.head_sha, record.plan?.diff_sha256].every(Boolean)
 const confirmable = record => !relayed(record) && sized(record) && identified(record)
+// A source check's more specific finding than "Source changed".
+const CODE_PILL = Object.freeze({ upstream_conflict: 'Conflicts', upstream_base_moved: 'Upstream moved',
+  commit_identity_mismatch: 'Wrong author', invalid_pr_text: 'Text not valid' })
+// The code for a record held by its own fields alone, before a tap.
+const localCode = record => relayed(record) ? '' : holdCode(record) || (sized(record) && identified(record) ? '' : 'restage')
 
 
 // The row's quiet metadata line: project and lines changed (files and
@@ -210,6 +223,8 @@ export function createInlineSession({ sessionId, actions, items = null, features
   // draws the app's own rows and attests the card's chat says `rows-v2`.
   const drawsRows = Array.isArray(features) && features.includes('row-state')
   const ownRows = drawsRows && features.includes('rows-v2')
+  // One that also draws asks to this chat's agent says `ask-v1`.
+  const asks = ownRows && features.includes('ask-v1')
   let chat = readContext(context)
   let attempts = []
   let fault = ''
@@ -365,7 +380,8 @@ export function createInlineSession({ sessionId, actions, items = null, features
   // A named record that is gone or unread holds the card, before anything else.
   function unresolvedHold() {
     const entry = entries().find(item => item.kind === 'missing' || item.kind === 'unread')
-    return entry ? { id: entry.id, pill: entry.kind === 'missing' ? HOLD.gone : HOLD.unread, note: entry.kind === 'unread' ? UNREAD_NOTE : '' } : null
+    return entry ? { id: entry.id, pill: entry.kind === 'missing' ? HOLD.gone : HOLD.unread, note: entry.kind === 'unread' ? UNREAD_NOTE : '',
+      code: entry.kind === 'missing' ? 'not_in_contribute' : 'couldnt_check' } : null
   }
 
   // Why the card's action cannot reach Confirm, as `{ note, id?, pill? }`:
@@ -378,7 +394,7 @@ export function createInlineSession({ sessionId, actions, items = null, features
     if (runtime.reviewStatus?.state === 'unavailable') return { note: 'Could not verify the current review. Try again; nothing was sent.' }
     if (ledgerIncomplete()) return { note: LEDGER_NOTE }
     if (!authoritative(key)) return null
-    if (runtime.connection !== 'connected') return { note: 'Connect GitHub in Möbius Settings → Accounts to send.' }
+    if (runtime.connection !== 'connected') return { note: 'Connect GitHub in Möbius Settings → Accounts to send.', account: 'connect' }
     // Without server-side binding of the confirmed snapshot, or a review check
     // addressed to these exact records, chat never sends.
     if (runtime.frozenBinding !== true || !Array.isArray(runtime.reviewStatus?.addressed)) return { note: NEWER_NOTE }
@@ -387,7 +403,7 @@ export function createInlineSession({ sessionId, actions, items = null, features
     if (relay) return { id: relay, pill: HOLD.relay }
     const all = units(key)
     const outside = all.find(unit => unlisted(key, unit))
-    if (outside) return { id: outside.records.find(record => idsFor(key).includes(record.id))?.id, pill: HOLD.stack }
+    if (outside) return { id: outside.records.find(record => idsFor(key).includes(record.id))?.id, pill: HOLD.stack, code: 'stack_incomplete' }
     const ready = readyUnits(key)
     // The action covers every record the card shows or none: with some units
     // ready, each pending record must be in the exact phase this Confirm would
@@ -414,9 +430,15 @@ export function createInlineSession({ sessionId, actions, items = null, features
     }
     const id = held.find(own) || held[0]
     const unit = unitOf(id)
-    const pill = own(id) || holdFor(unit?.reason) || (unit?.ready.some(record => record.id === id) ? HOLD.attention : HOLD.later)
+    const record = now.get(id)
+    const pill = own(id) || holdFor(unit?.reason) || (unit?.ready.some(member => member.id === id) ? HOLD.attention : HOLD.later)
+    // The code the agent is asked to fix: the record's own, or an incomplete
+    // size or identity. A record whose send is still being checked, or one
+    // that only waits for its turn in a stack, has none.
+    const code = holdCode(record, reviewStateFor(record, runtime.reviewStatus))
+      || (pill === HOLD.check ? 'restage' : '')
     // A check that can be retried says so; the row keeps its pill.
-    return { id, pill, note: unit?.reason === RETRY_CHECK_REASON ? RETRY_CHECK_REASON : '' }
+    return { id, pill: (pill === HOLD.source && CODE_PILL[code]) || pill, code, note: unit?.reason === RETRY_CHECK_REASON ? RETRY_CHECK_REASON : '' }
   }
 
   // Before a tap, from the records alone: the first row that holds the card.
@@ -424,7 +446,8 @@ export function createInlineSession({ sessionId, actions, items = null, features
     const gone = unresolvedHold()
     if (gone) return gone
     const entry = entries().find(item => item.kind === 'pending' && (item.record.status === 'submitting' || localHold(item.record)))
-    return entry ? { id: entry.id, pill: entry.record.status === 'submitting' ? HOLD.sending : localHold(entry.record) } : null
+    return entry ? { id: entry.id, pill: entry.record.status === 'submitting' ? HOLD.sending : localHold(entry.record),
+      code: entry.record.status === 'submitting' ? '' : localCode(entry.record) } : null
   }
 
   // An unknown outcome is still being checked until its window has passed.
@@ -525,18 +548,35 @@ export function createInlineSession({ sessionId, actions, items = null, features
       note: text(fault || (retry ? UNCHECKED_NOTE : '')) }
   }
 
-  function actionState(item) {
+  // What the card's held action asks of this chat's agent (`ask-v1`): the
+  // held record and its code, or the GitHub account, which only the owner
+  // can fix. Nothing when the action would not only open Contribute.
+  function fixFor({ hold, before, found, expired, list }) {
+    if (!asks || fault) return null
+    if (found?.account) return { account: found.account }
+    if (expired) {
+      const entry = list.find(item => item.kind === 'pending' && latestAttempt(item.id)?.state === 'unknown')
+      return entry ? { id: entry.id, code: 'result_unknown', attempt: latestAttempt(entry.id) } : null
+    }
+    const held = hold || before
+    if (!held?.code) return null
+    return ACCOUNT_CODES.has(held.code) ? { account: 'reconnect' } : { id: held.id, code: held.code }
+  }
+
+  // One action's state, and for the card's own action the ask it reports.
+  function cardAction(item) {
     const key = item.key
-    if (folded()) return { ...quiet, key, label: item.label || 'Contribute', disabled: true, hidden: true, open: false, note: '' }
-    if (!attested()) return unattestedAction(item)
-    if (key !== card?.key || !ours()) return statusAction(item)
+    if (folded()) return { state: { ...quiet, key, label: item.label || 'Contribute', disabled: true, hidden: true, open: false, note: '' } }
+    if (!attested()) return { state: unattestedAction(item) }
+    if (key !== card?.key || !ours()) return { state: statusAction(item) }
     const sendable = newest()
     const ids = idsFor(key)
     const list = entries()
     const mine = attempts.filter(attempt => attempt.ids.some(id => list.some(entry => entry.id === id)))
     const busy = mine.some(attempt => attempt.state === 'sending')
     const unknown = !busy && mine.some(attempt => attempt.state === 'unknown')
-    // Still checking: a calm, disabled "Checking…". Past the window: Contribute.
+    // Still checking: a calm, disabled "Checking…". Past the window, the agent
+    // is asked to check it (`ask-v1`), or the action opens Contribute.
     const checkingResult = unknown && mine.some(checkingAttempt)
     const nothingLeft = !list.some(entry => entry.kind === 'pending' || entry.kind === 'missing' || entry.kind === 'unread')
     const failure = mine.filter(attempt => ['failed', 'not_attempted'].includes(attempt.state) && attempt.ids.some(id => ids.includes(id))).at(-1)
@@ -560,7 +600,7 @@ export function createInlineSession({ sessionId, actions, items = null, features
     // pill cannot: a check to retry, the account, an older Möbius, or why the
     // last send was refused.
     const note = busy || checkingResult || unknown ? '' : text(fault || (checking ? '' : refreshNote) || reason || failure?.note)
-    return {
+    const state = {
       ...quiet, key, label,
       disabled: !openOnly && (busy || checkingResult || checking || loading || sending() || Boolean(frozen) && !confirming || Boolean(reason) && !retry),
       busy: busy || checkingResult,
@@ -570,6 +610,13 @@ export function createInlineSession({ sessionId, actions, items = null, features
       hidden: nothingLeft && !busy && !unknown && !confirming && !fault && !retry,
       note,
     }
+    const fix = openOnly && sendable ? fixFor({ hold, before, found, expired: unknown && !checkingResult, list }) : null
+    // The account is the owner's: the action opens it, named, in Contribute.
+    if (fix?.account) return { state: { ...state, label: fix.account === 'connect' ? 'Connect GitHub' : 'Reconnect GitHub', note: '' } }
+    if (!fix) return { state }
+    // The host draws the ask in this action's place. The action stays as it
+    // was, so a host that does not draw this ask still opens Contribute.
+    return { state, ask: cardAsk(fix.id, fix.code, askRev(fix.id, fix.code, current().get(fix.id) || null, fix.attempt)) }
   }
 
   // Re-read an unknown outcome on a backoff; reads never send.
@@ -601,8 +648,11 @@ export function createInlineSession({ sessionId, actions, items = null, features
     if (data !== (lastCheckpoint?.data ?? null)) lastCheckpoint = data ? { id: crypto.randomUUID(), data } : null
     const key = card?.key || ''
     const { title = '', titleTone = 'neutral', titleBusy = false } = heading(key)
+    const reports = advertised.map(cardAction)
+    const ask = reports.find(report => report.ask)?.ask || null
     publish({
-      sessionId, actions: advertised.map(actionState), title,
+      sessionId, actions: reports.map(report => report.state), title,
+      ...(asks ? { ask } : {}),
       // Rows only for the chat the host attests; otherwise the card's own
       // fallback rows stay, and nothing is read.
       ...(tracks() ? { rows: ownRowsReport(key), titleTone, titleBusy } : {}),

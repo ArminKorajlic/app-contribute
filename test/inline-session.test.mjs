@@ -1457,3 +1457,140 @@ test('the B2 host accepts a confirmation that names screenshots', async t => {
   assert.equal(parsed[0].facts.find(fact => fact.label === 'Change').value, '1 file · +2 −0 · 2 screenshots')
   assert.match(parsed[1].facts.find(fact => fact.label === 'Change').value, /1 screenshot$/)
 })
+
+// ---- "Fix in chat" (`ask-v1`): a held row asks this chat's agent, by code.
+const ASKS = ['row-state', 'rows-v2', 'ask-v1']
+const refsOf = h => h.last().ask?.refs.map(ref => [ref.id, ref.code]) || null
+
+test('without ask-v1 a held card reports no ask and still opens Contribute', async () => {
+  const h = harness({ ids: ['one'], records: [prepared('one', { record: { quality_review: { state: 'changes_needed', reviewed_head_sha: HEAD } } })] })
+  h.session.start(); await tick()
+  assert.equal('ask' in h.last(), false)
+  assert.deepEqual([h.action(KEY).open, h.action(KEY).label], [true, 'Open Contribute'])
+})
+
+test('a held row becomes Fix in chat with its record id and code, before any tap', async () => {
+  const cases = [
+    [{ quality_review: { state: 'all_clear', reviewed_head_sha: NEXT } }, 'needs_review'],
+    [{ quality_review: { state: 'changes_needed', reviewed_head_sha: HEAD } }, 'changes_needed'],
+    [{ last_submit_error: 'remote: rejected https://example.com <b>x</b>' }, 'send_failed'],
+    [{ last_submit_error: 'x', last_submit_error_code: 'commit_identity_mismatch' }, 'commit_identity_mismatch'],
+    [{ last_submit_error: 'x', last_submit_error_code: 'invalid_pr_text' }, 'invalid_pr_text'],
+    [{ last_submit_error: 'x', last_submit_error_code: 'publication_destination_unavailable' }, 'publication_destination_unavailable'],
+    [{ needs_attention: true }, 'needs_attention'],
+  ]
+  for (const [record, code] of cases) {
+    const h = harness({ ids: ['one', 'two'], features: ASKS, records: [prepared('one', { record }), prepared('two')] })
+    h.session.start(); await tick()
+    const rev = h.last().ask.refs[0].rev
+    assert.deepEqual(h.last().ask, { refs: [{ id: 'one', code, rev }] }, code)
+    assert.match(rev, /^[0-9a-f]{7,64}$/)
+    // The action stays as the fallback the host replaces.
+    assert.deepEqual([h.action(KEY).open, h.action(KEY).label], [true, 'Open Contribute'])
+    assert.equal(h.last().title, '1 needs a fix')
+  }
+  const ready = harness({ ids: ['one'], features: ASKS, records: [prepared('one')] })
+  ready.session.start(); await tick()
+  assert.equal(ready.last().ask, null, 'a ready card asks nothing')
+  assert.equal(ready.action(KEY).label, 'Contribute')
+})
+
+test('the tap\'s source check names conflicts, a moved base and commit identity by code', async () => {
+  for (const [code, pill] of [['upstream_conflict', 'Conflicts'], ['upstream_base_moved', 'Upstream moved'],
+    ['commit_identity_mismatch', 'Wrong author'], ['invalid_pr_text', 'Text not valid'], ['branch_moved', HOLD.source]]) {
+    const h = harness({ ids: ['one'], features: ASKS, records: [prepared('one')],
+      runtime: { reviewStatus: { state: 'ready', addressed: ['one'], byId: { one: { state: 'needs_refresh', code } } } } })
+    await openConfirm(h)
+    assert.equal(h.action(KEY).confirming, false)
+    assert.deepEqual(h.pills(), [['one', pill]], code)
+    assert.deepEqual(refsOf(h), [['one', code === 'branch_moved' ? 'source_changed' : code]])
+    h.fire(KEY, 'confirm'); await tick()
+    assert.deepEqual(h.sends, [])
+  }
+})
+
+test('a missing named record, an incomplete stack and an expired unknown send are asks too', async () => {
+  const missing = harness({ ids: ['gone', 'two'], features: ASKS, records: [prepared('two')] })
+  missing.session.start(); await tick()
+  assert.deepEqual(refsOf(missing), [['gone', 'not_in_contribute']])
+  const records = [layer('base', 1, ''), layer('top', 2, 'base')]
+  records[1].plan.base_sha = records[0].plan.head_sha
+  const stack = harness({ ids: ['base'], features: ASKS, records })
+  await openConfirm(stack)
+  assert.deepEqual(refsOf(stack), [['base', 'stack_incomplete']])
+  const c = clock()
+  const h = timed({ ids: ['one'], features: ASKS, records: [prepared('one')], send: () => ({ uncertain: true }) }, c)
+  await openConfirm(h)
+  h.fire(KEY, 'confirm'); await tick()
+  assert.equal(h.last().ask, null, 'nothing is asked while the result is still being checked')
+  for (let i = 0; i < 20 && c.pending().length; i++) await c.advance(60000)
+  assert.deepEqual(refsOf(h), [['one', 'result_unknown']])
+  assert.equal(h.sends.length, 1, 'an ask never sends again')
+})
+
+test('the GitHub connection is the owner\'s: a named account action, never an ask', async () => {
+  const off = harness({ ids: ['one'], features: ASKS, records: [prepared('one')], runtime: { connection: 'disconnected' } })
+  await openConfirm(off)
+  assert.equal(off.last().ask, null)
+  assert.deepEqual([off.action(KEY).open, off.action(KEY).label, off.action(KEY).note], [true, 'Connect GitHub', ''])
+  const reconnect = harness({ ids: ['one'], features: ASKS, records: [prepared('one')],
+    runtime: { reviewStatus: { state: 'ready', addressed: ['one'], byId: { one: { state: 'unavailable', code: 'github_reconnect' } } } } })
+  await openConfirm(reconnect)
+  assert.equal(reconnect.last().ask, null)
+  assert.deepEqual([reconnect.action(KEY).open, reconnect.action(KEY).label], [true, 'Reconnect GitHub'])
+  const failed = harness({ ids: ['one'], features: ASKS, records: [prepared('one', { record: { last_submit_error: 'x', last_submit_error_code: 'github_reconnect' } })] })
+  failed.session.start(); await tick()
+  assert.equal(failed.last().ask, null)
+  assert.equal(failed.action(KEY).label, 'Reconnect GitHub')
+})
+
+test('a retryable check, a confirmation, a send in progress and an older card never ask', async () => {
+  const retry = harness({ ids: ['one'], features: ASKS, records: [prepared('one')],
+    runtime: { reviewStatus: { state: 'ready', addressed: ['one'], byId: { one: { state: 'unavailable', code: 'review_unavailable' } } } } })
+  await openConfirm(retry)
+  assert.deepEqual([retry.action(KEY).label, retry.last().ask], ['Try again', null])
+  const confirming = harness({ ids: ['one'], features: ASKS, records: [prepared('one')] })
+  await openConfirm(confirming)
+  assert.deepEqual([confirming.action(KEY).confirming, confirming.last().ask], [true, null])
+  const gate = deferred()
+  const sending = harness({ ids: ['one'], features: ASKS, records: [prepared('one')], send: () => gate.promise })
+  await openConfirm(sending)
+  sending.fire(KEY, 'confirm'); await tick()
+  assert.equal(sending.last().ask, null)
+  gate.resolve({ ok: true }); await tick()
+  const held = prepared('one', { record: { needs_attention: true } })
+  const older = harness({ ids: ['one'], features: ASKS, records: [held], context: { chatId: CHAT, latest: false, intent: CHAT_INTENT } })
+  older.session.start(); await tick()
+  assert.equal(older.last().ask, null)
+  const relay = harness({ ids: ['one'], features: ASKS, records: [prepared('one', { record: { submission_mode: 'mobius-bot' } })] })
+  relay.session.start(); await tick()
+  assert.deepEqual([relay.last().ask, relay.action(KEY).label], [null, 'Open Contribute'], 'a relay record is sent in Contribute')
+})
+
+test('after the agent fixes and re-stages, the next turn hint brings Contribute back', async () => {
+  const h = harness({ ids: ['one'], features: ASKS, records: [prepared('one', { record: { quality_review: { state: 'changes_needed', reviewed_head_sha: HEAD } } })] })
+  h.session.start(); await tick()
+  assert.deepEqual(refsOf(h), [['one', 'changes_needed']])
+  const before = h.last().ask.refs[0].rev
+  h.store.set('one', prepared('one', { head: NEXT, record: { updated_at: '2026-10-20T12:00:00Z', quality_review: { state: 'changes_needed', reviewed_head_sha: NEXT } } }))
+  h.session.refresh('turn'); await tick()
+  assert.notEqual(h.last().ask.refs[0].rev, before, 'a restaged version is a new state, so it can be asked about again')
+  h.store.set('one', prepared('one', { head: NEXT, record: { updated_at: '2026-10-20T12:30:00Z' } }))
+  h.session.refresh('turn'); await tick()
+  assert.equal(h.last().ask, null)
+  assert.deepEqual([h.action(KEY).label, h.action(KEY).open], ['Contribute', false])
+})
+
+test('every ask the card builds is one the host accepts and words itself', async t => {
+  const BLOCKS = process.env.MOBIUS_BLOCKS_FRONTEND || ''
+  if (!BLOCKS) return t.skip('set MOBIUS_BLOCKS_FRONTEND to a Möbius frontend with the passive block host to run this check')
+  const host = await import(`${BLOCKS}/src/components/ChatView/markdown/appBlockSession.js`)
+  if (!host.askMessage) return t.skip('this Möbius frontend predates ask-v1')
+  const { ASK_CODES, cardAsk } = await import('../card-asks.js')
+  for (const code of ASK_CODES) {
+    const ask = cardAsk('contribute-card-states-20261106', code, 'a'.repeat(40))
+    assert.deepEqual(host.sessionAsk(ask), ask, code)
+    assert.equal(host.askMessage('contribute', ask),
+      `Please fix what the contribute card in this chat flagged:\n\n\`contribute · contribute-card-states-20261106 · ${code}\``)
+  }
+})
