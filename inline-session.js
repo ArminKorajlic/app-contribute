@@ -192,7 +192,9 @@ const confirmable = record => !relayed(record) && sized(record) && identified(re
 const CODE_PILL = Object.freeze({ upstream_conflict: 'Conflicts', upstream_base_moved: 'Upstream moved',
   commit_identity_mismatch: 'Wrong author', invalid_pr_text: 'Text not valid' })
 // The code for a record held by its own fields alone, before a tap.
-const localCode = record => relayed(record) ? '' : holdCode(record) || (sized(record) && identified(record) ? '' : 'restage')
+// A send that may already be public asks nothing here: only its observed
+// outcome asks (publication_changed, or result_unknown after the window).
+const localCode = record => relayed(record) || uncertainPublication(record) ? '' : holdCode(record) || (sized(record) && identified(record) ? '' : 'restage')
 
 
 // The row's quiet metadata line: project and lines changed (files and
@@ -468,7 +470,7 @@ export function createInlineSession({ sessionId, actions, items = null, features
     // size or identity. A record whose send is still being checked, or one
     // that only waits for its turn in a stack, has none.
     const code = holdCode(record, reviewStateFor(record, runtime.reviewStatus))
-      || (pill === HOLD.check ? 'restage' : '')
+      || (pill === HOLD.check && !uncertainPublication(record) ? 'restage' : '')
     // A check that can be retried says so; the row keeps its pill.
     return { id, pill: (pill === HOLD.source && CODE_PILL[code]) || pill, code, note: unit?.reason === RETRY_CHECK_REASON ? RETRY_CHECK_REASON : '' }
   }

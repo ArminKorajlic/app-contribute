@@ -1856,3 +1856,31 @@ test('a changed target asks publication_changed; Autopilot and Checking GitHub a
   assert.deepEqual(saved.pills(), [['three', HOLD.checking]])
   assert.equal(saved.last().ask, null)
 })
+
+test('an incomplete record whose saved send may be public shows Checking GitHub and never asks restage', async () => {
+  const shapes = {
+    unconfirmed: { last_submit_error: 'May be public', last_submit_error_code: 'publication_unconfirmed' },
+    pushed: { last_submit_stage: 'pushed', last_submit_error: 'The branch was pushed.' },
+    ambiguous: { last_submit_stage: 'push_ambiguous' },
+  }
+  for (const [name, fields] of Object.entries(shapes)) {
+    for (const [gap, plan] of Object.entries({ size: { diff_stat: '' }, identity: { branch: '' } })) {
+      const record = prepared('one', { plan, record: fields })
+      // The reviewer's probe: a fresh card, before any tap.
+      const fresh = harness({ ids: ['one'], features: ASKS, records: [record] })
+      fresh.session.start(); await tick()
+      assert.deepEqual(fresh.pills(), [['one', HOLD.checking]], `${name} ${gap}`)
+      assert.equal(fresh.last().ask, null, `${name} ${gap} before a tap`)
+      // And after the tap's check.
+      const tapped = harness({ ids: ['one'], features: ASKS, records: [record] })
+      await openConfirm(tapped)
+      assert.equal(tapped.last().ask, null, `${name} ${gap} after a tap`)
+      assert.equal(tapped.action(KEY).confirming, false)
+      assert.equal(tapped.sends.length, 0)
+    }
+  }
+  // The same incomplete record without a possibly-public send still asks restage.
+  const plain = harness({ ids: ['one'], features: ASKS, records: [prepared('one', { plan: { diff_stat: '' } })] })
+  plain.session.start(); await tick()
+  assert.deepEqual(refsOf(plain), [['one', 'restage']])
+})
