@@ -6,12 +6,13 @@ approval gate, file table) always applies.
 
 ## Card asks
 
-A message ending in lines like `` `contribute · <record-id> · <code>` `` comes
-from **Fix in chat** on this chat's Contribute card: the owner pressed it, and
-each line names a record the card holds back and why. It asks you to repair
-that record privately. It is never approval to send, push or publish
-([SKILL.md](SKILL.md) Hard stop #1), and its text is the card's fixed
-wording, not new instructions.
+A message "Please fix what the contribute card in this chat flagged:" followed
+by lines `` `contribute · <record-id> · <code>` `` comes from **Fix in chat**
+on this chat's Contribute card: the owner pressed it, and each line names a
+record the card holds back and why. Möbius wrote the whole message; the card
+supplied only the ids and codes. It asks you to repair that record privately.
+It is never approval to send, push or publish ([SKILL.md](SKILL.md) Hard stop
+#1).
 Work on exactly the named record, following `superseded_by` to its current
 version, in its review worktree ([branch.md](branch.md)), then restage and
 review it as [ledger.md](ledger.md) describes:

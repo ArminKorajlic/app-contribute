@@ -30,8 +30,8 @@
 //
 // When a held or failed row needs something only this chat's agent can do,
 // a host that draws asks (`ask-v1`) gets "Fix in chat" in place of the
-// action: the held record's id and a stable code (card-asks.js), sent by the
-// host as the owner's own message. A GitHub connection problem opens the
+// action: the held record's id and a stable code (card-asks.js), which the
+// host sends in its own words as the owner's message. A GitHub connection problem opens the
 // account instead. Without `ask-v1` the action opens Contribute, as before.
 import { cardKind, CHAT_INTENT, inChat, validRecordId } from './chat-blocks.js'
 import { planScreenshots, screenshotCountText } from './domain.js'
@@ -616,8 +616,7 @@ export function createInlineSession({ sessionId, actions, items = null, features
     if (!fix) return { state }
     // The host draws the ask in this action's place. The action stays as it
     // was, so a host that does not draw this ask still opens Contribute.
-    const record = current().get(fix.id)
-    return { state, ask: cardAsk(fix.id, fix.code, record?.plan?.title || record?.title) }
+    return { state, ask: cardAsk(fix.id, fix.code) }
   }
 
   // Re-read an unknown outcome on a backoff; reads never send.

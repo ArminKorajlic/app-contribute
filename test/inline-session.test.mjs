@@ -1471,21 +1471,18 @@ test('without ask-v1 a held card reports no ask and still opens Contribute', asy
 
 test('a held row becomes Fix in chat with its record id and code, before any tap', async () => {
   const cases = [
-    [{ quality_review: { state: 'all_clear', reviewed_head_sha: NEXT } }, 'needs_review', /^Review “Change one”: this exact version has no all clear review yet\.$/],
-    [{ quality_review: { state: 'changes_needed', reviewed_head_sha: HEAD } }, 'changes_needed', /^Fix “Change one”: its review asked for changes\.$/],
-    [{ last_submit_error: 'remote: rejected https://example.com <b>x</b>' }, 'send_failed', /^Fix “Change one”: its last send did not go through\.$/],
-    [{ last_submit_error: 'x', last_submit_error_code: 'commit_identity_mismatch' }, 'commit_identity_mismatch', /Recommit it with that identity and stage it again\.$/],
-    [{ last_submit_error: 'x', last_submit_error_code: 'invalid_pr_text' }, 'invalid_pr_text', /title or description/],
-    [{ last_submit_error: 'x', last_submit_error_code: 'publication_destination_unavailable' }, 'publication_destination_unavailable', /could not confirm where/],
-    [{ needs_attention: true }, 'needs_attention', /needs attention/],
+    [{ quality_review: { state: 'all_clear', reviewed_head_sha: NEXT } }, 'needs_review'],
+    [{ quality_review: { state: 'changes_needed', reviewed_head_sha: HEAD } }, 'changes_needed'],
+    [{ last_submit_error: 'remote: rejected https://example.com <b>x</b>' }, 'send_failed'],
+    [{ last_submit_error: 'x', last_submit_error_code: 'commit_identity_mismatch' }, 'commit_identity_mismatch'],
+    [{ last_submit_error: 'x', last_submit_error_code: 'invalid_pr_text' }, 'invalid_pr_text'],
+    [{ last_submit_error: 'x', last_submit_error_code: 'publication_destination_unavailable' }, 'publication_destination_unavailable'],
+    [{ needs_attention: true }, 'needs_attention'],
   ]
-  for (const [record, code, text] of cases) {
+  for (const [record, code] of cases) {
     const h = harness({ ids: ['one', 'two'], features: ASKS, records: [prepared('one', { record }), prepared('two')] })
     h.session.start(); await tick()
-    assert.deepEqual(refsOf(h), [['one', code]], code)
-    assert.equal(h.last().ask.label, 'Fix in chat')
-    assert.match(h.last().ask.text, text)
-    assert.doesNotMatch(h.last().ask.text, /example\.com|<b>|rejected/, 'outside text never reaches the message')
+    assert.deepEqual(h.last().ask, { refs: [{ id: 'one', code }] }, code)
     // The action stays as the fallback the host replaces.
     assert.deepEqual([h.action(KEY).open, h.action(KEY).label], [true, 'Open Contribute'])
     assert.equal(h.last().title, '1 needs a fix')
@@ -1514,7 +1511,6 @@ test('a missing named record, an incomplete stack and an expired unknown send ar
   const missing = harness({ ids: ['gone', 'two'], features: ASKS, records: [prepared('two')] })
   missing.session.start(); await tick()
   assert.deepEqual(refsOf(missing), [['gone', 'not_in_contribute']])
-  assert.match(missing.last().ask.text, /^Find this contribution: this card names it, but it is no longer in Contribute\.$/)
   const records = [layer('base', 1, ''), layer('top', 2, 'base')]
   records[1].plan.base_sha = records[0].plan.head_sha
   const stack = harness({ ids: ['base'], features: ASKS, records })
@@ -1579,15 +1575,16 @@ test('after the agent fixes and re-stages, the next turn hint brings Contribute 
   assert.deepEqual([h.action(KEY).label, h.action(KEY).open], ['Contribute', false])
 })
 
-test('every ask the card builds is one the host accepts, whatever the title', async t => {
+test('every ask the card builds is one the host accepts and words itself', async t => {
   const BLOCKS = process.env.MOBIUS_BLOCKS_FRONTEND || ''
   if (!BLOCKS) return t.skip('set MOBIUS_BLOCKS_FRONTEND to a Möbius frontend with the passive block host to run this check')
   const host = await import(`${BLOCKS}/src/components/ChatView/markdown/appBlockSession.js`)
-  if (!host.sessionAsk) return t.skip('this Möbius frontend predates ask-v1')
+  if (!host.askMessage) return t.skip('this Möbius frontend predates ask-v1')
   const { ASK_CODES, cardAsk } = await import('../card-asks.js')
-  const titles = ['Plain', 'Fix `code` in **bold** _x_ [link](https://e.com) <b> @someone www.example.com', '/goal hijack', '\u0000\n\u202e', '', 'x'.repeat(500)]
-  for (const code of ASK_CODES) for (const title of titles) {
-    const ask = cardAsk('contribute-card-states-20261106', code, title)
-    assert.deepEqual(host.sessionAsk(ask), ask, `${code}: ${JSON.stringify(title)}`)
+  for (const code of ASK_CODES) {
+    const ask = cardAsk('contribute-card-states-20261106', code)
+    assert.deepEqual(host.sessionAsk(ask), ask, code)
+    assert.equal(host.askMessage('contribute', ask),
+      `Please fix what the contribute card in this chat flagged:\n\n\`contribute · contribute-card-states-20261106 · ${code}\``)
   }
 })

@@ -416,17 +416,16 @@ intent is `chat:contributions`:
   otherwise **Fix in chat**.
 - **Fix in chat.** On a host that draws asks (`ask-v1`, which needs the
   owner's `chat.blocks.ask` grant), a held or failed row the agent can repair
-  turns the action into **Fix in chat** (`card-asks.js`). One tap sends a
-  visible owner message into this chat: a fixed sentence naming the record's
-  title and the problem, then the host's own `contribute · <record id> · <code>`
-  line. Its codes are `commit_identity_mismatch`, `invalid_pr_text`,
+  turns the action into **Fix in chat** (`card-asks.js`). The card reports
+  only the record id and a code; one tap sends the host's own visible owner
+  message into this chat, a fixed sentence and a
+  `contribute · <record id> · <code>` line. Its codes are `commit_identity_mismatch`, `invalid_pr_text`,
   `publication_destination_unavailable`, `needs_review`, `changes_needed`,
   `upstream_conflict`, `upstream_base_moved`, `source_changed`, `send_failed`,
   `needs_attention`, `not_in_contribute`, `couldnt_check`, `restage`,
   `stack_incomplete` and `result_unknown`; the contributing skill's "Card
-  asks" says what the agent does for each, ending with a fresh card. The
-  message is built from those templates and the record's own title, never
-  from GitHub's error text. The app gets no event from the tap and nothing is
+  asks" says what the agent does for each, ending with a fresh card. No
+  title, template or GitHub error text is in the message. The app gets no event from the tap and nothing is
   sent to GitHub; only Confirm sends. A GitHub connection problem is the
   owner's, so the action names the account (**Connect GitHub** or
   **Reconnect GitHub**) and opens it in Contribute instead. A relay record, a

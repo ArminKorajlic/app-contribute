@@ -1,29 +1,19 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { ACCOUNT_CODES, ASK_CODES, askTitle, cardAsk, holdCode } from '../card-asks.js'
+import { ACCOUNT_CODES, ASK_CODES, cardAsk, holdCode } from '../card-asks.js'
 
 const HEAD = 'a'.repeat(40)
 const record = (extra = {}) => ({ id: 'r-1', status: 'prepared', plan: { head_sha: HEAD, title: 'Title' },
   quality_review: { state: 'all_clear', reviewed_head_sha: HEAD }, ...extra })
 
-test('a title becomes one quoted plain line with nothing a chat message renders or hides', () => {
-  assert.equal(askTitle('Calmer in-chat send states'), '“Calmer in-chat send states”')
-  assert.equal(askTitle('Use `x_y` in **[docs](https://a.b)** <tag> @me www.site.org\nnext'), '“Use x y in docs (https a.b) tag me www site.org next”')
-  assert.equal(askTitle('   '), 'this contribution')
-  assert.equal(askTitle(null), 'this contribution')
-  assert.equal(askTitle('x'.repeat(300)).length, 122)
-})
-
-test('every code has a fixed template and an ask names exactly one record', () => {
+test('an ask names exactly one record and its code, and no words of the card\'s own', () => {
   for (const code of ASK_CODES) {
-    const ask = cardAsk('r-1', code, 'Title')
-    assert.equal(ask.label, 'Fix in chat')
-    assert.ok(ask.text.length <= 400 && ask.text.includes('“Title”'), code)
-    assert.deepEqual(ask.refs, [{ id: 'r-1', code }])
+    assert.deepEqual(cardAsk('r-1', code), { refs: [{ id: 'r-1', code }] })
+    assert.match(code, /^[a-z][a-z0-9_]{1,47}$/, 'the host\'s code grammar')
   }
-  assert.equal(cardAsk('r-1', 'github_reconnect', 'Title'), null, 'the account is never an ask')
-  assert.equal(cardAsk('r-1', 'anything_else', 'Title'), null)
+  assert.equal(cardAsk('r-1', 'github_reconnect'), null, 'the account is never an ask')
+  assert.equal(cardAsk('r-1', 'anything_else'), null)
   assert.ok(!ASK_CODES.some(code => ACCOUNT_CODES.has(code)))
 })
 
