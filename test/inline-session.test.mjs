@@ -1482,7 +1482,10 @@ test('a held row becomes Fix in chat with its record id and code, before any tap
   for (const [record, code] of cases) {
     const h = harness({ ids: ['one', 'two'], features: ASKS, records: [prepared('one', { record }), prepared('two')] })
     h.session.start(); await tick()
-    assert.deepEqual(h.last().ask, { refs: [{ id: 'one', code }] }, code)
+    const rev = h.last().ask.refs[0].rev
+    assert.deepEqual(h.last().ask, { refs: [{ id: 'one', code, rev }] }, code)
+    assert.match(rev, /^[0-9a-f]{7,64}$/)
+    if (!record.last_submit_error) assert.equal(rev, HEAD, 'a held record\'s state is its reviewed head')
     // The action stays as the fallback the host replaces.
     assert.deepEqual([h.action(KEY).open, h.action(KEY).label], [true, 'Open Contribute'])
     assert.equal(h.last().title, '1 needs a fix')
@@ -1569,7 +1572,11 @@ test('after the agent fixes and re-stages, the next turn hint brings Contribute 
   const h = harness({ ids: ['one'], features: ASKS, records: [prepared('one', { record: { quality_review: { state: 'changes_needed', reviewed_head_sha: HEAD } } })] })
   h.session.start(); await tick()
   assert.deepEqual(refsOf(h), [['one', 'changes_needed']])
-  h.store.set('one', prepared('one', { record: { updated_at: '2026-10-20T12:00:00Z' } }))
+  const before = h.last().ask.refs[0].rev
+  h.store.set('one', prepared('one', { head: NEXT, record: { updated_at: '2026-10-20T12:00:00Z', quality_review: { state: 'changes_needed', reviewed_head_sha: NEXT } } }))
+  h.session.refresh('turn'); await tick()
+  assert.notEqual(h.last().ask.refs[0].rev, before, 'a restaged version is a new state, so it can be asked about again')
+  h.store.set('one', prepared('one', { head: NEXT, record: { updated_at: '2026-10-20T12:30:00Z' } }))
   h.session.refresh('turn'); await tick()
   assert.equal(h.last().ask, null)
   assert.deepEqual([h.action(KEY).label, h.action(KEY).open], ['Contribute', false])
@@ -1582,7 +1589,7 @@ test('every ask the card builds is one the host accepts and words itself', async
   if (!host.askMessage) return t.skip('this Möbius frontend predates ask-v1')
   const { ASK_CODES, cardAsk } = await import('../card-asks.js')
   for (const code of ASK_CODES) {
-    const ask = cardAsk('contribute-card-states-20261106', code)
+    const ask = cardAsk('contribute-card-states-20261106', code, 'a'.repeat(40))
     assert.deepEqual(host.sessionAsk(ask), ask, code)
     assert.equal(host.askMessage('contribute', ask),
       `Please fix what the contribute card in this chat flagged:\n\n\`contribute · contribute-card-states-20261106 · ${code}\``)

@@ -38,7 +38,7 @@ import { planScreenshots, screenshotCountText } from './domain.js'
 import { isPublished, publicationUnits, publishedPull, reviewIncomplete, sendBlocker } from './send-readiness.js'
 import { RETRY_CHECK_REASON, reviewStateFor } from './review.js'
 import { stackMeta } from './stack.js'
-import { ACCOUNT_CODES, cardAsk, holdCode } from './card-asks.js'
+import { ACCOUNT_CODES, askRev, cardAsk, holdCode } from './card-asks.js'
 
 const copy = value => JSON.parse(JSON.stringify(value))
 const text = (value, max = 500) => String(value ?? '').trim().slice(0, max)
@@ -556,7 +556,7 @@ export function createInlineSession({ sessionId, actions, items = null, features
     if (found?.account) return { account: found.account }
     if (expired) {
       const entry = list.find(item => item.kind === 'pending' && latestAttempt(item.id)?.state === 'unknown')
-      return entry ? { id: entry.id, code: 'result_unknown' } : null
+      return entry ? { id: entry.id, code: 'result_unknown', attempt: latestAttempt(entry.id) } : null
     }
     const held = hold || before
     if (!held?.code) return null
@@ -616,7 +616,7 @@ export function createInlineSession({ sessionId, actions, items = null, features
     if (!fix) return { state }
     // The host draws the ask in this action's place. The action stays as it
     // was, so a host that does not draw this ask still opens Contribute.
-    return { state, ask: cardAsk(fix.id, fix.code) }
+    return { state, ask: cardAsk(fix.id, fix.code, askRev(fix.id, fix.code, current().get(fix.id) || null, fix.attempt)) }
   }
 
   // Re-read an unknown outcome on a backoff; reads never send.

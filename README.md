@@ -417,9 +417,12 @@ intent is `chat:contributions`:
 - **Fix in chat.** On a host that draws asks (`ask-v1`, which needs the
   owner's `chat.blocks.ask` grant), a held or failed row the agent can repair
   turns the action into **Fix in chat** (`card-asks.js`). The card reports
-  only the record id and a code; one tap sends the host's own visible owner
-  message into this chat, a fixed sentence and a
-  `contribute · <record id> · <code>` line. Its codes are `commit_identity_mismatch`, `invalid_pr_text`,
+  only the record id, a code and `rev`, the state it is about (the reviewed
+  head, or a digest of the last failure or unconfirmed attempt); one tap
+  sends the host's own visible owner message into this chat, a fixed sentence
+  and a `contribute · <record id> · <code>` line. The host posts one ask per
+  state once, so a repeated tap says "Already asked" until the agent
+  restages. Its codes are `commit_identity_mismatch`, `invalid_pr_text`,
   `publication_destination_unavailable`, `needs_review`, `changes_needed`,
   `upstream_conflict`, `upstream_base_moved`, `source_changed`, `send_failed`,
   `needs_attention`, `not_in_contribute`, `couldnt_check`, `restage`,
