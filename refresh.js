@@ -161,9 +161,13 @@ export function createSyncHub({ policy = SYNC_POLICY, remainingPoints = () => nu
   const githubDue = fact => now() - fact.lastRead >= policy.githubCooldownMs
   const tickers = createTickers(isVisible)
   const probes = createProbeWatcher({ policy, now, isVisible, isLow: lowOnPoints })
-  const stillWanted = (fact, generation) => generation === fact.generation && facts.get(fact.name) === fact
+  // A fact that was unregistered (its screen went, or its token changed) is dead for good,
+  // even to a read already in flight or queued behind one.
+  const registered = fact => facts.get(fact.name) === fact
+  const stillWanted = (fact, generation) => generation === fact.generation && registered(fact)
 
   async function readFact(fact) {
+    if (!registered(fact)) return
     const generation = fact.generation
     fact.lastRead = now()
     fact.pending = false
@@ -172,7 +176,7 @@ export function createSyncHub({ policy = SYNC_POLICY, remainingPoints = () => nu
     try { value = await fact.spec.read() } catch (error) {
       // A GitHub read that failed is still wanted: the cooldown reads it again, nothing else will
       // (the probe reports a change once, and its answer is already taken).
-      if (fact.spec.github && facts.get(fact.name) === fact) fact.pending = true
+      if (fact.spec.github && registered(fact)) fact.pending = true
       if (!fact.spec.failed) throw error
       if (stillWanted(fact, generation)) fact.spec.failed(error)
       return
@@ -196,7 +200,7 @@ export function createSyncHub({ policy = SYNC_POLICY, remainingPoints = () => nu
   function arm(fact) {
     clearTimeout(fact.timer)
     fact.timer = null
-    const wait = visible ? nextWait(fact) : null
+    const wait = visible && registered(fact) ? nextWait(fact) : null
     if (wait !== null) fact.timer = setTimeout(() => { fact.timer = null; void automatic(fact) }, wait)
   }
 

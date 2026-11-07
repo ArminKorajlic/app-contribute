@@ -290,6 +290,29 @@ test('an unregistered fact is never read again', async () => {
   assert.equal(state.reads.runs, 1)
 })
 
+test('a fact unregistered while its read is in flight is never re-armed, and its queued trailing read never runs', async () => {
+  const { hub, state, setVisible } = setup()
+  hub.start()
+  let release
+  const stop = hub.fact('runs', {
+    ...RUNS,
+    read: () => {
+      state.reads.runs = (state.reads.runs || 0) + 1
+      return state.reads.runs === 1 ? new Promise(resolve => { release = resolve }) : Promise.resolve('trailing answer')
+    },
+    apply: value => { state.shown.runs = value },
+  })
+  await setVisible(true)
+  const running = hub.refresh('runs')
+  void hub.refresh('runs') // the owner asks again while the first read is out: one trailing read is queued
+  stop() // a connection or token change replaces the fact
+  release('late answer')
+  await running
+  await elapse(10 * 60000)
+  assert.equal(state.reads.runs, 1, 'the removed fact went on reading')
+  assert.equal(state.shown.runs, undefined, 'the removed fact showed an answer')
+})
+
 test('a change the hub is told of reads GitHub at once, unless the account is low', async () => {
   const { hub, state, fact, setVisible } = setup()
   hub.start(); fact('incoming', { github: true })
