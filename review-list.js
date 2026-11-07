@@ -84,3 +84,19 @@ export async function loadReviewPulls(token, refs) {
   for (const batch of batches) read.push(...await readBatch(token, batch))
   return new Map(read.filter(([, pr]) => pr))
 }
+
+// One live read of the PRs the reviews belong to: all of `refs`, or only those whose keys are in `keys`.
+// What was asked for travels with the answer, so a merge can tell a PR GitHub did not return from one nobody asked about.
+export async function readReviewPulls(token, refs, keys = null) {
+  const asked = keys ? refs.filter(ref => keys.has(reviewKey(ref.repo, ref.number))) : refs
+  return { everything: !keys, asked: asked.map(ref => reviewKey(ref.repo, ref.number)), pulls: await loadReviewPulls(token, asked) }
+}
+
+// The PRs known after a read. A read of everything replaces them; a partial one replaces just the PRs it asked
+// for, so one GitHub did not return is unknown again (never kept from an older read) and the rest keep theirs.
+export function mergeReviewPulls(known, { everything, asked, pulls }) {
+  if (everything) return pulls
+  const next = new Map(known)
+  asked.forEach(key => next.delete(key))
+  return new Map([...next, ...pulls])
+}

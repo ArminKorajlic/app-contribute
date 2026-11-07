@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { DESK_VIEWS, deskCounts, railBadge } from '../desk.js'
-import { changedReviewRuns, classifyReview, loadReviewPulls, reviewCounts, reviewEntries, reviewKey, withReviewRun } from '../review-list.js'
+import { changedReviewRuns, classifyReview, loadReviewPulls, mergeReviewPulls, readReviewPulls, reviewCounts, reviewEntries, reviewKey, withReviewRun } from '../review-list.js'
 
 const HEAD = 'a'.repeat(40)
 const run = (extra = {}) => ({ id: 'r', state: 'complete', execution_state: 'completed', chat_id: 'c', created_at: '2026-11-03T22:00:00Z', ...extra })
@@ -103,6 +103,34 @@ test('every PR is read live in batches of 25, one batch after another, and only 
     assert.equal((await loadReviewPulls('token', [])).size, 0)
     globalThis.fetch = async () => ({ ok: false })
     assert.equal((await loadReviewPulls('token', [{ repo: 'o/r', number: 1 }])).size, 0, 'a failed read leaves every PR unknown')
+  } finally { globalThis.fetch = previous }
+})
+
+test('a read of some PRs replaces just those: one GitHub did not return is unknown again, the others keep their last read', async () => {
+  const previous = globalThis.fetch
+  let missing = new Set()
+  globalThis.fetch = async (url, options) => {
+    const query = JSON.parse(options.body).query
+    const numbers = [...query.matchAll(/pullRequest\(number:(\d+)\)/g)].map(match => Number(match[1]))
+    return { ok: true, json: async () => ({ data: Object.fromEntries(numbers.map((number, index) => [`p${index}`, { pullRequest: missing.has(number) ? null : live({ number, state: 'OPEN' }) }])) }) }
+  }
+  const refs = [1, 2, 3].map(number => ({ repo: 'o/r', number }))
+  const readInto = async (known, keys) => mergeReviewPulls(known, await readReviewPulls('token', refs, keys))
+  const keysOf = pulls => [...pulls.keys()].sort()
+  try {
+    const everything = await readInto(new Map(), null)
+    assert.deepEqual(keysOf(everything), ['o/r#1', 'o/r#2', 'o/r#3'])
+    // GitHub no longer returns PR 1 (permission lost, deleted): the targeted read of PRs 1 and 2 finds only PR 2.
+    missing = new Set([1])
+    const partial = await readInto(everything, new Set(['o/r#1', 'o/r#2']))
+    assert.deepEqual(keysOf(partial), ['o/r#2', 'o/r#3'], 'PR 1 kept its old read instead of becoming unknown')
+    assert.equal(partial.get('o/r#3'), everything.get('o/r#3'), 'a PR nobody asked about lost its last read')
+    assert.deepEqual(keysOf(everything), ['o/r#1', 'o/r#2', 'o/r#3'], 'the earlier read was changed')
+    // A targeted read that fails altogether leaves exactly the PRs it asked for unknown.
+    globalThis.fetch = async () => ({ ok: false })
+    assert.deepEqual(keysOf(await readInto(partial, new Set(['o/r#3']))), ['o/r#2'])
+    // A read of everything replaces the whole set.
+    assert.equal((await readInto(partial, null)).size, 0)
   } finally { globalThis.fetch = previous }
 })
 
