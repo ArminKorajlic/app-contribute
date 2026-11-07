@@ -46,7 +46,6 @@ import { planScreenshots, publicationVersion, screenshotCountText, uncertainPubl
 import { isAutopilotEnabled } from './autopilot.js'
 import { isPublished, publicationUnits, publishedPull, reviewIncomplete, sendBlocker } from './send-readiness.js'
 import { RETRY_CHECK_REASON, reviewStateFor } from './review.js'
-import { stackMeta } from './stack.js'
 import { ACCOUNT_CODES, askRev, cardAsk, holdCode } from './card-asks.js'
 
 const copy = value => JSON.parse(JSON.stringify(value))
@@ -61,7 +60,8 @@ const UNKNOWN_NOTE = 'GitHub hasn’t confirmed the result yet.'
 // nothing is ever retried blindly.
 export const RECHECK_DELAYS_MS = [3000, 6000, 12000, 24000, 45000, 60000]
 export const RECHECK_WINDOW_MS = 10 * 60 * 1000
-const PULL_STATUS = { draft: ['Draft', 'neutral'], open: ['Open', 'success'], landing: ['Open', 'success'], merged: ['Merged', 'accent'], closed: ['Closed', 'neutral'] }
+// An open pull request needs no word beside its link; Merged is the finished state.
+const PULL_STATUS = { draft: ['Draft', 'neutral'], open: ['', 'neutral'], landing: ['', 'neutral'], merged: ['Merged', 'success'], closed: ['Closed', 'neutral'] }
 // A pending recheck never keeps a process alive on its own (Node's unref);
 // in a browser frame it is an ordinary timeout.
 const DEFAULT_TIMERS = { set: (fn, ms) => { const id = setTimeout(fn, ms); id?.unref?.(); return id }, clear: id => clearTimeout(id) }
@@ -128,28 +128,47 @@ export function observeAttempt(attempt, byId) {
 // (binary, mode, rename or empty-file changes) are all valid; any other text
 // is unreadable and keeps the card blocked.
 const STAT = /^(\d+) files? changed(?:, (\d+) insertions?\(\+\))?(?:, (\d+) deletions?\(-\))?$/
-export function changeSize(plan) {
+export function lineCounts(plan) {
   const stat = STAT.exec(String(plan?.diff_stat || '').trim())
-  if (!stat) return ''
-  const files = Number(stat[1])
-  return `${files} ${files === 1 ? 'file' : 'files'} · +${stat[2] || 0} −${stat[3] || 0}`
+  return stat ? { added: Number(stat[2] || 0), removed: Number(stat[3] || 0) } : null
+}
+// "+a −r", with a no-break space so the two stay together.
+export const linesText = lines => `+${lines.added}\u00a0−${lines.removed}`
+
+// What a card row shows besides its title, in order: project, the screenshots
+// a new PR will publish, the stack layer, then the change size. The printed
+// card (prepared_block.py prepared_item), the live rows and Confirm's rows all
+// use it, so Confirm approves the list the owner just read.
+function rowValues(record) {
+  const plan = record?.plan || {}
+  const shots = planScreenshots(plan).length
+  return { project: text(plan.repo || record?.repo, 100), shots: shots ? screenshotCountText(shots) : '',
+    layer: stackLayer(plan), lines: lineCounts(plan) }
+}
+// The row's "Layer k of n", by one strict rule shared with the printed card
+// (prepared_block.py stack_layer, test/fixtures/stack-layers.json): a
+// non-empty string id and whole-number position and total, 1 <= position <=
+// total, 2 <= total <= 999. Staging writes these as numbers; anything else
+// shows no layer rather than guess.
+const layerCount = n => typeof n === 'number' && Number.isInteger(n) && n >= 1 && n <= 999
+function stackLayer(plan) {
+  const stack = plan?.stack && typeof plan.stack === 'object' ? plan.stack : {}
+  return typeof stack.id === 'string' && stack.id && layerCount(stack.position) && layerCount(stack.total) && stack.total >= 2 && stack.position <= stack.total
+    ? `Layer ${stack.position} of ${stack.total}` : ''
 }
 
 // ---- The row Confirm shows for each frozen record. The host draws these rows
-// in place of the card's own, so they carry the card's facts with the same
-// values (prepared_block.py prepared_item), plus the layer for a stack. What
-// Confirm sends is the frozen snapshot, which the server binds exactly.
+// in place of the card's own (the block opts in to value-only facts, labels
+// kept for assistive technology), and draws the change size in colour from
+// `lines`; an older host shows its text. What Confirm sends is the frozen
+// snapshot, which the server binds exactly.
 export function confirmationItem(record) {
-  const plan = record.plan || {}
-  const meta = stackMeta(record)
-  const screenshots = planScreenshots(plan).length
-  const change = [changeSize(plan), screenshots ? screenshotCountText(screenshots) : ''].filter(Boolean).join(' · ')
-  const facts = [
-    ['Project', plan.repo || record.repo],
-    ...(change ? [['Change', change]] : []),
-    ...(meta ? [['Stack', `Layer ${meta.position} of ${meta.total} · ${meta.name}`]] : []),
-  ]
-  return { title: text(plan.title || record.title || record.id, 240), facts: facts.map(([label, value]) => ({ label, value: text(value) })) }
+  const { project, shots, layer, lines } = rowValues(record)
+  const facts = [{ label: 'Project', value: project },
+    ...(shots ? [{ label: 'Screenshots', value: shots }] : []),
+    ...(layer ? [{ label: 'Stack', value: layer }] : []),
+    ...(lines ? [{ label: 'Change', value: linesText(lines), lines }] : [])]
+  return { title: text(record.plan?.title || record.title || record.id, 240), facts }
 }
 // A record sent through Möbius's relay (submission_mode 'mobius-bot') uses a
 // relay request that cannot bind the confirmed snapshot on the server, so it
@@ -161,8 +180,20 @@ export const RELAY_NOTE = 'This contribution is sent through the Möbius relay, 
 // Contribute. Only a reason no row explains is a line of text.
 export const LEDGER_NOTE = 'Could not read every contribution. Try again; nothing was sent.'
 export const HOLD = Object.freeze({ review: 'Needs review', notSent: 'Not sent', attention: 'Needs attention', check: 'Needs a fresh check',
-  source: 'Source changed', later: 'Sent after its stack', stack: 'Stack incomplete', relay: 'Send in Contribute', sending: 'Sending',
+  source: 'Source changed', later: 'Sent after its stack', stack: 'Stack incomplete', parentMerged: 'Parent merged',
+  parentChanged: 'Parent changed', invalidStack: 'Stack not valid', relay: 'Send in Contribute', sending: 'Sending',
   checking: 'Checking GitHub', gone: 'Not in Contribute', unread: 'Couldn’t check' })
+// Why a stack cannot be sent as a whole (stack.js stackReadiness codes, plus
+// a stack the card lists only in part), as its row's pill and ask code.
+const STACK_HOLDS = Object.freeze({
+  incomplete: { pill: HOLD.stack, code: 'stack_incomplete' },
+  refresh: { pill: HOLD.parentMerged, code: 'stack_parent_merged' },
+  restack: { pill: HOLD.parentChanged, code: 'stack_parent_changed' },
+  invalid: { pill: HOLD.invalidStack, code: '' },
+})
+// Held rows that wait rather than need a fix: a send in flight, one GitHub has
+// not answered yet, or a stack layer due after its parent.
+const WAITING = new Set([HOLD.sending, HOLD.checking, HOLD.later, HOLD.unread])
 export const UNREAD_NOTE = 'Could not read this contribution. Try again; nothing was sent.'
 // What observation of an unknown send can conclude. A changed target holds
 // the row with this ask code; an update Autopilot owns gets a neutral pill.
@@ -184,7 +215,7 @@ const MAX_SUCCESSORS = 8
 // A frozen record is confirmable only when its whole identity is present.
 // The owner must see how big each change is, so a record without a readable
 // diff stat is never confirmable (staging always records one from Git).
-const sized = record => Boolean(changeSize(record?.plan))
+const sized = record => Boolean(lineCounts(record?.plan))
 const identified = record => [record.plan?.repo || record.repo, record.plan?.branch || record.branch,
   record.plan?.head_sha, record.plan?.diff_sha256].every(Boolean)
 const confirmable = record => !relayed(record) && sized(record) && identified(record)
@@ -197,13 +228,11 @@ const CODE_PILL = Object.freeze({ upstream_conflict: 'Conflicts', upstream_base_
 const localCode = record => relayed(record) || uncertainPublication(record) ? '' : holdCode(record) || (sized(record) && identified(record) ? '' : 'restage')
 
 
-// The row's quiet metadata line: project and lines changed (files and
-// screenshots are named in Confirm's rows).
-const STAT_LINES = /^\d+ files? changed(?:, (\d+) insertions?\(\+\))?(?:, (\d+) deletions?\(-\))?$/
-export function rowMeta(record) {
-  const repo = text(record?.plan?.repo || record?.repo, 100)
-  const stat = STAT_LINES.exec(String(record?.plan?.diff_stat || '').trim())
-  return [repo, stat ? `+${stat[1] || 0} −${stat[2] || 0}` : ''].filter(Boolean).join(' · ')
+// The row's quiet metadata line. A host with `lines-v1` draws the change size
+// itself from the row's `lines`; an older one gets it here as text.
+export function rowMeta(record, { linesApart = false } = {}) {
+  const { project, shots, layer, lines } = rowValues(record)
+  return [project, shots, layer, lines && !linesApart ? linesText(lines) : ''].filter(Boolean).join(' · ')
 }
 
 // Why a prepared record cannot be sent, from the record alone, as its pill.
@@ -248,6 +277,8 @@ export function createInlineSession({ sessionId, actions, items = null, features
   const ownRows = drawsRows && features.includes('rows-v2')
   // One that also draws asks to this chat's agent says `ask-v1`.
   const asks = ownRows && features.includes('ask-v1')
+  // The host draws a row's change size from `lines` (in colour, spoken).
+  const drawsLines = ownRows && features.includes('lines-v1')
   let chat = readContext(context)
   let attempts = []
   let fault = ''
@@ -385,6 +416,14 @@ export function createInlineSession({ sessionId, actions, items = null, features
   const idsFor = key => sendKey(key) ? entries().filter(entry => entry.kind === 'pending').map(entry => entry.id) : []
   const versionKey = ids => [...ids].sort().map(id => `${id}@${versionOf(current().get(id))}`).join('\n')
   const unreadNow = () => !reading.size && entries().some(entry => entry.kind === 'unread')
+  // Before the first exact read of a named record answers, the card knows
+  // nothing: that is loading, never "No contributions". The host keeps the
+  // card's own saved rows meanwhile.
+  const firstRead = () => tracks() && !folded() && !entries().length && hints.some(hint => {
+    const found = resolve(hint)
+    const target = found.next || found.id
+    return !found.record && !absent.has(target) && !unreadable.has(target)
+  })
 
   const sending = () => attempts.some(attempt => attempt.state === 'sending')
   const overlaps = (attempt, unit) => attempt.unitKey === unit.key || attempt.ids.some(id => unit.records.some(record => record.id === id))
@@ -412,18 +451,32 @@ export function createInlineSession({ sessionId, actions, items = null, features
   const ledgerIncomplete = () => runtime?.ledger === 'incomplete'
 
   // A named record that is gone or unread holds the card, before anything else.
+  // A hold names the record the action is about (`id`, `pill`, `code`) and,
+  // in `holds`, every held record with its own reason: the rows show each
+  // one and the header counts them.
   function unresolvedHold() {
-    const entry = entries().find(item => item.kind === 'missing' || item.kind === 'unread')
-    return entry ? { id: entry.id, pill: entry.kind === 'missing' ? HOLD.gone : HOLD.unread, note: entry.kind === 'unread' ? UNREAD_NOTE : '',
-      code: entry.kind === 'missing' ? 'not_in_contribute' : 'couldnt_check' } : null
+    const holds = entries().filter(item => item.kind === 'missing' || item.kind === 'unread')
+      .map(entry => ({ id: entry.id, pill: entry.kind === 'missing' ? HOLD.gone : HOLD.unread, note: entry.kind === 'unread' ? UNREAD_NOTE : '',
+        code: entry.kind === 'missing' ? 'not_in_contribute' : 'couldnt_check' }))
+    return holds.length ? { ...holds[0], holds } : null
   }
 
   // Why the card's action cannot reach Confirm, as `{ note, id?, pill? }`:
   // `id` is the record that holds the card (its row gets `pill`); `note` is a
   // reason no row explains. Nothing when it can.
+  // What stops the card's action, with every per-record blocker collected in
+  // `holds` in one pass: unresolved reads and local holds, relay records,
+  // incomplete stacks and the authoritative check's own findings. The first
+  // of them is the action's reason; rows and counts read them all.
   function blocked(key) {
-    const gone = unresolvedHold()
-    if (gone) return gone
+    const checked = checkedBlock(key)
+    if (!unresolvedHold()) return checked
+    const local = localHeld()
+    return { ...local, holds: distinctHolds([...local.holds, ...checked?.holds || []]) }
+  }
+  // The first reason found for a record is its reason.
+  const distinctHolds = holds => holds.filter((hold, i) => holds.findIndex(other => other.id === hold.id) === i)
+  function checkedBlock(key) {
     if (!runtime) return null
     if (runtime.reviewStatus?.state === 'unavailable') return { note: 'Could not verify the current review. Try again; nothing was sent.' }
     if (ledgerIncomplete()) return { note: LEDGER_NOTE }
@@ -432,56 +485,64 @@ export function createInlineSession({ sessionId, actions, items = null, features
     // Without server-side binding of the confirmed snapshot, or a review check
     // addressed to these exact records, chat never sends.
     if (runtime.frozenBinding !== true || !Array.isArray(runtime.reviewStatus?.addressed)) return { note: NEWER_NOTE }
-    const now = current()
-    const relay = idsFor(key).find(id => relayed(now.get(id)))
-    if (relay) return { id: relay, pill: HOLD.relay }
-    const all = units(key)
-    const outside = all.find(unit => unlisted(key, unit))
-    if (outside) return { id: outside.records.find(record => idsFor(key).includes(record.id))?.id, pill: HOLD.stack, code: 'stack_incomplete' }
+    const ids = idsFor(key)
     const ready = readyUnits(key)
     // The action covers every record the card shows or none: with some units
     // ready, each pending record must be in the exact phase this Confirm would
     // send. A deferred stack layer holds the card too.
     const confirmed = new Set(ready.flatMap(unit => unit.ready.map(record => record.id)))
-    const held = idsFor(key).filter(id => !confirmed.has(id))
-    if (ready.length && !held.length) return null
-    return held.length ? holdOf(key, held) : { note: '' }
+    const holds = units(key).flatMap(unit => unitHolds(key, unit, ids.filter(id => !confirmed.has(id)
+      && (unit.records.some(record => record.id === id) || unit.key === `record:${id}`))))
+    if (holds.length) return { ...holds[0], holds }
+    return ready.length ? null : { note: '' }
   }
-
-  // The record that holds a card and its pill: the first with a reason of its
-  // own (a send blocker, an unresolved send, a missing size or identity), else
-  // the first held. Only a record outside its stack's next phase waits for
-  // its turn.
-  function holdOf(key, held) {
+  // The blockers of one publication unit, among its held records the card
+  // lists. Every record blocked for a reason of its own is one (a relay
+  // record, a failed check, an unsized change). A stack the card lists only
+  // in part, or one that is structurally incomplete, is one blocker shown on
+  // its first listed layer. A record held only because another member of the
+  // same unit is blocked (a sized parent of an unsized layer) shows nothing.
+  function unitHolds(key, unit, held) {
+    if (!held.length) return []
     const now = current()
-    const unitOf = id => units(key).find(unit => unit.records.some(record => record.id === id))
     const own = id => {
       const record = now.get(id)
       if (!record) return HOLD.gone
-      const unit = unitOf(id)
+      if (relayed(record)) return HOLD.relay
       return holdFor(sendBlocker(record, reviewStateFor(record, runtime.reviewStatus), { requireCheck: true }))
-        || (unit && locked(unit) ? HOLD.checking : '') || (sized(record) && identified(record) ? '' : HOLD.check)
+        || (locked(unit) ? HOLD.checking : '') || (sized(record) && identified(record) ? '' : HOLD.check)
     }
-    const id = held.find(own) || held[0]
-    const unit = unitOf(id)
-    const record = now.get(id)
-    const pill = own(id) || holdFor(unit?.reason) || (unit?.ready.some(member => member.id === id) ? HOLD.attention : HOLD.later)
-    // The code the agent is asked to fix: the record's own, or an incomplete
-    // size or identity. A record whose send is still being checked, or one
-    // that only waits for its turn in a stack, has none.
-    const code = holdCode(record, reviewStateFor(record, runtime.reviewStatus))
-      || (pill === HOLD.check && !uncertainPublication(record) ? 'restage' : '')
-    // A check that can be retried says so; the row keeps its pill.
-    return { id, pill: (pill === HOLD.source && CODE_PILL[code]) || pill, code, note: unit?.reason === RETRY_CHECK_REASON ? RETRY_CHECK_REASON : '' }
+    const holdOne = id => {
+      const record = now.get(id)
+      const pill = own(id) || holdFor(unit.reason) || (unit.ready.some(member => member.id === id) ? HOLD.attention : HOLD.later)
+      // The code the agent is asked to fix: the record's own, or an incomplete
+      // size or identity. A record whose send is still being checked, or one
+      // that only waits for its turn in a stack, has none.
+      const code = holdCode(record, reviewStateFor(record, runtime.reviewStatus))
+        || (pill === HOLD.check && !uncertainPublication(record) ? 'restage' : '')
+      // A check that can be retried says so; the row keeps its pill.
+      return { id, pill: (pill === HOLD.source && CODE_PILL[code]) || pill, code, note: unit.reason === RETRY_CHECK_REASON ? RETRY_CHECK_REASON : '' }
+    }
+    const blockers = held.filter(own)
+    if (blockers.length) return blockers.map(holdOne)
+    // A stack that cannot be sent as a whole says why, on its first listed
+    // layer: layers missing from the card or the ledger, a merged or changed
+    // parent the remaining layers must be rebuilt on, or a chain no chat repair
+    // fits (no ask; the action opens Contribute).
+    const structural = unlisted(key, unit) ? 'incomplete' : unit.stackCode
+    if (structural) return [{ id: held[0], ...STACK_HOLDS[structural], note: '' }]
+    return [holdOne(held[0])]
   }
 
+
   // Before a tap, from the records alone: the first row that holds the card.
+  // An unresolved record leads (the action reads again first); every record
+  // held by its own fields is listed too.
   function localHeld() {
-    const gone = unresolvedHold()
-    if (gone) return gone
-    const entry = entries().find(item => item.kind === 'pending' && (item.record.status === 'submitting' || localHold(item.record)))
-    return entry ? { id: entry.id, pill: entry.record.status === 'submitting' ? HOLD.sending : localHold(entry.record),
-      code: entry.record.status === 'submitting' ? '' : localCode(entry.record) } : null
+    const holds = [...unresolvedHold()?.holds || [], ...entries().filter(item => item.kind === 'pending' && (item.record.status === 'submitting' || localHold(item.record)))
+      .map(entry => ({ id: entry.id, pill: entry.record.status === 'submitting' ? HOLD.sending : localHold(entry.record),
+        code: entry.record.status === 'submitting' ? '' : localCode(entry.record) }))]
+    return holds.length ? { ...holds[0], holds } : null
   }
 
   // An unknown outcome is still being checked until its window has passed, or
@@ -504,7 +565,7 @@ export function createInlineSession({ sessionId, actions, items = null, features
     if (attempt?.state === 'sending') return { status: 'Sending', busy: true }
     if (isPublished(record)) {
       const pull = publishedPull(record)
-      const [status, statusTone] = PULL_STATUS[record.status] || ['Sent', 'success']
+      const [status, statusTone] = PULL_STATUS[record.status] || ['', 'neutral']
       return { status, statusTone, links: [{ label: `#${pull.number}`, url: pull.url }] }
     }
     if (attempt?.state === 'unknown') {
@@ -514,7 +575,7 @@ export function createInlineSession({ sessionId, actions, items = null, features
       return checkingAttempt(attempt) ? { status: 'Checking GitHub', busy: true } : { status: 'Not confirmed' }
     }
     const failed = rowFailure(id)
-    if (failed) return { status: 'Not sent', statusTone: failed.state === 'failed' ? 'danger' : 'neutral' }
+    if (failed) return { status: 'Not sent', statusTone: failed.state === 'failed' ? 'attention' : 'neutral' }
     return null
   }
 
@@ -527,25 +588,36 @@ export function createInlineSession({ sessionId, actions, items = null, features
 
   // ---- The app's own rows (`rows-v2`).
   function rowFor({ id, record, kind }, hold) {
-    const row = { title: text(record?.plan?.title || record?.title || id, 120), meta: record ? rowMeta(record) : '', intent: `review:${id}` }
+    // A record that could not be read has no title to show; its id is not one.
+    const fallback = kind === 'unread' ? 'Couldn’t load this contribution' : kind === 'missing' ? 'Contribution no longer in Contribute' : id
+    const lines = drawsLines ? lineCounts(record?.plan) : null
+    const row = { title: text(record?.plan?.title || record?.title || fallback, 120), meta: record ? rowMeta(record, { linesApart: Boolean(lines) }) : '',
+      ...(lines ? { lines } : {}), intent: `review:${id}` }
     if (kind === 'missing') return { ...row, pill: HOLD.gone, tone: 'attention' }
     if (kind === 'unread') return { ...row, pill: HOLD.unread }
     if (kind === 'dismissed') return { ...row, pill: record.status === 'abandoned' ? 'Dismissed' : 'Replaced' }
     const state = rowState(id)
     if (state) return { ...row, pill: state.status, tone: state.statusTone || 'neutral', busy: state.busy === true, links: state.links || [] }
     if (record.status === 'submitting') return { ...row, pill: HOLD.sending, busy: true }
-    return hold?.id === id ? { ...row, pill: hold.pill, tone: 'attention' } : row
+    const held = hold?.holds?.find(item => item.id === id)
+    return held ? { ...row, pill: held.pill, tone: 'attention' } : row
   }
-  function ownRowsReport(key) {
+  function ownRowsReport(key, head) {
     if (folded()) return []
     const hold = sendKey(key) ? heldNow(key) : null
-    return entries().map(entry => rowFor(entry, hold)).slice(0, 12)
+    const rows = entries().map(entry => rowFor(entry, hold)).slice(0, 12)
+    // One state, said once: when every row carries the same state and the
+    // header already says it (a shared send or check, or a title that is the
+    // pill), the rows drop it. A row whose state differs keeps its pill.
+    const shared = rows.length && rows.every(row => row.pill && row.pill === rows[0].pill && !row.links?.length)
+    return shared && (head.titleBusy || head.title === rows[0].pill || head.covers === rows[0].pill)
+      ? rows.map(({ pill: _pill, tone: _tone, busy: _busy, ...row }) => row) : rows
   }
 
   // ---- The header says what the card stands at.
   function heading(key) {
     if (folded()) return { title: CONTINUED_TITLE }
-    if (!tracks()) return { title: '' }
+    if (!tracks() || firstRead()) return { title: '' }
     const list = entries()
     const pending = list.filter(entry => entry.kind === 'pending')
     const sent = list.filter(entry => entry.kind === 'sent')
@@ -554,7 +626,14 @@ export function createInlineSession({ sessionId, actions, items = null, features
     // says the result is not confirmed (or how many were sent).
     const inFlight = counted.filter(entry => !isPublished(current().get(entry.id)) && (latestAttempt(entry.id)?.state === 'sending'
       || (latestAttempt(entry.id) && checkingAttempt(latestAttempt(entry.id)))))
-    if (inFlight.length) return { title: `Sending ${inFlight.length}`, titleBusy: true }
+    // A send still underway says Sending; once every one has left and only
+    // GitHub's answer is awaited, the card says so.
+    if (inFlight.length) {
+      const leaving = inFlight.filter(entry => latestAttempt(entry.id)?.state === 'sending').length
+      const checking = inFlight.length - leaving
+      const title = !leaving ? 'Checking GitHub…' : checking ? `Sending ${leaving} · checking ${checking}…` : `Sending ${leaving}…`
+      return { title, titleBusy: true }
+    }
     if (!counted.length) return { title: list.length ? 'Nothing left to send' : 'No contributions' }
     if (sent.length === counted.length) {
       const opened = attempts.some(attempt => attempt.ids.some(id => sent.some(entry => entry.id === id)))
@@ -562,18 +641,44 @@ export function createInlineSession({ sessionId, actions, items = null, features
       const count = sent.length
       const title = prs ? opened ? count === 1 ? 'Pull request opened' : `${count} pull requests opened` : count === 1 ? '1 pull request' : `${count} pull requests`
         : count === 1 ? 'Contribution sent' : `${count} contributions sent`
-      return { title, titleTone: 'success' }
+      // Success only on the live card and only when none was closed unmerged:
+      // a history card stays neutral.
+      return { title, titleTone: newest() && sent.every(entry => entry.record.status !== 'closed') ? 'success' : 'neutral' }
     }
     const unknown = pending.filter(entry => latestAttempt(entry.id)?.state === 'unknown')
     if (unknown.length) {
-      if (unknown.every(entry => findingOf(entry.id) === 'autopilot')) return { title: sent.length ? `${sent.length} of ${counted.length} sent` : AUTOPILOT_PILL, titleTone: 'neutral' }
+      if (unknown.every(entry => findingOf(entry.id) === 'autopilot')) return { title: sent.length ? `${sent.length} of ${counted.length} sent` : AUTOPILOT_PILL, covers: AUTOPILOT_PILL, titleTone: 'neutral' }
       const changed = unknown.some(entry => findingOf(entry.id) === 'changed')
-      return { title: sent.length ? `${sent.length} of ${counted.length} sent` : changed ? CHANGED_PILL : 'Result not confirmed', titleTone: 'attention' }
+      // An unconfirmed result is not a failure: it is counted as not confirmed.
+      const unconfirmed = unknown.filter(entry => findingOf(entry.id) !== 'autopilot').length
+      return { title: sent.length ? `${sent.length} of ${counted.length} sent · ${unconfirmed} not confirmed` : changed ? CHANGED_PILL : 'Not confirmed yet', covers: changed ? CHANGED_PILL : 'Not confirmed', titleTone: 'attention' }
     }
-    const failed = pending.filter(entry => rowFailure(entry.id))
+    // What holds the card, each counted for real and said as what it is: a
+    // blocked GitHub account is the owner's, a record that could not be read
+    // only needs reading again, and only the rest need a fix. The rows show
+    // the same holds (rowFor).
     const hold = sendKey(key) ? heldNow(key) : null
-    if (sent.length) return { title: `${sent.length} of ${counted.length} sent`, titleTone: failed.length || hold ? 'attention' : 'neutral' }
-    if (hold) return { title: '1 needs a fix', titleTone: 'attention' }
+    const holds = hold?.holds || []
+    const account = sendKey(key) ? blocked(key)?.account || (holds.some(item => ACCOUNT_CODES.has(item.code)) ? 'reconnect' : '') : ''
+    const unreadCount = list.filter(entry => entry.kind === 'unread').length
+    const fixIds = new Set([...pending.filter(entry => rowFailure(entry.id) && !ACCOUNT_CODES.has(rowFailure(entry.id).code)).map(entry => entry.id),
+      ...holds.filter(item => !WAITING.has(item.pill) && !ACCOUNT_CODES.has(item.code)).map(item => item.id)])
+    const parts = [
+      account ? account === 'connect' ? 'GitHub not connected' : 'Reconnect GitHub' : '',
+      fixIds.size ? `${fixIds.size} ${fixIds.size === 1 ? 'needs' : 'need'} a fix` : '',
+      unreadCount ? `couldn’t load ${unreadCount}` : '',
+    ].filter(Boolean)
+    const tone = account || fixIds.size ? 'attention' : 'neutral'
+    if (sent.length) return { title: [`${sent.length} of ${counted.length} sent`, ...parts].join(' · '), titleTone: tone }
+    if (parts.length) {
+      const title = parts.join(' · ')
+      return { title: title[0].toUpperCase() + title.slice(1), titleTone: tone }
+    }
+    // Readiness is claimed only once the tap's check found it: while that
+    // check runs the header says so; otherwise (saved, loading, before a
+    // tap) the header is a neutral count.
+    if (sendKey(key) && activating === key) return { title: 'Checking contributions', titleBusy: true }
+    if (sendKey(key) && frozen?.key === key) return { title: `${frozen.units.flatMap(unit => unit.ready).length} ready to send` }
     return { title: plural(counted.length, 'contribution', 'contributions') }
   }
 
@@ -634,7 +739,7 @@ export function createInlineSession({ sessionId, actions, items = null, features
     const failure = mine.filter(attempt => ['failed', 'not_attempted'].includes(attempt.state) && attempt.ids.some(id => ids.includes(id))).at(-1)
     const confirming = frozen?.key === key
     const checking = activating === key
-    const loading = hints.some(id => reading.has(id)) && !list.length
+    const loading = (hints.some(id => reading.has(id)) || firstRead()) && !list.length
     const found = checking || confirming ? null : blocked(key)
     const hold = found?.id ? found : null
     const before = !runtime || !authoritative(key) ? localHeld() : null
@@ -647,7 +752,7 @@ export function createInlineSession({ sessionId, actions, items = null, features
     const stuck = Boolean(fault) || unknown && !checkingResult || settled && !retry && (Boolean(hold || before || reason) || !sendable)
     const openOnly = stuck && !busy && !checking && !confirming
     const label = openOnly ? 'Open Contribute' : busy ? 'Sending…' : checkingResult || checking ? 'Checking…' : loading ? 'Loading…'
-      : retry ? 'Try again' : failure ? 'Retry' : ids.length === 1 ? 'Contribute' : 'Contribute all'
+      : retry ? 'Try again' : failure ? 'Retry' : ids.length > 1 ? `Send ${ids.length}` : 'Send'
     // Rows carry each record's state as a pill; one line of text says what a
     // pill cannot: a check to retry, the account, an older Möbius, or why the
     // last send was refused.
@@ -659,10 +764,19 @@ export function createInlineSession({ sessionId, actions, items = null, features
       open: openOnly,
       confirming,
       confirmation: confirming ? frozen.units.flatMap(unit => unit.ready.map(confirmationItem)) : null,
-      hidden: nothingLeft && !busy && !unknown && !confirming && !fault && !retry,
+      // While the tap's check, a send or GitHub's answer is underway the
+      // header says so; the action slot is empty rather than a disabled
+      // button. The action keeps its busy state for the host's locking.
+      hidden: (busy || checkingResult || checking) && !fault
+        || nothingLeft && !busy && !unknown && !confirming && !fault && !retry && !loading && !firstRead(),
       note,
     }
     const fix = openOnly && sendable ? fixFor({ hold, before, found, expired: unknown && !checkingResult, list }) : null
+    // A send Autopilot now owns asks nothing of the owner: no action at all
+    // (the header already opens Contribute).
+    const autopilotOnly = unknown && !checkingResult && list.filter(item => item.kind === 'pending' && latestAttempt(item.id)?.state === 'unknown')
+      .every(item => findingOf(item.id) === 'autopilot')
+    if (autopilotOnly && !fix) return { state: { ...state, hidden: true } }
     // The account is the owner's: the action opens it, named, in Contribute.
     if (fix?.account) return { state: { ...state, label: fix.account === 'connect' ? 'Connect GitHub' : 'Reconnect GitHub', note: '' } }
     if (!fix) return { state }
@@ -734,7 +848,8 @@ export function createInlineSession({ sessionId, actions, items = null, features
     if (fault) data = lastCheckpoint?.data ?? null
     if (data !== (lastCheckpoint?.data ?? null)) lastCheckpoint = data ? { id: crypto.randomUUID(), data } : null
     const key = card?.key || ''
-    const { title = '', titleTone = 'neutral', titleBusy = false } = heading(key)
+    const head = heading(key)
+    const { title = '', titleTone = 'neutral', titleBusy = false } = head
     const reports = advertised.map(cardAction)
     const ask = reports.find(report => report.ask)?.ask || null
     publish({
@@ -742,7 +857,7 @@ export function createInlineSession({ sessionId, actions, items = null, features
       ...(asks ? { ask } : {}),
       // Rows only for the chat the host attests; otherwise the card's own
       // fallback rows stay, and nothing is read.
-      ...(tracks() ? { rows: ownRowsReport(key), titleTone, titleBusy } : {}),
+      ...(tracks() ? { ...(firstRead() ? {} : { rows: ownRowsReport(key, head) }), titleTone, titleBusy } : {}),
       retain: Boolean(fault || lastCheckpoint || frozen || activating || sending()),
       checkpoint: lastCheckpoint, checkpointAck, recoveryError: Boolean(fault), ackNonce,
     })

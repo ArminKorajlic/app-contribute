@@ -68,10 +68,11 @@ The card is that chat's live view of its contributions, read from the ledger:
   owner to send some from Contribute first.
   A record re-prepared later shows its current version, a dismissed one says
   so, and one that belongs to another chat is never shown or sent.
-- **One action.** **Contribute** (**Contribute all** for several) checks the
-  current source and review of the records waiting to be sent and turns into
-  **Confirm**, listing exactly those, each with its **Project** and **Change**
-  (Change also names any screenshots the PR will publish). All of them or
+- **One action.** **Send** (**Send N** for several) checks the current
+  source and review of the records waiting to be sent and turns into **Not
+  now** / **Confirm**, listing exactly those with the same values as the
+  card's rows: project, any screenshots the PR will publish, the stack layer,
+  and lines added (green) and removed (red). All of them or
   none: a row that cannot be sent is marked with a short pill (Needs review,
   Not sent, Conflicts, …) and the action becomes **Fix in chat**, which sends
   you a `contribute · <id> · <code>` request in this chat ([SKILL.md](SKILL.md)

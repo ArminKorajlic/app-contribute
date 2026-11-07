@@ -33,13 +33,23 @@ review it as [ledger.md](ledger.md) describes:
 | `not_in_contribute` | Find what removed or replaced the record; stage the work again from this chat if it still exists, otherwise tell the owner it is gone. |
 | `couldnt_check` | Read the record; if it is intact, only print a new card, otherwise repair it with the ledger's CAS rules. |
 | `restage` | Restage it so its diff stat and identity are complete, then review again. |
-| `stack_incomplete` | Prepare, review and stage every layer of its stack from this chat, so the card can list the whole stack. |
+| `stack_incomplete` | Layers of its stack are missing from the card or the ledger: prepare, review and stage only the missing private layers from this chat, so the card can list the whole stack. |
+| `stack_parent_merged` | A parent layer has merged: rebuild only the remaining prepared (private) layers on the repository's fresh default branch, restage and review them again ([maintainer.md](maintainer.md) "PR stacks"). Never retarget the old child silently. |
+| `stack_parent_changed` | A prepared layer of the named record's stack no longer sits on its parent's reviewed head (the parent was restaged or updated): rebuild only the prepared (private) layers above that parent on its current head, restage and review them again. |
 | `result_unknown` | Read only: look on GitHub for the exact branch and pull request. Record a PR you find; otherwise report what you saw. Never clear the error or send again. |
 | `publication_changed` | Read only: the platform's observation found that GitHub or the record no longer matches the signed attempt (a different head, base or text, or a closed target). That is not proof nothing was sent, so never clear the error or receipt, retry, reopen or replace the PR. Compare the record with the live branch and PR; tell the owner what changed and which decision it needs (update the existing PR, prepare a replacement, or dismiss). Restage only after the owner decides. |
 
+For every stack code, change only prepared, private layers: never modify,
+rebase, restage or force-push a layer that is already public (draft, open) or
+merged. If the repair would change a public layer, for example a public
+layer sits above one that must be rebuilt, stop and ask the owner how to
+proceed instead.
+
 Then print a fresh card with `python3 /data/apps/contribute/prepared_block.py
 <record-id> …` ([publish.md](publish.md) "Offering Send in chat"), so the
-owner can press Contribute. If the repair needs an owner decision (a changed
+owner can press Send. A stack whose chain is not valid (layers from different
+repositories, a layer in an unpublishable state, mismatched layer metadata) is
+not an ask: its row says "Stack not valid" and the card opens Contribute. If the repair needs an owner decision (a changed
 scope, a closed target PR, a different repository), ask for that decision
 instead. A GitHub connection problem is never an ask: the card offers the
 owner the account itself.

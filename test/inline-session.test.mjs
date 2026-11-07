@@ -10,7 +10,7 @@ import { connectInlineSession, readBlockSession } from '../block-protocol.js'
 import { reviewAddressFor } from '../send-readiness.js'
 import { createPublicationObserver, TRANSPORT_BACKOFF_MS } from '../publication-observer.js'
 import { attemptOutcome, AUTOPILOT_PILL, CHANGED_NOTE, CHANGED_PILL, PUBLICATION_CHANGED, confirmationItem, CONTINUED_TITLE, HOLD, LEDGER_NOTE, NEWER_NOTE, UNREAD_NOTE, RECHECK_DELAYS_MS, RECHECK_WINDOW_MS, RECOVERY_NOTE,
-  REFRESH_FAILED_NOTE, REVIEW_REUSE_MS, TIMEOUT_NOTE, UNCHECKED_NOTE, VISIBLE_REREAD_MS, createInlineSession, decodeCheckpoint, encodeCheckpoint, localHold, observeAttempt, rowMeta } from '../inline-session.js'
+  REFRESH_FAILED_NOTE, REVIEW_REUSE_MS, TIMEOUT_NOTE, UNCHECKED_NOTE, VISIBLE_REREAD_MS, createInlineSession, decodeCheckpoint, encodeCheckpoint, lineCounts, localHold, observeAttempt, rowMeta } from '../inline-session.js'
 
 const HEAD = 'a'.repeat(40), NEXT = 'c'.repeat(40)
 // The chat the host attests the card is in, and another one.
@@ -45,7 +45,7 @@ function serverReviewStatus(addressed, store) {
 // The item intents the host sends with the session (`init.items`).
 const reviewItems = ids => ids.map(id => ({ intent: `review:${id}` }))
 // The card prepared_block.py prints: one action, the records as fallback items.
-const card = ids => ({ actions: [{ key: KEY, label: ids.length === 1 ? 'Contribute' : 'Contribute all' }], items: reviewItems(ids) })
+const card = ids => ({ actions: [{ key: KEY, label: ids.length === 1 ? 'Send' : `Send ${ids.length}` }], items: reviewItems(ids) })
 // A current host draws the app's rows and attests the chat; pass `features`
 // or `context` to model an older host or another chat.
 function harness({ ids = null, actions = card(ids).actions, items = card(ids || []).items, features = ['row-state', 'rows-v2'], context = { chatId: CHAT, latest: true, intent: CHAT_INTENT },
@@ -88,13 +88,13 @@ test('the card shows each named record as a row from the ledger, and reading nev
   const h = harness({ ids: ['one', 'two'], records: [prepared('one', { plan: { diff_stat: ' 3 files changed, 142 insertions(+), 38 deletions(-)' } }), prepared('two')] })
   h.session.start(); await tick()
   assert.deepEqual(h.last().rows, [
-    { title: 'Change one', meta: 'owner/repo · +142 −38', intent: 'review:one' },
-    { title: 'Change two', meta: 'owner/repo · +2 −0', intent: 'review:two' }])
+    { title: 'Change one', meta: 'owner/repo · +142\u00a0−38', intent: 'review:one' },
+    { title: 'Change two', meta: 'owner/repo · +2\u00a0−0', intent: 'review:two' }])
   assert.equal(h.last().title, '2 contributions')
   assert.equal(h.last().titleTone, 'neutral')
   assert.equal('items' in h.last(), false, 'the app\'s own rows replace the card\'s items')
   const state = h.action(KEY)
-  assert.deepEqual([state.label, state.disabled, state.open, state.note], ['Contribute all', false, false, ''])
+  assert.deepEqual([state.label, state.disabled, state.open, state.note], ['Send 2', false, false, ''])
   assert.equal(h.sends.length, 0)
   assert.equal(h.needs.length, 0, 'reading the card needs no send runtime, so no GitHub or source check')
   assert.deepEqual([...new Set(h.reads)].sort(), ['one', 'two'], 'exact local reads only')
@@ -157,7 +157,7 @@ test('a re-prepared record resolves through superseded_by to its successor, quie
   const latest = prepared('v3', { plan: { title: 'Calmer in-chat send states', diff_stat: '2 files changed, 96 insertions(+), 24 deletions(-)' } })
   const h = harness({ ids: ['v1'], records: [old, middle, latest] })
   await openConfirm(h)
-  assert.deepEqual(h.last().rows, [{ title: 'Calmer in-chat send states', meta: 'owner/repo · +96 −24', intent: 'review:v3' }])
+  assert.deepEqual(h.last().rows, [{ title: 'Calmer in-chat send states', meta: 'owner/repo · +96\u00a0−24', intent: 'review:v3' }])
   assert.deepEqual(h.needs.at(-1), ['v3'])
   assert.deepEqual(h.action(KEY).confirmation.map(item => item.title), ['Calmer in-chat send states'])
   // A loop or a dangling link never hangs the card.
@@ -174,8 +174,8 @@ test('a dismissed record stays as a quiet row and drops out of the action', asyn
   const h = harness({ ids: ['one', 'two'], records: [prepared('one'), prepared('two', { record: { status: 'abandoned' } })] })
   await openConfirm(h)
   assert.deepEqual(h.pills(), [['one', ''], ['two', 'Dismissed']])
-  assert.equal(h.last().title, '1 contribution')
-  assert.equal(h.action(KEY).label, 'Contribute')
+  assert.equal(h.last().title, '1 ready to send', 'the tap\'s check found one ready')
+  assert.equal(h.action(KEY).label, 'Send')
   assert.deepEqual(h.action(KEY).confirmation.map(item => item.title), ['Change one'])
   const all = harness({ ids: ['two'], records: [prepared('two', { record: { status: 'abandoned' } })] })
   all.session.start(); await tick()
@@ -211,11 +211,11 @@ test('a card that a newer card follows drops its open Confirm and folds, but kee
   await openConfirm(busy)
   busy.fire(KEY, 'confirm'); await tick()
   busy.session.update({ context: { chatId: CHAT, latest: false, intent: CHAT_INTENT } }); await tick()
-  assert.equal(busy.last().title, 'Sending 1')
-  assert.equal(busy.row('one').pill, 'Sending')
+  assert.equal(busy.last().title, 'Sending 1…')
+  assert.deepEqual([busy.row('one').pill, busy.last().title], [undefined, 'Sending 1…'], 'the header says it once')
   // A different chat id for the same session is ignored.
   busy.session.update({ context: { chatId: OTHER, latest: true, intent: CHAT_INTENT } }); await tick()
-  assert.equal(busy.row('one').pill, 'Sending')
+  assert.deepEqual([busy.row('one').pill, busy.last().title], [undefined, 'Sending 1…'], 'the header says it once')
   gate.resolve({ ok: true })
 })
 
@@ -236,7 +236,7 @@ test('a settled turn re-reads the records; a shown tab re-reads only after 30 se
   h.store.set('one', { ...published(prepared('one'), 3101), status: 'merged' })
   h.session.refresh('turn'); await tick()
   assert.equal(h.reads.length, 3, 'a settled turn always re-reads')
-  assert.deepEqual([h.row('one').pill, h.row('one').tone], ['Merged', 'accent'])
+  assert.deepEqual([h.row('one').pill, h.row('one').tone], ['Merged', 'success'])
   assert.equal(h.needs.length, 0, 'none of this checks GitHub or the source')
 })
 
@@ -265,15 +265,17 @@ test('a tap reuses a review check younger than two minutes and checks again afte
 test('Contribute becomes Confirm with each frozen change as the card shows it', async () => {
   const h = harness({ ids: ['one'], records: [prepared('one')] })
   h.session.start(); await tick()
-  assert.equal(h.action(KEY).label, 'Contribute')
+  assert.equal(h.action(KEY).label, 'Send')
   await openConfirm(h)
   const state = h.action(KEY)
   assert.equal(state.confirming, true)
-  assert.deepEqual(state.confirmation, [{ title: 'Change one', facts: [{ label: 'Project', value: 'owner/repo' }, { label: 'Change', value: '1 file · +2 −0' }] }])
+  assert.deepEqual(state.confirmation, [{ title: 'Change one', facts: [{ label: 'Project', value: 'owner/repo' },
+    { label: 'Change', value: '+2\u00a0−0', lines: { added: 2, removed: 0 } }] }], 'the row\'s values; the host colours the change size')
   const sized = confirmationItem(prepared('sized', { plan: { diff_stat: ' 3 files changed, 40 insertions(+), 2 deletions(-)' } }))
-  assert.deepEqual(sized.facts.find(fact => fact.label === 'Change'), { label: 'Change', value: '3 files · +40 −2' })
+  assert.deepEqual(sized.facts.find(fact => fact.label === 'Change'), { label: 'Change', value: '+40\u00a0−2', lines: { added: 40, removed: 2 } })
   const stacked = confirmationItem({ ...layer('base', 1, ''), plan: { ...layer('base', 1, '').plan, diff_stat: '1 file changed, 1 insertion(+)' } })
-  assert.deepEqual(stacked.facts.map(fact => fact.label), ['Project', 'Change', 'Stack'], 'a stack layer also names its layer')
+  assert.deepEqual(stacked.facts.map(fact => [fact.label, fact.value]), [['Project', 'owner/repo'], ['Stack', 'Layer 1 of 2'], ['Change', '+1\u00a0−0']],
+    'a stack layer also names its layer, before the change size as on its row')
   assert.equal(h.sends.length, 0, 'activation is not approval')
 })
 
@@ -289,12 +291,12 @@ test('Confirm sends the frozen snapshot once and publishes the unresolved checkp
   assert.equal(h.sends[0].records[0].plan.title, frozenTitle, 'the frozen snapshot, not a refreshed substitute, is sent')
   assert.ok(h.last().checkpoint, 'checkpoint exists while the request is outstanding')
   assert.equal(h.last().retain, true)
-  assert.deepEqual([h.last().title, h.last().titleBusy], ['Sending 1', true])
+  assert.deepEqual([h.last().title, h.last().titleBusy], ['Sending 1…', true])
   assert.deepEqual([h.action(KEY).label, h.action(KEY).busy, h.action(KEY).disabled], ['Sending…', true, true])
   h.store.set('one', published(prepared('one')))
   gate.resolve({ ok: true }); await tick()
   assert.equal(h.action(KEY).hidden, true, 'the button goes away')
-  assert.deepEqual([h.row('one').pill, h.row('one').tone, h.row('one').links], ['Open', 'success', [{ label: '#7', url: 'https://github.com/owner/repo/pull/7' }]])
+  assert.deepEqual([h.row('one').pill, h.row('one').tone, h.row('one').links], ['', 'neutral', [{ label: '#7', url: 'https://github.com/owner/repo/pull/7' }]], 'an open PR is its link')
   assert.deepEqual([h.last().title, h.last().titleTone], ['Pull request opened', 'success'])
   assert.equal(h.last().checkpoint, null, 'a proven result releases the checkpoint')
 })
@@ -317,7 +319,7 @@ test('the newest attempt owns the checkpoint after fail, restage and retry (relo
     send: () => ++call === 1 ? { error: 'Push rejected', failure: { owner: 'agent' } } : second.promise })
   await openConfirm(h)
   h.fire(KEY, 'confirm'); await tick()
-  assert.deepEqual([h.row('one').pill, h.row('one').tone], ['Not sent', 'danger'])
+  assert.deepEqual([h.row('one').pill, h.row('one').tone], ['Not sent', 'attention'])
   assert.equal(h.action(KEY).label, 'Retry', 'a definite failure the send path accepts again is retried explicitly')
   assert.equal(h.last().checkpoint, null, 'a known failure is not a lock')
   h.store.set('one', prepared('one', { head: NEXT, record: { updated_at: '2026-10-20T12:00:00Z' } }))
@@ -353,8 +355,8 @@ test('only uncertain sends lock after reload; a known failure allows a new expli
   await openConfirm(lost)
   lost.fire(KEY, 'confirm'); await tick()
   assert.ok(lost.last().checkpoint, 'a lost response stays owned')
-  assert.deepEqual([lost.row('one').pill, lost.row('one').busy], ['Checking GitHub', true])
-  assert.equal(lost.last().title, 'Sending 1')
+  assert.deepEqual([lost.row('one').pill, lost.row('one').busy], [undefined, undefined], 'the header says it once')
+  assert.equal(lost.last().title, 'Checking GitHub…', 'the send left; only GitHub\'s answer is awaited')
 })
 
 test('Contribute all sends independent units in parallel and a stack as one ordered request', async () => {
@@ -365,18 +367,18 @@ test('Contribute all sends independent units in parallel and a stack as one orde
   await openConfirm(h)
   const confirming = h.action(KEY)
   assert.deepEqual(confirming.confirmation.map(item => item.title), ['Change one', 'Change two', 'Change base', 'Change top'])
-  assert.equal(confirming.confirmation[2].facts[2].value, 'Layer 1 of 2 · Stack')
+  assert.deepEqual(confirming.confirmation[2].facts.map(fact => fact.value), ['owner/repo', 'Layer 1 of 2', '+2\u00a0−0'])
   h.fire(KEY, 'confirm'); await tick()
   assert.deepEqual(h.sends.map(call => call.ids.join('+')).sort(), ['base+top', 'one', 'two'], 'both singles are in flight together')
   h.store.set('two', published(prepared('two'), 8))
   gates.two.resolve({ ok: true }); await tick()
-  assert.deepEqual(h.pills(), [['one', 'Sending'], ['two', 'Open'], ['base', 'Sending'], ['top', 'Sending']], 'a finished unit settles before slower siblings')
+  assert.deepEqual(h.pills(), [['one', 'Sending'], ['two', ''], ['base', 'Sending'], ['top', 'Sending']], 'a finished unit settles before slower siblings')
   h.store.set('base', published(h.store.get('base'), 9)); h.store.set('top', published(h.store.get('top'), 10))
   gates.stack.resolve({ ok: true }); await tick()
   gates.one.resolve({ error: 'Push rejected', failure: { owner: 'agent' } }); await tick()
-  assert.deepEqual([h.last().title, h.last().titleTone], ['3 of 4 sent', 'attention'])
+  assert.deepEqual([h.last().title, h.last().titleTone], ['3 of 4 sent · 1 needs a fix', 'attention'])
   assert.deepEqual(h.last().rows.map(row => [row.intent.slice(7), row.pill, row.links?.[0]?.label]), [['one', 'Not sent', undefined],
-    ['two', 'Open', '#8'], ['base', 'Open', '#9'], ['top', 'Open', '#10']], 'a sibling failure never makes a sent unit pending')
+    ['two', '', '#8'], ['base', '', '#9'], ['top', '', '#10']], 'a sibling failure never makes a sent unit pending')
   assert.equal(h.action(KEY).hidden, false)
 })
 
@@ -496,7 +498,7 @@ test('a change without a readable size is never offered for Confirm, single or i
   }
   const deletions = harness({ ids: ['one'], records: [prepared('one', { plan: { diff_stat: ' 2 files changed, 7 deletions(-)' } })] })
   await openConfirm(deletions)
-  assert.equal(deletions.action(KEY).confirmation[0].facts.find(fact => fact.label === 'Change').value, '2 files · +0 −7')
+  assert.deepEqual(deletions.action(KEY).confirmation[0].facts.find(fact => fact.label === 'Change'), { label: 'Change', value: '+0\u00a0−7', lines: { added: 0, removed: 7 } })
   assert.equal(rowMeta(prepared('x', { plan: { diff_stat: '' } })), 'owner/repo', 'no size, no lines on the row')
 })
 
@@ -562,7 +564,7 @@ test('an uncertified approval_changed refusal stays unknown and locked end to en
       await openConfirm(h)
       h.fire(KEY, 'confirm'); await tick()
       assert.ok(h.last().checkpoint, 'the unresolved attempt stays in the checkpoint')
-      assert.deepEqual([h.last().retain, h.action(KEY).label, h.action(KEY).disabled, h.row('one').pill], [true, 'Checking…', true, 'Checking GitHub'])
+      assert.deepEqual([h.last().retain, h.action(KEY).label, h.action(KEY).disabled, h.action(KEY).hidden, h.last().title], [true, 'Checking…', true, true, 'Checking GitHub…'])
       h.fire(KEY, 'activate'); await tick()
       assert.equal(h.action(KEY).confirming, false, 'Confirm is not offered again')
       h.fire(KEY, 'confirm'); await tick()
@@ -586,7 +588,9 @@ test('a failed exact read holds the card with Try again, which reaches Confirm o
   const h = harness({ ids: ['one'], records: [prepared('one')], runtime: { records: [] },
     loadExact: async (id, store) => { if (failing) throw new Error('offline'); return structuredClone(store.get(id)) } })
   h.session.start(); await tick()
-  assert.deepEqual(h.last().rows, [{ title: 'one', meta: '', intent: 'review:one', pill: HOLD.unread }], 'an unread record is not called missing')
+  assert.deepEqual(h.last().rows, [{ title: 'Couldn’t load this contribution', meta: '', intent: 'review:one', pill: HOLD.unread }],
+    'an unread record is not called missing, and its id is not a title')
+  assert.deepEqual([h.last().title, h.last().titleTone], ['Couldn’t load 1', 'neutral'], 'an unread record is not one that needs a fix')
   assert.deepEqual([h.action(KEY).label, h.action(KEY).open], ['Try again', false])
   h.fire(KEY, 'activate'); await tick()
   h.provide(); await tick()
@@ -736,12 +740,13 @@ test('sending shows calm per-row progress and a disabled Sending… with no warn
   const gate = deferred()
   const h = harness({ ids: ['one', 'two'], records: [prepared('one'), prepared('two')], send: () => gate.promise })
   await openConfirm(h)
-  assert.equal(h.last().title, '2 contributions')
+  assert.equal(h.last().title, '2 ready to send')
   h.fire(KEY, 'confirm'); await tick()
   const state = h.action(KEY)
   assert.deepEqual([state.label, state.busy, state.disabled, state.note, state.status], ['Sending…', true, true, '', ''])
-  assert.deepEqual([h.last().title, h.last().titleBusy], ['Sending 2', true])
-  assert.deepEqual(h.last().rows.map(row => [row.pill, row.busy, row.tone]), [['Sending', true, 'neutral'], ['Sending', true, 'neutral']])
+  assert.deepEqual([h.last().title, h.last().titleBusy], ['Sending 2…', true])
+  assert.deepEqual(h.last().rows.map(row => [row.pill, row.busy, row.tone]), [[undefined, undefined, undefined], [undefined, undefined, undefined]],
+    'one shared state is said once, by the header')
   gate.resolve({ ok: true })
 })
 
@@ -770,13 +775,13 @@ test('after the recheck window an unconfirmed push says Not confirmed and only o
   const h = timed({ ids: ['one'], records: [prepared('one')], send: () => ({ uncertain: true }) }, c)
   await openConfirm(h)
   h.fire(KEY, 'confirm'); await tick()
-  assert.equal(h.last().title, 'Sending 1')
+  assert.equal(h.last().title, 'Checking GitHub…')
   for (let elapsed = 0; elapsed <= RECHECK_WINDOW_MS && c.pending().length; elapsed += 60000) await c.advance(60000)
   assert.equal(c.pending().length, 0, 'rechecks stop after the window')
   const state = h.action(KEY)
   assert.deepEqual([state.open, state.label, state.busy, state.note], [true, 'Open Contribute', false, ''])
-  assert.deepEqual(h.row('one').pill, 'Not confirmed')
-  assert.deepEqual([h.last().title, h.last().titleTone], ['Result not confirmed', 'attention'])
+  assert.deepEqual([h.row('one').pill, h.last().title], [undefined, 'Not confirmed yet'], 'the header says it once')
+  assert.deepEqual([h.last().title, h.last().titleTone], ['Not confirmed yet', 'attention'])
   assert.ok(h.last().checkpoint, 'the unresolved attempt still crosses a reload')
   h.fire(KEY, 'activate'); await tick()
   assert.equal(h.action(KEY).confirming, false)
@@ -798,7 +803,7 @@ test('with another row sent, an expired check counts what is known', async () =>
   m.store.set('one', published(prepared('one'), 5))
   m.fire(KEY, 'confirm'); await tick()
   for (let i = 0; i < 20 && c.pending().length; i++) await c.advance(60000)
-  assert.equal(m.last().title, '1 of 2 sent')
+  assert.equal(m.last().title, '1 of 2 sent · 1 not confirmed', 'unknown is counted as not confirmed, never as failed')
 })
 
 test('a partly sent card links the sent rows, marks the failed one, and opens Contribute when it cannot retry', async () => {
@@ -808,9 +813,9 @@ test('a partly sent card links the sent rows, marks the failed one, and opens Co
   h.store.set('one', published(prepared('one'), 21))
   h.store.set('two', prepared('two', { record: { last_submit_error: 'The branch already exists.', updated_at: '2026-10-20T23:00:00Z' } }))
   h.fire(KEY, 'confirm'); await tick(); h.provide(); await tick()
-  assert.deepEqual([h.last().title, h.last().titleTone], ['1 of 2 sent', 'attention'])
-  assert.deepEqual(h.last().rows.map(row => [row.pill, row.tone, row.links]), [['Open', 'success', [{ label: '#21', url: 'https://github.com/owner/repo/pull/21' }]],
-    ['Not sent', 'danger', []]])
+  assert.deepEqual([h.last().title, h.last().titleTone], ['1 of 2 sent · 1 needs a fix', 'attention'])
+  assert.deepEqual(h.last().rows.map(row => [row.pill, row.tone, row.links]), [['', 'neutral', [{ label: '#21', url: 'https://github.com/owner/repo/pull/21' }]],
+    ['Not sent', 'attention', []]], 'an open PR is its link; a failed send is amber, not red')
   assert.deepEqual([h.action(KEY).open, h.action(KEY).label, h.action(KEY).note], [true, 'Open Contribute', 'The branch already exists.'])
 })
 
@@ -837,7 +842,7 @@ test('an update to an existing pull request is reported as sent, not opened, and
   assert.equal(h.row('one').links[0].label, '#30')
   const merged = harness({ ids: ['one'], records: [{ ...published(prepared('one'), 8), status: 'merged' }] })
   merged.session.start(); await tick()
-  assert.deepEqual([merged.row('one').pill, merged.row('one').tone], ['Merged', 'accent'])
+  assert.deepEqual([merged.row('one').pill, merged.row('one').tone], ['Merged', 'success'])
 })
 
 test('disposing the card cancels its pending recheck', async () => {
@@ -871,7 +876,7 @@ test('an old card shows only this chat\'s records, from the ledger, and never se
       published(prepared('theirs', { record: { chat_id: OTHER, chat_ids: [OTHER] } }), 9)]
     const h = harness({ actions, items, records, context: OLD_CONTEXT })
     h.session.start(); await tick()
-    const expected = items.length ? [['one', 'Open'], ['two', 'Dismissed'], ['three', '']] : [['one', 'Open']]
+    const expected = items.length ? [['one', ''], ['two', 'Dismissed'], ['three', '']] : [['one', '']]
     assert.deepEqual(h.pills(), expected, `${actions[0].key}: another chat's record is not shown`)
     assert.equal(h.last().actions[0].hidden, true, 'nothing to do from an old card')
     h.fire(actions[0].key, 'activate'); h.provide(); await tick()
@@ -898,7 +903,7 @@ test('an old card that could not read its record offers Try again, which only re
   assert.deepEqual(h.pills(), [['one', HOLD.unread]], 'an unavailable read is not reported as a missing contribution')
   reachable = true
   h.fire('chat-send:one', 'activate'); await tick()
-  assert.deepEqual(h.pills(), [['one', 'Open']])
+  assert.deepEqual(h.pills(), [['one', '']], 'an open PR needs no word beside its link')
   assert.equal(h.action('chat-send:one').hidden, true)
   assert.deepEqual([h.needs.length, h.sends.length], [0, 0])
 })
@@ -1009,7 +1014,7 @@ test('a successor that failed to read is read again on the next trigger', async 
   failNew = false
   h.session.refresh('turn'); await tick(12)
   assert.deepEqual(h.last().rows.map(row => [row.title, row.pill || '']), [['Newer', '']])
-  assert.equal(h.action(KEY).label, 'Contribute')
+  assert.equal(h.action(KEY).label, 'Send')
 })
 
 test('triggers during a card read run one more read after it, not another alongside', async () => {
@@ -1080,7 +1085,7 @@ test('end to end, new host and this card: the host envelope through the app\'s p
   assert.equal(w.last().type, 'moebius:app-block-state')
   assert.equal(w.last().generation, 3, 'reports carry the document generation')
   assert.deepEqual(w.last().rows.map(row => row.intent), ['review:one', 'review:two'])
-  assert.deepEqual([w.action().label, w.action().hidden], ['Contribute all', false])
+  assert.deepEqual([w.action().label, w.action().hidden], ['Send 2', false])
   assert.equal(await w.confirmFlow(), true)
   assert.deepEqual(w.needs, [['one', 'two']])
   w.store.set('one', published(prepared('one'), 11)); w.store.set('two', published(prepared('two'), 12))
@@ -1214,12 +1219,12 @@ test('the printed card reaches Confirm for the chat\'s waiting work, with the ro
   assert.equal(block.intent, 'chat:contributions')
   assert.deepEqual(block.items.map(item => item.intent), ['review:one', 'review:two', 'review:three'], 'the chat\'s earlier prepared work joins')
   const view = await hostView(block)
-  assert.deepEqual(view.actions, [{ key: printedKey(['one', 'two', 'three']), label: 'Contribute all' }], 'the earlier card\'s action, so an older host runs it as before')
+  assert.deepEqual(view.actions, [{ key: printedKey(['one', 'two', 'three']), label: 'Send 3' }], 'the printed action, so an older host runs it as before')
   const h = harness({ actions: view.actions, items: view.items, records })
   await openConfirm(h)
   const state = h.action(KEY)
   assert.deepEqual(state.confirmation, block.items.map(({ title, facts }) => ({ title, facts })), 'Confirm\'s rows are the printed rows')
-  assert.equal(block.items[1].facts[1].value, '1 file · +2 −0 · 2 screenshots')
+  assert.deepEqual(block.items[1].facts.map(fact => fact.value), ['owner/repo', '2 screenshots', '+2\u00a0−0'], 'the card and Confirm name the same screenshots')
   // A card printed for one stack layer lists the whole phase, so it reaches Confirm.
   const layers = [layer('base', 1, ''), layer('top', 2, 'base')]
   layers[1].plan.base_sha = layers[0].plan.head_sha
@@ -1278,7 +1283,7 @@ test('the host draws an old card as this chat\'s status rows, and only an open l
   if (host.features.includes('rows-v2')) {
     const context = { chatId: CHAT, latest: true, intent: 'review:one' }
     const rows = await rendered(published(prepared('one')), host.features, context)
-    assert.match(rows, /<p class="md-app-block__item-meta">owner\/repo · \+2 −0<\/p>/)
+    assert.match(rows, /<p class="md-app-block__item-meta">owner\/repo · \+2\u00a0−0<\/p>/)
     assert.match(rows, /md-app-block__title-mark is-success/)
     assert.doesNotMatch(rows, /Open a new pull request|<footer>/, 'the saved facts give way to the app\'s rows')
     const elsewhere = await rendered(published(prepared('one', { record: { chat_id: OTHER, chat_ids: [OTHER] } })), host.features, context)
@@ -1302,7 +1307,7 @@ test('the host draws the live card: ledger rows, one action, a sent ending, and 
   }
   const ready = await render({})
   assert.match(ready, /<strong>2 contributions<\/strong>/)
-  assert.match(ready, /intent=review%3Aone">Show confirmation rows in place<\/a><p class="md-app-block__item-meta">owner\/repo · \+142 −38<\/p>/)
+  assert.match(ready, /intent=review%3Aone">Show confirmation rows in place<\/a><p class="md-app-block__item-meta">owner\/repo · \+142\u00a0−38<\/p>/)
   assert.doesNotMatch(ready, /From this conversation|<dt>|Rows from/, 'every row is the app\'s')
   assert.match(ready, /<footer>[^]*>Contribute all<\/button>/)
   const confirming = await render({ confirm: true })
@@ -1367,12 +1372,15 @@ test('a card refresh runs one at a time, through the coordinator after the first
 
 test('only a whole Git shortstat line counts as a change size', () => {
   const sizeOf = diffStat => confirmationItem(prepared('s', { plan: { diff_stat: diffStat } })).facts.find(fact => fact.label === 'Change')?.value
-  for (const [stat, size] of [
-    [' 3 files changed, 40 insertions(+), 2 deletions(-)', '3 files · +40 −2'],
-    ['1 file changed, 1 insertion(+)', '1 file · +1 −0'],
-    [' 2 files changed, 7 deletions(-)\n', '2 files · +0 −7'],
-    ['1 file changed', '1 file · +0 −0'],
-  ]) assert.equal(sizeOf(stat), size, stat)
+  for (const [stat, size, lines] of [
+    [' 3 files changed, 40 insertions(+), 2 deletions(-)', '+40\u00a0−2', [40, 2]],
+    ['1 file changed, 1 insertion(+)', '+1\u00a0−0', [1, 0]],
+    [' 2 files changed, 7 deletions(-)\n', '+0\u00a0−7', [0, 7]],
+    ['1 file changed', '+0\u00a0−0', [0, 0]],
+  ]) {
+    assert.equal(sizeOf(stat), size, stat)
+    assert.deepEqual(lineCounts({ diff_stat: stat }), { added: lines[0], removed: lines[1] })
+  }
   for (const stat of ['1 file changed, lots of deletions', '2 files changed, 40 insertions(+), ??? deletions(-)',
     'about 1 file changed', '1 file changed, 2 insertions(+) and more', '1 file changed, 2 deletions(-), 3 insertions(+)',
     ' 3 files changed, 4 insertions(+)\n 1 file changed']) {
@@ -1425,23 +1433,23 @@ test('a card refresh settles as failed after its deadline or a rejection, never 
 test('Confirm names the screenshots a new pull request will publish on its Change line', () => {
   const body = '## Summary\n\nFixes the clipped title.\n\n| Before | After |\n| --- | --- |\n| ![Before](screenshot:before.png) | ![After](screenshot:after.png) |'
   const item = confirmationItem(prepared('shots', { plan: { body_draft: body, screenshots: [shot('before.png'), shot('after.png')] } }))
-  assert.equal(item.facts.find(fact => fact.label === 'Change').value, '1 file · +2 −0 · 2 screenshots')
-  assert.equal(item.facts.some(fact => fact.label === 'Screenshots'), false, 'on the Change line, as on the card')
+  assert.deepEqual(item.facts.map(fact => [fact.label, fact.value]), [['Project', 'owner/repo'], ['Screenshots', '2 screenshots'], ['Change', '+2\u00a0−0']],
+    'the card row\'s values, in its order')
   assert.ok(item.facts.every(fact => !/screenshot:/.test(fact.value)))
-  assert.equal(confirmationItem(prepared('one', { plan: { screenshots: [shot('one.png')] } })).facts.find(fact => fact.label === 'Change').value,
-    '1 file · +2 −0 · 1 screenshot')
+  assert.equal(confirmationItem(prepared('one', { plan: { screenshots: [shot('one.png')] } })).facts.find(fact => fact.label === 'Screenshots').value,
+    '1 screenshot')
 
-  // Malformed entries are not counted; none at all leaves the Change line as is.
+  // Malformed entries are not counted; none at all adds no Screenshots value.
   const plain = confirmationItem(prepared('plain', { plan: { screenshots: [{ name: '../x.png', sha256: SHA }, { name: 'ok.png', sha256: 'short' }] } }))
-  assert.equal(plain.facts.find(fact => fact.label === 'Change').value, '1 file · +2 −0')
+  assert.deepEqual(plain.facts.map(fact => fact.label), ['Project', 'Change'])
 
-  // Without a readable diff stat, the count still gets its own Change line.
+  // Without a readable diff stat, the count is still named (and nothing is confirmable).
   const unsized = confirmationItem(prepared('unsized', { plan: { diff_stat: '', screenshots: [shot('a.png')] } }))
-  assert.equal(unsized.facts.find(fact => fact.label === 'Change')?.value, '1 screenshot')
+  assert.deepEqual(unsized.facts.map(fact => [fact.label, fact.value]), [['Project', 'owner/repo'], ['Screenshots', '1 screenshot']])
 
   const base = layer('base', 1, '')
   const full = confirmationItem({ ...base, plan: { ...base.plan, diff_stat: '1 file changed, 1 insertion(+)', screenshots: [shot('a.png'), shot('b.png')] } })
-  assert.equal(full.facts.find(fact => fact.label === 'Change').value, '1 file · +1 −0 · 2 screenshots')
+  assert.deepEqual(full.facts.map(fact => fact.value), ['owner/repo', '2 screenshots', 'Layer 1 of 2', '+1\u00a0−0'])
 })
 
 test('the B2 host accepts a confirmation that names screenshots', async t => {
@@ -1455,7 +1463,7 @@ test('the B2 host accepts a confirmation that names screenshots', async t => {
   ]
   const parsed = b2.confirmationOf(items)
   assert.ok(parsed, 'the host rejected the list, which would keep Confirm disabled')
-  assert.equal(parsed[0].facts.find(fact => fact.label === 'Change').value, '1 file · +2 −0 · 2 screenshots')
+  assert.equal(parsed[0].facts.find(fact => fact.label === 'Change').value, '1 file · +2\u00a0−0 · 2 screenshots')
   assert.match(parsed[1].facts.find(fact => fact.label === 'Change').value, /1 screenshot$/)
 })
 
@@ -1478,7 +1486,7 @@ test('a lost response settles from observation alone: the PR shows without a res
   const h = timed({ ids: ['one'], records: [prepared('one')], send: () => ({ uncertain: true }), observe: o.observe }, c)
   await openConfirm(h)
   h.fire(KEY, 'confirm'); await tick()
-  assert.equal(h.row('one').pill, 'Checking GitHub')
+  assert.deepEqual([h.row('one').pill, h.last().title], [undefined, 'Checking GitHub…'], 'the header says it once')
   await c.advance(RECHECK_DELAYS_MS[0])
   assert.deepEqual(o.calls, ['one'], 'the recheck asked the platform to observe once')
   assert.equal(h.store.get('one').status, 'prepared', 'the local ledger copy never moved')
@@ -1499,14 +1507,14 @@ test('a published branch whose PR is not confirmed keeps Checking GitHub and kee
   await c.advance(RECHECK_DELAYS_MS[0])
   await c.advance(RECHECK_DELAYS_MS[1])
   assert.equal(o.calls.length, 2)
-  assert.deepEqual([h.row('one').pill, h.row('one').busy], ['Checking GitHub', true])
+  assert.deepEqual([h.last().title, h.last().titleBusy], ['Checking GitHub…', true])
   assert.deepEqual([h.action(KEY).label, h.action(KEY).disabled], ['Checking…', true])
-  assert.equal(h.last().title, 'Sending 1')
+  assert.equal(h.last().title, 'Checking GitHub…')
   h.fire(KEY, 'activate'); await tick()
   assert.equal(h.action(KEY).confirming, false, 'still locked')
   // The window and its fallback stay: after it, Not confirmed and Contribute.
   for (let i = 0; i < 30 && c.pending().length; i++) await c.advance(60000)
-  assert.equal(h.row('one').pill, 'Not confirmed')
+  assert.deepEqual([h.row('one').pill, h.last().title], [undefined, 'Not confirmed yet'], 'the header says it once')
   assert.equal(h.action(KEY).open, true)
   assert.ok(h.last().checkpoint, 'still unresolved across a reload')
   assert.equal(h.sends.length, 1)
@@ -1519,7 +1527,7 @@ test('a target that changed holds the row with publication_changed, stops checki
   await openConfirm(h)
   h.fire(KEY, 'confirm'); await tick()
   await c.advance(RECHECK_DELAYS_MS[0])
-  assert.deepEqual([h.row('one').pill, h.row('one').tone, h.row('one').busy], [CHANGED_PILL, 'attention', false])
+  assert.deepEqual([h.row('one').pill, h.last().title, h.last().titleTone], [undefined, CHANGED_PILL, 'attention'], 'the header says it once')
   assert.deepEqual([h.last().title, h.last().titleTone], [CHANGED_PILL, 'attention'])
   const state = h.action(KEY)
   assert.deepEqual([state.open, state.label, state.busy], [true, 'Open Contribute', false], 'without ask-v1 the action opens Contribute')
@@ -1541,7 +1549,7 @@ test('an update Autopilot owns is left to Autopilot with a neutral status', asyn
   await openConfirm(h)
   h.fire(KEY, 'confirm'); await tick()
   await c.advance(RECHECK_DELAYS_MS[0])
-  assert.deepEqual([h.row('one').pill, h.row('one').tone, h.row('one').busy], [AUTOPILOT_PILL, 'neutral', false])
+  assert.deepEqual([h.row('one').pill, h.last().title, h.last().titleTone], [undefined, AUTOPILOT_PILL, 'neutral'], 'the header says it once')
   assert.deepEqual([h.last().title, h.last().titleTone], [AUTOPILOT_PILL, 'neutral'])
   assert.equal(c.pending().length, 0, 'the card stops checking')
   assert.equal(o.calls.length, 1)
@@ -1554,7 +1562,7 @@ test('an update Autopilot owns is left to Autopilot with a neutral status', asyn
   k.fire(KEY, 'confirm'); await tick()
   await c.advance(RECHECK_DELAYS_MS[0]); await c.advance(RECHECK_DELAYS_MS[1])
   assert.equal(other.calls.length, 1, 'asked once, then left alone')
-  assert.equal(k.row('two').pill, 'Checking GitHub')
+  assert.deepEqual([k.row('two').pill, k.last().title], [undefined, 'Checking GitHub…'], 'the header says it once')
   k.store.set('two', published(prepared('two'), 4)); await c.advance(RECHECK_DELAYS_MS[2])
   assert.equal(k.last().title, 'Pull request opened', 'the ledger re-read still settles it')
 })
@@ -1567,7 +1575,7 @@ test('an older Möbius without the observe route keeps the ledger-only recheck',
   h.fire(KEY, 'confirm'); await tick()
   await c.advance(RECHECK_DELAYS_MS[0]); await c.advance(RECHECK_DELAYS_MS[1])
   assert.equal(o.calls.length, 1, 'the route is not asked for again')
-  assert.equal(h.row('one').pill, 'Checking GitHub')
+  assert.deepEqual([h.row('one').pill, h.last().title], [undefined, 'Checking GitHub…'], 'the header says it once')
   h.store.set('one', published(prepared('one'), 9)); await c.advance(RECHECK_DELAYS_MS[2])
   assert.deepEqual(h.row('one').links, [{ label: '#9', url: 'https://github.com/owner/repo/pull/9' }])
   assert.equal(h.sends.length, 1)
@@ -1630,7 +1638,7 @@ test('the card and the app refresh share one observer: one request at a time, th
   assert.ok(RECHECK_DELAYS_MS[2] < TRANSPORT_BACKOFF_MS[1])
   await c.advance(RECHECK_DELAYS_MS[2])
   assert.equal(requests, 2, 'the longer backoff holds')
-  assert.equal(h.row('one').pill, 'Checking GitHub', 'no answer is not an outcome')
+  assert.equal(h.last().title, 'Checking GitHub…', 'no answer is not an outcome')
   assert.equal(h.sends.length, 1)
 })
 
@@ -1643,11 +1651,11 @@ test('B4: a changed finding expires when the record gets a new version, which is
   await openConfirm(h)
   h.fire(KEY, 'confirm'); await tick()
   await c.advance(RECHECK_DELAYS_MS[0])
-  assert.equal(h.row('one').pill, CHANGED_PILL)
+  assert.deepEqual([h.row('one').pill, h.last().title], [undefined, CHANGED_PILL], 'the header says it once')
   h.store.set('one', prepared('one', { head: NEXT, record: { updated_at: '2026-10-20T12:00:00Z', last_submit_error_code: 'publication_unconfirmed' } }))
   h.session.refresh('turn'); await tick(); h.provide(); await tick()
   assert.equal(calls, 2, 'the new version was observed')
-  assert.equal(h.row('one').pill, 'Checking GitHub')
+  assert.deepEqual([h.row('one').pill, h.last().title], [undefined, 'Checking GitHub…'], 'the header says it once')
   assert.ok(c.pending().length > 0, 'checking resumed')
   assert.equal(h.sends.length, 1)
 })
@@ -1681,7 +1689,7 @@ test('B2: a saved post-push error keeps the attempt unknown and the row checking
   await openConfirm(h)
   h.fire(KEY, 'confirm'); await tick()
   await c.advance(RECHECK_DELAYS_MS[0])
-  assert.equal(h.row('one').pill, 'Checking GitHub')
+  assert.deepEqual([h.row('one').pill, h.last().title], [undefined, 'Checking GitHub…'], 'the header says it once')
   assert.ok(h.last().checkpoint)
 })
 
@@ -1719,7 +1727,7 @@ test('a held row becomes Fix in chat with its record id and code, before any tap
   const ready = harness({ ids: ['one'], features: ASKS, records: [prepared('one')] })
   ready.session.start(); await tick()
   assert.equal(ready.last().ask, null, 'a ready card asks nothing')
-  assert.equal(ready.action(KEY).label, 'Contribute')
+  assert.equal(ready.action(KEY).label, 'Send')
 })
 
 test('the tap\'s source check names conflicts, a moved base and commit identity by code', async () => {
@@ -1805,7 +1813,7 @@ test('after the agent fixes and re-stages, the next turn hint brings Contribute 
   h.store.set('one', prepared('one', { head: NEXT, record: { updated_at: '2026-10-20T12:30:00Z' } }))
   h.session.refresh('turn'); await tick()
   assert.equal(h.last().ask, null)
-  assert.deepEqual([h.action(KEY).label, h.action(KEY).open], ['Contribute', false])
+  assert.deepEqual([h.action(KEY).label, h.action(KEY).open], ['Send', false])
 })
 
 test('every ask the card builds is one the host accepts and words itself', async t => {
@@ -1831,12 +1839,12 @@ test('a changed target asks publication_changed; Autopilot and Checking GitHub a
   h.fire(KEY, 'confirm'); await tick()
   assert.equal(h.last().ask, null, 'Checking GitHub asks nothing')
   await c.advance(RECHECK_DELAYS_MS[0])
-  assert.equal(h.row('one').pill, CHANGED_PILL)
+  assert.deepEqual([h.row('one').pill, h.last().title], [undefined, CHANGED_PILL], 'the header says it once')
   assert.deepEqual(refsOf(h), [['one', PUBLICATION_CHANGED]], 'changed comes before result_unknown, even within the window')
   const rev = h.last().ask.refs[0].rev
   // An unrelated write that keeps the attempt and source is the same state.
   h.store.set('one', { ...prepared('one'), updated_at: '2026-10-20T10:40:00Z' }); h.session.refresh('turn'); await tick()
-  assert.equal(h.row('one').pill, CHANGED_PILL, 'the new version was observed again')
+  assert.equal(h.last().title, CHANGED_PILL, 'the new version was observed again')
   assert.equal(h.last().ask.refs[0].rev, rev, 'the same changed state asks once')
   assert.equal(h.sends.length, 1, 'an ask never sends again')
 
@@ -1845,8 +1853,9 @@ test('a changed target asks publication_changed; Autopilot and Checking GitHub a
   await openConfirm(a)
   a.fire(KEY, 'confirm'); await tick()
   await c.advance(RECHECK_DELAYS_MS[0])
-  assert.equal(a.row('two').pill, AUTOPILOT_PILL)
+  assert.deepEqual([a.row('two').pill, a.last().title], [undefined, AUTOPILOT_PILL], 'the header says it once')
   assert.equal(a.last().ask, null, 'Autopilot owns it: no ask')
+  assert.equal(a.action(KEY).hidden, true, 'nothing is asked of the owner either: no action')
   for (let i = 0; i < 20 && c.pending().length; i++) await c.advance(60000)
   assert.equal(a.last().ask, null, 'still no ask after the window')
 
@@ -1923,3 +1932,327 @@ test('a read issued after a settlement still lands (control)', async () => {
   h.session.refresh('turn'); await tick()
   assert.deepEqual(h.row('one').links, [{ label: '#34', url: 'https://github.com/owner/repo/pull/34' }])
 })
+
+// ---- Truthful state: loading is not empty, and counts are real.
+test('before the first exact read answers, the card is loading, never empty', async () => {
+  const gate = deferred()
+  const h = harness({ ids: ['one', 'two'], records: [prepared('one'), prepared('two')], loadExact: async (id, store) => { await gate.promise; return structuredClone(store.get(id)) } })
+  h.session.start(); await tick()
+  assert.equal(h.last().title, '', 'the host keeps the saved title')
+  assert.equal('rows' in h.last(), false, 'the host keeps the printed rows; nothing claims there are none')
+  assert.deepEqual([h.action(KEY).label, h.action(KEY).hidden], ['Loading…', false])
+  gate.resolve(); await tick()
+  assert.equal(h.last().title, '2 contributions')
+  assert.equal(h.last().rows.length, 2)
+})
+
+test('every unreadable record and every row that needs a fix is counted', async () => {
+  const unread = harness({ ids: ['one', 'two'], records: [prepared('one'), prepared('two')], runtime: { records: [] },
+    loadExact: async () => { throw new Error('offline') } })
+  unread.session.start(); await tick()
+  assert.deepEqual([unread.last().title, unread.last().titleTone], ['Couldn’t load 2', 'neutral'])
+  assert.deepEqual(unread.last().rows.map(row => row.title), ['Couldn’t load this contribution', 'Couldn’t load this contribution'])
+  const failed = { last_submit_error: 'The branch already exists.', updated_at: '2026-10-20T23:00:00Z' }
+  const h = harness({ ids: ['one', 'two', 'three'], records: [prepared('one'), prepared('two', { record: failed }), prepared('three', { record: failed })] })
+  h.session.start(); await tick()
+  assert.deepEqual([h.last().title, h.last().titleTone], ['2 need a fix', 'attention'])
+})
+
+test('a sent card is green only while it is the newest and nothing was closed unmerged', async () => {
+  const newest = harness({ ids: ['one'], records: [published(prepared('one'), 9)] })
+  newest.session.start(); await tick()
+  assert.deepEqual([newest.last().title, newest.last().titleTone], ['1 pull request', 'success'])
+  const older = harness({ ids: ['one'], records: [published(prepared('one'), 9)], context: { chatId: CHAT, latest: false, intent: CHAT_INTENT } })
+  older.session.start(); await tick()
+  assert.equal(older.last().titleTone, 'neutral', 'history stays neutral')
+  const closed = harness({ ids: ['one'], records: [{ ...published(prepared('one'), 9), status: 'closed' }] })
+  closed.session.start(); await tick()
+  assert.equal(closed.last().titleTone, 'neutral')
+})
+
+// ---- The header claims readiness only for a checked, frozen confirmation.
+test('the header is a neutral count until the tap\'s check finds the set ready, and says Checking contributions meanwhile', async () => {
+  const gate = deferred()
+  const h = harness({ ids: ['one', 'two'], records: [prepared('one'), prepared('two')] })
+  h.session.start(); await tick()
+  assert.equal(h.last().title, '2 contributions', 'saved and loaded cards claim nothing')
+  assert.deepEqual([h.action(KEY).label, h.action(KEY).hidden], ['Send 2', false])
+  h.fire(KEY, 'activate'); await tick()
+  assert.deepEqual([h.last().title, h.last().titleBusy], ['Checking contributions', true], 'the check is not a send')
+  assert.equal(h.action(KEY).hidden, true, 'no button while the check runs')
+  h.provide(); await tick()
+  assert.deepEqual([h.last().title, h.action(KEY).confirming, h.action(KEY).hidden], ['2 ready to send', true, false])
+  h.fire(KEY, 'cancel'); await tick()
+  assert.equal(h.last().title, '2 contributions', 'Not now returns to the neutral count')
+  gate.resolve()
+})
+
+test('a blocked GitHub connection is named in the header, never called ready', async () => {
+  const off = harness({ ids: ['one'], features: ASKS, records: [prepared('one')], runtime: { connection: 'disconnected' } })
+  await openConfirm(off)
+  assert.deepEqual([off.last().title, off.last().titleTone], ['GitHub not connected', 'attention'])
+  const reconnect = harness({ ids: ['one'], features: ASKS, records: [prepared('one')],
+    runtime: { reviewStatus: { state: 'ready', addressed: ['one'], byId: { one: { state: 'unavailable', code: 'github_reconnect' } } } } })
+  await openConfirm(reconnect)
+  assert.equal(reconnect.last().title, 'Reconnect GitHub')
+  const failed = harness({ ids: ['one'], features: ASKS, records: [prepared('one', { record: { last_submit_error: 'x', last_submit_error_code: 'github_reconnect' } })] })
+  failed.session.start(); await tick()
+  assert.equal(failed.last().title, 'Reconnect GitHub', 'a refused send for the account is not a contribution that needs a fix')
+})
+
+test('a hidden action keeps its busy state, so the host stays locked and retained while no button shows', async () => {
+  const gate = deferred()
+  const h = harness({ ids: ['one'], records: [prepared('one')], send: () => gate.promise })
+  await openConfirm(h)
+  h.fire(KEY, 'confirm'); await tick()
+  const sending = h.action(KEY)
+  assert.deepEqual([sending.hidden, sending.busy, sending.disabled], [true, true, true])
+  assert.equal(h.last().retain, true)
+  h.fire(KEY, 'activate'); await tick()
+  assert.equal(h.sends.length, 1, 'nothing more is sent while it works')
+  gate.resolve({ uncertain: true }); await tick()
+  assert.deepEqual([h.action(KEY).hidden, h.action(KEY).disabled, h.last().title], [true, true, 'Checking GitHub…'])
+  assert.ok(h.last().checkpoint, 'the unknown result stays owned')
+})
+
+test('with lines-v1 a row carries its change size apart from its text; an older host gets it as text', async () => {
+  const records = [prepared('one', { plan: { diff_stat: ' 3 files changed, 64 insertions(+), 12 deletions(-)' } }), layer('base', 1, ''), layer('top', 2, 'base')]
+  records[2].plan.base_sha = records[1].plan.head_sha
+  const current = harness({ ids: ['one', 'base', 'top'], features: ['row-state', 'rows-v2', 'lines-v1'], records })
+  current.session.start(); await tick()
+  assert.deepEqual(current.last().rows.map(row => [row.meta, row.lines]), [
+    ['owner/repo', { added: 64, removed: 12 }], ['owner/repo · Layer 1 of 2', { added: 2, removed: 0 }], ['owner/repo · Layer 2 of 2', { added: 2, removed: 0 }]])
+  const older = harness({ ids: ['one', 'base'], records: records.slice(0, 2) })
+  older.session.start(); await tick()
+  assert.deepEqual(older.last().rows.map(row => [row.meta, 'lines' in row]), [['owner/repo · +64\u00a0−12', false], ['owner/repo · Layer 1 of 2 · +2\u00a0−0', false]])
+})
+
+// ---- Every hold is counted from its own reason, and said as what it is.
+test('two records the check holds for their own reasons are both shown and counted', async () => {
+  const review = { state: 'ready', addressed: ['one', 'two', 'three'],
+    byId: { one: { state: 'needs_refresh', code: 'branch_moved' }, two: { state: 'needs_refresh', code: 'branch_moved' }, three: { state: 'ready' } } }
+  const h = harness({ ids: ['one', 'two', 'three'], features: ASKS, records: [prepared('one'), prepared('two'), prepared('three')], runtime: { reviewStatus: review } })
+  await openConfirm(h)
+  assert.equal(h.action(KEY).confirming, false)
+  assert.deepEqual(h.pills(), [['one', HOLD.source], ['two', HOLD.source], ['three', '']], 'each held row says why')
+  assert.deepEqual([h.last().title, h.last().titleTone], ['2 need a fix', 'attention'], 'the count is every held record, not the one the action names')
+})
+
+test('beside sent rows, an unreadable record or a blocked account is said as such, never as a fix', async () => {
+  const unread = harness({ ids: ['one', 'two'], records: [published(prepared('one'), 9), prepared('two')],
+    loadExact: async (id, store) => { if (id === 'two') throw new Error('offline'); return structuredClone(store.get(id)) } })
+  unread.session.start(); await tick()
+  assert.deepEqual([unread.last().title, unread.last().titleTone], ['1 of 2 sent · couldn’t load 1', 'neutral'])
+  const account = harness({ ids: ['one', 'two'], features: ASKS,
+    records: [published(prepared('one'), 9), prepared('two', { record: { last_submit_error: 'x', last_submit_error_code: 'github_reconnect' } })] })
+  account.session.start(); await tick()
+  assert.deepEqual([account.last().title, account.last().titleTone], ['1 of 2 sent · Reconnect GitHub', 'attention'])
+  const both = harness({ ids: ['one', 'two', 'three'], records: [prepared('one'), prepared('two', { record: { last_submit_error: 'x', updated_at: '2026-10-20T23:00:00Z' } }), prepared('three')],
+    loadExact: async (id, store) => { if (id === 'three') throw new Error('offline'); return structuredClone(store.get(id)) } })
+  both.session.start(); await tick()
+  assert.equal(both.last().title, '1 needs a fix · couldn’t load 1')
+})
+
+test('a send still leaving and a result awaiting GitHub are counted apart', async () => {
+  const gate = deferred()
+  const h = harness({ ids: ['one', 'two'], records: [prepared('one'), prepared('two')],
+    send: rec => rec.id === 'one' ? gate.promise : { uncertain: true } })
+  await openConfirm(h)
+  h.fire(KEY, 'confirm'); await tick()
+  assert.deepEqual([h.last().title, h.last().titleBusy], ['Sending 1 · checking 1…', true])
+  assert.deepEqual(h.pills(), [['one', 'Sending'], ['two', 'Checking GitHub']], 'different states stay on their rows')
+  gate.resolve({ uncertain: true }); await tick()
+  assert.equal(h.last().title, 'Checking GitHub…')
+})
+
+test('a stack layer is read the same way the printed card reads it (shared fixtures)', async () => {
+  const { readFileSync } = await import('node:fs')
+  const { cases } = JSON.parse(readFileSync(new URL('./fixtures/stack-layers.json', import.meta.url), 'utf8'))
+  for (const { stack, layer: expected } of cases) {
+    const item = confirmationItem(prepared('s', { plan: { stack } }))
+    assert.equal(item.facts.find(fact => fact.label === 'Stack')?.value || '', expected, JSON.stringify(stack))
+  }
+})
+
+// ---- Every per-record blocker is collected, whatever leads the action.
+test('two stacks listed only in part are both marked and counted', async () => {
+  const stackOf = (prefix, id) => [layer(`${prefix}-base`, 1, ''), layer(`${prefix}-top`, 2, `${prefix}-base`)].map(record => ({ ...record,
+    plan: { ...record.plan, branch: `stack/${id}/${record.plan.stack.position}`, stack: { ...record.plan.stack, id,
+      base_branch: record.plan.stack.position === 1 ? 'main' : `stack/${id}/1` } } }))
+  const a = stackOf('a', 'sa'), b = stackOf('b', 'sb')
+  a[1].plan.base_sha = a[0].plan.head_sha; b[1].plan.base_sha = b[0].plan.head_sha
+  const h = harness({ ids: ['a-base', 'b-base'], records: [...a, ...b] })
+  await openConfirm(h)
+  assert.equal(h.action(KEY).confirming, false)
+  assert.deepEqual(h.pills(), [['a-base', HOLD.stack], ['b-base', HOLD.stack]])
+  assert.equal(h.last().title, '2 need a fix')
+})
+
+test('two relay records are both marked and counted', async () => {
+  const relay = { record: { submission_mode: 'mobius-bot' } }
+  const h = harness({ ids: ['one', 'two', 'three'], records: [prepared('one', relay), prepared('two', relay), prepared('three')] })
+  await openConfirm(h)
+  assert.equal(h.action(KEY).confirming, false)
+  assert.deepEqual(h.pills(), [['one', HOLD.relay], ['two', HOLD.relay], ['three', '']])
+  assert.equal(h.last().title, '2 need a fix')
+})
+
+test('a source change and an unreadable record are each shown and counted as what they are', async () => {
+  const h = harness({ ids: ['one', 'two'], records: [prepared('one'), prepared('two')],
+    runtime: { reviewStatus: { state: 'ready', addressed: ['one'], byId: { one: { state: 'needs_refresh', code: 'branch_moved' } } } },
+    loadExact: async (id, store) => { if (id === 'two') throw new Error('offline'); return structuredClone(store.get(id)) } })
+  await openConfirm(h)
+  assert.equal(h.action(KEY).confirming, false)
+  assert.deepEqual(h.pills(), [['one', HOLD.source], ['two', HOLD.unread]])
+  assert.deepEqual([h.last().title, h.last().titleTone], ['1 needs a fix · couldn’t load 1', 'attention'])
+  assert.equal(h.action(KEY).label, 'Try again', 'the read comes first; nothing is sent')
+})
+
+// ---- Blockers are collected per publication unit.
+const soloStack = (prefix, id) => {
+  const base = layer(`${prefix}-base`, 1, '')
+  return { ...base, plan: { ...base.plan, branch: `stack/${id}/1`, stack: { ...base.plan.stack, id, base_branch: 'main' } } }
+}
+
+test('two stacks each missing a layer from the ledger are both marked and counted', async () => {
+  const h = harness({ ids: ['a-base', 'b-base'], records: [soloStack('a', 'sa'), soloStack('b', 'sb')] })
+  await openConfirm(h)
+  assert.equal(h.action(KEY).confirming, false)
+  assert.deepEqual(h.pills(), [['a-base', HOLD.stack], ['b-base', HOLD.stack]])
+  assert.equal(h.last().title, '2 need a fix')
+})
+
+test('an incomplete stack beside a source change: each row says its own reason and both are counted', async () => {
+  const h = harness({ ids: ['a-base', 'one'], records: [soloStack('a', 'sa'), prepared('one')],
+    runtime: { reviewStatus: { state: 'ready', addressed: ['a-base', 'one'], byId: { 'a-base': { state: 'ready' }, one: { state: 'needs_refresh', code: 'branch_moved' } } } } })
+  await openConfirm(h)
+  assert.equal(h.action(KEY).confirming, false)
+  assert.deepEqual(h.pills(), [['a-base', HOLD.stack], ['one', HOLD.source]])
+  assert.equal(h.last().title, '2 need a fix')
+})
+
+// ---- A stack that cannot be sent as a whole says why, truthfully.
+const pair = (baseStatus = 'prepared') => {
+  const records = [layer('base', 1, '', baseStatus), layer('top', 2, 'base')]
+  records[1].plan.base_sha = records[0].plan.head_sha
+  return records
+}
+
+test('a complete stack whose parent merged asks for the child to be rebuilt, not for missing layers', async () => {
+  const h = harness({ ids: ['top'], features: ASKS, records: pair('merged') })
+  await openConfirm(h)
+  assert.equal(h.action(KEY).confirming, false)
+  assert.deepEqual(h.pills(), [['top', HOLD.parentMerged]])
+  assert.deepEqual(refsOf(h), [['top', 'stack_parent_merged']])
+  assert.equal(h.last().title, '1 needs a fix')
+})
+
+test('a stack with a layer off its parent\'s reviewed head asks for the stack to be rebuilt', async () => {
+  const records = pair()
+  records[1].plan.base_sha = 'f'.repeat(40)
+  const h = harness({ ids: ['base', 'top'], features: ASKS, records })
+  await openConfirm(h)
+  assert.deepEqual(h.pills(), [['base', HOLD.parentChanged], ['top', '']], 'one blocker for the stack, on its first listed layer')
+  assert.deepEqual(refsOf(h), [['base', 'stack_parent_changed']])
+})
+
+test('an invalid chain is named on its row and opens Contribute, with no ask', async () => {
+  const records = pair()
+  records[1].plan.repo = 'owner/other'; records[1].repo = 'owner/other'
+  const h = harness({ ids: ['base', 'top'], features: ASKS, records })
+  await openConfirm(h)
+  assert.deepEqual(h.pills(), [['base', HOLD.invalidStack], ['top', '']])
+  assert.equal(h.last().ask, null)
+  assert.deepEqual([h.action(KEY).open, h.action(KEY).label], [true, 'Open Contribute'])
+  assert.equal(h.last().title, '1 needs a fix')
+})
+
+test('a stack missing a layer from the ledger is the only one called incomplete', async () => {
+  const h = harness({ ids: ['a-base'], features: ASKS, records: [soloStack('a', 'sa')] })
+  await openConfirm(h)
+  assert.deepEqual(h.pills(), [['a-base', HOLD.stack]])
+  assert.deepEqual(refsOf(h), [['a-base', 'stack_incomplete']])
+})
+
+// ---- Every stack shape: one classification, label and ask; no remedy names
+// a public or merged layer, and nothing blocked can be confirmed or sent.
+const STATUSES = ['merged', 'open', 'prepared', 'missing']
+function chainOf(statuses, { parentOk, drift }) {
+  const total = statuses.length
+  const head = i => String(i + 1).repeat(40)
+  const records = statuses.map((status, i) => status === 'missing' ? null : prepared(`l${i + 1}`, { head: head(i),
+    plan: { branch: `stack/s1/0${i + 1}`, ...(i ? { base_sha: head(i - 1) } : {}),
+      stack: { id: 's1', name: 'Stack', position: i + 1, total, base_branch: i ? `stack/s1/0${i}` : 'main', ...(i ? { parent_record_id: `l${i}` } : {}) } },
+    record: { status, ...(status === 'open' || status === 'merged' ? { number: 40 + i, url: `https://github.com/owner/repo/pull/${40 + i}` } : {}) } })).filter(Boolean)
+  // An inconsistent parent id on the top layer; drift on the first prepared layer above the base.
+  if (!parentOk && records.length) records.at(-1).plan.stack.parent_record_id = 'elsewhere'
+  const drifted = records.find((record, i) => i && record.status === 'prepared')
+  if (drift && drifted) drifted.plan.base_sha = 'f'.repeat(40)
+  return { records, drifted: drift ? drifted?.id : null }
+}
+// The expected reason, in stack.js's own order.
+function expectedReason(statuses, { parentOk }, drifted) {
+  if (statuses.includes('missing')) return 'incomplete'
+  for (let i = 1; i < statuses.length; i++) {
+    if (!parentOk && i === statuses.length - 1) return 'invalid'
+    if (statuses[i] === 'prepared' && statuses[i - 1] === 'merged') return 'refresh'
+    if (drifted === `l${i + 1}`) return 'restack'
+  }
+  return ''
+}
+const STACK_EXPECT = { incomplete: [HOLD.stack, 'stack_incomplete'], refresh: [HOLD.parentMerged, 'stack_parent_merged'],
+  restack: [HOLD.parentChanged, 'stack_parent_changed'], invalid: [HOLD.invalidStack, null] }
+const product = (lists) => lists.reduce((all, list) => all.flatMap(prefix => list.map(item => [...prefix, item])), [[]])
+
+test('every two- and three-layer stack shape is classified truthfully and stays fail-closed', async () => {
+  let checked = 0
+  for (const statuses of [...product([STATUSES, STATUSES]), ...product([STATUSES, STATUSES, STATUSES])]) {
+    for (const parentOk of [true, false]) {
+      for (const drift of [false, true]) {
+        const { records, drifted } = chainOf(statuses, { parentOk, drift })
+        const ids = records.filter(record => record.status === 'prepared').map(record => record.id)
+        if (!ids.length || (!parentOk && statuses.at(-1) === 'missing')) continue
+        const shape = `${statuses.join('/')} parent:${parentOk ? 'ok' : 'other'} drift:${drift && drifted ? drifted : 'no'}`
+        const reason = expectedReason(statuses, { parentOk }, drifted)
+        const h = harness({ ids, features: ASKS, records, send: () => ({ ok: true }), sendStack: () => ({ ok: true }) })
+        await openConfirm(h)
+        const pills = h.pills()
+        if (reason) {
+          const [label, code] = STACK_EXPECT[reason]
+          assert.deepEqual(pills, ids.map((id, i) => [id, i === 0 ? label : '']), shape)
+          assert.equal(h.action(KEY).confirming, false, shape)
+          assert.deepEqual((refsOf(h) || []), code ? [[ids[0], code]] : [], shape)
+          if (!code) assert.equal(h.action(KEY).open, true, `${shape}: no ask opens Contribute`)
+          h.fire(KEY, 'confirm'); await tick()
+          assert.deepEqual(h.sends, [], `${shape}: nothing is sent`)
+        } else {
+          assert.ok(pills.every(([, pill]) => ![HOLD.stack, HOLD.parentMerged, HOLD.parentChanged, HOLD.invalidStack].includes(pill)), shape)
+        }
+        // Any ask names a prepared record, never a public or merged layer.
+        for (const [id] of (refsOf(h) || [])) assert.equal(records.find(record => record.id === id).status, 'prepared', shape)
+        // A confirmation only ever lists prepared layers.
+        for (const item of h.action(KEY).confirmation || []) assert.ok(records.some(record => `Change ${record.id}` === item.title && record.status === 'prepared'), shape)
+        checked++
+      }
+    }
+  }
+  assert.ok(checked > 150, `${checked} shapes`)
+})
+
+test('the reviewed regressions: an unrelated parent id, a drifted child of a merged parent, and a public layer above a drifted one', async () => {
+  const other = chainOf(['prepared', 'prepared'], { parentOk: false, drift: false })
+  const a = harness({ ids: ['l1', 'l2'], features: ASKS, records: other.records })
+  await openConfirm(a)
+  assert.deepEqual([a.pills(), (refsOf(a) || []), a.action(KEY).open], [[['l1', HOLD.invalidStack], ['l2', '']], [], true])
+  const merged = chainOf(['merged', 'prepared'], { parentOk: true, drift: true })
+  const b = harness({ ids: ['l2'], features: ASKS, records: merged.records })
+  await openConfirm(b)
+  assert.deepEqual([b.pills(), (refsOf(b) || [])], [[['l2', HOLD.parentMerged]], [['l2', 'stack_parent_merged']]], 'refresh on the main branch, not on the merged parent')
+  const mixed = chainOf(['prepared', 'prepared', 'open'], { parentOk: true, drift: true })
+  const c = harness({ ids: ['l1', 'l2'], features: ASKS, records: mixed.records })
+  await openConfirm(c)
+  assert.deepEqual([c.pills(), (refsOf(c) || [])], [[['l1', HOLD.parentChanged], ['l2', '']], [['l1', 'stack_parent_changed']]])
+  assert.equal(mixed.records[2].status, 'open', 'the public third layer is not named; the remedy changes only private layers and asks the owner otherwise')
+  assert.deepEqual(c.sends, [])
+})
+

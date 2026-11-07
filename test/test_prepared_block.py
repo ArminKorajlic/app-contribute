@@ -38,12 +38,12 @@ class PreparedBlockTests(unittest.TestCase):
     block = self.card(record('one'))
     self.assertEqual(block['intent'], 'chat:contributions', 'one intent, so the host can tell the newest card')
     self.assertEqual((block['inline'], block['interaction'], block['expand']), (True, 'inline', False))
-    self.assertEqual(block['item_facts'], 'values')
-    self.assertEqual(block['title'], '1 contribution')
+    self.assertEqual((block['item_facts'], block['confirm_facts']), ('values', 'values'))
+    self.assertEqual(block['title'], '1 contribution', 'a printed card claims no readiness, only a count')
     self.assertEqual(block['items'], [{'title': 'Change one', 'intent': 'review:one',
-      'facts': [{'label': 'Project', 'value': 'owner/repo'}, {'label': 'Change', 'value': '2 files · +4 −1'}]}])
-    self.assertEqual(block['action'], {'label': 'Contribute', 'intent': 'chat-send:one'},
-      'the earlier card\'s action, so a host without rows-v2 runs it as before')
+      'facts': [{'label': 'Project', 'value': 'owner/repo'}, {'label': 'Change', 'value': '+4\u00a0−1', 'lines': {'added': 4, 'removed': 1}}]}],
+      'the live row\'s values; a current host colours the change size, an older one shows its text')
+    self.assertEqual(block['action'], {'label': 'Send', 'intent': 'chat-send:one'})
     self.assertNotIn('facts', block)
 
   def test_many_contributions_share_the_one_fixed_action(self):
@@ -54,7 +54,7 @@ class PreparedBlockTests(unittest.TestCase):
     self.assertEqual([item['intent'] for item in block['items']], [f'review:{item}' for item in long_ids])
     for item in block['items']:
       self.assertEqual(set(item), {'title', 'intent', 'facts'}, 'no per-item action')
-    self.assertEqual(block['action'], {'label': 'Contribute all', 'intent': f'chat-send-batch:{module.batch_handle(long_ids)}'},
+    self.assertEqual(block['action'], {'label': 'Send 3', 'intent': f'chat-send-batch:{module.batch_handle(long_ids)}'},
       'one action over every item, matching them as before')
     self.assertLessEqual(len(block['action']['intent']), 32)
 
@@ -144,21 +144,24 @@ class PreparedBlockTests(unittest.TestCase):
     self.assertTrue(out.getvalue().startswith('```mobius-app\n') and out.getvalue().endswith('\n```\n'))
 
   def test_change_size_is_the_whole_shortstat_line(self):
-    for stat, size in [(' 1 file changed, 2 insertions(+)\n', '1 file · +2 −0'), ('2 files changed, 7 deletions(-)', '2 files · +0 −7'),
-        ('1 file changed', '1 file · +0 −0')]:
-      self.assertEqual(module.change_size({'diff_stat': stat}), size)
+    for stat, lines in [(' 1 file changed, 2 insertions(+)\n', (2, 0)), ('2 files changed, 7 deletions(-)', (0, 7)), ('1 file changed', (0, 0))]:
+      self.assertEqual(module.line_counts({'diff_stat': stat}), {'added': lines[0], 'removed': lines[1]})
     for stat in ['1 file changed, lots of deletions', 'about 1 file changed', '1 file changed, 2 insertions(+) and more', '']:
-      self.assertEqual(module.change_size({'diff_stat': stat}), '', stat)
+      self.assertIsNone(module.line_counts({'diff_stat': stat}), stat)
     block = self.card(record('one', plan={'diff_stat': 'about 1 file changed'}))
-    self.assertEqual(block['items'][0]['facts'][1], {'label': 'Change', 'value': 'Size not recorded'})
+    self.assertEqual(block['items'][0]['facts'][1], {'label': 'Change', 'value': 'Size not recorded'}, 'no counts, so nothing to colour')
 
   def test_change_names_the_screenshots_the_pr_will_publish(self):
     shot = lambda name: {'name': name, 'sha256': 'e' * 64, 'size': 1200, 'alt': name}
     two = self.card(record('one', plan={'screenshots': [shot('before.png'), shot('after.png'), {'name': '../x.png', 'sha256': 'e' * 64}]}))
-    self.assertEqual(two['items'][0]['facts'][1], {'label': 'Change', 'value': '2 files · +4 −1 · 2 screenshots'})
+    self.assertEqual([fact['value'] for fact in two['items'][0]['facts']], ['owner/repo', '2 screenshots', '+4\u00a0−1'])
     one = self.card(record('one', plan={'screenshots': [shot('a.png'), {'name': 'b.png', 'sha256': 'short'}]}))
-    self.assertEqual(one['items'][0]['facts'][1]['value'], '2 files · +4 −1 · 1 screenshot')
-    self.assertEqual(module.change_text({'diff_stat': '', 'screenshots': [shot('a.png')]}), '1 screenshot')
+    self.assertEqual(one['items'][0]['facts'][1], {'label': 'Screenshots', 'value': '1 screenshot'})
+
+  def test_a_stack_layer_is_read_exactly_as_the_app_reads_it(self):
+    fixtures = json.loads((Path(__file__).parent / 'fixtures' / 'stack-layers.json').read_text())
+    for case in fixtures['cases']:
+      self.assertEqual(module.stack_layer({'stack': case['stack']}), case['layer'], case['stack'])
 
   def test_handle_matches_the_app(self):
     # chat-blocks.js: batchHandle(['b', 'a']) === '968bcf1a16b2b0ee'

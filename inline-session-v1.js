@@ -18,10 +18,10 @@
 // pill, the pull request link once published, and one short reason when a
 // send failed (building-apps.md "Passive block sessions").
 import { sendTarget } from './chat-blocks.js'
-import { planScreenshots, screenshotCountText, uncertainPublication } from './domain.js'
+import { uncertainPublication } from './domain.js'
 import { isPublished, publicationUnits, publishedPull, sendBlocker } from './send-readiness.js'
 import { RETRY_CHECK_REASON, reviewStateFor } from './review.js'
-import { stackMeta } from './stack.js'
+import { confirmationItem } from './inline-session.js'
 
 const copy = value => JSON.parse(JSON.stringify(value))
 const text = (value, max = 500) => String(value ?? '').trim().slice(0, max)
@@ -112,25 +112,13 @@ export function changeSize(plan) {
   const stat = STAT.exec(String(plan?.diff_stat || '').trim())
   if (!stat) return ''
   const files = Number(stat[1])
-  return `${files} ${files === 1 ? 'file' : 'files'} · +${stat[2] || 0} −${stat[3] || 0}`
+  return `${files} ${files === 1 ? 'file' : 'files'} · +${stat[2] || 0}\u00a0−${stat[3] || 0}`
 }
 
-// ---- The row Confirm shows for each frozen record. The host draws these rows
-// in place of the card's own, so they carry the card's facts with the same
-// values (prepared_block.py prepared_item), plus the layer for a stack. What
-// Confirm sends is the frozen snapshot, which the server binds exactly.
-export function confirmationItem(record) {
-  const plan = record.plan || {}
-  const meta = stackMeta(record)
-  const screenshots = planScreenshots(plan).length
-  const change = [changeSize(plan), screenshots ? screenshotCountText(screenshots) : ''].filter(Boolean).join(' · ')
-  const facts = [
-    ['Project', plan.repo || record.repo],
-    ...(change ? [['Change', change]] : []),
-    ...(meta ? [['Stack', `Layer ${meta.position} of ${meta.total} · ${meta.name}`]] : []),
-  ]
-  return { title: text(plan.title || record.title || record.id, 240), facts: facts.map(([label, value]) => ({ label, value: text(value) })) }
-}
+// ---- The row Confirm shows for each frozen record: the printed card's row
+// (inline-session.js confirmationItem), so Confirm lists what the owner read.
+// What Confirm sends is the frozen snapshot, which the server binds exactly.
+export { confirmationItem }
 // A record sent through Möbius's relay (submission_mode 'mobius-bot') uses a
 // relay request that cannot bind the confirmed snapshot on the server, so it
 // is never confirmable from chat; Contribute itself still sends it.
