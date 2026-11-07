@@ -43,18 +43,42 @@ test('the contributing skill tells the agent what to do for every code', () => {
   assert.match(section, /prepared_block\.py/)
 })
 
-test('the state token is the reviewed head, or a digest that changes with the failure or attempt', () => {
-  const rev = (...args) => askRev(...args)
-  assert.equal(rev('r-1', 'needs_review', record()), HEAD)
-  const failed = record({ last_submit_error: 'x', last_submit_error_code: 'commit_identity_mismatch', updated_at: '2026-11-07T01:00:00Z' })
-  const failure = rev('r-1', 'commit_identity_mismatch', failed)
-  assert.match(failure, /^[0-9a-f]{16}$/)
-  assert.equal(rev('r-1', 'commit_identity_mismatch', structuredClone(failed)), failure, 'the same failure, the same token')
-  assert.notEqual(rev('r-1', 'commit_identity_mismatch', { ...failed, updated_at: '2026-11-07T02:00:00Z' }), failure, 'a new failure')
-  assert.notEqual(rev('r-1', 'send_failed', { ...failed, plan: { ...failed.plan, head_sha: 'b'.repeat(40) } }), failure, 'restaged')
-  const unknown = rev('r-1', 'result_unknown', record(), { id: 'att-1', at: 1 })
-  assert.equal(rev('r-1', 'result_unknown', null, { id: 'att-1', at: 1 }), unknown)
-  assert.notEqual(rev('r-1', 'result_unknown', record(), { id: 'att-2', at: 2 }), unknown)
-  assert.match(rev('gone', 'not_in_contribute', null), /^[0-9a-f]{16}$/)
-  assert.match(rev('r-1', 'restage', record({ plan: { title: 'No head' } })), /^[0-9a-f]{16}$/)
+test('the state token follows the cause, not the record\'s last write', () => {
+  const token = /^[0-9a-f]{16}$/
+  const base = record({ plan: { head_sha: HEAD, base_sha: 'b'.repeat(40), diff_sha256: 'd'.repeat(64), title: 'Title', body_draft: 'Body one' },
+    updated_at: '2026-11-07T01:00:00Z' })
+  const rev = (code, value, attempt) => askRev('r-1', code, value, attempt)
+  // A metadata-only restage at the same head is a new state.
+  const text = rev('invalid_pr_text', base)
+  assert.match(text, token)
+  assert.notEqual(rev('invalid_pr_text', { ...base, plan: { ...base.plan, body_draft: 'Body two' } }), text)
+  assert.notEqual(rev('changes_needed', { ...base, quality_review: { state: 'changes_needed', reviewed_head_sha: HEAD, summary: 'Second pass' } }),
+    rev('changes_needed', { ...base, quality_review: { state: 'changes_needed', reviewed_head_sha: HEAD, summary: 'First pass' } }))
+  // A record-wide write alone is not.
+  assert.equal(rev('invalid_pr_text', { ...base, updated_at: '2026-11-07T05:00:00Z', reconciliation_hint: { main_sha: 'e'.repeat(40) } }), text)
+  // Another attention cause at the same head is a new state; the same cause seen again is not.
+  const attention = (key, detected) => ({ ...base, needs_attention: true, attention: { type: 'merge_conflict', key, detected_at: detected } })
+  const first = rev('needs_attention', attention('merge_conflict:aaa', '2026-11-07T01:00:00Z'))
+  assert.equal(rev('needs_attention', attention('merge_conflict:aaa', '2026-11-07T04:00:00Z')), first)
+  assert.notEqual(rev('needs_attention', attention('merge_conflict:bbb', '2026-11-07T04:00:00Z')), first)
+  assert.notEqual(rev('needs_attention', { ...attention('merge_conflict:aaa'), attention: { type: 'checks_failed', key: 'merge_conflict:aaa' } }), first)
+  // A failed send is its attempt.
+  const failed = { ...base, last_submit_error: 'Push rejected', last_submit_error_code: 'commit_identity_mismatch',
+    submit_started_at: '2026-11-07T01:00:00Z', personal_submit_input_sha256: 'f'.repeat(64) }
+  const failure = rev('commit_identity_mismatch', failed)
+  assert.equal(rev('commit_identity_mismatch', { ...failed, updated_at: '2026-11-07T06:00:00Z', reconciliation_hint: { main_sha: 'e'.repeat(40) } }), failure,
+    'an unrelated update keeps the same failure')
+  assert.notEqual(rev('commit_identity_mismatch', { ...failed, submit_started_at: '2026-11-07T02:00:00Z' }), failure, 'a new failed attempt')
+  // Without an attempt stamp (older records) the failure itself is the identity.
+  const legacy = { ...failed, submit_started_at: undefined, personal_submit_input_sha256: undefined }
+  const old = rev('send_failed', { ...legacy, last_submit_error_code: undefined })
+  assert.equal(rev('send_failed', { ...legacy, last_submit_error_code: undefined, updated_at: '2026-11-08T00:00:00Z' }), old)
+  assert.notEqual(rev('send_failed', { ...legacy, last_submit_error_code: undefined, last_submit_error: 'Branch exists' }), old)
+  // Codes, unknown attempts and missing records.
+  assert.notEqual(rev('upstream_conflict', base), rev('upstream_base_moved', base))
+  assert.equal(rev('upstream_conflict', { ...base, plan: { ...base.plan, title: 'Renamed' } }), rev('upstream_conflict', base), 'a source cause ignores the text')
+  const unknown = rev('result_unknown', base, { id: 'att-1', at: 1 })
+  assert.equal(rev('result_unknown', null, { id: 'att-1', at: 1 }), unknown)
+  assert.notEqual(rev('result_unknown', base, { id: 'att-2', at: 2 }), unknown)
+  assert.match(askRev('gone', 'not_in_contribute', null), token)
 })

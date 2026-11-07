@@ -1485,7 +1485,6 @@ test('a held row becomes Fix in chat with its record id and code, before any tap
     const rev = h.last().ask.refs[0].rev
     assert.deepEqual(h.last().ask, { refs: [{ id: 'one', code, rev }] }, code)
     assert.match(rev, /^[0-9a-f]{7,64}$/)
-    if (!record.last_submit_error) assert.equal(rev, HEAD, 'a held record\'s state is its reviewed head')
     // The action stays as the fallback the host replaces.
     assert.deepEqual([h.action(KEY).open, h.action(KEY).label], [true, 'Open Contribute'])
     assert.equal(h.last().title, '1 needs a fix')
