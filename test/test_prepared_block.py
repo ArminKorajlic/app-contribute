@@ -64,11 +64,18 @@ class PreparedBlockTests(unittest.TestCase):
     self.assertEqual([item['intent'] for item in block['items']], ['review:alone', 'review:second', 'review:third'],
       'the whole ready phase, not the published layer or another stack')
 
-  def test_a_card_that_is_not_all_clear_still_prints_and_the_live_card_holds_it(self):
+  def test_a_named_record_that_is_not_all_clear_for_its_head_is_refused(self):
     stale = record('one', quality_review={'state': 'all_clear', 'reviewed_head_sha': 'b' * 40})
-    single = self.card(stale)
-    self.assertEqual(single['action']['intent'], 'chat-contribute:all')
-    self.assertNotIn('facts', single)
+    for bad in (stale, record('two', quality_review={}), record('three', quality_review={'state': 'changes_needed', 'reviewed_head_sha': HEAD})):
+      with self.assertRaisesRegex(ValueError, 'not all clear for its current version'):
+        self.card(bad)
+
+  def test_a_stack_layer_joins_for_its_phase_even_when_unreviewed(self):
+    stack = lambda position: {'stack': {'id': 's1', 'name': 'Stack', 'position': position, 'total': 2}}
+    self.save(record('top', plan=stack(2), quality_review={}))
+    block = self.card(record('base', plan=stack(1)))
+    self.assertEqual([item['intent'] for item in block['items']], ['review:base', 'review:top'],
+      'the whole phase is listed; the live card holds it until the layer is reviewed')
 
   def test_more_than_twelve_are_refused_and_sent_in_rounds(self):
     with self.assertRaisesRegex(ValueError, 'at most 12 contributions; these are 15'):
@@ -81,11 +88,14 @@ class PreparedBlockTests(unittest.TestCase):
     reconciled = record('reconciled', chat_id=other, chat_ids=[other, chat], created_at='2026-11-02T00:00:00Z')
     elsewhere = record('elsewhere', chat_id=other, created_at='2026-11-03T00:00:00Z')
     sent = record('sent', chat_id=chat, status='open')
-    self.save(earlier, reconciled, elsewhere, sent)
+    unreviewed = record('unreviewed', chat_id=chat, quality_review={}, created_at='2026-11-01T01:00:00Z')
+    changes = record('changes', chat_id=chat, quality_review={'state': 'changes_needed', 'reviewed_head_sha': HEAD})
+    restaged = record('restaged', chat_id=chat, plan={'head_sha': 'c' * 40})
+    self.save(earlier, reconciled, elsewhere, sent, unreviewed, changes, restaged)
     named = self.save(record('today', chat_id=chat))
     block = module.card_block(named, self.ledger.name, chat)
     self.assertEqual([item['intent'] for item in block['items']], ['review:today', 'review:earlier', 'review:reconciled'],
-      'the newest card is the chat\'s only live one, so it names all of its waiting work')
+      'the newest card names all of the chat\'s ready work; unreviewed, changes-needed and restaged work is not pulled in')
     self.assertEqual(block['title'], '3 contributions')
     with self.assertRaisesRegex(ValueError, 'elsewhere is not from this chat'):
       module.card_block(self.save(elsewhere), self.ledger.name, chat)

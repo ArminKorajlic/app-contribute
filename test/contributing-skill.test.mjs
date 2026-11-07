@@ -238,7 +238,8 @@ test('the read-only PR link helper has its own routing row outside maintainer ri
 test('the Send-in-chat guidance describes the live chat card and its one action', () => {
   const publish = read('contributing/publish.md').replace(/\s+/g, ' ')
   assert.match(publish, /in the chat whose work it is/)
-  assert.match(publish, /every other prepared contribution of this chat \(`--chat-id`, default `\$CHAT_ID`\)/)
+  assert.match(publish, /every other prepared contribution of this chat that is all clear for its current head \(`--chat-id`, default `\$CHAT_ID`; unreviewed work is never pulled in\)/)
+  assert.match(publish, /refuses a listed record that is not all clear for its current head/)
   assert.match(publish, /one that belongs to another chat is never shown or sent/)
   assert.match(publish, /All of them or none/)
   assert.match(publish, /Only the last card printed in a chat is live; an earlier one folds to "Continued below"/)

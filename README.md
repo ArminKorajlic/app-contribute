@@ -348,9 +348,11 @@ intent `chat:contributions` (the same for every card, so the chat host can tell
 the newest one), one action `chat-contribute:all`, `"expand": false` (no inline
 app view), and one fallback item per record (`review:<id>`, with **Project** and
 **Change** facts) for hosts that cannot run the card. It adds every other
-prepared contribution of its chat (`--chat-id`, default `$CHAT_ID`) and every
-prepared layer of any stack it names, refuses a record from another chat, and
-refuses more than 12.
+prepared contribution of its chat that is all clear for its current head
+(`--chat-id`, default `$CHAT_ID`) and every prepared layer of any stack it
+names, refuses a listed record that is not all clear for its current head or
+comes from another chat, and refuses more than 12. A record that later loses
+its all clear shows a held pill on the live card.
 
 The chat runs Contribute headless behind the card (`chat.blocks.passive`). On a
 Möbius that advertises `rows-v2`, the session carries a **host-attested chat**

@@ -60,9 +60,10 @@ The card is that chat's live view of its contributions, read from the ledger:
 - **What it shows.** One row per contribution: its PR title over its project
   and lines changed, with a pill once something happens. The helper names
   the records you list, every other prepared contribution of this chat
-  (`--chat-id`, default `$CHAT_ID`), and every prepared layer of any stack
-  among them; a record from another chat is refused (restage it from this
-  chat first). At most 12 contributions fit; with more, send in two rounds.
+  that is all clear for its current head (`--chat-id`, default `$CHAT_ID`;
+  unreviewed work is never pulled in), and every prepared layer of any
+  stack among them. It refuses a listed record that is not all clear for its
+  current head, or one from another chat (restage it from this chat first). At most 12 contributions fit; with more, send in two rounds.
   A record re-prepared later shows its current version, a dismissed one says
   so, and one that belongs to another chat is never shown or sent.
 - **One action.** **Contribute** (**Contribute all** for several) checks the

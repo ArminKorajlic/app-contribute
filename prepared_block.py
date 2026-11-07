@@ -113,6 +113,13 @@ def prepared_item(record):
       {'label': 'Change', 'value': change_text(plan)}]}
 
 
+def all_clear(record):
+  """Reviewed all clear for its exact current head; Contribute re-checks on tap."""
+  plan = record.get('plan') or {}
+  review = record.get('quality_review') if isinstance(record.get('quality_review'), dict) else {}
+  return review.get('state') == 'all_clear' and bool(plan.get('head_sha')) and review.get('reviewed_head_sha') == plan.get('head_sha')
+
+
 def in_chat(record, chat_id):
   """The chat created the record or reconciled it (contributing/ledger.md)."""
   ids = record.get('chat_ids') if isinstance(record.get('chat_ids'), list) else []
@@ -120,9 +127,10 @@ def in_chat(record, chat_id):
 
 
 def chat_records(chat_id, ledger):
-  """Every prepared pull request of this chat, oldest first. The newest card
-  in a chat is its only live one, so it names all of the chat's waiting work,
-  not only what this turn prepared."""
+  """Every prepared pull request of this chat that is all clear for its
+  current head, oldest first. The newest card in a chat is its only live one,
+  so it names all of the chat's ready work, not only what this turn prepared.
+  Unreviewed work is never pulled in, so it cannot hold the card."""
   found = []
   for path in sorted(Path(ledger).glob('*.json')):
     try:
@@ -131,13 +139,16 @@ def chat_records(chat_id, ledger):
       continue
     if (isinstance(record, dict) and record.get('status') == 'prepared' and in_chat(record, chat_id)
         and RECORD_ID.fullmatch(str(record.get('id') or '')) and path.name == f'{record["id"]}.json'
-        and (record.get('plan') or {}).get('action') in ('pr', 'pr_update')):
+        and (record.get('plan') or {}).get('action') in ('pr', 'pr_update') and all_clear(record)):
       found.append(record)
   return sorted(found, key=lambda record: str(record.get('created_at') or ''))
 
 
 def card_block(records, ledger=None, chat_id=None):
   records = list({record['id']: record for record in records}.values())
+  waiting = [record['id'] for record in records if not all_clear(record)]
+  if waiting:
+    raise ValueError(f'{", ".join(waiting)} is not all clear for its current version. Review it before printing its card.')
   if chat_id:
     # A card shown in this chat shows only this chat's records.
     stray = [record['id'] for record in records if not in_chat(record, chat_id)]
