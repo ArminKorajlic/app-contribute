@@ -4,6 +4,9 @@
 const INIT = 'moebius:app-block-init'
 const ACTION = 'moebius:app-block-action'
 const STATE = 'moebius:app-block-state'
+const REFRESH = 'moebius:app-block-refresh'
+// The chat host's ids are UUIDs; anything else is not a chat context.
+const CHAT_ID = /^[A-Za-z0-9-]{1,64}$/
 
 // The host's intent grammar (#1914 appBlock.js).
 const INTENT = /^[a-z][a-z0-9-]{0,31}:[\x21-\x7e]{1,256}$/
@@ -20,6 +23,10 @@ export function readBlockSession(value) {
       .filter((intent, index, list) => list.indexOf(intent) === index).map(intent => ({ intent })) : null,
     // What the host draws beyond the original report fields (`row-state`).
     features: Array.isArray(value.features) ? value.features.filter(feature => typeof feature === 'string').slice(0, 16) : [],
+    // The chat this card is rendered in and whether it is that chat's newest
+    // card, attested by the chat host (`rows-v2`). Never taken from the card.
+    context: typeof value.context?.chatId === 'string' && CHAT_ID.test(value.context.chatId)
+      ? { chatId: value.context.chatId, latest: value.context.latest !== false } : null,
     checkpoint: value.checkpoint && typeof value.checkpoint === 'object' ? { id: value.checkpoint.id, data: value.checkpoint.data } : null,
     retain: value.retain === true,
     recoveryError: Boolean(value.recoveryError),
@@ -27,7 +34,7 @@ export function readBlockSession(value) {
 }
 
 // Host messages come only from the parent shell document on this origin.
-export function listenBlockSession({ onInit, onAction }) {
+export function listenBlockSession({ onInit, onAction, onRefresh = null }) {
   const listener = event => {
     if (event.source !== window.parent || event.origin !== window.location.origin) return
     if (event.data?.type === INIT) {
@@ -36,6 +43,9 @@ export function listenBlockSession({ onInit, onAction }) {
     } else if (event.data?.type === ACTION) {
       const { sessionId, key, event: name, nonce } = event.data
       onAction({ sessionId, key, event: name, nonce })
+    } else if (event.data?.type === REFRESH) {
+      const { sessionId, reason } = event.data
+      if (typeof sessionId === 'string') onRefresh?.({ sessionId, reason: reason === 'visible' ? 'visible' : 'turn' })
     }
   }
   window.addEventListener('message', listener)

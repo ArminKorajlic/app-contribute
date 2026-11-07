@@ -1,18 +1,23 @@
 #!/usr/bin/env python3
-"""Print the chat card for one or more prepared contributions. No writes.
+"""Print the chat card for prepared contributions. No writes.
 
-The card lists each contribution as one item that opens its exact entry in
-Contribute, with two snapshot facts from this read: the project and the change
-size. It has one action, Contribute (or Contribute all), covering exactly the
-records its items name. When the owner taps it, Contribute re-reads those
-records, checks they are reviewed and current, and its own rows for them, with
-the same facts, replace these items while the button becomes Confirm. Nothing
-is sent before that Confirm. Independent contributions are sent in parallel;
-the layers of one stack are sent in order.
+The card is the chat's live view of its contributions. On a Möbius that runs
+it (`rows-v2`), the card shows what the ledger says now: the records it names,
+followed to their current version and kept only when they belong to the chat
+the card is shown in, each as its title over its project and lines changed,
+with a pill once something happens. Its one action, Contribute (Contribute all
+for several), becomes Confirm over exactly the records that are ready at that
+tap; nothing is sent before that Confirm. Only the newest card of a chat is
+live: an earlier one folds to "Continued below". Every card has the same
+block intent, so the chat host can tell which card is the newest.
+
+The items printed here are a static fallback for a host that cannot run the
+card. They name where to look; they never decide what is sent.
 The card has no inline app view (`"expand": false`).
 """
 import argparse
 import json
+import os
 import re
 from pathlib import Path
 
@@ -26,21 +31,13 @@ STAT = re.compile(r'(\d+) files? changed(?:, (\d+) insertions?\(\+\))?(?:, (\d+)
 # A staged screenshot entry, as the app counts them (domain.js planScreenshots).
 SCREENSHOT_NAME = re.compile(r'[a-z0-9][a-z0-9-]{0,60}\.png')
 SHA256 = re.compile(r'[0-9a-f]{64}')
-VERDICTS = {'all_clear': 'All clear', 'changes_needed': 'Changes needed', 'reviewing': 'Reviewing'}
-# The chat host shows at most 12 items, and one action covers at most 12.
+# The chat host shows at most 12 rows, and one action covers at most 12.
 MAX_ITEMS = 12
+# One intent for every card, so the chat host can tell the newest card in a
+# chat; one action, whose records the app decides at the owner's tap.
+CHAT_INTENT = 'chat:contributions'
+CHAT_ACTION = 'chat-contribute:all'
 JSON_LIMIT = 16384
-
-
-def batch_handle(ids):
-  """FNV-1a 64 over the sorted ids; chat-blocks.js computes the same handle."""
-  value = '\n'.join(['contribute-batch-v1', *sorted(set(ids))])
-  digest = 0xcbf29ce484222325
-  units = value.encode('utf-16-le')
-  for index in range(0, len(units), 2):
-    digest ^= units[index] | units[index + 1] << 8
-    digest = digest * 0x100000001b3 & 0xFFFFFFFFFFFFFFFF
-  return f'{digest:016x}'
 
 
 def read_record(record_id, ledger):
@@ -84,14 +81,6 @@ def with_complete_stacks(records, ledger):
   return listed
 
 
-def verdict(record):
-  plan = record.get('plan') or {}
-  review = record.get('quality_review') if isinstance(record.get('quality_review'), dict) else {}
-  state = review.get('state')
-  # A verdict for an older head does not cover this one.
-  return None if state == 'all_clear' and review.get('reviewed_head_sha') != plan.get('head_sha') else state
-
-
 def change_size(plan):
   stat = STAT.fullmatch(str(plan.get('diff_stat') or '').strip())
   if not stat:
@@ -124,44 +113,54 @@ def prepared_item(record):
       {'label': 'Change', 'value': change_text(plan)}]}
 
 
-def sendable(record):
-  """Reviewed all clear for its current version; Contribute re-checks on tap."""
-  return verdict(record) == 'all_clear'
+def in_chat(record, chat_id):
+  """The chat created the record or reconciled it (contributing/ledger.md)."""
+  ids = record.get('chat_ids') if isinstance(record.get('chat_ids'), list) else []
+  return bool(chat_id) and (record.get('chat_id') == chat_id or chat_id in ids)
 
 
-def group_intent(records):
-  """The entry the card opens: the one record, the stack every record is a
-  layer of (a layer's entry opens its whole stack), or the review queue."""
-  stacks = {((record.get('plan') or {}).get('stack') or {}).get('id') or None for record in records}
-  return f'review:{records[0]["id"]}' if len(records) == 1 or stacks != {None} and len(stacks) == 1 else 'reviews:queue'
+def chat_records(chat_id, ledger):
+  """Every prepared pull request of this chat, oldest first. The newest card
+  in a chat is its only live one, so it names all of the chat's waiting work,
+  not only what this turn prepared."""
+  found = []
+  for path in sorted(Path(ledger).glob('*.json')):
+    try:
+      record = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+      continue
+    if (isinstance(record, dict) and record.get('status') == 'prepared' and in_chat(record, chat_id)
+        and RECORD_ID.fullmatch(str(record.get('id') or '')) and path.name == f'{record["id"]}.json'
+        and (record.get('plan') or {}).get('action') in ('pr', 'pr_update')):
+      found.append(record)
+  return sorted(found, key=lambda record: str(record.get('created_at') or ''))
 
 
-def card_block(records, ledger=None):
+def card_block(records, ledger=None, chat_id=None):
   records = list({record['id']: record for record in records}.values())
+  if chat_id:
+    # A card shown in this chat shows only this chat's records.
+    stray = [record['id'] for record in records if not in_chat(record, chat_id)]
+    if stray:
+      raise ValueError(f'{", ".join(stray)} is not from this chat. Restage it from this chat first, so its record names this chat.')
+    if ledger is not None:
+      records = list({record['id']: record for record in [*records, *chat_records(chat_id, ledger)]}.values())
   if ledger is not None:
     records = with_complete_stacks(records, ledger)
   if not records:
     raise ValueError('A card names at least one prepared record.')
+  if len(records) > MAX_ITEMS:
+    raise ValueError(f'A card shows at most {MAX_ITEMS} contributions; these are {len(records)}. '
+      'Only the newest card in a chat is live, so send these in two rounds: print a card for some, and the next one after they are sent.')
   items = [prepared_item(record) for record in records]
-  shown, hidden = records[:MAX_ITEMS], len(records) - MAX_ITEMS
-  block = {'app': 'contribute', 'intent': group_intent(records),
-    'title': '1 contribution ready' if len(records) == 1 else f'{len(records)} contributions ready',
+  block = {'app': 'contribute', 'intent': CHAT_INTENT,
+    'title': '1 contribution' if len(records) == 1 else f'{len(records)} contributions',
     'inline': True, 'interaction': 'inline', 'expand': False,
-    # Project and size read on their own, so rows show values only.
-    'item_facts': 'values', 'items': items[:MAX_ITEMS]}
-  if hidden > 0:
-    # One action cannot cover records the card does not list, so an
-    # overflowing card only opens Contribute.
-    block['facts'] = [{'label': 'Not shown', 'value': f'and {hidden} more in Contribute'}]
-  elif not all(sendable(record) for record in shown):
-    waiting = sum(not sendable(record) for record in shown)
-    block['facts'] = [{'label': 'Review', 'value': f'{waiting} of {len(shown)} not all clear for this version. Open Contribute.'}]
-  else:
-    ids = [record['id'] for record in shown]
-    block['action'] = ({'label': 'Contribute', 'intent': f'chat-send:{ids[0]}'} if len(ids) == 1
-      else {'label': 'Contribute all', 'intent': f'chat-send-batch:{batch_handle(ids)}'})
+    # Project and size read on their own, so fallback rows show values only.
+    'item_facts': 'values', 'items': items,
+    'action': {'label': 'Contribute' if len(records) == 1 else 'Contribute all', 'intent': CHAT_ACTION}}
   if utf16_length(json.dumps(block, ensure_ascii=False)) > JSON_LIMIT:
-    raise ValueError('This card is too large for chat. Open Contribute to send these.')
+    raise ValueError('This card is too large for chat. Print fewer contributions per card.')
   return block
 
 
@@ -169,9 +168,11 @@ def main():
   parser = argparse.ArgumentParser(description=__doc__)
   parser.add_argument('record_ids', nargs='+')
   parser.add_argument('--ledger-dir', type=Path)
+  parser.add_argument('--chat-id', default=os.environ.get('CHAT_ID', ''),
+    help='The chat this card is printed in (default: $CHAT_ID). Its other prepared contributions join the card.')
   args = parser.parse_args()
   ledger = args.ledger_dir or find_ledger()
-  block = card_block([read_record(record_id, ledger) for record_id in args.record_ids], ledger)
+  block = card_block([read_record(record_id, ledger) for record_id in args.record_ids], ledger, args.chat_id or None)
   print('```mobius-app\n' + json.dumps(block, ensure_ascii=False) + '\n```')
 
 

@@ -5,6 +5,7 @@ import { loadFreshContributionRecord } from '../storage.js'
 
 // Headless: the chat host renders every control. This only connects the
 // host's session to the inline Send model and the app's publication runtime.
+// `onNeedRuntime(ids)` asks for the send runtime, checking exactly `ids`.
 export function InlineBlockSession({ blockSession, runtime, onNeedRuntime }) {
   const session = useRef(null)
   // Where this document's reports go: the host's handle when it gave one for
@@ -16,16 +17,19 @@ export function InlineBlockSession({ blockSession, runtime, onNeedRuntime }) {
     function start(init) {
       target.current = blockSession?.sessionId === init.sessionId && typeof blockSession.setState === 'function'
         && (init.generation === null || init.generation === blockSession.generation) ? blockSession : init
-      if (session.current?.sessionId === init.sessionId) { session.current.start(); return }
+      // A repeated init for this session carries the host's current verdict on
+      // the card's chat (for example that a newer card now follows it).
+      if (session.current?.sessionId === init.sessionId) { session.current.update(init); return }
       session.current?.dispose()
       session.current = createInlineSession({ ...init, publish: state => publishBlockState(state, target.current), loadExact: id => loadFreshContributionRecord(id, { strict: true }),
-        onNeedRuntime: () => latest.current.onNeedRuntime?.() })
+        onNeedRuntime: ids => latest.current.onNeedRuntime?.(ids) })
       if (latest.current.runtime) session.current.updateRuntime(latest.current.runtime)
       session.current.start()
     }
     const stop = listenBlockSession({
       onInit: start,
       onAction: event => { if (event.sessionId === session.current?.sessionId) session.current.handleEvent(event) },
+      onRefresh: hint => { if (hint.sessionId === session.current?.sessionId) session.current.refresh(hint.reason) },
     })
     const initial = readBlockSession(blockSession)
     if (initial) start(initial)

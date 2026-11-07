@@ -54,28 +54,40 @@ source chat instead of asking them to open Contribute:
 python3 /data/apps/contribute/prepared_block.py <record-id> [<record-id> …]
 ```
 
-Paste the printed `mobius-app` fence unchanged. The card lists each
-contribution as one item (its PR title, opening that exact entry in
-Contribute, with its **Project** and **Change** size) and has exactly one
-action: **Contribute** for one id, **Contribute all** for several, covering
-exactly the listed items. Items have no buttons of their own, and the card has
-no inline app view. It shows at most 12 items; with more, it says how many
-more are in Contribute and offers no action, so send those from Contribute.
-A card whose items are not all clear for their current version offers no
-action and says so. Naming any layer of a stack lists every prepared layer of
-that stack, because its phase is sent as one; a card that does not list every
-layer is refused in chat. Tapping re-reads the
-exact records and their current review, then turns the same button into
-**Confirm**, listing exactly what will be sent, each with the same Project and
-Change as its item (Change also names any screenshots the PR will
-publish); nothing is sent before Confirm,
-and the server refuses if a record changed after that snapshot. Independent
-contributions are sent in parallel; a stack's layers are sent in order. A lost
-response keeps that card locked as **Checking GitHub** (it re-reads the
-result by itself, it never resends) until Contribute shows the outcome. Once
-sent, each row links its pull request and the header says what happened. The card is not approval: do not describe a
-printed card as sent or approved, and do not send the same work again yourself
-while the card owns it.
+Paste the printed `mobius-app` fence unchanged, in the chat whose work it is.
+The card is that chat's live view of its contributions, read from the ledger:
+
+- **What it shows.** One row per contribution: its PR title over its project
+  and lines changed, with a pill once something happens. The helper names
+  the records you list, every other prepared contribution of this chat
+  (`--chat-id`, default `$CHAT_ID`), and every prepared layer of any stack
+  among them; a record from another chat is refused (restage it from this
+  chat first). At most 12 contributions fit; with more, send in two rounds.
+  A record re-prepared later shows its current version, a dismissed one says
+  so, and one that belongs to another chat is never shown or sent.
+- **One action.** **Contribute** (**Contribute all** for several) checks the
+  current source and review of the records waiting to be sent and turns into
+  **Confirm**, listing exactly those, each with its **Project** and **Change**
+  (Change also names any screenshots the PR will publish). All of them or
+  none: a row that cannot be sent is marked with a short pill (Needs review,
+  Not sent, Needs a fresh check, …) and the action opens Contribute instead.
+  Fix that row's record and print a new card. Nothing is sent before Confirm,
+  and the server refuses if a record changed after that snapshot.
+  Independent contributions are sent in parallel; a stack's layers in order.
+- **The newest card wins.** Only the last card printed in a chat is live; an
+  earlier one folds to "Continued below". Print a new card whenever this
+  chat prepares more work, instead of pointing the owner at an older one.
+- **It stays current by itself.** It re-reads its records when it appears,
+  when a turn in this chat settles and when the tab is shown again, so after
+  you restage, review or the owner sends from Contribute, the card already
+  shows it. A lost response keeps the card locked as **Checking GitHub** (it
+  re-reads the result by itself, it never resends). Once sent, each row links
+  its pull request and the header says what happened.
+
+The card is not approval: do not describe a printed card as sent or approved,
+and do not send the same work again yourself while the card owns it. Cards
+printed before this design only show their records' status; print a new card
+to send what they list.
 
 ## Updating an existing PR after approval
 
