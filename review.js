@@ -642,7 +642,8 @@ const REVIEW_QUEUE_INTENT = 'reviews:queue'
 export function contributionReviewTargetFromIntent(intent) {
   if (typeof intent !== 'string') return null
   const normalized = intent.trim()
-  if (normalized === REVIEW_QUEUE_INTENT) return { queue: true }
+  // A chat card opens the contributions waiting for review (chat-blocks.js CHAT_INTENT).
+  if ([REVIEW_QUEUE_INTENT, 'chat:contributions'].includes(normalized)) return { queue: true }
   const match = REVIEW_INTENT.exec(normalized)
   return match ? { recordId: match[1] } : null
 }

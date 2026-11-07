@@ -76,10 +76,9 @@ import { FOLLOWED_REPOSITORIES, followedRepositories } from './repositories.js'
 import { ProjectControls } from './ui/ProjectControls.jsx'
 import { PullRequests } from './ui/PullRequests.jsx'
 import { collaborationRequest, discoverRepositories, discoverRepository } from './collaboration.js'
-import { cardRecordIds, chatBlockTarget } from './chat-blocks.js'
+import { chatBlockTarget, validRecordId } from './chat-blocks.js'
 import { InlineBlockSession } from './ui/InlineBlockSession.jsx'
 import { reviewAddressFor, writeBindingRefusal } from './send-readiness.js'
-import { readBlockSession } from './block-protocol.js'
 
 // The app's own icon, with a lettered fallback for installs whose icon route
 // 404s. Mirrors the App Store header pattern.
@@ -177,18 +176,18 @@ export const appBlockSessions = true
 // account, ledger and review reads and its guarded Send handlers, mounts only
 // once the owner taps the card's action, and stays invisible.
 export default function ContributeEntry({ appId, token, blockSession = null }) {
-  const [runtimeWanted, setRuntimeWanted] = useState(false)
   const [runtime, setRuntime] = useState(null)
-  // Status is read only for the records the card's items name (none when the
-  // host sent no items).
-  const addressed = useMemo(() => {
-    const session = readBlockSession(blockSession)
-    return cardRecordIds((session?.actions || []).map(action => action.key), session?.items)
-  }, [blockSession])
+  // The records the card's action covers at the owner's tap: the only ones
+  // whose source and review are checked. null until the first tap.
+  const [addressed, setAddressed] = useState(null)
+  const onNeedRuntime = useCallback(ids => {
+    const next = (Array.isArray(ids) ? ids : []).filter(validRecordId)
+    setAddressed(current => current && current.join('\n') === next.join('\n') ? current : next)
+  }, [])
   if (!blockSession) return <ContributeApp appId={appId} token={token} />
   return <>
-    <InlineBlockSession blockSession={blockSession} runtime={runtime} onNeedRuntime={() => setRuntimeWanted(true)} />
-    {runtimeWanted ? <ContributeApp appId={appId} token={token} addressedRecordIds={addressed} onPublicationRuntime={setRuntime} /> : null}
+    <InlineBlockSession blockSession={blockSession} runtime={runtime} onNeedRuntime={onNeedRuntime} />
+    {addressed ? <ContributeApp appId={appId} token={token} addressedRecordIds={addressed} onPublicationRuntime={setRuntime} /> : null}
   </>
 }
 
@@ -444,7 +443,7 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
     if (outcome.ok) {
       // Tagged with the address it answers, so a status for an older, narrower
       // address is never mistaken for a check of the card's whole stack.
-      const indexed = { ...indexReviewStatus(outcome.data), address: reviewAddressKey }
+      const indexed = { ...indexReviewStatus(outcome.data), address: reviewAddressKey, fetchedAt: Date.now() }
       setReviewStatus(indexed)
       return indexed
     }
@@ -1591,6 +1590,9 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
       records, ledgerReady: ledgerReady && ledgerCurrentRef.current,
       ledger: !ledgerReady ? 'loading' : ledgerCurrentRef.current ? 'current' : 'incomplete',
       reviewStatus: reviewStatus.address === reviewAddressKey ? reviewStatus : { ...reviewStatus, state: 'loading' },
+      // When the card's current check was answered; a tap re-checks one older
+      // than its reuse window (inline-session.js REVIEW_REUSE_MS).
+      reviewCheckedAt: reviewStatus.address === reviewAddressKey && reviewStatus.state === 'ready' ? reviewStatus.fetchedAt ?? null : null,
       connection: conn.state === 'checking' ? 'checking' : conn.state, frozenBinding: conn.frozenBinding === true,
       // The relay route cannot bind a confirmed snapshot, so chat never uses it.
       // Chat sends require the binding at the moment of the write, too.

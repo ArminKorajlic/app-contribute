@@ -235,15 +235,19 @@ test('the read-only PR link helper has its own routing row outside maintainer ri
   assert.ok(rows.some(line => line.includes('pr_block.py') && /no rights needed/.test(line)))
 })
 
-test('the Send-in-chat guidance describes one item per contribution and exactly one card action', () => {
+test('the Send-in-chat guidance describes the live chat card and its one action', () => {
   const publish = read('contributing/publish.md').replace(/\s+/g, ' ')
-  assert.match(publish, /one item \(its PR title, opening that exact entry in Contribute, with its \*\*Project\*\* and \*\*Change\*\* size\) and has exactly one action/)
-  assert.match(publish, /Items have no buttons of their own/)
-  assert.match(publish, /at most 12 items; with more, it says how many more are in Contribute and offers no action/)
-  assert.doesNotMatch(publish, /a \*\*Contribute\*\* per item/)
-  assert.match(publish, /Naming any layer of a stack lists every prepared layer of that stack/)
+  assert.match(publish, /in the chat whose work it is/)
+  assert.match(publish, /every other contribution of this chat that is ready with its whole stack \(`--chat-id`, default `\$CHAT_ID`, required; unreviewed work is never pulled in\)/)
+  assert.match(publish, /It refuses the card if any of those, stack layers included, is not all clear for its current head or is from another chat/)
+  assert.match(publish, /one that belongs to another chat is never shown or sent/)
+  assert.match(publish, /All of them or none/)
+  assert.match(publish, /Only the last card printed in a chat is live; an earlier one folds to "Continued below"/)
+  assert.match(publish, /every prepared layer of any stack among them/)
+  assert.match(publish, /At most 12 contributions fit; with more, ask the owner to send some from Contribute first/)
+  assert.doesNotMatch(publish, /a \*\*Contribute\*\* per item|says how many more are in Contribute/)
   const readme = read('README.md').replace(/\s+/g, ' ')
-  assert.match(readme, /session `items`/)
+  assert.match(readme, /host-attested chat/)
   assert.match(readme, /"expand": false/)
 })
 
