@@ -1534,8 +1534,10 @@ test('a target that changed holds the row with publication_changed, stops checki
 
 test('an update Autopilot owns is left to Autopilot with a neutral status', async () => {
   const c = clock()
-  const o = observing(() => ({ outcome: 'not_eligible', action: 'autopilot_update' }))
-  const h = timed({ ids: ['one'], records: [prepared('one')], send: () => ({ uncertain: true }), observe: o.observe }, c)
+  // The platform's real answer carries no attempt context: Autopilot comes
+  // from the record's own Autopilot grant.
+  const o = observing(() => ({ outcome: 'not_eligible', message: 'Autopilot recovers its own update; checking never settles or retires it.' }))
+  const h = timed({ ids: ['one'], records: [prepared('one', { record: { autopilot: { enabled: true, state: 'idle' } } })], send: () => ({ uncertain: true }), observe: o.observe }, c)
   await openConfirm(h)
   h.fire(KEY, 'confirm'); await tick()
   await c.advance(RECHECK_DELAYS_MS[0])
@@ -1630,4 +1632,55 @@ test('the card and the app refresh share one observer: one request at a time, th
   assert.equal(requests, 2, 'the longer backoff holds')
   assert.equal(h.row('one').pill, 'Checking GitHub', 'no answer is not an outcome')
   assert.equal(h.sends.length, 1)
+})
+
+// ---- Review regressions (app-observer-wiring.md B2, B4): the reviewer's probes.
+test('B4: a changed finding expires when the record gets a new version, which is observed afresh', async () => {
+  const c = clock()
+  let calls = 0
+  const h = timed({ ids: ['one'], records: [prepared('one')], send: () => ({ uncertain: true }),
+    observe: async () => { calls += 1; return { outcome: calls === 1 ? 'changed' : 'pending' } } }, c)
+  await openConfirm(h)
+  h.fire(KEY, 'confirm'); await tick()
+  await c.advance(RECHECK_DELAYS_MS[0])
+  assert.equal(h.row('one').pill, CHANGED_PILL)
+  h.store.set('one', prepared('one', { head: NEXT, record: { updated_at: '2026-10-20T12:00:00Z', last_submit_error_code: 'publication_unconfirmed' } }))
+  h.session.refresh('turn'); await tick(); h.provide(); await tick()
+  assert.equal(calls, 2, 'the new version was observed')
+  assert.equal(h.row('one').pill, 'Checking GitHub')
+  assert.ok(c.pending().length > 0, 'checking resumed')
+  assert.equal(h.sends.length, 1)
+})
+
+test('B4: a late settlement for an older version never overwrites a newer exact read', async () => {
+  const c = clock()
+  const gate = deferred()
+  const old = prepared('one')
+  const h = timed({ ids: ['one'], records: [old], send: () => ({ uncertain: true }), observe: () => gate.promise }, c)
+  await openConfirm(h)
+  h.fire(KEY, 'confirm'); await tick()
+  await c.advance(RECHECK_DELAYS_MS[0])
+  h.store.set('one', prepared('one', { head: NEXT, record: { updated_at: '2026-10-20T12:00:00Z', last_submit_error_code: 'publication_unconfirmed' } }))
+  h.session.refresh('turn'); await tick()
+  gate.resolve({ outcome: 'settled', record: published(old, 7) }); await tick()
+  assert.notEqual(h.last().title, 'Pull request opened')
+  assert.deepEqual(h.row('one').links, [])
+  assert.ok(h.last().checkpoint, 'the unknown attempt is still owned')
+  assert.equal(h.sends.length, 1)
+})
+
+test('B2: a saved post-push error keeps the attempt unknown and the row checking', async () => {
+  const attempt = { id: 'a1', unitKey: 'record:one', ids: ['one'], at: Date.parse('2026-10-20T10:30:00Z'), state: 'unknown' }
+  const pushed = prepared('one', { record: { last_submit_stage: 'pushed', last_submit_push_sha: HEAD,
+    last_submit_error: 'GitHub command failed. The branch was pushed.', updated_at: '2026-10-20T11:00:00Z' } })
+  assert.equal(observeAttempt(attempt, new Map([['one', pushed]])).state, 'unknown')
+  assert.equal(localHold(pushed), HOLD.checking)
+  const c = clock()
+  const h = timed({ ids: ['one'], records: [prepared('one')], observe: async () => ({ outcome: 'pending', effect: 'branch_published' }),
+    send: rec => { h.store.set(rec.id, pushed); return { error: pushed.last_submit_error, record: pushed, failure: { status: 409, code: '' }, uncertain: true } } }, c)
+  await openConfirm(h)
+  h.fire(KEY, 'confirm'); await tick()
+  await c.advance(RECHECK_DELAYS_MS[0])
+  assert.equal(h.row('one').pill, 'Checking GitHub')
+  assert.ok(h.last().checkpoint)
 })

@@ -7,7 +7,7 @@
 // connect helpers return the raw Response so the connection card can branch
 // on res.ok and surface the server's error detail verbatim.
 
-import { UNCONFIRMED_SUBMIT_CODES } from './domain.js'
+import { UNCONFIRMED_SUBMIT_CODES, uncertainPublication } from './domain.js'
 
 function authHeaders(token) {
   return { Authorization: 'Bearer ' + token }
@@ -41,12 +41,17 @@ async function responseDetail(response, fallback) {
 // Answers that say a publication may already be public. They are never a
 // refusal: the attempt keeps its signed receipt, the record stays locked, and
 // only a read-only observation settles it (observeContributionPublication).
+// Certainty comes from structure, never from wording: an unconfirmed code, a
+// returned record the platform left possibly public (a 409 after the branch
+// push), or any 5xx that does not certify a definite refusal.
+const DEFINITE_5XX_CODES = new Set(['publication_failed'])
 function unconfirmedCode(status, detail) {
-  const code = detail && typeof detail === 'object' ? String(detail.code || '') : ''
+  const fields = detail && typeof detail === 'object' ? detail : {}
+  const code = String(fields.code || '')
   if (UNCONFIRMED_SUBMIT_CODES.has(code)) return code
-  // A 5xx with no readable answer (a proxy page, an unexpected exception on an
-  // older Möbius) does not say that nothing happened.
-  return status >= 500 && !detail ? 'response_unreadable' : ''
+  if ([fields.record, ...(Array.isArray(fields.records) ? fields.records : [])].some(uncertainPublication)) return code || 'possibly_public'
+  if (status >= 500 && !DEFINITE_5XX_CODES.has(code) && fields.not_attempted !== true) return code || 'server_error'
+  return ''
 }
 const unconfirmed = (status, code, message) => ({
   uncertain: true,
@@ -67,19 +72,24 @@ const unconfirmed = (status, code, message) => ({
 //   unsupported  — this Möbius has no observe route (an older host)
 //   transport    — no answer reached us; try again later with backoff
 // A missing answer, a 404 or a timeout never means that nothing was sent.
+// The timeout covers the whole answer, body included, so a stalled body
+// cannot hold the shared observer.
 export const OBSERVE_OUTCOMES = Object.freeze(['settled', 'pending', 'unavailable', 'changed', 'not_eligible'])
 export async function observeContributionPublication({ appId, token, recordId, timeoutMs = 30000 }) {
-  let r
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  let r, body
   try {
-    r = await fetchRead(
+    r = await fetch(
       '/api/github/contributions/' + encodeURIComponent(appId) + '/' + encodeURIComponent(recordId) + '/observe',
-      { method: 'POST', headers: { ...authHeaders(token), 'Content-Type': 'application/json' }, body: '{}' },
-      timeoutMs,
+      { method: 'POST', headers: { ...authHeaders(token), 'Content-Type': 'application/json' }, body: '{}', signal: controller.signal },
     )
+    body = await r.json().catch(error => { if (controller.signal.aborted) throw error; return null })
   } catch {
     return { outcome: 'transport' }
+  } finally {
+    clearTimeout(timer)
   }
-  const body = await r.json().catch(() => null)
   // An older host has no such route: the framework's own 404 or a 405. A 404
   // about the record or app is only no answer.
   if (r.status === 405 || r.status === 404 && body?.detail === 'Not Found') return { outcome: 'unsupported' }
@@ -87,12 +97,7 @@ export async function observeContributionPublication({ appId, token, recordId, t
   const record = Array.isArray(body.records) && body.records[0]?.id === recordId ? body.records[0] : null
   // A settlement without its record is not one we can show; ask again.
   if (body.outcome === 'settled' && !record) return { outcome: 'transport', status: r.status }
-  const attempt = body.attempt && typeof body.attempt === 'object' ? body.attempt : null
-  return {
-    outcome: body.outcome, record, message: typeof body.message === 'string' ? body.message : '',
-    effect: typeof body.effect === 'string' ? body.effect : '',
-    action: typeof attempt?.action === 'string' ? attempt.action : '',
-  }
+  return { outcome: body.outcome, record, message: typeof body.message === 'string' ? body.message : '', effect: typeof body.effect === 'string' ? body.effect : '' }
 }
 
 // The instance GitHub account, owned by Möbius Settings. Contribute needs only
@@ -348,7 +353,7 @@ export async function submitContribution({
     }
     if (approvalRefusal(detail)) return approvalRefusal(detail)
     const unsure = unconfirmedCode(r.status, detail)
-    if (unsure) return { ...unconfirmed(r.status, unsure, detail?.message), record: detail?.record || null }
+    if (unsure) return { ...unconfirmed(r.status, unsure, typeof detail === 'string' ? detail : detail?.message), record: detail?.record || null }
     if (detail && typeof detail === 'object') {
       return {
         error: detail.message || 'Could not submit this PR.',
@@ -428,7 +433,7 @@ export async function updateContribution({ appId, token, rec, expectedRecord = n
     }
     if (approvalRefusal(detail)) return approvalRefusal(detail)
     const unsure = unconfirmedCode(r.status, detail)
-    if (unsure) return { ...unconfirmed(r.status, unsure, detail?.message), record: detail?.record || null }
+    if (unsure) return { ...unconfirmed(r.status, unsure, typeof detail === 'string' ? detail : detail?.message), record: detail?.record || null }
     if (detail && typeof detail === 'object') {
       return {
         error: detail.message || 'Could not update this PR.',
@@ -623,7 +628,7 @@ async function writeContributionStack({
     const unsure = unconfirmedCode(r.status, detail)
     if (unsure) {
       return {
-        ...unconfirmed(r.status, unsure, detail?.message),
+        ...unconfirmed(r.status, unsure, typeof detail === 'string' ? detail : detail?.message),
         records: Array.isArray(detail?.records) ? detail.records : [],
         submitted: Array.isArray(updating ? detail?.updated : detail?.submitted)
           ? (updating ? detail.updated : detail.submitted)

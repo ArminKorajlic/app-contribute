@@ -2,8 +2,8 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
 
-import { observeContributionPublication, submitContribution, submitContributionStack, updateContribution } from '../api.js'
-import { resolveUncertainSubmission, uncertainPublication } from '../domain.js'
+import { observeContributionPublication, submitContribution, submitContributionStack, updateContribution, updateContributionStack } from '../api.js'
+import { publicationVersion, resolveUncertainSubmission, uncertainPublication } from '../domain.js'
 import { sendBlocker } from '../send-readiness.js'
 import { ANSWER_REUSE_MS, MAX_PER_PASS, SUBMITTING_GRACE_MS, TRANSPORT_BACKOFF_MS, createPublicationObserver } from '../publication-observer.js'
 
@@ -34,10 +34,12 @@ test('observe is one empty POST to the record\'s observe route and returns the s
 test('observe keeps pending, changed and not_eligible with their content-free context', async () => {
   const pending = await withFetch(json({ outcome: 'pending', effect: 'branch_published', records: [{ id: 'one' }], message: 'm',
     attempt: { action: 'submit', phase: 'branch_published', effect: 'push' } }), () => observeContributionPublication({ appId: 80, token: 't', recordId: 'one' }))
-  assert.deepEqual([pending.result.outcome, pending.result.effect, pending.result.action], ['pending', 'branch_published', 'submit'])
-  const autopilot = await withFetch(json({ outcome: 'not_eligible', records: [{ id: 'one' }], message: 'm', attempt: { action: 'autopilot_update' } }),
+  assert.deepEqual([pending.result.outcome, pending.result.effect], ['pending', 'branch_published'])
+  // The platform's Autopilot refusal as it is sent: no attempt context.
+  const autopilot = await withFetch(json({ outcome: 'not_eligible', records: [{ id: 'one' }], message: 'Autopilot recovers its own update; checking never settles or retires it.' }),
     () => observeContributionPublication({ appId: 80, token: 't', recordId: 'one' }))
-  assert.deepEqual([autopilot.result.outcome, autopilot.result.action], ['not_eligible', 'autopilot_update'])
+  assert.equal(autopilot.result.outcome, 'not_eligible')
+  assert.equal('action' in autopilot.result, false, 'nothing is inferred from the answer\'s attempt or wording')
   const changed = await withFetch(json({ outcome: 'changed', records: [{ id: 'one' }], message: 'm' }),
     () => observeContributionPublication({ appId: 80, token: 't', recordId: 'one' }))
   assert.equal(changed.result.outcome, 'changed')
@@ -106,10 +108,10 @@ test('concurrent checks of one record share one request; final answers are never
   await new Promise(resolve => setTimeout(resolve, 0))
   assert.equal(calls, 1)
   release({ outcome: 'changed' })
-  assert.deepEqual(await first, { outcome: 'changed' })
-  assert.deepEqual(await second, { outcome: 'changed' })
+  assert.equal((await first).outcome, 'changed')
+  assert.equal((await second).version, publicationVersion(record), 'every answer names the version it is about')
   c.advance(60 * 60 * 1000)
-  assert.deepEqual(await observer.check(record), { outcome: 'changed' })
+  assert.equal((await observer.check(record)).outcome, 'changed')
   assert.equal(calls, 1, 'final for this version')
   // A new write is a new question.
   await observer.check({ ...record, updated_at: '2026-10-20T11:00:00Z' })
@@ -169,7 +171,7 @@ test('the refresh sweep observes only uncertain records, a bounded few, and hand
     { id: 'issue', type: 'issue', status: 'submitting', updated_at: '2026-10-20T09:00:00Z' },
   ]
   const settled = []
-  await observer.sweep(records, record => settled.push(record.id))
+  await observer.sweep(records, record => settled.push(record.id), id => records.find(record => record.id === id))
   assert.equal(asked.length, MAX_PER_PASS)
   assert.deepEqual(asked.sort(), ['a', 'u0', 'u1', 'u2'], 'oldest first, only uncertain personal PRs')
   assert.deepEqual(settled, ['a'])
@@ -180,4 +182,112 @@ test('refresh and observation never call a publication route', () => {
     const source = readFileSync(new URL(file, import.meta.url), 'utf8')
     assert.doesNotMatch(source, /\/submit|update-existing|submit-stack|update-stack|\/ready\b/, file)
   }
+})
+
+// ---- Review regressions (app-observer-wiring.md B1, B2, B4, B5).
+const routes = {
+  submit: () => submitContribution({ appId: 80, token: 't', rec: { id: 'one' } }),
+  update: () => updateContribution({ appId: 80, token: 't', rec: { id: 'one' } }),
+  submitStack: () => submitContributionStack({ appId: 80, token: 't', recordIds: ['one', 'two'] }),
+  updateStack: () => updateContributionStack({ appId: 80, token: 't', recordIds: ['one', 'two'] }),
+}
+
+test('B1: every 5xx without a certified refusal is uncertain on all four Send routes, whatever its body', async () => {
+  const bodies = {
+    jsonString: () => json({ detail: 'Internal Server Error' }, 500),
+    jsonObject: () => json({ detail: { message: 'upstream timed out' } }, 503),
+    otherCode: () => json({ detail: { message: 'GitHub is unavailable.', code: 'github_unavailable' } }, 503),
+    malformed: () => new Response('{"detail": ', { status: 502 }),
+    missing: () => new Response(null, { status: 504 }),
+  }
+  for (const [route, call] of Object.entries(routes)) {
+    for (const [shape, body] of Object.entries(bodies)) {
+      const { result } = await withFetch(body, call)
+      assert.equal(result.uncertain, true, `${route} ${shape}`)
+      assert.equal(result.failure.owner, 'automatic', `${route} ${shape}`)
+    }
+    // Certified answers stay definite.
+    const refused = await withFetch(json({ detail: { message: 'Nothing was published.', code: 'publication_failed' } }, 500), call)
+    assert.equal(refused.result.uncertain, undefined, `${route} publication_failed`)
+    const notAttempted = await withFetch(json({ detail: { message: 'changed', code: 'approval_changed', not_attempted: true } }, 409), call)
+    assert.equal(notAttempted.result.notAttempted, true, `${route} certified non-attempt`)
+  }
+})
+
+// The record a known post-push error saves: the branch was pushed, its PR
+// create failed, and the platform answers a truthful 409 with an empty code.
+const pushedRecord = (id = 'one') => ({ id, type: 'pr', status: 'prepared', plan: { action: 'pr', head_sha: 'a'.repeat(40) },
+  last_submit_stage: 'pushed', last_submit_push_sha: 'a'.repeat(40), last_pushed_branch: 'owner:fix/one',
+  last_submit_error: 'GitHub command failed. The branch was pushed to https://github.com/owner/repo/tree/fix/one.', updated_at: '2026-10-20T11:00:00Z' })
+
+test('B2: a 409 after the branch push is possibly public, never "nothing was sent"', async () => {
+  const body = () => json({ detail: { message: pushedRecord().last_submit_error, code: '', record: pushedRecord() } }, 409)
+  for (const route of ['submit', 'update']) {
+    const { result } = await withFetch(body, routes[route])
+    assert.equal(result.uncertain, true, route)
+    assert.equal(result.failure.code, 'possibly_public', route)
+  }
+  const stack = await withFetch(json({ detail: { message: 'm', code: '', records: [pushedRecord('one'), { id: 'two', type: 'pr', status: 'prepared' }] } }, 409), routes.submitStack)
+  assert.equal(stack.result.uncertain, true)
+  assert.equal(uncertainPublication(pushedRecord()), true)
+  assert.equal(resolveUncertainSubmission({ id: 'one' }, { records: [pushedRecord()] }).state, 'publishing')
+  // A preflight refusal before any push stays a definite refusal.
+  const preflight = await withFetch(json({ detail: { message: 'The reviewed source changed.', code: 'review_refresh_needed',
+    record: { id: 'one', type: 'pr', status: 'prepared', last_submit_error: 'The reviewed source changed.' } } }, 409), routes.submit)
+  assert.equal(preflight.result.uncertain, undefined)
+  assert.equal(uncertainPublication({ ...pushedRecord(), last_submit_error: undefined }), false, 'a restage clears the error')
+  const app = readFileSync(new URL('../index.jsx', import.meta.url), 'utf8')
+  assert.doesNotMatch(app, /'Nothing was sent\. Th/, 'a ledger read never certifies that nothing was sent')
+})
+
+test('B4: a settled answer for an older record version is never handed to the workspace', async () => {
+  const c = clockAt()
+  let release
+  const observer = createPublicationObserver({ now: c.now, observe: () => new Promise(resolve => { release = resolve }) })
+  const older = uncertainRecord('one')
+  let current = older
+  const settled = []
+  const sweep = observer.sweep([older], record => settled.push(record), () => current)
+  await new Promise(resolve => setTimeout(resolve, 0))
+  current = { ...older, updated_at: '2026-10-20T10:20:00Z', plan: { head_sha: 'b'.repeat(40) } }
+  release({ outcome: 'settled', record: { ...older, status: 'open' } })
+  await sweep
+  assert.deepEqual(settled, [], 'the row moved on while it was observed')
+})
+
+test('B5: final, backed-off and recently answered records never take the per-pass budget, and asks rotate', async () => {
+  const c = clockAt()
+  const asked = []
+  const answers = { r0: 'changed', r1: 'changed', r2: 'not_eligible', r3: 'changed' }
+  const observer = createPublicationObserver({ now: c.now, observe: async record => {
+    asked.push(record.id)
+    if (record.id === 'r4') return { outcome: 'settled', record: { ...record, status: 'open' } }
+    if (record.id === 'r5') throw new Error('offline')
+    return { outcome: answers[record.id] || 'pending' }
+  } })
+  const records = Array.from({ length: 8 }, (_, n) => uncertainRecord(`r${n}`, { updated_at: `2026-10-20T10:0${n}:00Z` }))
+  const settled = []
+  const pass = () => observer.sweep(records, record => settled.push(record.id), id => records.find(record => record.id === id))
+  await pass()
+  assert.deepEqual(asked, ['r0', 'r1', 'r2', 'r3'])
+  c.advance(ANSWER_REUSE_MS)
+  await pass()
+  assert.deepEqual(asked.slice(4), ['r4', 'r5', 'r6', 'r7'], 'the four final answers no longer starve the rest')
+  assert.deepEqual(settled, ['r4'])
+  c.advance(ANSWER_REUSE_MS)
+  await pass()
+  // r5 is backing off; the pending records are asked, least recently first.
+  assert.deepEqual(asked.slice(8), ['r6', 'r7'])
+  c.advance(TRANSPORT_BACKOFF_MS[0])
+  await pass()
+  assert.equal(asked.slice(10)[0], 'r5', 'the longest-waiting record goes first once its backoff passes')
+})
+
+test('the observe timeout covers a stalled answer body', async t => {
+  const original = globalThis.fetch
+  globalThis.fetch = async (_url, { signal }) => ({ ok: true, status: 200,
+    json: () => new Promise((_resolve, reject) => signal.addEventListener('abort', () => reject(new Error('aborted')))) })
+  t.after(() => { globalThis.fetch = original })
+  const result = await observeContributionPublication({ appId: 80, token: 't', recordId: 'one', timeoutMs: 20 })
+  assert.equal(result.outcome, 'transport')
 })

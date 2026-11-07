@@ -412,12 +412,16 @@ intent is `chat:contributions`:
   `/observe` route reads GitHub against the attempt's signed receipt, and the
   card re-reads its records. A settled answer shows the PR; a branch whose PR
   is not confirmed stays **Checking GitHub**; a changed target holds the row
-  as **Changed on GitHub** (ask code `publication_changed`); an update
-  Autopilot owns shows **With Autopilot**. After the window the row shows
-  **Not confirmed** and opens Contribute; it is never resent. The workspace's
-  refresh and the scheduled job observe uncertain records too (the job a
-  bounded few per pass, only past the card's window); a Möbius without the
-  route keeps the ledger-only recheck. A row whose send failed shows **Not sent**, with the reason as
+  as **Changed on GitHub** (ask code `publication_changed`); a record with
+  Autopilot on that the platform leaves to Autopilot shows **With Autopilot**.
+  Each answer belongs to one record version: a late answer for an older one
+  is dropped, and a new version is observed afresh. After the window the row
+  shows **Not confirmed** and opens Contribute; it is never resent. The
+  workspace's refresh and the scheduled job observe uncertain records too (a
+  bounded few per pass; the job only past the card's window, as a load
+  heuristic, so an occasional duplicate read is possible); a Möbius without
+  the route keeps the ledger-only recheck, and the earlier card keeps the
+  attempt unknown and locked. A row whose send failed shows **Not sent**, with the reason as
 one line beside the action; the action is
   **Retry** when the guarded send path accepts those records again (sent rows
   are never resent), otherwise **Open Contribute**.

@@ -1296,3 +1296,21 @@ test('a row-state host gets value-only row facts and a purple Merged pill', asyn
   assert.equal(h.last().itemFacts, 'values')
   assert.deepEqual(h.last().items[0], { intent: 'review:one', status: 'Merged', statusTone: 'accent', links: [{ label: '#8', url: 'https://github.com/owner/repo/pull/8' }] })
 })
+
+// ---- Review regression (app-observer-wiring.md B3): the earlier card keeps
+// an uncertain send unknown and locked; it only re-reads the ledger.
+test('B3: a saved unconfirmed or post-push error never turns a restored unknown send into Not sent', async () => {
+  const attempt = { id: 'a1', unitKey: 'record:one', ids: ['one'], at: Date.parse('2026-10-20T10:30:00Z'), state: 'unknown' }
+  const unconfirmed = prepared('one', { record: { last_submit_error: 'GitHub has not confirmed.', last_submit_error_code: 'publication_unconfirmed', updated_at: '2026-10-20T11:00:00Z' } })
+  const pushed = prepared('one', { record: { last_submit_stage: 'pushed', last_submit_error: 'The branch was pushed.', updated_at: '2026-10-20T11:00:00Z' } })
+  for (const record of [unconfirmed, pushed]) assert.equal(observeAttempt(attempt, new Map([['one', record]])).state, 'unknown')
+  const checkpoint = { id: 'cp', data: encodeCheckpoint([{ ...attempt, at: Date.now() }]) }
+  const h = harness({ actions: [{ key: 'chat-send:one', label: 'Contribute' }], records: [unconfirmed], checkpoint, retain: true })
+  h.session.start(); await tick()
+  h.provide(); await tick()
+  assert.ok(h.last().checkpoint, 'the unknown attempt stays in the checkpoint')
+  assert.notEqual(h.action('chat-send:one').status, 'Not sent')
+  h.fire('chat-send:one', 'activate'); await tick()
+  h.fire('chat-send:one', 'confirm'); await tick()
+  assert.equal(h.sends.length, 0, 'never sent again')
+})

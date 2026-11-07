@@ -18,7 +18,7 @@
 // pill, the pull request link once published, and one short reason when a
 // send failed (building-apps.md "Passive block sessions").
 import { sendTarget } from './chat-blocks.js'
-import { planScreenshots, screenshotCountText } from './domain.js'
+import { planScreenshots, screenshotCountText, uncertainPublication } from './domain.js'
 import { isPublished, publicationUnits, publishedPull, sendBlocker } from './send-readiness.js'
 import { RETRY_CHECK_REASON, reviewStateFor } from './review.js'
 import { stackMeta } from './stack.js'
@@ -95,8 +95,10 @@ export function observeAttempt(attempt, byId) {
   const records = attempt.ids.map(id => byId.get(id))
   if (records.length && records.every(isPublished)) return { ...attempt, state: 'sent', note: '' }
   if (attempt.state !== 'unknown') return attempt
+  // A saved error that says the send may already be public is not a refusal:
+  // the attempt stays unknown, locked and in the checkpoint.
   const failed = records.find(record => record?.status === 'prepared' && record.last_submit_error
-    && Date.parse(record.updated_at) > attempt.at)
+    && !uncertainPublication(record) && Date.parse(record.updated_at) > attempt.at)
   return failed ? { ...attempt, state: 'failed', note: text(failed.last_submit_error) } : attempt
 }
 

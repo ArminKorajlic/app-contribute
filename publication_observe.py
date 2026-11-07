@@ -14,7 +14,9 @@ answer, a 404 or a timeout is never taken to mean that nothing was sent.
 Bounds, so a stuck record cannot cost a request every pass:
 
 - A record a card may still be checking (written less than
-  ``CARD_WINDOW_SECONDS`` ago) is left to the card.
+  ``CARD_WINDOW_SECONDS`` ago) is left to the card. This is a load
+  heuristic, not exclusion: a reloaded card or an open pane may still read the
+  same record, and the platform's per-record lock serializes those reads.
 - At most ``MAX_PER_PASS`` observations per pass, oldest first.
 - Each record version (its id and last write) is asked at most
   ``MAX_OBSERVATIONS`` times, with the wait doubling from ``FIRST_WAIT``.
@@ -69,9 +71,13 @@ def uncertain(record: dict[str, Any]) -> bool:
         return False
     if record.get("status") == "submitting":
         return True
+    # A known error after the branch push (stage ``pushed`` with an error) is
+    # possibly public too: restaging clears the error, so it is this attempt's.
     return record.get("status") == "prepared" and (
         record.get("last_submit_stage") in UNSETTLED_STAGES
         or record.get("last_submit_error_code") in UNCONFIRMED_CODES
+        or (record.get("last_submit_stage") == "pushed"
+            and bool(record.get("last_submit_error")))
     )
 
 
@@ -102,7 +108,12 @@ def _written_at(record: dict[str, Any]) -> float | None:
 
 
 def _version(record: dict[str, Any]) -> str:
-    return "%s@%s" % (record.get("id"), record.get("updated_at") or "")
+    """domain.js publicationVersion: last write, reviewed head, attempt identity."""
+    plan = record.get("plan") if isinstance(record.get("plan"), dict) else {}
+    return "|".join(str(value if value is not None else "") for value in (
+        record.get("id"), record.get("updated_at"), plan.get("head_sha"),
+        record.get("submit_started_at"), record.get("personal_submit_input_sha256"),
+    ))
 
 
 class Observer:

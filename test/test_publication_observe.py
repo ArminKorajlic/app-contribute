@@ -63,7 +63,10 @@ class PublicationObserveTest(unittest.TestCase):
         self.assertTrue(uncertain(record("a", status="submitting", last_submit_stage=None)))
         self.assertTrue(uncertain(record("a")))
         self.assertTrue(uncertain(record("a", last_submit_stage="pushed", last_submit_error_code="publication_unconfirmed")))
-        self.assertFalse(uncertain(record("a", last_submit_stage="pushed", last_submit_error_code="upstream_conflict")))
+        self.assertFalse(uncertain(record("a", last_submit_stage=None, last_submit_error="x", last_submit_error_code="upstream_conflict")))
+        # A known error after the branch push (a truthful 409) is possibly public.
+        self.assertTrue(uncertain(record("a", last_submit_stage="pushed", last_submit_error="The branch was pushed.")))
+        self.assertFalse(uncertain(record("a", last_submit_stage="pushed")), "a restage cleared the error")
         self.assertFalse(uncertain(record("a", status="open")))
         self.assertFalse(uncertain(record("a", submission_mode="mobius-bot")))
         self.assertFalse(uncertain(record("a", type="issue", status="submitting")))
@@ -72,6 +75,16 @@ class PublicationObserveTest(unittest.TestCase):
         stages = re.search(r"UNSETTLED_SUBMIT_STAGES = new Set\(\[([^\]]*)\]\)", domain).group(1)
         self.assertEqual(set(re.findall(r"'([a-z_]+)'", codes)), set(publication_observe.UNCONFIRMED_CODES))
         self.assertEqual(set(re.findall(r"'([a-z_]+)'", stages)), set(publication_observe.UNSETTLED_STAGES))
+
+    def test_a_new_head_or_attempt_is_a_new_question(self):
+        platform = FakePlatform({"a": "changed"})
+        self.observer(platform).run([record("a", plan={"head_sha": "1" * 40})])
+        self.now += FIRST_WAIT
+        self.observer(platform).run([record("a", plan={"head_sha": "1" * 40})])
+        self.assertEqual(len(platform.requests), 1, "final for that version")
+        self.observer(platform).run([record("a", plan={"head_sha": "2" * 40})])
+        self.observer(platform).run([record("a", plan={"head_sha": "2" * 40}, submit_started_at="t2")])
+        self.assertEqual(len(platform.requests), 3)
 
     def test_only_posts_the_observe_route(self):
         platform = FakePlatform()

@@ -419,11 +419,13 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
   // waiting: after each ledger read, ask the platform to read GitHub for it
   // (read-only, deduped with any chat card in this frame, backed off when
   // unanswered). Not awaited, so a refresh, and a card's Try again, never
-  // wait on GitHub. A settled record replaces its row.
+  // wait on GitHub. A settled record replaces its row only while the row is
+  // still the version that was observed.
   const observeUncertainRef = useRef(() => {})
   observeUncertainRef.current = () => {
     void sharedPublicationObserver(appId, tokenRef.current)
-      .sweep(recordsRef.current, record => applyRecordUpdates(record))
+      .sweep(recordsRef.current, record => applyRecordUpdates(record),
+        id => recordsRef.current.find(record => record.id === id))
       .catch(() => {})
   }
 
@@ -1030,7 +1032,8 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
         if (resolution.state === 'blocked') {
           refreshReviewStatus()
           return {
-            error: 'Nothing was sent. This contribution needs an update before you try again.',
+            // Only a certified non-attempt may say nothing was sent.
+            error: 'This contribution needs an update before you try again.',
             failure: { owner: 'agent', code: 'review_refresh_needed' },
           }
         }
@@ -1418,7 +1421,7 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
         return {
           error: summary.published > 0
             ? 'Saved progress was restored. The remaining changes show what needs updating.'
-            : 'Nothing was sent. These changes need an update before you try again.',
+            : 'These changes need an update before you try again.',
           failure: { owner: 'agent', code: 'review_refresh_needed' },
         }
       }

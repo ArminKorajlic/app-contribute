@@ -86,7 +86,8 @@ The card is that chat's live view of its contributions, read from the ledger:
   shows it. A lost response keeps the card locked as **Checking GitHub**: it
   asks the platform to read GitHub for the exact attempt (read-only `/observe`)
   and never resends. **Changed on GitHub** means the target no longer matches
-  the reviewed attempt; **With Autopilot** means Autopilot owns the update.
+  the reviewed attempt; **With Autopilot** means the record's Autopilot owns
+  the recovery.
   Neither is proof that nothing was sent. Once sent, each row links
   its pull request and the header says what happened.
 

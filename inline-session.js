@@ -26,14 +26,18 @@
 // backoff, for RECHECK_WINDOW_MS after the send; it never sends again. A
 // settled answer shows the pull request; a published branch whose PR is not
 // confirmed keeps "Checking GitHub"; a target that changed holds the row
-// (`publication_changed`); an update Autopilot owns is left to Autopilot.
-// Without the observe route (an older Möbius) the card only re-reads.
+// (`publication_changed`); a record with Autopilot on that the platform does
+// not observe is left to Autopilot. Every answer and finding belongs to one
+// exact record version: a late answer for an older version is dropped, and a
+// new version is observed afresh. Without the observe route (an older
+// Möbius) the card only re-reads.
 //
 // The card reports calm state to the host: a live title, and per row a status
 // pill, the pull request link once published, and one short reason when a
 // send failed (building-apps.md "Passive block sessions").
 import { cardKind, CHAT_INTENT, inChat, validRecordId } from './chat-blocks.js'
-import { planScreenshots, screenshotCountText, uncertainPublication } from './domain.js'
+import { planScreenshots, publicationVersion, screenshotCountText, uncertainPublication } from './domain.js'
+import { isAutopilotEnabled } from './autopilot.js'
 import { isPublished, publicationUnits, publishedPull, reviewIncomplete, sendBlocker } from './send-readiness.js'
 import { RETRY_CHECK_REASON, reviewStateFor } from './review.js'
 import { stackMeta } from './stack.js'
@@ -275,10 +279,15 @@ export function createInlineSession({ sessionId, actions, items = null, features
   let alive = true
   let recheckTimer = null
   let rechecks = 0
-  // What observation found for a record whose send is unknown: 'pending',
-  // 'changed', 'autopilot' or 'ineligible'. Session-only: a reloaded card
-  // asks again. `observeOff` once the host has no observe route.
+  // What observation found for a record whose send is unknown, with the
+  // record version it is about: 'pending', 'changed', 'autopilot' or
+  // 'ineligible'. A finding for another version is ignored. Session-only: a
+  // reloaded card asks again. `observeOff` once the host has no observe route.
   const findings = new Map()
+  const findingOf = (id, record = current().get(id)) => {
+    const found = findings.get(id)
+    return found && record && found.version === publicationVersion(record) ? found.outcome : ''
+  }
   let observeOff = !observe
   let observing = false
 
@@ -453,7 +462,7 @@ export function createInlineSession({ sessionId, actions, items = null, features
   // An unknown outcome is still being checked until its window has passed, or
   // until observation concluded for each of its records (a changed target, or
   // an update Autopilot owns): those stay locked but are no longer checked.
-  const concluded = attempt => attempt.ids.every(id => isPublished(current().get(id)) || CONCLUDED.has(findings.get(id)))
+  const concluded = attempt => attempt.ids.every(id => isPublished(current().get(id)) || CONCLUDED.has(findingOf(id)))
   const checkingAttempt = attempt => attempt.state === 'unknown' && now() - attempt.at < RECHECK_WINDOW_MS && !concluded(attempt)
   const latestAttempt = id => attempts.filter(attempt => attempt.ids.includes(id)).at(-1)
 
@@ -475,8 +484,8 @@ export function createInlineSession({ sessionId, actions, items = null, features
     }
     if (attempt?.state === 'unknown') {
       // `code` is the ask a host with asks offers for this row.
-      if (findings.get(id) === 'changed') return { status: CHANGED_PILL, statusTone: 'attention', code: PUBLICATION_CHANGED }
-      if (findings.get(id) === 'autopilot') return { status: AUTOPILOT_PILL }
+      if (findingOf(id) === 'changed') return { status: CHANGED_PILL, statusTone: 'attention', code: PUBLICATION_CHANGED }
+      if (findingOf(id) === 'autopilot') return { status: AUTOPILOT_PILL }
       return checkingAttempt(attempt) ? { status: 'Checking GitHub', busy: true } : { status: 'Not confirmed' }
     }
     const failed = rowFailure(id)
@@ -532,8 +541,8 @@ export function createInlineSession({ sessionId, actions, items = null, features
     }
     const unknown = pending.filter(entry => latestAttempt(entry.id)?.state === 'unknown')
     if (unknown.length) {
-      if (unknown.every(entry => findings.get(entry.id) === 'autopilot')) return { title: sent.length ? `${sent.length} of ${counted.length} sent` : AUTOPILOT_PILL, titleTone: 'neutral' }
-      const changed = unknown.some(entry => findings.get(entry.id) === 'changed')
+      if (unknown.every(entry => findingOf(entry.id) === 'autopilot')) return { title: sent.length ? `${sent.length} of ${counted.length} sent` : AUTOPILOT_PILL, titleTone: 'neutral' }
+      const changed = unknown.some(entry => findingOf(entry.id) === 'changed')
       return { title: sent.length ? `${sent.length} of ${counted.length} sent` : changed ? CHANGED_PILL : 'Result not confirmed', titleTone: 'attention' }
     }
     const failed = pending.filter(entry => rowFailure(entry.id))
@@ -638,21 +647,27 @@ export function createInlineSession({ sessionId, actions, items = null, features
   // settled answer brings the saved record, nothing else changes the ledger.
   async function observeUnknown() {
     if (observeOff || observing || !alive) return
-    const byId = current()
-    const ids = [...new Set(attempts.filter(attempt => attempt.state === 'unknown').flatMap(attempt => attempt.ids))]
-      .filter(id => byId.get(id) && !isPublished(byId.get(id)) && !STOPPED.has(findings.get(id)))
-    if (!ids.length) return
+    const asked = new Map()
+    for (const id of new Set(attempts.filter(attempt => attempt.state === 'unknown').flatMap(attempt => attempt.ids))) {
+      const record = current().get(id)
+      if (record && !isPublished(record) && !STOPPED.has(findingOf(id, record))) asked.set(id, record)
+    }
+    if (!asked.size) return
     observing = true
     let answers
-    try { answers = await Promise.all(ids.map(id => Promise.resolve().then(() => observe(byId.get(id))).catch(() => null))) } finally { observing = false }
+    try { answers = await Promise.all([...asked.values()].map(record => Promise.resolve().then(() => observe(record)).catch(() => null))) } finally { observing = false }
     if (!alive) return
-    ids.forEach((id, index) => {
+    ;[...asked].forEach(([id, record], index) => {
       const answer = answers[index]
-      if (answer?.outcome === 'unsupported') observeOff = true
-      else if (answer?.outcome === 'settled' && answer.record?.id === id) { exact.set(id, answer.record); absent.delete(id); unreadable.delete(id); findings.delete(id) }
-      else if (answer?.outcome === 'pending') findings.set(id, 'pending')
-      else if (answer?.outcome === 'changed') findings.set(id, 'changed')
-      else if (answer?.outcome === 'not_eligible') findings.set(id, answer.action === 'autopilot_update' ? 'autopilot' : 'ineligible')
+      if (answer?.outcome === 'unsupported') { observeOff = true; return }
+      // Only an answer about the record as it still is: a newer read wins.
+      const version = publicationVersion(record)
+      if (!answer || (answer.version ?? version) !== version || publicationVersion(current().get(id)) !== version) return
+      if (answer.outcome === 'settled' && answer.record?.id === id) { exact.set(id, answer.record); absent.delete(id); unreadable.delete(id); findings.delete(id) }
+      else if (['pending', 'changed'].includes(answer.outcome)) findings.set(id, { version, outcome: answer.outcome })
+      // The platform does not observe Autopilot's own update; whether this
+      // record is Autopilot's comes from the record, not from that answer.
+      else if (answer.outcome === 'not_eligible') findings.set(id, { version, outcome: isAutopilotEnabled(record) ? 'autopilot' : 'ineligible' })
     })
     settle(); emit()
   }
@@ -836,7 +851,8 @@ export function createInlineSession({ sessionId, actions, items = null, features
     refresh(reason) {
       if (!alive || !tracks() || folded()) return
       if (reason === 'visible' && now() - lastRead < VISIBLE_REREAD_MS) return
-      void readCard()
+      // A record that changed since its last answer is observed afresh.
+      void readCard().then(observeUnknown)
     },
     // The records this card's action would cover now.
     sendIds() { return idsFor(card?.key || '') },
