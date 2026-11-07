@@ -4,11 +4,11 @@ import { spawnSync } from 'node:child_process'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { CHAT_ACTION, cardKind, hintedIds, inChat } from '../chat-blocks.js'
+import { CHAT_ACTION, CHAT_INTENT, cardKind, hintedIds, inChat } from '../chat-blocks.js'
 import { frontendModules, renderModule } from './render-harness.mjs'
 import { readBlockSession } from '../block-protocol.js'
 import { reviewAddressFor } from '../send-readiness.js'
-import { attemptOutcome, confirmationItem, CONTINUED_TITLE, EXPIRED_NOTE, HOLD, LEDGER_NOTE, LEGACY_NOTE, NEWER_NOTE, RECHECK_DELAYS_MS, RECHECK_WINDOW_MS, RECOVERY_NOTE,
+import { attemptOutcome, CHANGED_NOTE, confirmationItem, CONTINUED_TITLE, HOLD, LEDGER_NOTE, NEWER_NOTE, UNREAD_NOTE, RECHECK_DELAYS_MS, RECHECK_WINDOW_MS, RECOVERY_NOTE,
   REFRESH_FAILED_NOTE, REVIEW_REUSE_MS, TIMEOUT_NOTE, UNCHECKED_NOTE, VISIBLE_REREAD_MS, createInlineSession, decodeCheckpoint, encodeCheckpoint, localHold, observeAttempt, rowMeta } from '../inline-session.js'
 
 const HEAD = 'a'.repeat(40), NEXT = 'c'.repeat(40)
@@ -43,7 +43,7 @@ const reviewItems = ids => ids.map(id => ({ intent: `review:${id}` }))
 const card = ids => ({ actions: [{ key: KEY, label: ids.length === 1 ? 'Contribute' : 'Contribute all' }], items: reviewItems(ids) })
 // A current host draws the app's rows and attests the chat; pass `features`
 // or `context` to model an older host or another chat.
-function harness({ ids = null, actions = card(ids).actions, items = card(ids || []).items, features = ['row-state', 'rows-v2'], context = { chatId: CHAT, latest: true },
+function harness({ ids = null, actions = card(ids).actions, items = card(ids || []).items, features = ['row-state', 'rows-v2'], context = { chatId: CHAT, latest: true, intent: CHAT_INTENT },
   records, checkpoint = null, retain = false, send, sendStack, address = null, loadExact = null, runtime: extra = {}, timers, now }) {
   const store = new Map(records.map(record => [record.id, record]))
   const states = [], sends = [], needs = [], reads = []
@@ -100,22 +100,23 @@ test('a record from another chat is never shown or sent, whatever the card names
   h.fire(KEY, 'confirm'); await tick()
   assert.deepEqual(h.sends.map(send => send.ids).flat().sort(), ['mine', 'reconciled'])
   // The same card shown in the other chat covers only that chat's records.
-  const there = harness({ ids: ['mine', 'theirs'], records: [mine, theirs], context: { chatId: OTHER, latest: true } })
+  const there = harness({ ids: ['mine', 'theirs'], records: [mine, theirs], context: { chatId: OTHER, latest: true, intent: CHAT_INTENT } })
   there.session.start(); await tick()
   assert.deepEqual(there.last().rows.map(row => row.intent), ['review:theirs'])
   assert.equal(inChat(theirs, CHAT), false)
   assert.equal(inChat(mine, ''), false, 'no chat, no membership')
 })
 
-test('without the host\'s chat the card only shows status and never sends', async () => {
+test('without the host\'s chat the card reads and shows no records, and never sends', async () => {
   for (const options of [{ context: null }, { features: ['row-state'] }, { features: [] }]) {
     const h = harness({ ids: ['one'], records: [prepared('one')], ...options })
     h.session.start(); await tick()
     h.fire(KEY, 'activate'); await tick()
     h.provide(); await tick()
     h.fire(KEY, 'confirm'); await tick()
-    assert.equal(h.needs.length, 0, JSON.stringify(options))
-    assert.equal(h.sends.length, 0)
+    assert.deepEqual([h.reads, h.needs, h.sends], [[], [], []], JSON.stringify(options))
+    assert.equal('rows' in h.last(), false, 'the card\'s own fallback rows stay')
+    assert.equal(h.last().title, '')
     assert.equal(h.action(KEY).confirming, false)
   }
   const older = harness({ ids: ['one'], records: [prepared('one')], features: [] })
@@ -124,6 +125,19 @@ test('without the host\'s chat the card only shows status and never sends', asyn
   const rowState = harness({ ids: ['one'], records: [prepared('one')], features: ['row-state'] })
   rowState.session.start(); await tick()
   assert.deepEqual([rowState.action(KEY).open, rowState.action(KEY).label, rowState.action(KEY).note], [true, 'Open Contribute', ''])
+})
+
+test('a card in another intent group is never the live card, even with the live action', async () => {
+  // The host computes `latest` per app and block intent: a fence that keeps
+  // the action but changes its intent is newest of its own group only.
+  const h = harness({ ids: ['one'], records: [prepared('one')], context: { chatId: CHAT, latest: true, intent: 'review:one' } })
+  await openConfirm(h).catch(() => {})
+  h.fire(KEY, 'activate'); await tick()
+  h.provide(); await tick()
+  h.fire(KEY, 'confirm'); await tick()
+  assert.deepEqual([h.needs, h.sends], [[], []])
+  assert.deepEqual(h.pills(), [['one', '']], 'it still shows this chat\'s status')
+  assert.equal(h.action(KEY).hidden, true)
 })
 
 test('a re-prepared record resolves through superseded_by to its successor, quietly', async () => {
@@ -141,8 +155,8 @@ test('a re-prepared record resolves through superseded_by to its successor, quie
   assert.deepEqual(loop.pills(), [['b', 'Replaced']])
   const dangling = harness({ ids: ['a'], records: [prepared('a', { record: { status: 'superseded', superseded_by: 'gone' } })] })
   dangling.session.start(); await tick(12)
-  assert.deepEqual(dangling.pills(), [['a', 'Replaced']])
-  assert.equal(dangling.action(KEY).hidden, true, 'nothing left to send')
+  assert.deepEqual(dangling.pills(), [['a', HOLD.gone]], 'a successor that is gone is not a completed dismissal')
+  assert.deepEqual([dangling.action(KEY).hidden, dangling.action(KEY).open], [false, true], 'it holds the card')
 })
 
 test('a dismissed record stays as a quiet row and drops out of the action', async () => {
@@ -160,13 +174,13 @@ test('a dismissed record stays as a quiet row and drops out of the action', asyn
 
 // ---- Newest card wins.
 test('an earlier card folds to Continued below with no reads, and wakes if it becomes the newest again', async () => {
-  const h = harness({ ids: ['one'], records: [prepared('one')], context: { chatId: CHAT, latest: false } })
+  const h = harness({ ids: ['one'], records: [prepared('one')], context: { chatId: CHAT, latest: false, intent: CHAT_INTENT } })
   h.session.start(); await tick()
   assert.deepEqual([h.last().title, h.last().rows, h.action(KEY).hidden], [CONTINUED_TITLE, [], true])
   assert.deepEqual(h.reads, [], 'an earlier card reads nothing')
   h.session.refresh('turn'); h.fire(KEY, 'activate'); await tick()
   assert.deepEqual([h.reads, h.needs], [[], []], 'nor on a refresh hint or a tap')
-  h.session.update({ context: { chatId: CHAT, latest: true } }); await tick()
+  h.session.update({ context: { chatId: CHAT, latest: true, intent: CHAT_INTENT } }); await tick()
   assert.equal(h.last().title, '1 contribution')
   assert.deepEqual(h.reads, ['one'])
 })
@@ -175,7 +189,7 @@ test('a card that a newer card follows drops its open Confirm and folds, but kee
   const h = harness({ ids: ['one'], records: [prepared('one')] })
   await openConfirm(h)
   assert.equal(h.action(KEY).confirming, true)
-  h.session.update({ context: { chatId: CHAT, latest: false } }); await tick()
+  h.session.update({ context: { chatId: CHAT, latest: false, intent: CHAT_INTENT } }); await tick()
   assert.equal(h.action(KEY).confirming, false)
   assert.equal(h.last().title, CONTINUED_TITLE)
   h.fire(KEY, 'confirm'); await tick()
@@ -185,11 +199,11 @@ test('a card that a newer card follows drops its open Confirm and folds, but kee
   const busy = harness({ ids: ['one'], records: [prepared('one')], send: () => gate.promise })
   await openConfirm(busy)
   busy.fire(KEY, 'confirm'); await tick()
-  busy.session.update({ context: { chatId: CHAT, latest: false } }); await tick()
+  busy.session.update({ context: { chatId: CHAT, latest: false, intent: CHAT_INTENT } }); await tick()
   assert.equal(busy.last().title, 'Sending 1')
   assert.equal(busy.row('one').pill, 'Sending')
   // A different chat id for the same session is ignored.
-  busy.session.update({ context: { chatId: OTHER, latest: true } }); await tick()
+  busy.session.update({ context: { chatId: OTHER, latest: true, intent: CHAT_INTENT } }); await tick()
   assert.equal(busy.row('one').pill, 'Sending')
   gate.resolve({ ok: true })
 })
@@ -296,8 +310,8 @@ test('the newest attempt owns the checkpoint after fail, restage and retry (relo
   assert.equal(h.action(KEY).label, 'Retry', 'a definite failure the send path accepts again is retried explicitly')
   assert.equal(h.last().checkpoint, null, 'a known failure is not a lock')
   h.store.set('one', prepared('one', { head: NEXT, record: { updated_at: '2026-10-20T12:00:00Z' } }))
-  h.provide()
   h.fire(KEY, 'activate'); await tick()
+  h.provide(); await tick() // the tap checks the restaged head
   h.fire(KEY, 'confirm'); await tick()
   assert.equal(h.sends.at(-1).records[0].plan.head_sha, NEXT, 'the retry sends the new reviewed head')
   const saved = decodeCheckpoint(h.last().checkpoint)
@@ -556,19 +570,19 @@ test('an uncertified approval_changed refusal stays unknown and locked end to en
 })
 
 // ---- Checks that could not finish end on Try again, which only reads again.
-test('a failed exact read ends the check with an enabled Try again that can then reach Confirm', async () => {
+test('a failed exact read holds the card with Try again, which reaches Confirm once the record reads', async () => {
   let failing = true
-  const h = harness({ ids: ['one'], records: [prepared('one')],
+  const h = harness({ ids: ['one'], records: [prepared('one')], runtime: { records: [] },
     loadExact: async (id, store) => { if (failing) throw new Error('offline'); return structuredClone(store.get(id)) } })
   h.session.start(); await tick()
-  assert.deepEqual(h.last().rows, [{ title: 'one', pill: 'Couldn’t check', intent: 'review:one' }], 'an unread record is not called missing')
+  assert.deepEqual(h.last().rows, [{ title: 'one', meta: '', intent: 'review:one', pill: HOLD.unread }], 'an unread record is not called missing')
+  assert.deepEqual([h.action(KEY).label, h.action(KEY).open], ['Try again', false])
   h.fire(KEY, 'activate'); await tick()
   h.provide(); await tick()
-  assert.deepEqual([h.action(KEY).confirming, h.action(KEY).disabled, h.action(KEY).label], [false, false, 'Try again'])
+  assert.deepEqual([h.action(KEY).confirming, h.action(KEY).disabled, h.action(KEY).label, h.action(KEY).note], [false, false, 'Try again', UNREAD_NOTE])
   failing = false
   h.fire(KEY, 'activate'); await tick()
   assert.deepEqual(h.needs.at(-1), ['one'], 'the tap asks the app to check the record it can now read')
-  assert.equal(h.action(KEY).label, 'Checking…', 'a check addressed to other records is still loading')
   h.provide(); await tick()
   assert.equal(h.action(KEY).confirming, true, 'the retry reaches Confirm')
   assert.equal(h.sends.length, 0)
@@ -587,8 +601,8 @@ test('an unavailable review check ends the check with an enabled Try again that 
   assert.equal(h.action(KEY).label, 'Checking…', 'still checking while that refresh is pending')
   unavailable(); await tick()
   assert.deepEqual([h.action(KEY).confirming, h.action(KEY).disabled, h.action(KEY).label], [false, false, 'Try again'])
-  h.provide(); await tick()
   h.fire(KEY, 'activate'); await tick()
+  h.provide(); await tick() // the check recovers
   assert.equal(h.action(KEY).confirming, true, 'the retry reaches Confirm')
   assert.equal(h.sends.length, 0)
 })
@@ -628,8 +642,8 @@ test('a retry during the first ledger read never strands the card on Checking', 
   ledgerReady = true
   h.session.updateRuntime(runtime()); await tick()
   assert.deepEqual([h.action(KEY).confirming, h.action(KEY).disabled, h.action(KEY).label], [false, false, 'Try again'])
-  h.provide(); await tick()
   h.fire(KEY, 'activate'); await tick()
+  h.provide(); await tick()
   assert.equal(h.action(KEY).confirming, true)
   assert.equal(h.sends.length, 0)
 })
@@ -675,7 +689,8 @@ test('a refresh that times out or fails ends the check on Try again, and a late 
   report({ refreshDone: 1, refreshOutcome: 'timeout' }); await tick()
   assert.equal(h.action(KEY).confirming, false, 'no Confirm from a late answer')
   h.fire(KEY, 'activate'); await tick()
-  assert.equal(h.action(KEY).confirming, true, 'only a new Try again reaches Confirm')
+  report({ refreshDone: 2, refreshOutcome: 'done' }); await tick()
+  assert.equal(h.action(KEY).confirming, true, 'only a new Try again, with its own check, reaches Confirm')
   const failed = harness({ ids: ['one'], records: [prepared('one')], runtime: { refresh: () => Promise.reject(new Error('listing failed')) } })
   const reportFailed = fields => failed.session.updateRuntime({ ...failed.runtime(), refreshing: false, refreshDone: 0, refreshOutcome: '', ...fields })
   failed.session.start(); await tick()
@@ -836,63 +851,163 @@ test('a card is recognised by its action; its items are only hints of where to l
   assert.equal(hintedIds(Array.from({ length: 20 }, (_, n) => ({ intent: `review:r${n}` }))).length, 12)
 })
 
-test('an old card shows its records\' current state as rows and never sends', async () => {
-  const actions = [{ key: 'chat-send-batch:968bcf1a16b2b0ee', label: 'Contribute all' }]
-  const records = [published(prepared('one'), 3101), prepared('two', { record: { status: 'abandoned' } }), prepared('three')]
-  const h = harness({ actions, items: reviewItems(['one', 'two', 'three']), records })
-  h.session.start(); await tick()
-  assert.deepEqual(h.pills(), [['one', 'Open'], ['two', 'Dismissed'], ['three', '']])
-  assert.equal(h.last().title, '1 of 2 sent')
-  assert.equal(h.last().actions[0].hidden, true, 'nothing to do from an old card')
-  h.fire(actions[0].key, 'activate'); h.provide(); await tick()
-  h.fire(actions[0].key, 'confirm'); await tick()
-  assert.deepEqual([h.needs, h.sends], [[], []], 'an old card never asks for the send runtime')
-  // It shows another chat's records too: it is only status.
-  const there = harness({ actions, items: reviewItems(['one']), records: [published(prepared('one', { record: { chat_id: OTHER, chat_ids: [OTHER] } }))] })
-  there.session.start(); await tick()
-  assert.deepEqual(there.pills(), [['one', 'Open']])
-  assert.equal(there.last().title, '1 pull request')
-})
-
-test('a card printed before items named records shows its record status, on any host, and never sends', async () => {
-  const actions = [{ key: 'chat-send:one', label: 'Contribute' }]
-  const show = async (record, features = ['row-state']) => {
-    const h = harness({ actions, items: [], features, records: record ? [record] : [] })
+test('an old card shows only this chat\'s records, from the ledger, and never sends', async () => {
+  for (const actions of [[{ key: 'chat-send-batch:968bcf1a16b2b0ee', label: 'Contribute all' }], [{ key: 'chat-send:one', label: 'Contribute' }]]) {
+    const items = actions[0].key === 'chat-send:one' ? [] : reviewItems(['one', 'two', 'three', 'theirs'])
+    const records = [published(prepared('one'), 3101), prepared('two', { record: { status: 'abandoned' } }), prepared('three'),
+      published(prepared('theirs', { record: { chat_id: OTHER, chat_ids: [OTHER] } }), 9)]
+    const h = harness({ actions, items, records })
     h.session.start(); await tick()
-    const state = h.action('chat-send:one')
-    h.fire('chat-send:one', 'activate'); h.provide(); await tick()
-    h.fire('chat-send:one', 'confirm'); await tick()
-    assert.deepEqual([h.action('chat-send:one').confirming, h.sends.length, h.needs.length], [false, 0, 0])
-    return state
+    const expected = items.length ? [['one', 'Open'], ['two', 'Dismissed'], ['three', '']] : [['one', 'Open']]
+    assert.deepEqual(h.pills(), expected, `${actions[0].key}: another chat's record is not shown`)
+    assert.equal(h.last().actions[0].hidden, true, 'nothing to do from an old card')
+    h.fire(actions[0].key, 'activate'); h.provide(); await tick()
+    h.fire(actions[0].key, 'confirm'); await tick()
+    assert.deepEqual([h.needs, h.sends], [[], []], 'an old card never asks for the send runtime')
   }
-  const sent = await show(published(prepared('one')))
-  // A legacy card has no item rows, so on a row-state host the action itself stays visible.
-  assert.deepEqual([sent.hidden, sent.disabled, sent.open, sent.label, sent.status, sent.statusTone, sent.note], [false, true, false, 'Sent', 'Open', 'success', ''])
-  assert.deepEqual(sent.links, [{ label: '#7', url: 'https://github.com/owner/repo/pull/7' }])
-  const waiting = await show(prepared('one'))
-  assert.deepEqual([waiting.open, waiting.label, waiting.note, waiting.status], [true, 'Open Contribute', '', ''])
-  const missing = await show(null)
-  assert.deepEqual([missing.open, missing.note], [false, 'This contribution is no longer in Contribute.'])
-  const dismissed = await show(prepared('one', { record: { status: 'abandoned' } }))
-  assert.equal(dismissed.note, 'This contribution was dismissed.')
-  const older = await show(prepared('one'), [])
-  assert.deepEqual([older.open, older.disabled, older.note], [false, true, LEGACY_NOTE])
-  const rows = await show(published(prepared('one')), ['row-state', 'rows-v2'])
-  assert.equal(rows.hidden, true, 'a host that draws the app\'s rows shows the result there')
+  // Nor through a successor that belongs to another chat.
+  const chain = harness({ actions: [{ key: 'chat-send:old' }], items: [], records: [prepared('old', { record: { status: 'superseded', superseded_by: 'moved' } }),
+    prepared('moved', { record: { chat_id: OTHER, chat_ids: [OTHER] } })] })
+  chain.session.start(); await tick(12)
+  assert.deepEqual(chain.last().rows, [])
+  // Without the host's chat, an old card reads and shows nothing.
+  const unattested = harness({ actions: [{ key: 'chat-send:one' }], items: [], features: ['row-state'], records: [published(prepared('one'))] })
+  unattested.session.start(); await tick()
+  assert.deepEqual([unattested.reads, 'rows' in unattested.last(), unattested.action('chat-send:one').open], [[], false, true])
 })
 
-test('an old card that could not check its record offers Try again, which only reads again', async () => {
+test('an old card that could not read its record offers Try again, which only reads again', async () => {
   let reachable = false
-  const h = harness({ actions: [{ key: 'chat-send:one' }], items: [], features: ['row-state'], records: [published(prepared('one'))],
+  const h = harness({ actions: [{ key: 'chat-send:one' }], items: [], records: [published(prepared('one'))],
     loadExact: async (id, store) => { if (!reachable) throw new Error('offline'); return structuredClone(store.get(id)) } })
   h.session.start(); await tick()
-  let state = h.action('chat-send:one')
-  assert.deepEqual([state.note, state.label, state.disabled], [UNCHECKED_NOTE, 'Try again', false], 'an unavailable read is not reported as a missing contribution')
+  assert.deepEqual([h.action('chat-send:one').note, h.action('chat-send:one').label, h.action('chat-send:one').disabled], [UNCHECKED_NOTE, 'Try again', false])
+  assert.deepEqual(h.pills(), [['one', HOLD.unread]], 'an unavailable read is not reported as a missing contribution')
   reachable = true
   h.fire('chat-send:one', 'activate'); await tick()
-  state = h.action('chat-send:one')
-  assert.deepEqual([state.status, state.label, state.disabled, state.note], ['Open', 'Sent', true, ''])
+  assert.deepEqual(h.pills(), [['one', 'Open']])
+  assert.equal(h.action('chat-send:one').hidden, true)
   assert.deepEqual([h.needs.length, h.sends.length], [0, 0])
+})
+
+// ---- Review regressions: newest card, versions, missing records.
+test('a card a newer one follows never starts another send after a settled attempt', async () => {
+  for (const outcome of [{ notAttempted: true, error: 'The saved proposal changed.' }, { error: 'Push rejected', failure: { owner: 'agent' } }]) {
+    const h = harness({ ids: ['one'], records: [prepared('one')], send: () => outcome })
+    await openConfirm(h)
+    h.fire(KEY, 'confirm'); await tick()
+    h.session.update({ context: { chatId: CHAT, latest: false, intent: CHAT_INTENT } }); await tick()
+    assert.deepEqual([h.last().title, h.action(KEY).hidden], [CONTINUED_TITLE, true], 'a settled attempt does not keep an earlier card live')
+    h.fire(KEY, 'activate'); await tick(); h.provide(); await tick()
+    h.fire(KEY, 'confirm'); await tick()
+    assert.equal(h.sends.length, 1, 'no second send from an earlier card')
+  }
+  // A sent card folds too.
+  const sent = harness({ ids: ['one'], records: [prepared('one')] })
+  await openConfirm(sent)
+  sent.store.set('one', published(prepared('one')))
+  sent.fire(KEY, 'confirm'); await tick()
+  sent.session.update({ context: { chatId: CHAT, latest: false, intent: CHAT_INTENT } }); await tick()
+  assert.equal(sent.last().title, CONTINUED_TITLE)
+  // A retry confirmation open when a newer card appears is dropped.
+  let first = true
+  const retry = harness({ ids: ['one', 'two'], records: [prepared('one'), prepared('two')],
+    send: rec => rec.id === 'two' && first ? (first = false, { notAttempted: true, error: 'changed' }) : { ok: true } })
+  await openConfirm(retry)
+  retry.store.set('one', published(prepared('one'), 5))
+  retry.fire(KEY, 'confirm'); await tick()
+  retry.fire(KEY, 'activate'); await tick(); retry.provide(); await tick()
+  assert.equal(retry.action(KEY).confirming, true)
+  retry.session.update({ context: { chatId: CHAT, latest: false, intent: CHAT_INTENT } }); await tick()
+  retry.fire(KEY, 'confirm'); await tick()
+  assert.deepEqual(retry.sends.map(call => call.ids), [['one'], ['two']], 'the dropped retry is never sent')
+})
+
+test('a reused check must be for the exact version: a restaged head is checked again', async () => {
+  let at = Date.parse('2026-11-07T00:00:00Z')
+  let refreshes = 0
+  const h = harness({ ids: ['one'], records: [prepared('one')], timers: { set: () => 0, clear() {} }, now: () => at,
+    runtime: { refreshDone: 0, refreshing: false, refresh() { refreshes += 1 } } })
+  await openConfirm(h)
+  assert.equal(h.action(KEY).confirming, true)
+  h.fire(KEY, 'cancel'); await tick()
+  // The same record is restaged with a new head and its own all clear.
+  h.store.set('one', prepared('one', { head: NEXT, record: { updated_at: '2026-10-20T12:00:00Z' } }))
+  h.session.refresh('turn'); await tick()
+  at += 1000
+  h.fire(KEY, 'activate'); await tick()
+  assert.equal(refreshes, 1, 'a check of the previous head is not reused for the new one')
+  assert.equal(h.action(KEY).confirming, false)
+  h.session.updateRuntime({ ...h.runtime(), refreshDone: 1 }); await tick()
+  assert.equal(h.action(KEY).confirming, true)
+  assert.equal(h.action(KEY).confirmation.length, 1)
+  h.fire(KEY, 'confirm'); await tick()
+  assert.equal(h.sends[0].records[0].plan.head_sha, NEXT)
+  // A check that answers after its record changed again is a check of the
+  // version it was asked for: the tap ends, and Try again checks the new one.
+  const THIRD = 'f'.repeat(40)
+  h.store.set('one', prepared('one', { head: THIRD, record: { updated_at: '2026-10-20T13:00:00Z' } }))
+  const moving = harness({ ids: ['one'], records: [prepared('one', { head: NEXT })], runtime: { refreshDone: 0, refreshing: false } })
+  await openConfirm(moving)
+  moving.fire(KEY, 'cancel'); await tick()
+  moving.store.set('one', prepared('one', { head: THIRD, record: { updated_at: '2026-10-20T13:00:00Z' } }))
+  moving.session.refresh('turn'); await tick()
+  moving.fire(KEY, 'activate'); await tick()
+  moving.store.set('one', prepared('one', { head: NEXT, record: { updated_at: '2026-10-20T14:00:00Z' } }))
+  moving.session.refresh('turn'); await tick()
+  moving.session.updateRuntime({ ...moving.runtime(), refreshDone: 1 }); await tick()
+  assert.deepEqual([moving.action(KEY).confirming, moving.action(KEY).label, moving.action(KEY).note], [false, 'Try again', CHANGED_NOTE])
+})
+
+test('the tap checks a successor it discovers, not the record the card named', async () => {
+  const h = harness({ ids: ['v1'], records: [prepared('v1')] })
+  h.session.start(); await tick()
+  h.store.set('v1', prepared('v1', { record: { status: 'superseded', superseded_by: 'v2', updated_at: '2026-10-20T12:00:00Z' } }))
+  h.store.set('v2', prepared('v2'))
+  h.fire(KEY, 'activate'); await tick(12)
+  assert.deepEqual(h.needs, [['v2']], 'the runtime is addressed after the tap\'s own read')
+  h.provide(); await tick()
+  assert.deepEqual(h.action(KEY).confirmation.map(item => item.title), ['Change v2'])
+})
+
+test('a named record that is gone holds the card; it is never left out of an all-or-none send', async () => {
+  const h = harness({ ids: ['one', 'gone'], records: [prepared('one')] })
+  h.session.start(); await tick()
+  assert.deepEqual(h.pills(), [['one', ''], ['gone', HOLD.gone]])
+  assert.equal(h.action(KEY).open, true)
+  await openConfirm(h)
+  h.fire(KEY, 'confirm'); await tick()
+  assert.deepEqual([h.action(KEY).confirming, h.sends.length], [false, 0])
+  // A record that disappears after a successful read is not shown as it was.
+  const later = harness({ ids: ['one'], records: [prepared('one')] })
+  later.session.start(); await tick()
+  later.store.delete('one')
+  later.session.refresh('turn'); await tick()
+  assert.deepEqual(later.pills(), [['one', HOLD.gone]])
+})
+
+test('a successor that failed to read is read again on the next trigger', async () => {
+  let failNew = true
+  const h = harness({ ids: ['old'], records: [prepared('old', { record: { status: 'superseded', superseded_by: 'new' } }), prepared('new', { plan: { title: 'Newer' } })],
+    loadExact: async (id, store) => { if (id === 'new' && failNew) throw new Error('offline'); return structuredClone(store.get(id)) } })
+  h.session.start(); await tick(12)
+  assert.deepEqual(h.pills(), [['old', HOLD.unread]], 'an unread successor is not a dismissal')
+  assert.equal(h.action(KEY).label, 'Try again')
+  failNew = false
+  h.session.refresh('turn'); await tick(12)
+  assert.deepEqual(h.last().rows.map(row => [row.title, row.pill || '']), [['Newer', '']])
+  assert.equal(h.action(KEY).label, 'Contribute')
+})
+
+test('triggers during a card read run one more read after it, not another alongside', async () => {
+  const gate = deferred()
+  let calls = 0
+  const h = harness({ ids: ['one'], records: [prepared('one')], loadExact: async (id, store) => { calls += 1; if (calls === 1) await gate.promise; return structuredClone(store.get(id)) } })
+  h.session.start(); await tick()
+  h.session.refresh('turn'); h.session.refresh('turn'); h.session.refresh('turn'); await tick()
+  assert.equal(calls, 1)
+  gate.resolve(); await tick(12)
+  assert.equal(calls, 2, 'one coalesced rerun')
 })
 
 // ---- The printed card, read as the host reads it.
@@ -964,37 +1079,33 @@ export function render(block, message, extra = {}) {
 }`, [stub])
 }
 
-test('the host shows a legacy card\'s published status and PR link, and a neutral note while prepared', async t => {
+test('the host draws an old card as this chat\'s status rows, and only an open link without a chat', async t => {
   const host = await hostRenderer(t)
   if (!host) return
   const block = host.parse(JSON.stringify({ app: 'contribute', intent: 'review:one', title: 'Change one', interaction: 'inline',
     facts: [{ label: 'Repository', value: 'owner/repo' }, { label: 'Action', value: 'Open a new pull request' }],
     action: { label: 'Contribute', intent: 'chat-send:one' } }))
-  const rendered = async (record, features) => {
-    const h = harness({ ...host.init(block), features, records: [record] })
+  const rendered = async (record, features, context) => {
+    const h = harness({ ...host.init(block), features, context, records: [record] })
     h.session.start(); await tick()
     const { sessionId, ...body } = h.last()
     return host.render(block, { type: 'moebius:app-block-state', sessionId, ...body })
   }
-  // As the host advertises itself: an older host draws status as text.
+  // Without the host's chat: the printed snapshot and a way into Contribute, nothing read.
   const actionFeatures = host.features.filter(feature => feature === 'row-state')
-  const sent = await rendered(published(prepared('one')), actionFeatures)
-  assert.match(sent, /md-app-block__(pill|status) is-success">Open<\/span>/)
-  assert.match(sent, /href="https:\/\/github.com\/owner\/repo\/pull\/7"[^>]*>#7/)
-  assert.match(sent, /<button[^>]*disabled=""[^>]*>Sent<\/button>/)
-  const waiting = await rendered(prepared('one'), actionFeatures)
-  if (actionFeatures.length) {
-    assert.match(waiting, /<a class="md-app-block__action is-secondary" href="[^"]*">Open Contribute<\/a>/)
-    assert.doesNotMatch(waiting, /md-app-block__note|<button[^>]*md-app-block__action/)
-  } else {
-    assert.match(waiting, /<button[^>]*disabled=""[^>]*>Open Contribute<\/button>/)
-    assert.match(waiting, /Open Contribute to send it\./)
-  }
+  const unattested = await rendered(published(prepared('one')), actionFeatures, null)
+  assert.match(unattested, /<dt>Repository<\/dt><dd>owner\/repo<\/dd>/)
+  assert.doesNotMatch(unattested, /pull\/7|is-success">Open/)
+  if (actionFeatures.length) assert.match(unattested, /<a class="md-app-block__action is-secondary" href="[^"]*">Open Contribute<\/a>/)
+  else assert.match(unattested, /<button[^>]*disabled=""[^>]*>Open Contribute<\/button>/)
   if (host.features.includes('rows-v2')) {
-    const rows = await rendered(published(prepared('one')), host.features)
+    const context = { chatId: CHAT, latest: true, intent: 'review:one' }
+    const rows = await rendered(published(prepared('one')), host.features, context)
     assert.match(rows, /<p class="md-app-block__item-meta">owner\/repo · \+2 −0<\/p>/)
     assert.match(rows, /md-app-block__title-mark is-success/)
     assert.doesNotMatch(rows, /Open a new pull request|<footer>/, 'the saved facts give way to the app\'s rows')
+    const elsewhere = await rendered(published(prepared('one', { record: { chat_id: OTHER, chat_ids: [OTHER] } })), host.features, context)
+    assert.doesNotMatch(elsewhere, /pull\/7|Change one<\/a>/, 'another chat\'s record is not drawn')
   }
 })
 
@@ -1025,7 +1136,7 @@ test('the host draws the live card: ledger rows, one action, a sent ending, and 
   assert.match(sent, /md-app-block__title-mark is-success[^]*<strong>2 pull requests<\/strong>/)
   assert.doesNotMatch(sent, /<footer>/, 'the button goes away')
   assert.match(sent, />#3101<svg[^]*md-app-block__pill is-success">Open</)
-  const earlier = await render({ context: { chatId: CHAT, latest: false } }, { onJump() {} })
+  const earlier = await render({ context: { chatId: CHAT, latest: false, intent: CHAT_INTENT } }, { onJump() {} })
   assert.match(earlier, /<section class="md-app-block md-app-block--value-facts md-app-block--folded" aria-label="Continued below">/)
   assert.match(earlier, />Jump to latest<svg/)
 })

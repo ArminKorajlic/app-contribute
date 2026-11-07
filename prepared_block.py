@@ -146,23 +146,27 @@ def chat_records(chat_id, ledger):
 
 def card_block(records, ledger=None, chat_id=None):
   records = list({record['id']: record for record in records}.values())
-  waiting = [record['id'] for record in records if not all_clear(record)]
-  if waiting:
-    raise ValueError(f'{", ".join(waiting)} is not all clear for its current version. Review it before printing its card.')
-  if chat_id:
-    # A card shown in this chat shows only this chat's records.
-    stray = [record['id'] for record in records if not in_chat(record, chat_id)]
-    if stray:
-      raise ValueError(f'{", ".join(stray)} is not from this chat. Restage it from this chat first, so its record names this chat.')
-    if ledger is not None:
-      records = list({record['id']: record for record in [*records, *chat_records(chat_id, ledger)]}.values())
+  if chat_id and ledger is not None:
+    # The chat's other ready work joins only with its whole stack ready and
+    # from this chat, so it can never hold or refuse the card.
+    ready = lambda group: all(all_clear(member) and in_chat(member, chat_id) for member in group)
+    joining = [record for record in chat_records(chat_id, ledger) if ready(with_complete_stacks([record], ledger))]
+    records = list({record['id']: record for record in [*records, *joining]}.values())
   if ledger is not None:
     records = with_complete_stacks(records, ledger)
   if not records:
     raise ValueError('A card names at least one prepared record.')
+  # The final set, stack layers included, is what the card names: every one
+  # all clear for its current head and, with a chat, from this chat.
+  waiting = [record['id'] for record in records if not all_clear(record)]
+  if waiting:
+    raise ValueError(f'{", ".join(waiting)} is not all clear for its current version. Review it (and every layer of its stack) before printing the card.')
+  stray = [record['id'] for record in records if chat_id and not in_chat(record, chat_id)]
+  if stray:
+    raise ValueError(f'{", ".join(stray)} is not from this chat. Restage it from this chat first, so its record names this chat.')
   if len(records) > MAX_ITEMS:
-    raise ValueError(f'A card shows at most {MAX_ITEMS} contributions; these are {len(records)}. '
-      'Only the newest card in a chat is live, so send these in two rounds: print a card for some, and the next one after they are sent.')
+    raise ValueError(f'This chat has {len(records)} contributions ready; a card shows at most {MAX_ITEMS}. '
+      'Ask the owner to send some from Contribute first, then print the card.')
   items = [prepared_item(record) for record in records]
   block = {'app': 'contribute', 'intent': CHAT_INTENT,
     'title': '1 contribution' if len(records) == 1 else f'{len(records)} contributions',
@@ -180,8 +184,10 @@ def main():
   parser.add_argument('record_ids', nargs='+')
   parser.add_argument('--ledger-dir', type=Path)
   parser.add_argument('--chat-id', default=os.environ.get('CHAT_ID', ''),
-    help='The chat this card is printed in (default: $CHAT_ID). Its other prepared contributions join the card.')
+    help='The chat this card is printed in (default: $CHAT_ID). Its other ready contributions join the card.')
   args = parser.parse_args()
+  if not args.chat_id:
+    parser.error('the chat this card is printed in is required: pass --chat-id or set CHAT_ID')
   ledger = args.ledger_dir or find_ledger()
   block = card_block([read_record(record_id, ledger) for record_id in args.record_ids], ledger, args.chat_id or None)
   print('```mobius-app\n' + json.dumps(block, ensure_ascii=False) + '\n```')

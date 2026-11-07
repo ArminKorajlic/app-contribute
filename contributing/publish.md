@@ -59,11 +59,13 @@ The card is that chat's live view of its contributions, read from the ledger:
 
 - **What it shows.** One row per contribution: its PR title over its project
   and lines changed, with a pill once something happens. The helper names
-  the records you list, every other prepared contribution of this chat
-  that is all clear for its current head (`--chat-id`, default `$CHAT_ID`;
-  unreviewed work is never pulled in), and every prepared layer of any
-  stack among them. It refuses a listed record that is not all clear for its
-  current head, or one from another chat (restage it from this chat first). At most 12 contributions fit; with more, send in two rounds.
+  the records you list, every other contribution of this chat that is ready
+  with its whole stack (`--chat-id`, default `$CHAT_ID`, required; unreviewed
+  work is never pulled in), and every prepared layer of any stack among them.
+  It refuses the card if any of those, stack layers included, is not all
+  clear for its current head or is from another chat (review it, or restage
+  it from this chat first). At most 12 contributions fit; with more, ask the
+  owner to send some from Contribute first.
   A record re-prepared later shows its current version, a dismissed one says
   so, and one that belongs to another chat is never shown or sent.
 - **One action.** **Contribute** (**Contribute all** for several) checks the
@@ -87,8 +89,10 @@ The card is that chat's live view of its contributions, read from the ledger:
 
 The card is not approval: do not describe a printed card as sent or approved,
 and do not send the same work again yourself while the card owns it. Cards
-printed before this design only show their records' status; print a new card
-to send what they list.
+printed before this design only show their records' status (this chat's
+records only); print a new card to send what they list. On a Möbius too old to
+say which chat a card is in, a card shows only what you printed and opens
+Contribute.
 
 ## Updating an existing PR after approval
 

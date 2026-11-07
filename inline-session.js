@@ -27,7 +27,7 @@
 // The card reports calm state to the host: a live title, and per row a status
 // pill, the pull request link once published, and one short reason when a
 // send failed (building-apps.md "Passive block sessions").
-import { cardKind, CHAT_ACTION, inChat, validRecordId } from './chat-blocks.js'
+import { cardKind, CHAT_ACTION, CHAT_INTENT, inChat, validRecordId } from './chat-blocks.js'
 import { planScreenshots, screenshotCountText } from './domain.js'
 import { isPublished, publicationUnits, publishedPull, reviewIncomplete, sendBlocker } from './send-readiness.js'
 import { RETRY_CHECK_REASON, reviewStateFor } from './review.js'
@@ -39,8 +39,6 @@ const CHECKPOINT_BYTES = 32768
 const MAX_ATTEMPTS = 24
 const UNRESOLVED = new Set(['sending', 'unknown'])
 const UNKNOWN_NOTE = 'GitHub hasn’t confirmed the result yet.'
-// After the recheck window, on a host without row state (no Open control).
-export const EXPIRED_NOTE = 'GitHub hasn’t confirmed the result. Open Contribute to check it.'
 // Rechecks of an unknown outcome: quick at first, then once a minute, for ten
 // minutes after the send. After that the row says "Not confirmed" and the
 // card opens Contribute; nothing is ever retried blindly.
@@ -54,7 +52,6 @@ const plural = (count, one, many) => `${count} ${count === 1 ? one : many}`
 export const TIMEOUT_NOTE = 'Contribute didn’t answer in time. Try again.'
 export const REFRESH_FAILED_NOTE = 'Contribute couldn’t check this right now. Try again.'
 export const NEWER_NOTE = 'Sending from chat needs a newer Möbius. Open Contribute to send.'
-export const LEGACY_NOTE = 'Open Contribute to send it.'
 export const UNCHECKED_NOTE = 'Couldn’t check this contribution right now.'
 export const RECOVERY_NOTE = 'The previous result from this card could not be restored. Open Contribute to check it; nothing will be sent from here.'
 
@@ -147,7 +144,9 @@ export const RELAY_NOTE = 'This contribution is sent through the Möbius relay, 
 export const LEDGER_NOTE = 'Could not read every contribution. Try again; nothing was sent.'
 export const HOLD = Object.freeze({ review: 'Needs review', notSent: 'Not sent', attention: 'Needs attention', check: 'Needs a fresh check',
   source: 'Source changed', later: 'Sent after its stack', stack: 'Stack incomplete', relay: 'Send in Contribute', sending: 'Sending',
-  checking: 'Checking GitHub', gone: 'Not in Contribute' })
+  checking: 'Checking GitHub', gone: 'Not in Contribute', unread: 'Couldn’t check' })
+export const UNREAD_NOTE = 'Could not read this contribution. Try again; nothing was sent.'
+export const CHANGED_NOTE = 'A contribution changed while it was being checked. Try again.'
 export const CONTINUED_TITLE = 'Continued below'
 // A tap reuses a source and review check this recent; a tab shown again
 // re-reads the ledger only if the last read is older than VISIBLE_REREAD_MS.
@@ -194,18 +193,24 @@ function holdFor(reason) {
   return HOLD.attention
 }
 
+
+// One record version: its exact head, base and reviewed diff.
+const versionOf = record => [record?.plan?.head_sha, record?.plan?.base_sha, record?.plan?.diff_sha256].map(value => String(value || '')).join(':')
+// The chat host's context: which chat, whether this is the newest card of the
+// block intent it names, and that intent (`rows-v2`). Never from the card.
+const readContext = value => value?.chatId ? { chatId: value.chatId, latest: value.latest !== false, intent: String(value.intent || '') } : null
+
 export function createInlineSession({ sessionId, actions, items = null, features = null, context = null, checkpoint = null, retain = false, recoveryError = false, publish, loadExact, onNeedRuntime,
   timers = DEFAULT_TIMERS, now = () => Date.now() }) {
   const advertised = [...new Map((actions || []).filter(item => typeof item?.key === 'string').map(item => [item.key, item])).values()]
   const card = cardKind(advertised, items)
   // Record ids the card's items name: where to look, never what is sent.
   const hints = card?.hints || []
-  // A host that draws row state, a live title and open-only actions says so
-  // (`row-state`); one that also draws the app's own rows and attests the
-  // card's chat says `rows-v2`. An older host keeps an older presentation.
+  // A host that draws an open-only action says `row-state`; one that also
+  // draws the app's own rows and attests the card's chat says `rows-v2`.
   const drawsRows = Array.isArray(features) && features.includes('row-state')
   const ownRows = drawsRows && features.includes('rows-v2')
-  let chat = context?.chatId ? { chatId: context.chatId, latest: context.latest !== false } : null
+  let chat = readContext(context)
   let attempts = []
   let fault = ''
   try {
@@ -219,10 +224,23 @@ export function createInlineSession({ sessionId, actions, items = null, features
   const generations = new Map()
   const reading = new Set()
   const unreadable = new Set()
-  const absent = new Set() // unreadable because the read found no record
+  const absent = new Set() // an exact read found no record
   let lastRead = -Infinity
+  let cardRead = null // the card read in flight
+  let rereadCard = false // another trigger arrived during it
   let runtime = null
   let activating = ''
+  // Until the tap's own read finishes, nothing is decided: the records to
+  // check are chosen from that read.
+  let deciding = false
+  // The tap asked for a source and review check (or mounted the runtime,
+  // whose first check it is). The next ready answer is that check.
+  let requested = false
+  // The record versions the requested check is for, taken when it was asked.
+  let requestedKey = ''
+  // The last check this card received: the exact versions of the records it
+  // covered, and when. A tap reuses it only for those versions, briefly.
+  let checked = null
   // The app's refresh completion count an activation is waiting for. The app
   // reports `refreshDone` (completed card refreshes) and `refreshing`; reports
   // sent while that refresh is still running are intermediate and never end
@@ -230,35 +248,41 @@ export function createInlineSession({ sessionId, actions, items = null, features
   // report as the answer.
   let awaitDone = -1
   let awaitLegacy = false
-  // Set when the refresh an activation waited for completed without an answer
-  // (timeout or failure). That activation has ended; only a new Try again can
-  // reach Confirm, whatever a late response later reports.
+  // Set when the check an activation waited for ended without an answer
+  // (timeout, failure, or a record that changed). That activation has ended;
+  // only a new Try again can reach Confirm.
   let refreshNote = ''
-  const awaitingCheck = () => awaitLegacy || (awaitDone >= 0 && !(Number(runtime?.refreshDone) >= awaitDone))
+  const awaitingCheck = () => deciding || awaitLegacy || (awaitDone >= 0 && !(Number(runtime?.refreshDone) >= awaitDone))
   let frozen = null // { key, units } — the exact snapshot the owner confirms
   let ackNonce = null
   let alive = true
   let recheckTimer = null
   let rechecks = 0
 
-  // Only this card, in a chat the host attests, on a host that draws its rows,
-  // can send. Every other card shows status.
-  const live = () => card?.kind === 'chat' && ownRows && Boolean(chat)
-  // An earlier card of the chat folds once nothing of its own is unresolved.
-  const folded = () => live() && chat.latest === false && !attempts.length && !frozen && !activating
-  const sendKey = key => live() && key === CHAT_ACTION
+  // The host attests the chat: only then does the card read or show records.
+  const attested = () => ownRows && Boolean(chat)
+  const tracks = () => attested() && Boolean(card)
+  // This card, in the group its host computes `latest` for.
+  const ours = () => tracks() && card.kind === 'chat' && chat.intent === CHAT_INTENT
+  // Only the newest card of its chat may start or confirm a send.
+  const newest = () => ours() && chat.latest !== false
+  const unresolved = () => attempts.some(attempt => UNRESOLVED.has(attempt.state))
+  // An earlier card folds once it owns nothing unresolved.
+  const folded = () => ours() && !newest() && !unresolved()
+  const sendKey = key => newest() && key === CHAT_ACTION
 
-  // Newest saved copy wins between the app's ledger and exact reads.
+  // Newest saved copy wins between the app's ledger and exact reads; a record
+  // an exact read found gone is gone.
   const current = () => {
     const merged = new Map()
     for (const record of [...(runtime?.records || []), ...exact.values()]) {
       const previous = merged.get(record?.id)
-      if (record?.id && (!previous || String(record.updated_at || '') >= String(previous.updated_at || ''))) merged.set(record.id, record)
+      if (record?.id && !absent.has(record.id) && (!previous || String(record.updated_at || '') >= String(previous.updated_at || ''))) merged.set(record.id, record)
     }
     return merged
   }
   // A named record's current version: follow `superseded_by` while it leads
-  // to a record not yet visited. `next` is a successor still to be read.
+  // to a record not yet visited. `next` is a successor not read yet.
   function resolve(id, byId = current()) {
     const seen = new Set([id])
     let at = id
@@ -272,26 +296,32 @@ export function createInlineSession({ sessionId, actions, items = null, features
     }
     return { id: at, record: byId.get(at) || null, seen }
   }
-  // Every id the card reads: the named records, their known successors, and
-  // the records of its own unresolved attempts.
-  const readIds = () => [...new Set([...hints.flatMap(id => [...resolve(id).seen]), ...attempts.flatMap(attempt => attempt.ids)])]
+  // Every id the card reads: the named records, their successors (read or
+  // still to read), and the records of its own unresolved attempts.
+  const readIds = () => [...new Set([...hints.flatMap(id => { const found = resolve(id); return [...found.seen, ...(found.next ? [found.next] : [])] }),
+    ...attempts.flatMap(attempt => attempt.ids)])]
 
-  // The card's rows, in card order: each named record's current version,
-  // kept only when it belongs to the attested chat (a live card), as
-  // `pending` (waiting to be sent), `sent`, `dismissed` or `unchecked`.
+  // The card's rows, in card order: each named record's current version that
+  // belongs to the attested chat, as `pending` (waiting to be sent), `sent`,
+  // `dismissed`, `missing` (a named record or successor that is gone) or
+  // `unread` (one that could not be read yet). Missing and unread rows hold
+  // the card: they are never a completed dismissal.
   function entries() {
+    if (!tracks()) return []
     const byId = current()
     const seen = new Set()
     const list = []
     for (const hint of hints) {
-      const { id, record } = resolve(hint, byId)
+      const { id, record, next } = resolve(hint, byId)
       if (seen.has(id)) continue
       seen.add(id)
-      if (!record) {
-        if (unreadable.has(id) && !absent.has(id)) list.push({ id, record: null, kind: 'unchecked' })
+      if (record && !inChat(record, chat.chatId)) continue
+      if (!record || next) {
+        // Not read yet: no row until its read answers.
+        const target = next || id
+        if (absent.has(target) || unreadable.has(target)) list.push({ id, record, kind: absent.has(target) ? 'missing' : 'unread' })
         continue
       }
-      if (live() && !inChat(record, chat.chatId)) continue
       const kind = isPublished(record) ? 'sent' : ['prepared', 'submitting'].includes(record.status) ? 'pending'
         : ['abandoned', 'superseded'].includes(record.status) ? 'dismissed' : ''
       if (kind) list.push({ id, record, kind })
@@ -300,6 +330,8 @@ export function createInlineSession({ sessionId, actions, items = null, features
   }
   // What the action covers: the card's records still waiting to be sent.
   const idsFor = key => sendKey(key) ? entries().filter(entry => entry.kind === 'pending').map(entry => entry.id) : []
+  const versionKey = ids => [...ids].sort().map(id => `${id}@${versionOf(current().get(id))}`).join('\n')
+  const unreadNow = () => !reading.size && entries().some(entry => entry.kind === 'unread')
 
   const sending = () => attempts.some(attempt => attempt.state === 'sending')
   const overlaps = (attempt, unit) => attempt.unitKey === unit.key || attempt.ids.some(id => unit.records.some(record => record.id === id))
@@ -312,25 +344,34 @@ export function createInlineSession({ sessionId, actions, items = null, features
   const readyUnits = key => units(key).filter(unit => unit.ready.length && !unlisted(key, unit) && !locked(unit) && unit.ready.every(confirmable))
   // A unit blocked only by a check that can be retried is read again by Try again.
   const checkRetryable = key => units(key).some(unit => unit.reason === RETRY_CHECK_REASON)
-  // Readiness is decided only from a complete ledger, a current review check,
-  // a known connection and finished exact reads of everything this card names.
   // A check addressed to other records (the card's set changed since the app
   // asked) is still loading the right one; only a check with no address at
   // all comes from a Möbius too old to send from chat.
   const addressedElsewhere = key => Array.isArray(runtime?.reviewStatus?.addressed)
     && !idsFor(key).every(id => runtime.reviewStatus.addressed.includes(id))
-  const authoritative = key => Boolean(runtime?.ledgerReady) && runtime.reviewStatus?.state === 'ready' && !addressedElsewhere(key)
-    && runtime.connection !== 'checking' && !reading.size && !readIds().some(id => unreadable.has(id) && !absent.has(id))
+  const answered = key => Boolean(runtime?.ledgerReady) && runtime.reviewStatus?.state === 'ready' && !addressedElsewhere(key)
+    && runtime.connection !== 'checking' && !reading.size
+  // Readiness is decided only from a complete ledger, a known connection,
+  // finished reads, and a current check of exactly these record versions.
+  const authoritative = key => answered(key) && checked?.key === versionKey(idsFor(key))
+  const reusable = key => Boolean(runtime) && authoritative(key) && now() - checked.at <= REVIEW_REUSE_MS
+    && !ledgerIncomplete() && !checkRetryable(key)
   const ledgerIncomplete = () => runtime?.ledger === 'incomplete'
-  const unreadNamed = () => hints.some(id => unreadable.has(id) && !absent.has(id))
+
+  // A named record that is gone or unread holds the card, before anything else.
+  function unresolvedHold() {
+    const entry = entries().find(item => item.kind === 'missing' || item.kind === 'unread')
+    return entry ? { id: entry.id, pill: entry.kind === 'missing' ? HOLD.gone : HOLD.unread, note: entry.kind === 'unread' ? UNREAD_NOTE : '' } : null
+  }
 
   // Why the card's action cannot reach Confirm, as `{ note, id?, pill? }`:
   // `id` is the record that holds the card (its row gets `pill`); `note` is a
   // reason no row explains. Nothing when it can.
   function blocked(key) {
+    const gone = unresolvedHold()
+    if (gone) return gone
     if (!runtime) return null
     if (runtime.reviewStatus?.state === 'unavailable') return { note: 'Could not verify the current review. Try again; nothing was sent.' }
-    if (unreadNamed() && !reading.size) return { note: 'Could not read this contribution. Try again; nothing was sent.' }
     if (ledgerIncomplete()) return { note: LEDGER_NOTE }
     if (!authoritative(key)) return null
     if (runtime.connection !== 'connected') return { note: 'Connect GitHub in Möbius Settings → Accounts to send.' }
@@ -374,9 +415,10 @@ export function createInlineSession({ sessionId, actions, items = null, features
     return { id, pill, note: unit?.reason === RETRY_CHECK_REASON ? RETRY_CHECK_REASON : '' }
   }
 
-  // Before a tap, from the records alone: the first pending row that cannot
-  // be sent, and its pill.
+  // Before a tap, from the records alone: the first row that holds the card.
   function localHeld() {
+    const gone = unresolvedHold()
+    if (gone) return gone
     const entry = entries().find(item => item.kind === 'pending' && (item.record.status === 'submitting' || localHold(item.record)))
     return entry ? { id: entry.id, pill: entry.record.status === 'submitting' ? HOLD.sending : localHold(entry.record) } : null
   }
@@ -403,7 +445,7 @@ export function createInlineSession({ sessionId, actions, items = null, features
     }
     if (attempt?.state === 'unknown') return checkingAttempt(attempt) ? { status: 'Checking GitHub', busy: true } : { status: 'Not confirmed' }
     const failed = rowFailure(id)
-    if (failed) return { status: 'Not sent', statusTone: failed.state === 'failed' ? 'danger' : 'neutral', note: text(failed.note, 200) }
+    if (failed) return { status: 'Not sent', statusTone: failed.state === 'failed' ? 'danger' : 'neutral' }
     return null
   }
 
@@ -416,8 +458,9 @@ export function createInlineSession({ sessionId, actions, items = null, features
 
   // ---- The app's own rows (`rows-v2`).
   function rowFor({ id, record, kind }, hold) {
-    if (kind === 'unchecked') return { title: id, pill: 'Couldn’t check', intent: `review:${id}` }
-    const row = { title: text(record.plan?.title || record.title || id, 120), meta: rowMeta(record), intent: `review:${id}` }
+    const row = { title: text(record?.plan?.title || record?.title || id, 120), meta: record ? rowMeta(record) : '', intent: `review:${id}` }
+    if (kind === 'missing') return { ...row, pill: HOLD.gone, tone: 'attention' }
+    if (kind === 'unread') return { ...row, pill: HOLD.unread }
     if (kind === 'dismissed') return { ...row, pill: record.status === 'abandoned' ? 'Dismissed' : 'Replaced' }
     const state = rowState(id)
     if (state) return { ...row, pill: state.status, tone: state.statusTone || 'neutral', busy: state.busy === true, links: state.links || [] }
@@ -430,38 +473,21 @@ export function createInlineSession({ sessionId, actions, items = null, features
     return entries().map(entry => rowFor(entry, hold)).slice(0, 12)
   }
 
-  // ---- Row state for a host that draws rows by the card's own items
-  // (`row-state` without `rows-v2`), keyed by their `review:<id>` intents.
-  const rowIntents = new Set((Array.isArray(items) ? items : []).map(item => item?.intent).filter(intent => typeof intent === 'string'))
-  const itemRowsShown = () => drawsRows && !ownRows && hints.length > 0 && hints.every(id => rowIntents.has(`review:${id}`))
-  function itemRows() {
-    if (!itemRowsShown()) return []
-    return hints.flatMap(hint => {
-      const state = rowState(resolve(hint).id)
-      return state ? [{ intent: `review:${hint}`, ...state }] : []
-    }).slice(0, 12)
-  }
-
   // ---- The header says what the card stands at.
   function heading(key) {
     if (folded()) return { title: CONTINUED_TITLE }
-    if (!ownRows && !itemRowsShown()) return { title: '' }
+    if (!tracks()) return { title: '' }
     const list = entries()
     const pending = list.filter(entry => entry.kind === 'pending')
     const sent = list.filter(entry => entry.kind === 'sent')
-    const counted = [...pending, ...sent, ...list.filter(entry => entry.kind === 'unchecked')]
-    const ids = counted.map(entry => entry.id)
+    const counted = list.filter(entry => entry.kind !== 'dismissed')
     // Only a send or a check still underway is "Sending"; an expired check
     // says the result is not confirmed (or how many were sent).
-    const inFlight = ids.filter(id => !isPublished(current().get(id)) && (latestAttempt(id)?.state === 'sending'
-      || (latestAttempt(id) && checkingAttempt(latestAttempt(id)))))
+    const inFlight = counted.filter(entry => !isPublished(current().get(entry.id)) && (latestAttempt(entry.id)?.state === 'sending'
+      || (latestAttempt(entry.id) && checkingAttempt(latestAttempt(entry.id)))))
     if (inFlight.length) return { title: `Sending ${inFlight.length}`, titleBusy: true }
-    if (!ownRows) {
-      // An older host keeps its saved title until everything is sent.
-      if (sent.length < counted.length || !counted.length) return { title: '' }
-    }
     if (!counted.length) return { title: list.length ? 'Nothing left to send' : 'No contributions' }
-    if (!pending.length && sent.length === counted.length) {
+    if (sent.length === counted.length) {
       const opened = attempts.some(attempt => attempt.ids.some(id => sent.some(entry => entry.id === id)))
       const prs = sent.every(entry => entry.record.plan?.action === 'pr')
       const count = sent.length
@@ -477,49 +503,30 @@ export function createInlineSession({ sessionId, actions, items = null, features
     return { title: plural(counted.length, 'contribution', 'contributions') }
   }
 
-  // The action's own status where the host draws no rows at all.
-  function actionStatus({ busy, checkingResult, unknown, failure, published, records }) {
-    if (fault) return ['Needs attention', 'danger']
-    if (busy) return ['Sending', 'neutral']
-    if (checkingResult) return ['Checking GitHub', 'neutral']
-    if (unknown) return ['Not confirmed', 'neutral']
-    if (failure) return ['Not sent', failure.state === 'failed' ? 'danger' : 'neutral']
-    if (published) return records.length === 1 ? PULL_STATUS[records[0].status] || ['Sent', 'success'] : ['Sent', 'success']
-    return ['', 'neutral']
+  const quiet = { busy: false, confirming: false, confirmation: null, tone: 'neutral', status: '', statusTone: 'neutral', links: [], badges: [] }
+
+  // A card that shows no records: the host could not attest its chat. It
+  // opens Contribute, or on a host without open-only actions says so.
+  function unattestedAction(item) {
+    return { ...quiet, key: item.key, label: 'Open Contribute', open: drawsRows && !fault, disabled: !drawsRows || Boolean(fault), hidden: false,
+      note: text(fault || (drawsRows ? '' : NEWER_NOTE)) }
   }
 
-  // A card that only shows status: never Confirm. It offers Try again when a
-  // named record could not be read (which only reads again). Where rows carry
-  // each record's state, the action opens Contribute while something is still
-  // waiting on a host that cannot run this card, and is otherwise gone; with no
-  // rows at all, the action itself carries the result.
+  // A card that only shows status (printed before this one, or this card
+  // outside its group): never Confirm. Its rows say everything; it offers
+  // Try again when a record could not be read, which only reads again.
   function statusAction(item) {
-    const list = entries()
-    const records = list.filter(entry => entry.record).map(entry => entry.record)
-    const published = list.length > 0 && list.every(entry => entry.kind === 'sent')
-    const pending = list.some(entry => entry.kind === 'pending')
-    const retry = !fault && unreadNamed() && !reading.size
-    const loading = !list.length && hints.some(id => reading.has(id))
-    const missing = !list.length && hints.length > 0 && hints.every(id => absent.has(id))
-    const open = drawsRows && !ownRows && pending && !retry && !fault
-    const base = { key: item.key, busy: false, open, confirming: false, confirmation: null, tone: 'neutral', badges: [] }
-    if (ownRows || itemRowsShown()) {
-      return { ...base, label: retry ? 'Try again' : 'Open Contribute', disabled: !retry && !open, hidden: !retry && !open && !fault,
-        note: text(fault || (retry ? UNCHECKED_NOTE : '')), status: '', statusTone: 'neutral', links: [] }
-    }
-    const [status, statusTone] = actionStatus({ published, records })
-    const note = fault || (retry ? UNCHECKED_NOTE : published || open ? ''
-      : missing ? sendBlocker(null) : pending ? (card?.kind === 'chat' ? NEWER_NOTE : LEGACY_NOTE) : records.length ? sendBlocker(records[0]) : '')
-    return { ...base, label: retry ? 'Try again' : loading ? 'Loading…' : published ? 'Sent' : 'Open Contribute',
-      disabled: !retry && !open, hidden: false, note: text(note), status, statusTone,
-      links: records.filter(isPublished).map(record => ({ label: `#${publishedPull(record).number}`, url: publishedPull(record).url })) }
+    const retry = !fault && unreadNow()
+    return { ...quiet, key: item.key, label: retry ? 'Try again' : 'Open Contribute', disabled: !retry, open: false, hidden: !retry && !fault,
+      note: text(fault || (retry ? UNCHECKED_NOTE : '')) }
   }
 
   function actionState(item) {
     const key = item.key
-    if (folded()) return { key, label: item.label || 'Contribute', disabled: true, hidden: true, busy: false, open: false, confirming: false,
-      confirmation: null, note: '', tone: 'neutral', status: '', statusTone: 'neutral', links: [], badges: [] }
-    if (!sendKey(key)) return statusAction(item)
+    if (folded()) return { ...quiet, key, label: item.label || 'Contribute', disabled: true, hidden: true, open: false, note: '' }
+    if (!attested()) return unattestedAction(item)
+    if (key !== CHAT_ACTION || !ours()) return statusAction(item)
+    const sendable = newest()
     const ids = idsFor(key)
     const list = entries()
     const mine = attempts.filter(attempt => attempt.ids.some(id => list.some(entry => entry.id === id)))
@@ -527,7 +534,7 @@ export function createInlineSession({ sessionId, actions, items = null, features
     const unknown = !busy && mine.some(attempt => attempt.state === 'unknown')
     // Still checking: a calm, disabled "Checking…". Past the window: Contribute.
     const checkingResult = unknown && mine.some(checkingAttempt)
-    const nothingLeft = !ids.length
+    const nothingLeft = !list.some(entry => entry.kind === 'pending' || entry.kind === 'missing' || entry.kind === 'unread')
     const failure = mine.filter(attempt => ['failed', 'not_attempted'].includes(attempt.state) && attempt.ids.some(id => ids.includes(id))).at(-1)
     const confirming = frozen?.key === key
     const checking = activating === key
@@ -536,11 +543,12 @@ export function createInlineSession({ sessionId, actions, items = null, features
     const hold = found?.id ? found : null
     const before = !runtime || !authoritative(key) ? localHeld() : null
     // A failed check or read can be retried; retrying only reads again.
-    const retry = runtime?.reviewStatus?.state === 'unavailable' || unreadNamed() || ledgerIncomplete() || checkRetryable(key) || Boolean(refreshNote)
+    const retry = sendable && (runtime?.reviewStatus?.state === 'unavailable' || unreadNow() || ledgerIncomplete() || checkRetryable(key) || Boolean(refreshNote))
     const reason = fault || found?.note || ''
-    // Nothing can be done from the chat: the control opens Contribute.
+    // Nothing can be done from the chat (or from a card a newer one follows):
+    // the control opens Contribute.
     const settled = !busy && !unknown
-    const stuck = Boolean(fault) || unknown && !checkingResult || settled && !retry && Boolean(hold || before || reason)
+    const stuck = Boolean(fault) || unknown && !checkingResult || settled && !retry && (Boolean(hold || before || reason) || !sendable)
     const openOnly = stuck && !busy && !checking && !confirming
     const label = openOnly ? 'Open Contribute' : busy ? 'Sending…' : checkingResult || checking ? 'Checking…' : loading ? 'Loading…'
       : retry ? 'Try again' : failure ? 'Retry' : ids.length === 1 ? 'Contribute' : 'Contribute all'
@@ -548,14 +556,14 @@ export function createInlineSession({ sessionId, actions, items = null, features
     // row explains (a check to retry, the account, an older Möbius).
     const note = busy || checkingResult || unknown ? '' : text(fault || (checking ? '' : refreshNote) || reason)
     return {
-      key, label,
+      ...quiet, key, label,
       disabled: !openOnly && (busy || checkingResult || checking || loading || sending() || Boolean(frozen) && !confirming || Boolean(reason) && !retry),
       busy: busy || checkingResult,
       open: openOnly,
       confirming,
       confirmation: confirming ? frozen.units.flatMap(unit => unit.ready.map(confirmationItem)) : null,
       hidden: nothingLeft && !busy && !unknown && !confirming && !fault && !retry,
-      note, tone: 'neutral', status: '', statusTone: 'neutral', links: [], badges: [],
+      note,
     }
   }
 
@@ -590,7 +598,9 @@ export function createInlineSession({ sessionId, actions, items = null, features
     const { title = '', titleTone = 'neutral', titleBusy = false } = heading(key)
     publish({
       sessionId, actions: advertised.map(actionState), title,
-      ...(ownRows ? { rows: ownRowsReport(key), titleTone, titleBusy } : { items: itemRows(), ...(drawsRows ? { itemFacts: 'values' } : {}) }),
+      // Rows only for the chat the host attests; otherwise the card's own
+      // fallback rows stay, and nothing is read.
+      ...(tracks() ? { rows: ownRowsReport(key), titleTone, titleBusy } : {}),
       retain: Boolean(fault || lastCheckpoint || frozen || activating || sending()),
       checkpoint: lastCheckpoint, checkpointAck, recoveryError: Boolean(fault), ackNonce,
     })
@@ -598,29 +608,39 @@ export function createInlineSession({ sessionId, actions, items = null, features
   }
 
   // A preflight that finished without authority: every read for the card is
-  // done, but a named record could not be read or the review check is
-  // unavailable. It ends the activation so the card offers Try again.
+  // done, but a named record could not be read or the check is unavailable.
+  // It ends the activation so the card offers Try again.
   const preflightFailed = () => Boolean(runtime) && !reading.size && !awaitingCheck()
-    && (unreadNamed() || runtime.reviewStatus?.state === 'unavailable' || ledgerIncomplete())
+    && (unreadNow() || runtime.reviewStatus?.state === 'unavailable' || ledgerIncomplete())
 
   function settle() {
-    const now = current()
-    attempts = attempts.map(attempt => observeAttempt(attempt, now))
+    const byId = current()
+    attempts = attempts.map(attempt => observeAttempt(attempt, byId))
     if (!activating) return
-    // Decide only on the completed refresh, never on an intermediate report.
+    // Decide only on the completed check, never on an intermediate report.
     if (awaitingCheck()) return
     const waited = awaitDone >= 0
     awaitDone = -1
+    const key = activating
     if (waited && ['timeout', 'failed'].includes(runtime?.refreshOutcome)) {
-      activating = ''
+      activating = ''; requested = false
       refreshNote = runtime.refreshOutcome === 'timeout' ? TIMEOUT_NOTE : REFRESH_FAILED_NOTE
       return
     }
-    if (!authoritative(activating)) {
-      if (preflightFailed()) activating = ''
+    // The ledger the runtime read can change which records the action covers
+    // (a successor, a record the exact read missed): check those instead.
+    if (requested && addressedElsewhere(key)) { requestedKey = versionKey(idsFor(key)); onNeedRuntime?.(idsFor(key)); return }
+    // The check this tap asked for has answered: it covers the versions it
+    // was asked for. A record that changed since makes it a check of another
+    // version, which ends the tap below.
+    if (requested && answered(key)) { checked = { key: requestedKey, at: now() }; requested = false }
+    if (!authoritative(key)) {
+      if (preflightFailed()) { activating = ''; requested = false }
+      // An answer for other versions (a record changed meanwhile) ends the
+      // tap; Try again checks the current ones.
+      else if (!requested && answered(key)) { activating = ''; refreshNote = CHANGED_NOTE }
       return
     }
-    const key = activating
     activating = ''
     const ready = blocked(key) ? [] : readyUnits(key)
     frozen = ready.length ? { key, units: copy(ready) } : null
@@ -638,52 +658,69 @@ export function createInlineSession({ sessionId, actions, items = null, features
       reading.delete(id)
       const { record, failed } = results[index]
       if (record?.id === id) { exact.set(id, record); unreadable.delete(id); absent.delete(id); return }
-      unreadable.add(id)
-      if (failed) absent.delete(id); else absent.add(id)
+      if (failed) { unreadable.add(id); absent.delete(id); return }
+      // An authoritative read found it gone: forget any earlier copy.
+      exact.delete(id); unreadable.delete(id); absent.add(id)
     })
     settle(); emit()
   }
 
-  // Read the card's records, then any successor they lead to, a bounded
-  // number of times. Local storage only.
-  async function readCard() {
-    if (folded()) return
-    await read(readIds())
-    for (let round = 0; round < MAX_SUCCESSORS && alive; round++) {
-      const next = [...new Set(hints.map(id => resolve(id).next).filter(id => id && !reading.has(id) && !unreadable.has(id)))]
-      if (!next.length) return
-      await read(next)
-    }
+  // Read the card's records and any successor they lead to (each at most once
+  // per pass, a bounded number of steps). Local storage only. A trigger during
+  // a pass runs one more pass after it, never a second one alongside it.
+  function readCard() {
+    if (!tracks() || folded()) return Promise.resolve()
+    if (cardRead) { rereadCard = true; return cardRead }
+    cardRead = (async () => {
+      do {
+        rereadCard = false
+        const tried = new Set(readIds())
+        await read([...tried])
+        for (let step = 0; step < MAX_SUCCESSORS && alive; step++) {
+          const next = [...new Set(hints.map(id => resolve(id).next).filter(id => id && !tried.has(id)))]
+          if (!next.length) break
+          next.forEach(id => tried.add(id))
+          await read(next)
+        }
+      } while (rereadCard && alive)
+    })().finally(() => { cardRead = null })
+    return cardRead
   }
 
-  function activate(key) {
-    if (fault || sending() || frozen || folded()) return
+  async function activate(key) {
+    if (fault || sending() || frozen || activating) return
     // A card that only shows status reads its records again; it never sends.
     if (!sendKey(key)) { void readCard(); return }
     activating = key
     awaitDone = -1
     awaitLegacy = false
     refreshNote = ''
+    deciding = true
+    emit()
+    // The tap first reads the card's records, so it checks what they are now.
+    await readCard()
+    if (!alive || activating !== key) { deciding = false; return }
     // The app mounts its send runtime (once) and checks exactly these records.
     onNeedRuntime?.(idsFor(key))
-    // The runtime's first check runs as it mounts. After that, a failed check,
-    // an incomplete ledger or a check older than REVIEW_REUSE_MS is read again
-    // by the app (one refresh at a time); the card waits until it completes.
-    if (runtime && (runtime.reviewStatus?.state === 'unavailable' || ledgerIncomplete() || checkRetryable(key)
-      || Number.isFinite(runtime.reviewCheckedAt) && now() - runtime.reviewCheckedAt > REVIEW_REUSE_MS)) {
+    requestedKey = versionKey(idsFor(key))
+    if (!runtime) requested = true
+    else if (!reusable(key)) {
+      // One refresh at a time; the card waits until it completes.
+      requested = true
       if ('refreshDone' in runtime) awaitDone = (Number(runtime.refreshDone) || 0) + 1
       else awaitLegacy = true
       // A failed refresh is reported through refreshDone; never leave its
       // rejection unhandled.
       if (!runtime.refreshing) Promise.resolve(runtime.refresh?.()).catch(() => {})
     }
-    void readCard()
+    deciding = false
+    settle(); emit()
   }
 
   function cancel(key) {
     if (sending()) return
     if (frozen?.key === key) frozen = null
-    if (activating === key) activating = ''
+    if (activating === key) { activating = ''; requested = false }
   }
 
   async function confirm(key) {
@@ -708,16 +745,17 @@ export function createInlineSession({ sessionId, actions, items = null, features
   return {
     sessionId,
     start() { emit(); void readCard() },
-    // A new envelope for this session: the host's verdict on the card's chat
-    // and whether it is still the newest card there. A card that stops being
-    // the newest drops an open confirmation (nothing was sent) and folds.
+    // A new envelope for this session: the host's verdict on whether the card
+    // is still the newest of its chat. A card a newer one follows drops any
+    // open confirmation or tap (nothing was sent) and can start no new send;
+    // it keeps showing a send it already started until that settles.
     update(init) {
-      const next = init?.context?.chatId ? { chatId: init.context.chatId, latest: init.context.latest !== false } : null
+      const next = readContext(init?.context)
       // The chat a card is in never changes; only the newest-card verdict does.
       if (chat && next && next.chatId !== chat.chatId) return
       const wasFolded = folded()
       chat = next
-      if (chat?.latest === false && !attempts.length && !sending()) { frozen = null; activating = '' }
+      if (!newest()) { frozen = null; if (activating) { activating = ''; requested = false; deciding = false } }
       emit()
       if (wasFolded && !folded()) void readCard()
     },
@@ -725,12 +763,11 @@ export function createInlineSession({ sessionId, actions, items = null, features
     // settled, or the tab was shown again (re-read only if the last read is
     // older than VISIBLE_REREAD_MS). Local reads only.
     refresh(reason) {
-      if (!alive || folded()) return
+      if (!alive || !tracks() || folded()) return
       if (reason === 'visible' && now() - lastRead < VISIBLE_REREAD_MS) return
       void readCard()
     },
-    // The records this card's action would cover now, for the app's review
-    // check address.
+    // The records this card's action would cover now.
     sendIds() { return idsFor(card?.key || '') },
     updateRuntime(next) { runtime = next; awaitLegacy = false; settle(); emit() },
     handleEvent(event) {
@@ -738,7 +775,7 @@ export function createInlineSession({ sessionId, actions, items = null, features
         || typeof event.nonce !== 'string' || !event.nonce || event.nonce.length > 128) return false
       if (event.nonce !== ackNonce) {
         ackNonce = event.nonce
-        if (event.event === 'activate') activate(event.key)
+        if (event.event === 'activate') void activate(event.key)
         else if (event.event === 'cancel') cancel(event.key)
         else void confirm(event.key)
       }

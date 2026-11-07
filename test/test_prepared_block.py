@@ -70,15 +70,25 @@ class PreparedBlockTests(unittest.TestCase):
       with self.assertRaisesRegex(ValueError, 'not all clear for its current version'):
         self.card(bad)
 
-  def test_a_stack_layer_joins_for_its_phase_even_when_unreviewed(self):
+  def test_a_stack_is_printed_only_when_every_layer_is_ready_and_from_this_chat(self):
     stack = lambda position: {'stack': {'id': 's1', 'name': 'Stack', 'position': position, 'total': 2}}
     self.save(record('top', plan=stack(2), quality_review={}))
-    block = self.card(record('base', plan=stack(1)))
-    self.assertEqual([item['intent'] for item in block['items']], ['review:base', 'review:top'],
-      'the whole phase is listed; the live card holds it until the layer is reviewed')
+    with self.assertRaisesRegex(ValueError, 'top is not all clear'):
+      self.card(record('base', plan=stack(1)))
+    self.save(record('top', plan=stack(2), chat_id='chat-2'))
+    with self.assertRaisesRegex(ValueError, 'top is not from this chat'):
+      module.card_block(self.save(record('base', plan=stack(1), chat_id='chat-1')), self.ledger.name, 'chat-1')
+    self.save(record('top', plan=stack(2), chat_id='chat-1'))
+    block = module.card_block(self.save(record('base', plan=stack(1), chat_id='chat-1')), self.ledger.name, 'chat-1')
+    self.assertEqual([item['intent'] for item in block['items']], ['review:base', 'review:top'])
+    # Another ready record of the chat whose stack is not ready stays out.
+    self.save(record('lonely', chat_id='chat-1', plan={'stack': {'id': 's9', 'name': 'S', 'position': 1, 'total': 2}}),
+      record('lonely-top', chat_id='chat-1', quality_review={}, plan={'stack': {'id': 's9', 'name': 'S', 'position': 2, 'total': 2}}))
+    joined = module.card_block(self.save(record('solo', chat_id='chat-1')), self.ledger.name, 'chat-1')
+    self.assertNotIn('review:lonely', [item['intent'] for item in joined['items']])
 
   def test_more_than_twelve_are_refused_and_sent_in_rounds(self):
-    with self.assertRaisesRegex(ValueError, 'at most 12 contributions; these are 15'):
+    with self.assertRaisesRegex(ValueError, '15 contributions ready; a card shows at most 12. Ask the owner to send some from Contribute first'):
       self.card(*(record(f'r{n:02}') for n in range(15)))
     self.assertEqual(len(self.card(*(record(f'r{n:02}') for n in range(12)))['items']), 12)
 
@@ -100,6 +110,18 @@ class PreparedBlockTests(unittest.TestCase):
     with self.assertRaisesRegex(ValueError, 'elsewhere is not from this chat'):
       module.card_block(self.save(elsewhere), self.ledger.name, chat)
     self.assertEqual(len(module.card_block(named, self.ledger.name)['items']), 1, 'without a chat id only the named records')
+
+  def test_the_helper_needs_the_chat_it_prints_in(self):
+    import io, os
+    from contextlib import redirect_stderr
+    self.save(record('mine', chat_id='chat-9'))
+    previous = os.environ.pop('CHAT_ID', None)
+    try:
+      sys.argv = ['prepared_block.py', 'mine', '--ledger-dir', self.ledger.name]
+      with redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+        module.main()
+    finally:
+      if previous is not None: os.environ['CHAT_ID'] = previous
 
   def test_the_chat_id_defaults_to_the_agents_chat(self):
     import io, os

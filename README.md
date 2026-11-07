@@ -348,16 +348,17 @@ intent `chat:contributions` (the same for every card, so the chat host can tell
 the newest one), one action `chat-contribute:all`, `"expand": false` (no inline
 app view), and one fallback item per record (`review:<id>`, with **Project** and
 **Change** facts) for hosts that cannot run the card. It adds every other
-prepared contribution of its chat that is all clear for its current head
-(`--chat-id`, default `$CHAT_ID`) and every prepared layer of any stack it
-names, refuses a listed record that is not all clear for its current head or
-comes from another chat, and refuses more than 12. A record that later loses
-its all clear shows a held pill on the live card.
+contribution of its chat that is ready with its whole stack (`--chat-id`,
+default `$CHAT_ID`, required) and every prepared layer of any stack it names,
+then refuses the card if any record in that final set is not all clear for its
+current head or comes from another chat, or if there are more than 12. A record
+that later loses its all clear shows a held pill on the live card.
 
 The chat runs Contribute headless behind the card (`chat.blocks.passive`). On a
 Möbius that advertises `rows-v2`, the session carries a **host-attested chat**
-id and whether this is the chat's newest card (`context: {chatId, latest}`),
-and the card is live:
+id, the block intent, and whether this is the chat's newest block of that
+intent (`context: {chatId, latest, intent}`). The card is live only when that
+intent is `chat:contributions`:
 
 - **Rows from the ledger.** The fallback items only say where to look. Each
   named record is read exactly, followed through `superseded_by` to its current
@@ -369,13 +370,22 @@ and the card is live:
   Dismissed, Replaced) and the PR link once published. The header says the
   state ("2 contributions", "Sending 2", "2 pull requests opened", "1 of 2
   sent", "1 needs a fix"), with a check, spinner or exclamation mark.
-- **Newest card wins.** A card that is not its chat's newest, and owns no
-  unresolved send, folds to one line, "Continued below", and reads nothing.
+- **Newest card wins.** Only the newest card can start or confirm a send. A
+  card that is not the newest drops an open confirmation; while it owns an
+  unresolved send it keeps showing it, and otherwise folds to one line,
+  "Continued below", and reads nothing.
+- **Unresolved records hold.** A named record (or successor) that is gone
+  shows **Not in Contribute**, and one that could not be read shows
+  **Couldn’t check** with **Try again**; either holds the card. A failed
+  successor read is retried on the next trigger.
 - **Cheap freshness.** It reads its records (local storage, no network) when it
   mounts, on the host's `app-block-refresh` after a turn in its chat settles,
-  and when the tab is shown again (if the last read is older than 30 s). The
-  source and review are checked only when the owner taps the action, and a
-  check younger than two minutes is reused.
+  and when the tab is shown again (if the last read is older than 30 s); a
+  trigger during a read runs one more read after it. The source and review are
+  checked only when the owner taps the action, for the records that tap's own
+  read found, and a check younger than two minutes is reused only for the exact
+  record versions (head, base, diff) it was asked for; a record that changes
+  while it is checked ends the tap with **Try again**.
 - **Confirm.** Tapping **Contribute** (or **Contribute all**) starts a
   send-only runtime that renders nothing and reads the complete ledger, the
   GitHub connection and the review status of exactly the records waiting to
@@ -400,15 +410,14 @@ and the card is live:
   **Retry** when the guarded send path accepts those records again (sent rows
   are never resent), otherwise **Open Contribute**.
 
-Every other card only shows status and never sends: a card printed before this
-design (`chat-send:<id>` or `chat-send-batch:<handle>` action), and this card
-on a Möbius without `rows-v2` or outside a chat. With `rows-v2` it shows its
-records as rows and no action; on a `row-state` host it reports status per
-item and **Open Contribute**; on an older host the action itself carries the
-status (Open, Merged…), the pull request links and a disabled **Sent** once
-everything is published, or a disabled action with one line saying to open
-Contribute. A record that could not be read offers **Try again**, which only
-reads again. Opening `chat:contributions` or `chat-contribute:all` in the app
+Every other card never sends. A card printed before this design
+(`chat-send:<id>` or `chat-send-batch:<handle>` action), or this card with
+another block intent, shows its records as rows, filtered to the attested chat
+exactly like the live card, and no action (**Try again** when a record could
+not be read, which only reads). Without a host-attested chat (a Möbius without
+`rows-v2`, or outside a chat) the card reads and reports nothing: the printed
+fallback rows stay, and the action opens Contribute (or, on a host without
+open-only actions, is disabled with one line saying to open Contribute). Opening `chat:contributions` or `chat-contribute:all` in the app
 shows the contributions waiting for review.
 
 ### PR links from chat
