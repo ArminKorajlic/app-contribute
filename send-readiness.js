@@ -52,7 +52,10 @@ export function publicationUnit(record, records, reviewStatus, options) {
   const readiness = stackReadiness(unit)
   const phase = readiness.ok ? stackPublicationRecords(unit) : []
   const reason = readiness.ok ? leadingReason(phase.map(blocker)) : readiness.code === 'settled' ? '' : readiness.message
-  return { key: `stack:${unit.id}`, stack: true, records: unit.records, ready: reason ? [] : phase, reason }
+  // `stackCode` says why a stack cannot be sent as a whole (stack.js
+  // stackReadiness: incomplete, invalid, restack, refresh), '' when it can.
+  return { key: `stack:${unit.id}`, stack: true, records: unit.records, ready: reason ? [] : phase, reason,
+    stackCode: readiness.ok || readiness.code === 'settled' ? '' : readiness.code }
 }
 
 // Distinct units for the named records. Several layers of one stack share one.

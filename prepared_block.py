@@ -5,9 +5,9 @@ The card is the chat's live view of its contributions. On a Möbius that runs
 it (`rows-v2`), the card shows what the ledger says now: the records it names,
 followed to their current version and kept only when they belong to the chat
 the card is shown in, each as its title over its project and lines changed,
-with a pill once something happens. Its one action, Contribute (Contribute all
-for several), becomes Confirm over exactly the records that are ready at that
-tap; nothing is sent before that Confirm. Only the newest card of a chat is
+with its state once something happens. Its one action, Send (Send N for
+several), becomes Not now / Confirm over exactly the records that are ready at
+that tap; nothing is sent before that Confirm. Only the newest card of a chat is
 live: an earlier one folds to "Continued below". Every card has the same
 block intent, so the chat host can tell which card is the newest.
 
@@ -26,7 +26,7 @@ from pr_block import bounded, utf16_length
 
 RECORD_ID = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,127}')
 # The whole stripped `git diff --shortstat` line, as the app parses it
-# (inline-session.js changeSize). Anything else has no readable size.
+# (inline-session.js lineCounts). Anything else has no readable size.
 STAT = re.compile(r'(\d+) files? changed(?:, (\d+) insertions?\(\+\))?(?:, (\d+) deletions?\(-\))?')
 # A staged screenshot entry, as the app counts them (domain.js planScreenshots).
 SCREENSHOT_NAME = re.compile(r'[a-z0-9][a-z0-9-]{0,60}\.png')
@@ -93,12 +93,10 @@ def with_complete_stacks(records, ledger):
   return listed
 
 
-def change_size(plan):
+def line_counts(plan):
+  """Lines added and removed (inline-session.js lineCounts), or None."""
   stat = STAT.fullmatch(str(plan.get('diff_stat') or '').strip())
-  if not stat:
-    return ''
-  files = int(stat[1])
-  return f'{files} {"file" if files == 1 else "files"} · +{stat[2] or 0}\u00a0−{stat[3] or 0}'
+  return {'added': int(stat[2] or 0), 'removed': int(stat[3] or 0)} if stat else None
 
 
 def screenshot_count(plan):
@@ -107,22 +105,34 @@ def screenshot_count(plan):
     and SHA256.fullmatch(str(shot.get('sha256') or ''))) if isinstance(shots, list) else 0
 
 
-def change_text(plan):
-  """The Change fact, with the screenshots the PR will publish, exactly as
-  Confirm's row shows it (inline-session.js confirmationItem)."""
-  size, count = change_size(plan), screenshot_count(plan)
-  shots = f'{count} {"screenshot" if count == 1 else "screenshots"}' if count else ''
-  return ' · '.join(part for part in (size, shots) if part) or 'Size not recorded'
+def stack_layer(plan):
+  """'Layer k of n', or '' (inline-session.js stackLayer, same rule): a stack
+  with a non-empty string id and whole-number position and total, with
+  1 <= position <= total, 2 <= total <= 999. Booleans, strings and anything
+  else omit the layer (test/fixtures/stack-layers.json)."""
+  stack = plan.get('stack') if isinstance(plan.get('stack'), dict) else {}
+  count = lambda n: (isinstance(n, int) and not isinstance(n, bool) or isinstance(n, float) and n.is_integer()) and 1 <= n <= 999
+  position, total, stack_id = stack.get('position'), stack.get('total'), stack.get('id')
+  if not (isinstance(stack_id, str) and stack_id and count(position) and count(total) and total >= 2 and position <= total):
+    return ''
+  return f'Layer {int(position)} of {int(total)}'
 
 
 def prepared_item(record):
+  """A fallback row: project, the screenshots the PR will publish, the stack
+  layer, then the change size, exactly as the live row and Confirm's row show
+  them (inline-session.js rowValues). The change size carries its counts as
+  `lines`, which a current host draws in colour; an older one shows the text."""
   plan = record.get('plan') if isinstance(record.get('plan'), dict) else {}
   if record.get('status') != 'prepared' or plan.get('action') not in ('pr', 'pr_update'):
     raise ValueError('Only a prepared pull request or pull-request update has a Send card.')
+  shots, layer, lines = screenshot_count(plan), stack_layer(plan), line_counts(plan)
   return {'title': bounded(plan.get('title') or record.get('title') or 'Prepared contribution'),
     'intent': f'review:{record["id"]}',
     'facts': [{'label': 'Project', 'value': bounded(plan.get('repo') or record.get('repo') or 'Unknown')},
-      {'label': 'Change', 'value': change_text(plan)}]}
+      *([{'label': 'Screenshots', 'value': f'{shots} screenshot' + ('' if shots == 1 else 's')}] if shots else []),
+      *([{'label': 'Stack', 'value': layer}] if layer else []),
+      {'label': 'Change', **({'value': f"+{lines['added']}\u00a0−{lines['removed']}", 'lines': lines} if lines else {'value': 'Size not recorded'})}]}
 
 
 def all_clear(record):
@@ -183,10 +193,11 @@ def card_block(records, ledger=None, chat_id=None):
   block = {'app': 'contribute', 'intent': CHAT_INTENT,
     'title': '1 contribution' if len(records) == 1 else f'{len(records)} contributions',
     'inline': True, 'interaction': 'inline', 'expand': False,
-    # Project and size read on their own, so fallback rows show values only.
-    'item_facts': 'values', 'items': items,
-    'action': ({'label': 'Contribute', 'intent': f'chat-send:{records[0]["id"]}'} if len(records) == 1
-      else {'label': 'Contribute all', 'intent': f'chat-send-batch:{batch_handle([record["id"] for record in records])}'})}
+    # Every value reads on its own, so fallback and Confirm rows show values
+    # only (labels kept for assistive technology).
+    'item_facts': 'values', 'confirm_facts': 'values', 'items': items,
+    'action': ({'label': 'Send', 'intent': f'chat-send:{records[0]["id"]}'} if len(records) == 1
+      else {'label': f'Send {len(records)}', 'intent': f'chat-send-batch:{batch_handle([record["id"] for record in records])}'})}
   if utf16_length(json.dumps(block, ensure_ascii=False)) > JSON_LIMIT:
     raise ValueError('This card is too large for chat. Print fewer contributions per card.')
   return block

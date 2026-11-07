@@ -10,7 +10,8 @@ import { uncertainPublication } from './domain.js'
 
 export const ASK_CODES = Object.freeze(['commit_identity_mismatch', 'invalid_pr_text', 'publication_destination_unavailable',
   'needs_review', 'changes_needed', 'upstream_conflict', 'upstream_base_moved', 'source_changed', 'send_failed',
-  'needs_attention', 'not_in_contribute', 'couldnt_check', 'restage', 'stack_incomplete', 'result_unknown', 'publication_changed'])
+  'needs_attention', 'not_in_contribute', 'couldnt_check', 'restage', 'stack_incomplete', 'stack_parent_merged', 'stack_parent_changed',
+  'result_unknown', 'publication_changed'])
 const ASKABLE = new Set(ASK_CODES)
 
 // Connection codes are the owner's: the card offers the account, not an ask.
@@ -38,6 +39,8 @@ const CAUSE = {
   needs_attention: record => [...source(record.plan || {}), record.attention?.type || '', record.attention?.key || ''],
   restage: record => [...source(record.plan || {}), record.plan?.diff_stat || '', record.plan?.repo || record.repo || '', record.plan?.branch || record.branch || ''],
   stack_incomplete: record => [...source(record.plan || {}), record.plan?.stack?.id || '', record.plan?.stack?.position || 0, record.plan?.stack?.total || 0],
+  stack_parent_merged: record => [...source(record.plan || {}), record.plan?.stack?.id || '', record.plan?.stack?.parent_record_id || ''],
+  stack_parent_changed: record => [...source(record.plan || {}), record.plan?.stack?.id || '', record.plan?.stack?.parent_record_id || ''],
   // An observed send whose GitHub target no longer matches it: the reviewed
   // source and the attempt it is about (its claim stamp and input digest,
   // and the push the platform saved), never when the record was last written.

@@ -366,11 +366,23 @@ intent is `chat:contributions`:
   version, and kept only if its `chat_id` or `chat_ids` include the attested
   chat, so a card printed in one chat never shows or sends another chat's
   records, whatever its items name. The card reports these as the host's
-  `rows`: title over `owner/repo · +a −d`, with a pill (Sending, Checking
-  GitHub, Open, Draft, Merged in purple, Closed, Not sent, Not confirmed,
-  Dismissed, Replaced) and the PR link once published. The header says the
-  state ("2 contributions", "Sending 2", "2 pull requests opened", "1 of 2
-  sent", "1 needs a fix"), with a check, spinner or exclamation mark.
+  `rows`: title over `owner/repo · 2 screenshots · Layer 1 of 2 · +a −d`
+  (on a host with `lines-v1` the change size is the row's `lines`, drawn with
+  additions green and deletions red; otherwise it is text in the line), with
+  its state in words (Sending, Checking GitHub, Draft, Merged, Closed, Not
+  sent, Not confirmed, Dismissed, Replaced) and the PR link once published.
+  An open PR needs no word beside its link, and a state every row shares and
+  the header already says is not repeated on each row. The header says the
+  state ("2 contributions", "Checking contributions", "2 ready to send",
+  "Sending 2…", "Checking GitHub…", "2 pull requests opened", "Sending 1 ·
+  checking 1…", "1 of 2 sent · 1 needs a fix", "2 of 3 sent · 1 not confirmed",
+  "1 of 2 sent · couldn’t load 1", "2 need a fix"), with a
+  check, spinner or exclamation mark. It is a neutral count until a tap's
+  check finds the set ready, and loading is never shown as empty. Every held
+  record shows its own reason and is counted; an unreadable record or a
+  blocked GitHub account is named as such, never as a fix. While a
+  check, a send or GitHub's answer is underway the header says so and no
+  button is shown.
 - **Newest card wins.** Only the newest card can start or confirm a send. A
   card that is not the newest drops an open confirmation; while it owns an
   unresolved send it keeps showing it, and otherwise folds to one line,
@@ -389,17 +401,20 @@ intent is `chat:contributions`:
   read found, and a check younger than two minutes is reused only for the exact
   record versions (head, base, diff) it was asked for; a record that changes
   while it is checked ends the tap with **Try again**.
-- **Confirm.** Tapping **Contribute** (or **Contribute all**) starts a
+- **Confirm.** Tapping **Send** (or **Send N**) starts a
   send-only runtime that renders nothing and reads the complete ledger, the
   GitHub connection and the review status of exactly the records waiting to
   be sent plus every prepared layer of their stacks. It then turns the same
-  button into **Confirm** and reports its own row for every change it will
-  send: **Project** and **Change**, plus **Stack** for a stack layer. The
+  button into **Not now** / **Confirm** and reports its own row for every
+  change it will send, with the card row's values (project, screenshots,
+  stack layer, change size; the block's `confirm_facts: "values"` keeps the
+  labels for assistive technology only). The
   action covers every record waiting to be sent or none: if one is not in
   the exact phase Confirm would send (a stack layer due later included) or
   cannot be sent, its row gets a short pill (Needs review, Not sent, Needs a
   fresh check, Source changed, Conflicts, Upstream moved, Wrong author, Stack
-  incomplete, Sent after its stack, Send in Contribute) and the action becomes
+  incomplete, Parent merged, Parent changed, Stack not valid, Sent after its stack, Send in
+  Contribute) and the action becomes
   **Fix in chat** (below), or **Open Contribute** where it cannot be. Confirm calls the
   same guarded Send handlers as the workspace and passes the confirmed snapshot
   as `expected_record(s)`; without that platform binding the card never sends,
@@ -437,12 +452,12 @@ intent is `chat:contributions`:
   record-wide timestamp; one tap
   sends the host's own visible owner message into this chat, a fixed sentence
   and a `contribute · <record id> · <code>` line. The host posts one ask per
-  state once, so a repeated tap says "Already asked" until the agent
+  state once, so a repeated tap says "Requested in chat" until the agent
   restages. Its codes are `commit_identity_mismatch`, `invalid_pr_text`,
   `publication_destination_unavailable`, `needs_review`, `changes_needed`,
   `upstream_conflict`, `upstream_base_moved`, `source_changed`, `send_failed`,
   `needs_attention`, `not_in_contribute`, `couldnt_check`, `restage`,
-  `stack_incomplete`, `result_unknown` and `publication_changed`; the contributing skill's "Card
+  `stack_incomplete`, `stack_parent_merged`, `stack_parent_changed`, `result_unknown` and `publication_changed`; the contributing skill's "Card
   asks" says what the agent does for each, ending with a fresh card. No
   title, template or GitHub error text is in the message. The app gets no event from the tap and nothing is
   sent to GitHub; only Confirm sends. A GitHub connection problem is the
