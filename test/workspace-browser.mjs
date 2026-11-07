@@ -1258,6 +1258,7 @@ window.runWorkspaceChecks = async () => {
         ensure(!calls.requests.slice(before).some(call => call.url === '/api/github/status'), 'An idle card mounted the full app')
         fire('activate', 'card-n1')
         await until(() => card()?.confirming, 'Contribute did not become Confirm: ' + JSON.stringify(card()))
+        ensure(card().confirmation?.[0]?.facts?.some(fact => fact.label === 'Project' && fact.value === 'owner/project'), 'Confirm lacked the app-sourced identity')
         ensure(JSON.stringify(card().confirmation[0].facts.slice(0, 2).map(fact => fact.label)) === '["Project","Change"]', 'Confirm did not lead with the card facts')
         ensure(calls.requests.some(call => call.url.includes('/review-status?record_id=card-record')), 'Card did not ask for its addressed review status')
         // The hidden runtime runs only what inline Send needs and renders nothing.
@@ -1267,6 +1268,7 @@ window.runWorkspaceChecks = async () => {
         ensure(!document.querySelector('.co-root'), 'The card rendered the workspace')
         ensure(!submits.length, 'Activation sent')
         fire('confirm', 'card-n2'); fire('confirm', 'card-n3')
+        // This card is attested (rows-v2), so the pull request link is on its row and the action goes.
         await until(() => card()?.hidden && states.at(-1).rows?.[0]?.links?.[0]?.url === 'https://github.com/owner/project/pull/9', 'Sent card did not settle to its PR')
         ensure(submits.length === 1, 'Confirm did not send exactly once: ' + submits.length)
         ensure(submits[0].expected_record?.id === 'card-record' && submits[0].expected_record.plan.head_sha === HEAD, 'Send did not carry the confirmed snapshot')
