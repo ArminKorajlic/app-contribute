@@ -1,6 +1,6 @@
 ---
 name: contributing
-description: "Contribute app's project-collaboration skill. Read before ANY public GitHub action, and for prepare my changes / prepare all, address existing contributions, finish the contribution cycle / submit and sync / align with upstream, and review or merge selected PRs."
+description: "Contribute app's project-collaboration skill. Read before ANY public GitHub action, and for prepare my changes / prepare all, address existing contributions (a chat card's Fix in chat request included), finish the contribution cycle / submit and sync / align with upstream, and review or merge selected PRs."
 ---
 # Contributing upstream
 
@@ -71,6 +71,7 @@ stage with one verdict ([ledger.md](ledger.md)), then publish once approved:
 | Link a public PR in chat so the owner can open it in Contribute (`pr_block.py`, read-only; no rights needed) | [maintainer.md](maintainer.md) “Link a PR in chat” |
 | Check results: required checks, local checks before staging, inspecting failed CI (prefer `/data/platform/scripts/ci-failures.sh <owner/repo> <pr-number\|run-id>` over full `gh run view --log` dumps) | [ci.md](ci.md) |
 | Any record with `submission_mode: "mobius-bot"` (legacy relay records only) | [legacy-bot.md](legacy-bot.md) |
+| Handle a card's **Fix in chat** message (`contribute · <record-id> · <code>`): what to repair per code | [card-asks.md](card-asks.md) |
 | Answer review activity in an "Autopilot: …" chat | the `review-followup` skill, not this one |
 
 ## Tools and GitHub status
