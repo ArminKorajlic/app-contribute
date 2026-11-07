@@ -146,7 +146,9 @@ def card_block(records, ledger=None):
   shown, hidden = records[:MAX_ITEMS], len(records) - MAX_ITEMS
   block = {'app': 'contribute', 'intent': group_intent(records),
     'title': '1 contribution ready' if len(records) == 1 else f'{len(records)} contributions ready',
-    'inline': True, 'interaction': 'inline', 'expand': False, 'items': items[:MAX_ITEMS]}
+    'inline': True, 'interaction': 'inline', 'expand': False,
+    # Project and size read on their own, so rows show values only.
+    'item_facts': 'values', 'items': items[:MAX_ITEMS]}
   if hidden > 0:
     # One action cannot cover records the card does not list, so an
     # overflowing card only opens Contribute.
