@@ -407,9 +407,17 @@ intent is `chat:contributions`:
   Independent units are sent in parallel; a stack's layers in order. Only
   attempts whose outcome is unknown survive a reload, as a bounded checkpoint
   of ids, and lock their unit until a read shows the result. An unknown outcome
-  is re-read on a backoff for ten minutes after the send (exact reads and the
-  app's card refresh), then shows **Not confirmed** and opens Contribute; it is
-  never resent. A row whose send failed shows **Not sent**, with the reason as
+  (a lost response, or a 503 `publication_unconfirmed`) is observed on a
+  backoff for ten minutes after the send: the platform's read-only
+  `/observe` route reads GitHub against the attempt's signed receipt, and the
+  card re-reads its records. A settled answer shows the PR; a branch whose PR
+  is not confirmed stays **Checking GitHub**; a changed target holds the row
+  as **Changed on GitHub** (ask code `publication_changed`); an update
+  Autopilot owns shows **With Autopilot**. After the window the row shows
+  **Not confirmed** and opens Contribute; it is never resent. The workspace's
+  refresh and the scheduled job observe uncertain records too (the job a
+  bounded few per pass, only past the card's window); a Möbius without the
+  route keeps the ledger-only recheck. A row whose send failed shows **Not sent**, with the reason as
 one line beside the action; the action is
   **Retry** when the guarded send path accepts those records again (sent rows
   are never resent), otherwise **Open Contribute**.
