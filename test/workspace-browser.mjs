@@ -326,10 +326,12 @@ const nativeEscape = () => new Promise((resolve, reject) => {
   window.finishNativeKey = error => error ? reject(new Error(error)) : resolve()
   window.workspaceNativeKey(JSON.stringify({ key:'Escape', code:'Escape', keyCode:27 }))
 })
+// The message may be a function, so a timeout reports the state it timed out
+// in rather than the state when the wait began.
 async function until(predicate, message) {
   const deadline = performance.now() + 5000
   while (!predicate()) {
-    if (performance.now() > deadline) throw new Error(message + '\nDOM: ' + text(query('main')).slice(0, 3000))
+    if (performance.now() > deadline) throw new Error((typeof message === 'function' ? message() : message) + '\nDOM: ' + text(query('main')).slice(0, 3000))
     await frame()
   }
   await frame()
@@ -1394,7 +1396,17 @@ window.runWorkspaceChecks = async () => {
         await until(() => calls.requests.filter(call => call.url === '/api/github/status').length > statusReads, 'The connection was not re-read')
         await frame(); await frame()
         fire('confirm', 'stack-n2')
-        await until(() => /no longer confirms the exact version/.test(card()?.note || '') || states.some(state => (state.actions || []).some(action => /no longer confirms the exact version/.test(action.note || ''))), 'A lost binding did not refuse: ' + JSON.stringify(card()))
+        // The send settles as refused: nothing in flight or confirming, both
+        // rows Not sent, no recovery checkpoint, a binding-unavailable reason
+        // (the card's own "newer Möbius" line, or the write's refusal), and no
+        // write request at all.
+        const settledRefusal = () => {
+          const last = states.at(-1)
+          return !card()?.busy && !card()?.confirming && /newer Möbius|no longer confirms the exact version/.test(card()?.note || '')
+            && last?.rows?.length === 2 && last.rows.every(row => row.pill === 'Not sent') && last.checkpoint === null
+        }
+        await until(settledRefusal, () => 'A lost binding did not settle as refused: ' + JSON.stringify({ action: card(), rows: states.at(-1)?.rows,
+          checkpoint: states.at(-1)?.checkpoint, writes: calls.requests.slice(before).filter(call => call.method === 'POST').map(call => call.url) }))
         ensure(!calls.requests.slice(before).some(call => call.method === 'POST' && /\/(submit|submit-stack|update-stack|update-existing)$/.test(call.url)), 'An unbound send was made')
       } finally {
         window.postMessage = realPost

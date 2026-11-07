@@ -379,8 +379,9 @@ intent is `chat:contributions`:
   **Couldn’t check** with **Try again**, even if an earlier copy is cached;
   either holds the card. A failed
   successor read is retried on the next trigger.
-- **Cheap freshness.** It reads its records (local storage, no network) when it
-  mounts, on the host's `app-block-refresh` after a turn in its chat settles,
+- **Cheap freshness.** It reads its records (exact storage reads; no GitHub or
+  source check) when it mounts, on the host's `app-block-refresh` after a turn
+  in its chat settles,
   and when the tab is shown again (if the last read is older than 30 s); a
   trigger during a read runs one more read after it. The source and review are
   checked only when the owner taps the action, for the records that tap's own
