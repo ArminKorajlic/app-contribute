@@ -1,6 +1,7 @@
 // One readiness model for every Send surface: which publication unit owns a
 // record, whether its next phase can be sent now, and why not. Pure; the
 // guarded Send handlers in index.jsx remain the only publication path.
+import { uncertainPublication } from './domain.js'
 import { leadingReason, qualityReviewFor, reviewCheckBlocker, reviewStateFor } from './review.js'
 import { publicationStackUnit, stackIntent, stackPublicationRecords, stackReadiness } from './stack.js'
 
@@ -29,6 +30,8 @@ export function sendBlocker(record, reviewState, { requireCheck = false } = {}) 
   }
   if (!['pr', 'pr_update'].includes(record.plan?.action)) return 'Only pull requests can be sent from here.'
   if (needsSourceRefresh(reviewState)) return 'The reviewed source changed. Refresh it in Contribute.'
+  // The last send may already be public: it stays locked until observed.
+  if (uncertainPublication(record)) return 'GitHub has not confirmed the last send yet.'
   if (sendNeedsAttention(record)) return 'The last send needs attention in Contribute.'
   if (reviewIncomplete(record)) return 'This exact version needs review first.'
   const unchecked = reviewCheckBlocker(reviewState)

@@ -79,9 +79,11 @@ export const attestsChat = init => Array.isArray(init?.features) && init.feature
 // The whole app side of a card session, as the headless component runs it:
 // the host's envelope and messages, read only through this adapter, drive one
 // inline session. `loadExact(id)` reads a record; `onNeedRuntime(ids)` asks for
-// the send runtime, checking exactly `ids`. Returns `updateRuntime(runtime)`
-// and `dispose()`.
-export function connectInlineSession({ blockSession, loadExact, onNeedRuntime }) {
+// the send runtime, checking exactly `ids`; `observe(record)` asks the
+// platform to read GitHub for an unknown send (publication-observer.js). The
+// earlier card only re-reads the ledger, which keeps an uncertain send locked.
+// Returns `updateRuntime(runtime)` and `dispose()`.
+export function connectInlineSession({ blockSession, loadExact, onNeedRuntime, observe = null }) {
   let session = null
   let runtime = null
   // Where this document's reports go: the host's handle when it gave one for
@@ -97,7 +99,7 @@ export function connectInlineSession({ blockSession, loadExact, onNeedRuntime })
     // The earlier card checks the records its action and items name, as before.
     const v1 = !attestsChat(init)
     const needs = v1 ? () => onNeedRuntime?.(cardRecordIds(init.actions.map(action => action.key), init.items)) : ids => onNeedRuntime?.(ids)
-    session = (v1 ? createInlineSessionV1 : createInlineSession)({ ...init, publish: state => publishBlockState(state, target), loadExact, onNeedRuntime: needs })
+    session = (v1 ? createInlineSessionV1 : createInlineSession)({ ...init, publish: state => publishBlockState(state, target), loadExact, onNeedRuntime: needs, ...(v1 ? {} : { observe }) })
     if (runtime) session.updateRuntime(runtime)
     session.start()
   }

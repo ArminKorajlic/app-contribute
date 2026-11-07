@@ -8,7 +8,8 @@ import { CHAT_INTENT, batchHandle, cardKind, hintedIds, inChat } from '../chat-b
 import { frontendModules, renderModule } from './render-harness.mjs'
 import { connectInlineSession, readBlockSession } from '../block-protocol.js'
 import { reviewAddressFor } from '../send-readiness.js'
-import { attemptOutcome, CHANGED_NOTE, confirmationItem, CONTINUED_TITLE, HOLD, LEDGER_NOTE, NEWER_NOTE, UNREAD_NOTE, RECHECK_DELAYS_MS, RECHECK_WINDOW_MS, RECOVERY_NOTE,
+import { createPublicationObserver, TRANSPORT_BACKOFF_MS } from '../publication-observer.js'
+import { attemptOutcome, AUTOPILOT_PILL, CHANGED_NOTE, CHANGED_PILL, PUBLICATION_CHANGED, confirmationItem, CONTINUED_TITLE, HOLD, LEDGER_NOTE, NEWER_NOTE, UNREAD_NOTE, RECHECK_DELAYS_MS, RECHECK_WINDOW_MS, RECOVERY_NOTE,
   REFRESH_FAILED_NOTE, REVIEW_REUSE_MS, TIMEOUT_NOTE, UNCHECKED_NOTE, VISIBLE_REREAD_MS, createInlineSession, decodeCheckpoint, encodeCheckpoint, localHold, observeAttempt, rowMeta } from '../inline-session.js'
 
 const HEAD = 'a'.repeat(40), NEXT = 'c'.repeat(40)
@@ -48,14 +49,14 @@ const card = ids => ({ actions: [{ key: KEY, label: ids.length === 1 ? 'Contribu
 // A current host draws the app's rows and attests the chat; pass `features`
 // or `context` to model an older host or another chat.
 function harness({ ids = null, actions = card(ids).actions, items = card(ids || []).items, features = ['row-state', 'rows-v2'], context = { chatId: CHAT, latest: true, intent: CHAT_INTENT },
-  records, checkpoint = null, retain = false, send, sendStack, address = null, loadExact = null, runtime: extra = {}, timers, now }) {
+  records, checkpoint = null, retain = false, send, sendStack, address = null, loadExact = null, observe = null, runtime: extra = {}, timers, now }) {
   const store = new Map(records.map(record => [record.id, record]))
   const states = [], sends = [], needs = [], reads = []
   // Every envelope goes through the app's own protocol parser, as in the frame.
   const parse = envelope => readBlockSession({ sessionId: 'session-1', generation: 1, actions: actions || [], ...envelope })
   const session = createInlineSession({ ...parse({ items, features, context, checkpoint, retain }), publish: state => states.push(structuredClone(state)),
     loadExact: id => { reads.push(id); return loadExact ? loadExact(id, store) : Promise.resolve(store.has(id) ? structuredClone(store.get(id)) : null) },
-    onNeedRuntime: ids => needs.push(ids), ...(timers ? { timers, now } : {}) })
+    onNeedRuntime: ids => needs.push(ids), ...(observe ? { observe: record => observe(record, store) } : {}), ...(timers ? { timers, now } : {}) })
   const update = session.update
   session.update = envelope => update(parse({ items, features, ...envelope }))
   const runtime = () => ({ records: [...store.values()], ledgerReady: true, connection: 'connected', frozenBinding: true,
@@ -1458,6 +1459,232 @@ test('the B2 host accepts a confirmation that names screenshots', async t => {
   assert.match(parsed[1].facts.find(fact => fact.label === 'Change').value, /1 screenshot$/)
 })
 
+// ---- Observation settles an unknown send (publication-observer.js, mobius #2083/#2084).
+// The platform answers what it read on GitHub; the card only shows it and
+// never sends again. `answers` is the sequence the platform gives.
+function observing(answers) {
+  const calls = []
+  const observe = async (record, store) => {
+    calls.push(record.id)
+    const answer = typeof answers === 'function' ? answers(record, store, calls.length) : answers[Math.min(calls.length, answers.length) - 1]
+    return answer ?? null
+  }
+  return { calls, observe }
+}
+
+test('a lost response settles from observation alone: the PR shows without a resend or the ledger changing first', async () => {
+  const c = clock()
+  const o = observing((record) => ({ outcome: 'settled', record: published(prepared(record.id), 21) }))
+  const h = timed({ ids: ['one'], records: [prepared('one')], send: () => ({ uncertain: true }), observe: o.observe }, c)
+  await openConfirm(h)
+  h.fire(KEY, 'confirm'); await tick()
+  assert.equal(h.row('one').pill, 'Checking GitHub')
+  await c.advance(RECHECK_DELAYS_MS[0])
+  assert.deepEqual(o.calls, ['one'], 'the recheck asked the platform to observe once')
+  assert.equal(h.store.get('one').status, 'prepared', 'the local ledger copy never moved')
+  assert.deepEqual(h.row('one').links, [{ label: '#21', url: 'https://github.com/owner/repo/pull/21' }])
+  assert.equal(h.last().title, 'Pull request opened')
+  assert.equal(h.action(KEY).hidden, true)
+  assert.equal(h.last().checkpoint, null, 'nothing unresolved crosses a reload')
+  assert.equal(c.pending().length, 0, 'nothing left to check')
+  assert.equal(h.sends.length, 1, 'never sent twice')
+})
+
+test('a published branch whose PR is not confirmed keeps Checking GitHub and keeps asking within the window', async () => {
+  const c = clock()
+  const o = observing(() => ({ outcome: 'pending', effect: 'branch_published' }))
+  const h = timed({ ids: ['one'], records: [prepared('one')], send: () => ({ uncertain: true }), observe: o.observe }, c)
+  await openConfirm(h)
+  h.fire(KEY, 'confirm'); await tick()
+  await c.advance(RECHECK_DELAYS_MS[0])
+  await c.advance(RECHECK_DELAYS_MS[1])
+  assert.equal(o.calls.length, 2)
+  assert.deepEqual([h.row('one').pill, h.row('one').busy], ['Checking GitHub', true])
+  assert.deepEqual([h.action(KEY).label, h.action(KEY).disabled], ['Checking…', true])
+  assert.equal(h.last().title, 'Sending 1')
+  h.fire(KEY, 'activate'); await tick()
+  assert.equal(h.action(KEY).confirming, false, 'still locked')
+  // The window and its fallback stay: after it, Not confirmed and Contribute.
+  for (let i = 0; i < 30 && c.pending().length; i++) await c.advance(60000)
+  assert.equal(h.row('one').pill, 'Not confirmed')
+  assert.equal(h.action(KEY).open, true)
+  assert.ok(h.last().checkpoint, 'still unresolved across a reload')
+  assert.equal(h.sends.length, 1)
+})
+
+test('a target that changed holds the row with publication_changed, stops checking and stays locked', async () => {
+  const c = clock()
+  const o = observing(() => ({ outcome: 'changed', message: 'The signed publication claim no longer matches this review.' }))
+  const h = timed({ ids: ['one'], records: [prepared('one')], send: () => ({ uncertain: true }), observe: o.observe }, c)
+  await openConfirm(h)
+  h.fire(KEY, 'confirm'); await tick()
+  await c.advance(RECHECK_DELAYS_MS[0])
+  assert.deepEqual([h.row('one').pill, h.row('one').tone, h.row('one').busy], [CHANGED_PILL, 'attention', false])
+  assert.deepEqual([h.last().title, h.last().titleTone], [CHANGED_PILL, 'attention'])
+  const state = h.action(KEY)
+  assert.deepEqual([state.open, state.label, state.busy], [true, 'Open Contribute', false], 'without ask-v1 the action opens Contribute')
+  assert.equal(c.pending().length, 0, 'a changed answer is final: no more checks')
+  assert.equal(o.calls.length, 1)
+  h.fire(KEY, 'activate'); await tick()
+  assert.equal(h.action(KEY).confirming, false, 'a changed target is not proof nothing was sent')
+  assert.ok(h.last().checkpoint)
+  assert.equal(PUBLICATION_CHANGED, 'publication_changed')
+  assert.equal(h.sends.length, 1)
+})
+
+test('an update Autopilot owns is left to Autopilot with a neutral status', async () => {
+  const c = clock()
+  // The platform's real answer carries no attempt context: Autopilot comes
+  // from the record's own Autopilot grant.
+  const o = observing(() => ({ outcome: 'not_eligible', message: 'Autopilot recovers its own update; checking never settles or retires it.' }))
+  const h = timed({ ids: ['one'], records: [prepared('one', { record: { autopilot: { enabled: true, state: 'idle' } } })], send: () => ({ uncertain: true }), observe: o.observe }, c)
+  await openConfirm(h)
+  h.fire(KEY, 'confirm'); await tick()
+  await c.advance(RECHECK_DELAYS_MS[0])
+  assert.deepEqual([h.row('one').pill, h.row('one').tone, h.row('one').busy], [AUTOPILOT_PILL, 'neutral', false])
+  assert.deepEqual([h.last().title, h.last().titleTone], [AUTOPILOT_PILL, 'neutral'])
+  assert.equal(c.pending().length, 0, 'the card stops checking')
+  assert.equal(o.calls.length, 1)
+  assert.equal(h.action(KEY).confirming, false)
+  assert.equal(h.sends.length, 1)
+  // Another record the platform does not observe keeps today's checking.
+  const other = observing(() => ({ outcome: 'not_eligible' }))
+  const k = timed({ ids: ['two'], records: [prepared('two')], send: () => ({ uncertain: true }), observe: other.observe }, c)
+  await openConfirm(k)
+  k.fire(KEY, 'confirm'); await tick()
+  await c.advance(RECHECK_DELAYS_MS[0]); await c.advance(RECHECK_DELAYS_MS[1])
+  assert.equal(other.calls.length, 1, 'asked once, then left alone')
+  assert.equal(k.row('two').pill, 'Checking GitHub')
+  k.store.set('two', published(prepared('two'), 4)); await c.advance(RECHECK_DELAYS_MS[2])
+  assert.equal(k.last().title, 'Pull request opened', 'the ledger re-read still settles it')
+})
+
+test('an older Möbius without the observe route keeps the ledger-only recheck', async () => {
+  const c = clock()
+  const o = observing(() => ({ outcome: 'unsupported' }))
+  const h = timed({ ids: ['one'], records: [prepared('one')], send: () => ({ uncertain: true }), observe: o.observe }, c)
+  await openConfirm(h)
+  h.fire(KEY, 'confirm'); await tick()
+  await c.advance(RECHECK_DELAYS_MS[0]); await c.advance(RECHECK_DELAYS_MS[1])
+  assert.equal(o.calls.length, 1, 'the route is not asked for again')
+  assert.equal(h.row('one').pill, 'Checking GitHub')
+  h.store.set('one', published(prepared('one'), 9)); await c.advance(RECHECK_DELAYS_MS[2])
+  assert.deepEqual(h.row('one').links, [{ label: '#9', url: 'https://github.com/owner/repo/pull/9' }])
+  assert.equal(h.sends.length, 1)
+})
+
+test('a reloaded card observes its restored unknown send once, even past the window, and never sends', async () => {
+  const c = clock()
+  const old = encodeCheckpoint([{ id: 'a1', unitKey: 'record:one', ids: ['one'], at: c.now() - RECHECK_WINDOW_MS - 1, state: 'unknown' }])
+  const o = observing(record => ({ outcome: 'settled', record: published(prepared(record.id), 30) }))
+  let sent = 0
+  const h = timed({ ids: ['one'], records: [prepared('one')], checkpoint: { id: 'cp', data: old }, retain: true, observe: o.observe,
+    runtime: { send: () => { sent += 1 }, sendStack: () => { sent += 1 } } }, c)
+  h.session.start(); await tick()
+  assert.deepEqual(o.calls, ['one'])
+  assert.equal(h.last().title, 'Pull request opened')
+  assert.equal(h.last().checkpoint, null)
+  assert.equal(h.sends.length + sent, 0, 'observation never sends')
+})
+
+test('an unconfirmed 503 saved on the record is not a refusal: the row checks and stays locked', async () => {
+  const attempt = { id: 'a1', unitKey: 'record:one', ids: ['one'], at: Date.parse('2026-10-20T10:30:00Z'), state: 'unknown' }
+  const unconfirmed = prepared('one', { record: { last_submit_error: 'GitHub has not confirmed', last_submit_error_code: 'publication_unconfirmed', updated_at: '2026-10-20T11:00:00Z' } })
+  assert.equal(observeAttempt(attempt, new Map([['one', unconfirmed]])).state, 'unknown')
+  assert.equal(localHold(unconfirmed), HOLD.checking)
+  const pushed = prepared('one', { record: { last_submit_stage: 'push_ambiguous', last_submit_error: 'Push outcome unknown', updated_at: '2026-10-20T11:00:00Z' } })
+  assert.equal(observeAttempt(attempt, new Map([['one', pushed]])).state, 'unknown')
+  const h = harness({ ids: ['one'], records: [unconfirmed] })
+  await openConfirm(h)
+  assert.deepEqual(h.pills(), [['one', HOLD.checking]])
+  assert.equal(h.action(KEY).confirming, false)
+  h.fire(KEY, 'confirm'); await tick()
+  assert.equal(h.sends.length, 0)
+})
+
+test('the card and the app refresh share one observer: one request at a time, then backoff after no answer', async () => {
+  const c = clock()
+  const gate = deferred()
+  let requests = 0
+  const observer = createPublicationObserver({ now: c.now, observe: () => { requests += 1; return requests === 1 ? gate.promise : Promise.reject(new Error('offline')) } })
+  const unknown = prepared('one', { record: { status: 'submitting', updated_at: '2026-10-20T10:00:00Z' } })
+  const h = timed({ ids: ['one'], records: [prepared('one')], send: () => ({ uncertain: true }), observe: record => observer.check(record) }, c)
+  await openConfirm(h)
+  h.store.set('one', unknown)
+  h.fire(KEY, 'confirm'); await tick()
+  await c.advance(RECHECK_DELAYS_MS[0])
+  // The app's refresh sweeps the same record while the card's request runs.
+  const settledRows = []
+  const sweep = observer.sweep([unknown], record => settledRows.push(record))
+  await tick()
+  assert.equal(requests, 1, 'one request serves the card and the refresh')
+  gate.resolve({ outcome: 'transport' }); await sweep; await tick()
+  assert.deepEqual(settledRows, [])
+  // No answer: the next request waits for the backoff, whoever asks.
+  await observer.sweep([unknown]); await tick()
+  assert.equal(requests, 1, 'still backing off')
+  assert.ok(RECHECK_DELAYS_MS[1] > TRANSPORT_BACKOFF_MS[0])
+  await c.advance(RECHECK_DELAYS_MS[1])
+  assert.equal(requests, 2, 'the card asked again once the backoff passed')
+  // A second miss waits longer than the card's next recheck.
+  assert.ok(RECHECK_DELAYS_MS[2] < TRANSPORT_BACKOFF_MS[1])
+  await c.advance(RECHECK_DELAYS_MS[2])
+  assert.equal(requests, 2, 'the longer backoff holds')
+  assert.equal(h.row('one').pill, 'Checking GitHub', 'no answer is not an outcome')
+  assert.equal(h.sends.length, 1)
+})
+
+// ---- Review regressions (app-observer-wiring.md B2, B4): the reviewer's probes.
+test('B4: a changed finding expires when the record gets a new version, which is observed afresh', async () => {
+  const c = clock()
+  let calls = 0
+  const h = timed({ ids: ['one'], records: [prepared('one')], send: () => ({ uncertain: true }),
+    observe: async () => { calls += 1; return { outcome: calls === 1 ? 'changed' : 'pending' } } }, c)
+  await openConfirm(h)
+  h.fire(KEY, 'confirm'); await tick()
+  await c.advance(RECHECK_DELAYS_MS[0])
+  assert.equal(h.row('one').pill, CHANGED_PILL)
+  h.store.set('one', prepared('one', { head: NEXT, record: { updated_at: '2026-10-20T12:00:00Z', last_submit_error_code: 'publication_unconfirmed' } }))
+  h.session.refresh('turn'); await tick(); h.provide(); await tick()
+  assert.equal(calls, 2, 'the new version was observed')
+  assert.equal(h.row('one').pill, 'Checking GitHub')
+  assert.ok(c.pending().length > 0, 'checking resumed')
+  assert.equal(h.sends.length, 1)
+})
+
+test('B4: a late settlement for an older version never overwrites a newer exact read', async () => {
+  const c = clock()
+  const gate = deferred()
+  const old = prepared('one')
+  const h = timed({ ids: ['one'], records: [old], send: () => ({ uncertain: true }), observe: () => gate.promise }, c)
+  await openConfirm(h)
+  h.fire(KEY, 'confirm'); await tick()
+  await c.advance(RECHECK_DELAYS_MS[0])
+  h.store.set('one', prepared('one', { head: NEXT, record: { updated_at: '2026-10-20T12:00:00Z', last_submit_error_code: 'publication_unconfirmed' } }))
+  h.session.refresh('turn'); await tick()
+  gate.resolve({ outcome: 'settled', record: published(old, 7) }); await tick()
+  assert.notEqual(h.last().title, 'Pull request opened')
+  assert.deepEqual(h.row('one').links, [])
+  assert.ok(h.last().checkpoint, 'the unknown attempt is still owned')
+  assert.equal(h.sends.length, 1)
+})
+
+test('B2: a saved post-push error keeps the attempt unknown and the row checking', async () => {
+  const attempt = { id: 'a1', unitKey: 'record:one', ids: ['one'], at: Date.parse('2026-10-20T10:30:00Z'), state: 'unknown' }
+  const pushed = prepared('one', { record: { last_submit_stage: 'pushed', last_submit_push_sha: HEAD,
+    last_submit_error: 'GitHub command failed. The branch was pushed.', updated_at: '2026-10-20T11:00:00Z' } })
+  assert.equal(observeAttempt(attempt, new Map([['one', pushed]])).state, 'unknown')
+  assert.equal(localHold(pushed), HOLD.checking)
+  const c = clock()
+  const h = timed({ ids: ['one'], records: [prepared('one')], observe: async () => ({ outcome: 'pending', effect: 'branch_published' }),
+    send: rec => { h.store.set(rec.id, pushed); return { error: pushed.last_submit_error, record: pushed, failure: { status: 409, code: '' }, uncertain: true } } }, c)
+  await openConfirm(h)
+  h.fire(KEY, 'confirm'); await tick()
+  await c.advance(RECHECK_DELAYS_MS[0])
+  assert.equal(h.row('one').pill, 'Checking GitHub')
+  assert.ok(h.last().checkpoint)
+})
+
 // ---- "Fix in chat" (`ask-v1`): a held row asks this chat's agent, by code.
 const ASKS = ['row-state', 'rows-v2', 'ask-v1']
 const refsOf = h => h.last().ask?.refs.map(ref => [ref.id, ref.code]) || null
@@ -1593,4 +1820,106 @@ test('every ask the card builds is one the host accepts and words itself', async
     assert.equal(host.askMessage('contribute', ask),
       `Please fix what the contribute card in this chat flagged:\n\n\`contribute · contribute-card-states-20261106 · ${code}\``)
   }
+})
+
+// ---- Observation through Fix in chat (`ask-v1`).
+test('a changed target asks publication_changed; Autopilot and Checking GitHub ask nothing', async () => {
+  const c = clock()
+  const h = timed({ ids: ['one'], features: ASKS, records: [prepared('one')], send: () => ({ uncertain: true }),
+    observe: async () => ({ outcome: 'changed' }) }, c)
+  await openConfirm(h)
+  h.fire(KEY, 'confirm'); await tick()
+  assert.equal(h.last().ask, null, 'Checking GitHub asks nothing')
+  await c.advance(RECHECK_DELAYS_MS[0])
+  assert.equal(h.row('one').pill, CHANGED_PILL)
+  assert.deepEqual(refsOf(h), [['one', PUBLICATION_CHANGED]], 'changed comes before result_unknown, even within the window')
+  const rev = h.last().ask.refs[0].rev
+  // An unrelated write that keeps the attempt and source is the same state.
+  h.store.set('one', { ...prepared('one'), updated_at: '2026-10-20T10:40:00Z' }); h.session.refresh('turn'); await tick()
+  assert.equal(h.row('one').pill, CHANGED_PILL, 'the new version was observed again')
+  assert.equal(h.last().ask.refs[0].rev, rev, 'the same changed state asks once')
+  assert.equal(h.sends.length, 1, 'an ask never sends again')
+
+  const a = timed({ ids: ['two'], features: ASKS, records: [prepared('two', { record: { autopilot: { enabled: true } } })], send: () => ({ uncertain: true }),
+    observe: async () => ({ outcome: 'not_eligible' }) }, c)
+  await openConfirm(a)
+  a.fire(KEY, 'confirm'); await tick()
+  await c.advance(RECHECK_DELAYS_MS[0])
+  assert.equal(a.row('two').pill, AUTOPILOT_PILL)
+  assert.equal(a.last().ask, null, 'Autopilot owns it: no ask')
+  for (let i = 0; i < 20 && c.pending().length; i++) await c.advance(60000)
+  assert.equal(a.last().ask, null, 'still no ask after the window')
+
+  // A newly opened card on a record whose saved send may be public: Checking GitHub, no ask.
+  const saved = harness({ ids: ['three'], features: ASKS, records: [prepared('three', { record: { last_submit_error: 'x', last_submit_error_code: 'publication_unconfirmed' } })] })
+  await openConfirm(saved)
+  assert.deepEqual(saved.pills(), [['three', HOLD.checking]])
+  assert.equal(saved.last().ask, null)
+})
+
+test('an incomplete record whose saved send may be public shows Checking GitHub and never asks restage', async () => {
+  const shapes = {
+    unconfirmed: { last_submit_error: 'May be public', last_submit_error_code: 'publication_unconfirmed' },
+    pushed: { last_submit_stage: 'pushed', last_submit_error: 'The branch was pushed.' },
+    ambiguous: { last_submit_stage: 'push_ambiguous' },
+  }
+  for (const [name, fields] of Object.entries(shapes)) {
+    for (const [gap, plan] of Object.entries({ size: { diff_stat: '' }, identity: { branch: '' } })) {
+      const record = prepared('one', { plan, record: fields })
+      // The reviewer's probe: a fresh card, before any tap.
+      const fresh = harness({ ids: ['one'], features: ASKS, records: [record] })
+      fresh.session.start(); await tick()
+      assert.deepEqual(fresh.pills(), [['one', HOLD.checking]], `${name} ${gap}`)
+      assert.equal(fresh.last().ask, null, `${name} ${gap} before a tap`)
+      // And after the tap's check.
+      const tapped = harness({ ids: ['one'], features: ASKS, records: [record] })
+      await openConfirm(tapped)
+      assert.equal(tapped.last().ask, null, `${name} ${gap} after a tap`)
+      assert.equal(tapped.action(KEY).confirming, false)
+      assert.equal(tapped.sends.length, 0)
+    }
+  }
+  // The same incomplete record without a possibly-public send still asks restage.
+  const plain = harness({ ids: ['one'], features: ASKS, records: [prepared('one', { plan: { diff_stat: '' } })] })
+  plain.session.start(); await tick()
+  assert.deepEqual(refsOf(plain), [['one', 'restage']])
+})
+
+// ---- Observation settlement and exact reads share one per-record ordering.
+async function settledDuringRead(late) {
+  const c = clock()
+  const old = encodeCheckpoint([{ id: 'a1', unitKey: 'record:one', ids: ['one'], at: c.now(), state: 'unknown' }])
+  const observed = deferred(), slow = deferred()
+  let reads = 0
+  const h = timed({ ids: ['one'], records: [prepared('one')], checkpoint: { id: 'cp', data: old }, retain: true,
+    observe: () => observed.promise,
+    loadExact: (id, store) => ++reads === 2 ? slow.promise : Promise.resolve(structuredClone(store.get(id))) }, c)
+  h.session.start(); await tick()
+  // A turn settles: an exact read starts before the observation answers.
+  h.session.refresh('turn'); await tick()
+  observed.resolve({ outcome: 'settled', record: published(prepared('one'), 33) }); await tick()
+  assert.deepEqual(h.row('one').links, [{ label: '#33', url: 'https://github.com/owner/repo/pull/33' }])
+  late(slow); await tick()
+  return { h, c }
+}
+
+for (const [name, late] of Object.entries({
+  'a stale prepared copy': slow => slow.resolve(prepared('one')),
+  'a missing record': slow => slow.resolve(null),
+  'a failed read': slow => slow.resolve(Promise.reject(new Error('offline'))),
+})) {
+  test(`an exact read issued before a settlement never undoes it: ${name}`, async () => {
+    const { h } = await settledDuringRead(late)
+    assert.deepEqual(h.row('one').links, [{ label: '#33', url: 'https://github.com/owner/repo/pull/33' }])
+    assert.equal(h.last().title, 'Pull request opened')
+    assert.equal(h.last().checkpoint, null)
+    assert.equal(h.sends.length, 0)
+  })
+}
+
+test('a read issued after a settlement still lands (control)', async () => {
+  const { h } = await settledDuringRead(slow => slow.resolve(prepared('one')))
+  h.store.set('one', { ...published(prepared('one'), 34), updated_at: '2026-10-20T12:00:00Z' })
+  h.session.refresh('turn'); await tick()
+  assert.deepEqual(h.row('one').links, [{ label: '#34', url: 'https://github.com/owner/repo/pull/34' }])
 })

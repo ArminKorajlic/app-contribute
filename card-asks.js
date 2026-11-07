@@ -6,10 +6,11 @@
 // the contributing skill's card-asks.md says what the agent does for each
 // code. Problems only the owner can fix (the GitHub connection) are not asks.
 import { contributionScopeHash, qualityReviewFor } from './review.js'
+import { uncertainPublication } from './domain.js'
 
 export const ASK_CODES = Object.freeze(['commit_identity_mismatch', 'invalid_pr_text', 'publication_destination_unavailable',
   'needs_review', 'changes_needed', 'upstream_conflict', 'upstream_base_moved', 'source_changed', 'send_failed',
-  'needs_attention', 'not_in_contribute', 'couldnt_check', 'restage', 'stack_incomplete', 'result_unknown'])
+  'needs_attention', 'not_in_contribute', 'couldnt_check', 'restage', 'stack_incomplete', 'result_unknown', 'publication_changed'])
 const ASKABLE = new Set(ASK_CODES)
 
 // Connection codes are the owner's: the card offers the account, not an ask.
@@ -37,6 +38,11 @@ const CAUSE = {
   needs_attention: record => [...source(record.plan || {}), record.attention?.type || '', record.attention?.key || ''],
   restage: record => [...source(record.plan || {}), record.plan?.diff_stat || '', record.plan?.repo || record.repo || '', record.plan?.branch || record.branch || ''],
   stack_incomplete: record => [...source(record.plan || {}), record.plan?.stack?.id || '', record.plan?.stack?.position || 0, record.plan?.stack?.total || 0],
+  // An observed send whose GitHub target no longer matches it: the reviewed
+  // source and the attempt it is about (its claim stamp and input digest,
+  // and the push the platform saved), never when the record was last written.
+  publication_changed: record => [...source(record.plan || {}), record.submit_started_at || '', record.personal_submit_input_sha256 || '',
+    record.last_submit_stage || '', record.last_submit_push_sha || ''],
 }
 // A failed send is one attempt: the platform stamps `submit_started_at` and
 // the attempt's input digest when it claims the record, and later unrelated
@@ -64,6 +70,8 @@ export const cardAsk = (id, code, rev) => ASKABLE.has(code) && HEX.test(String(r
 export function holdCode(record, reviewState = null) {
   if (!record) return 'not_in_contribute'
   if (record.status !== 'prepared') return ''
+  // A send that may already be public is being checked, not failed: no ask.
+  if (uncertainPublication(record)) return ''
   if (reviewState?.state === 'needs_refresh') return NAMED.has(reviewState.code) ? reviewState.code : 'source_changed'
   if (record.last_submit_error) {
     const code = String(record.last_submit_error_code || '')

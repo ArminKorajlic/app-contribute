@@ -40,6 +40,7 @@ import { stackPublicationRecords } from './stack.js'
 import { deliverCycleMessage } from './cycle-delivery.js'
 import { abandonPrepared, cacheFeed, cacheSourceSnapshot, loadAppSettings, loadCachedFeed, loadCachedSourceSnapshot, loadContributionRecord, loadFreshContributionRecord, loadFreshContributionRecords, loadCycleState, loadFullDiff, loadLedger, restoreAbandoned, saveAppSettings } from './storage.js'
 import { createRefreshCoordinator, isVisibleFrameMessage } from './refresh.js'
+import { sharedPublicationObserver } from './publication-observer.js'
 import {
   contributionPathDecision,
   contributionStackDecision,
@@ -186,7 +187,7 @@ export default function ContributeEntry({ appId, token, blockSession = null }) {
   }, [])
   if (!blockSession) return <ContributeApp appId={appId} token={token} />
   return <>
-    <InlineBlockSession blockSession={blockSession} runtime={runtime} onNeedRuntime={onNeedRuntime} />
+    <InlineBlockSession blockSession={blockSession} runtime={runtime} onNeedRuntime={onNeedRuntime} appId={appId} token={token} />
     {addressed ? <ContributeApp appId={appId} token={token} addressedRecordIds={addressed} onPublicationRuntime={setRuntime} /> : null}
   </>
 }
@@ -414,6 +415,20 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
     replaceFeed(mergeRecordUpdates(recordsRef.current, updates))
   ), [replaceFeed])
 
+  // A send GitHub has not confirmed is settled by observation, not by
+  // waiting: after each ledger read, ask the platform to read GitHub for it
+  // (read-only, deduped with any chat card in this frame, backed off when
+  // unanswered). Not awaited, so a refresh, and a card's Try again, never
+  // wait on GitHub. A settled record replaces its row only while the row is
+  // still the version that was observed.
+  const observeUncertainRef = useRef(() => {})
+  observeUncertainRef.current = () => {
+    void sharedPublicationObserver(appId, tokenRef.current)
+      .sweep(recordsRef.current, record => applyRecordUpdates(record),
+        id => recordsRef.current.find(record => record.id === id))
+      .catch(() => {})
+  }
+
   // Best-effort live refresh of the open PR/issue records in ONE batched
   // GraphQL round-trip. Returns the refreshed array — a NEW array only when
   // GitHub actually moved a record, the same reference otherwise (nothing to
@@ -600,6 +615,7 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
       signalReady({ item_count: recs.length })
 
       if (ledger.fromCache) return
+      observeUncertainRef.current()
       let toCache = recs
       let feedReplaced = false
       if (status.state === 'connected') {
@@ -663,6 +679,7 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
         ? await fetchRefreshed(baseline) : baseline
       replaceFeed(reconcileLedgerSnapshot(recordsRef.current, next, baseline))
       setFromCache(false)
+      observeUncertainRef.current()
     }
   }, [fetchRefreshed, refreshReviewStatus, replaceFeed])
   refreshWorkRef.current = runRefreshWork
@@ -1015,7 +1032,8 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
         if (resolution.state === 'blocked') {
           refreshReviewStatus()
           return {
-            error: 'Nothing was sent. This contribution needs an update before you try again.',
+            // Only a certified non-attempt may say nothing was sent.
+            error: 'This contribution needs an update before you try again.',
             failure: { owner: 'agent', code: 'review_refresh_needed' },
           }
         }
@@ -1403,7 +1421,7 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
         return {
           error: summary.published > 0
             ? 'Saved progress was restored. The remaining changes show what needs updating.'
-            : 'Nothing was sent. These changes need an update before you try again.',
+            : 'These changes need an update before you try again.',
           failure: { owner: 'agent', code: 'review_refresh_needed' },
         }
       }

@@ -16,6 +16,10 @@
 # deliberately retryable: the next scheduled pass resumes either outcome
 # without asking the owner to repeat the publication decision.
 #
+# Sends whose outcome GitHub has not confirmed, left with no pane open, get a
+# few bounded read-only observations per pass (publication_observe.py); the
+# platform settles only an exact outcome, and the job never sends.
+#
 # Then, for every pr/issue ledger record that is still draft/open, ask GitHub
 # for its live state, latest activity, and check status in ONE batched GraphQL
 # call (aliased resource() nodes, ~1 rate-limit point total), write back any
@@ -88,7 +92,7 @@ DEFAULT_BRANCH_BY_REPO = {}
 BASE_FAILURES_BY_REPO = {}
 
 
-def _call(method, path, body=None, headers=None):
+def _call(method, path, body=None, headers=None, timeout=15):
   url = API + path
   hdrs = {"Authorization": "Bearer " + TOKEN}
   if headers:
@@ -98,7 +102,7 @@ def _call(method, path, body=None, headers=None):
     data = json.dumps(body).encode("utf-8")
     hdrs["Content-Type"] = "application/json"
   req = urllib.request.Request(url, data=data, headers=hdrs, method=method)
-  with urllib.request.urlopen(req, timeout=15) as resp:
+  with urllib.request.urlopen(req, timeout=timeout) as resp:
     return resp.read(), resp.headers
 
 
@@ -240,6 +244,19 @@ def _finish_publication_connection(rec):
 
 for _name, _record, _etag in records:
   _finish_publication_connection(_record)
+
+
+# Sends GitHub has not confirmed, with no pane or card open to check them: a
+# bounded few read-only observations per pass (publication_observe.py). The
+# platform reads GitHub and saves only an exact outcome; nothing is sent.
+import publication_observe
+
+try:
+  publication_observe.Observer(
+    _call, APP_ID, os.environ.get("APP_JOB_STATE_DIR") or None,
+  ).run([item[1] for item in records])
+except Exception as exc:
+  print("contribute: publication observation error: %s" % exc, file=sys.stderr)
 
 
 def _is_target(rec):

@@ -408,12 +408,25 @@ intent is `chat:contributions`:
   Independent units are sent in parallel; a stack's layers in order. Only
   attempts whose outcome is unknown survive a reload, as a bounded checkpoint
   of ids, and lock their unit until a read shows the result. An unknown outcome
-  is re-read on a backoff for ten minutes after the send (exact reads and the
-  app's card refresh), then shows **Not confirmed** and asks the agent to check
-  it; it is never resent. A row whose send failed shows **Not sent**, with the
-  reason as one line beside the action; the action is **Retry** when the
-  guarded send path accepts those records again (sent rows are never resent),
-  otherwise **Fix in chat**.
+  (a lost response, or a 503 `publication_unconfirmed`) is observed on a
+  backoff for ten minutes after the send: the platform's read-only
+  `/observe` route reads GitHub against the attempt's signed receipt, and the
+  card re-reads its records. A settled answer shows the PR; a branch whose PR
+  is not confirmed stays **Checking GitHub**; a changed target holds the row
+  as **Changed on GitHub** and asks the agent with `publication_changed`; a
+  record with Autopilot on that the platform leaves to Autopilot shows **With
+  Autopilot**. Neither of the last two is ever proof that nothing was sent;
+  both stay locked. Each answer belongs to one record version: a late answer
+  for an older one is dropped, and a new version is observed afresh. After
+  the window the row shows **Not confirmed** and asks the agent to check it;
+  it is never resent. The workspace's refresh and the scheduled job observe
+  uncertain records too (a bounded few per pass; the job only past the card's
+  window, as a load heuristic, so an occasional duplicate read is possible);
+  a Möbius without the route keeps the ledger-only recheck, and the earlier
+  card keeps the attempt unknown and locked. A row whose send failed shows
+  **Not sent**, with the reason as one line beside the action; the action is
+  **Retry** when the guarded send path accepts those records again (sent rows
+  are never resent), otherwise **Fix in chat**.
 - **Fix in chat.** On a host that draws asks (`ask-v1`, which needs the
   owner's `chat.blocks.ask` grant), a held or failed row the agent can repair
   turns the action into **Fix in chat** (`card-asks.js`). The card reports
@@ -429,7 +442,7 @@ intent is `chat:contributions`:
   `publication_destination_unavailable`, `needs_review`, `changes_needed`,
   `upstream_conflict`, `upstream_base_moved`, `source_changed`, `send_failed`,
   `needs_attention`, `not_in_contribute`, `couldnt_check`, `restage`,
-  `stack_incomplete` and `result_unknown`; the contributing skill's "Card
+  `stack_incomplete`, `result_unknown` and `publication_changed`; the contributing skill's "Card
   asks" says what the agent does for each, ending with a fresh card. No
   title, template or GitHub error text is in the message. The app gets no event from the tap and nothing is
   sent to GitHub; only Confirm sends. A GitHub connection problem is the

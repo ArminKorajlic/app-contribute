@@ -82,3 +82,16 @@ test('the state token follows the cause, not the record\'s last write', () => {
   assert.notEqual(rev('result_unknown', base, { id: 'att-2', at: 2 }), unknown)
   assert.match(askRev('gone', 'not_in_contribute', null), token)
 })
+
+test('publication_changed is keyed on the attempt and source, never on a timestamp; a possibly-public send is not an ask', () => {
+  const base = { id: 'one', type: 'pr', status: 'prepared', updated_at: '2026-10-20T10:00:00Z', submit_started_at: '2026-10-20T09:59:00Z',
+    personal_submit_input_sha256: 'e'.repeat(64), last_submit_stage: 'pushed', last_submit_push_sha: 'a'.repeat(40),
+    plan: { head_sha: 'a'.repeat(40), base_sha: 'b'.repeat(40), diff_sha256: 'd'.repeat(64) } }
+  const rev = record => askRev('one', 'publication_changed', record)
+  assert.equal(rev({ ...base, updated_at: '2026-10-20T12:00:00Z' }), rev(base))
+  assert.notEqual(rev({ ...base, submit_started_at: '2026-10-20T13:00:00Z' }), rev(base), 'another attempt')
+  assert.notEqual(rev({ ...base, plan: { ...base.plan, head_sha: 'c'.repeat(40) } }), rev(base), 'another source')
+  assert.ok(cardAsk('one', 'publication_changed', rev(base)))
+  assert.equal(holdCode({ ...base, last_submit_error: 'The branch was pushed.' }), '', 'checking, not send_failed')
+  assert.equal(holdCode({ ...base, last_submit_stage: '', last_submit_error: 'Rejected.' }), 'send_failed')
+})

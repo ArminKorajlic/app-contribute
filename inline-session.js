@@ -21,8 +21,16 @@
 // in parallel; a stack's layers are sent in order by its one stack request.
 // Only attempts whose outcome is unknown cross a reload, and they lock their
 // unit until a read-only observation proves the result. While one is unknown
-// the card re-reads on its own (exact reads and the app's refresh), with
-// backoff, for RECHECK_WINDOW_MS after the send; it never sends again.
+// the card asks the platform to read GitHub for it (`observe`, shared with the
+// app's refresh in publication-observer.js) and re-reads its records, with
+// backoff, for RECHECK_WINDOW_MS after the send; it never sends again. A
+// settled answer shows the pull request; a published branch whose PR is not
+// confirmed keeps "Checking GitHub"; a target that changed holds the row
+// (`publication_changed`); a record with Autopilot on that the platform does
+// not observe is left to Autopilot. Every answer and finding belongs to one
+// exact record version: a late answer for an older version is dropped, and a
+// new version is observed afresh. Without the observe route (an older
+// Möbius) the card only re-reads.
 //
 // The card reports calm state to the host: a live title, and per row a status
 // pill, the pull request link once published, and one short reason when a
@@ -34,7 +42,8 @@
 // host sends in its own words as the owner's message. A GitHub connection problem opens the
 // account instead. Without `ask-v1` the action opens Contribute, as before.
 import { cardKind, CHAT_INTENT, inChat, validRecordId } from './chat-blocks.js'
-import { planScreenshots, screenshotCountText } from './domain.js'
+import { planScreenshots, publicationVersion, screenshotCountText, uncertainPublication } from './domain.js'
+import { isAutopilotEnabled } from './autopilot.js'
 import { isPublished, publicationUnits, publishedPull, reviewIncomplete, sendBlocker } from './send-readiness.js'
 import { RETRY_CHECK_REASON, reviewStateFor } from './review.js'
 import { stackMeta } from './stack.js'
@@ -107,8 +116,9 @@ export function observeAttempt(attempt, byId) {
   const records = attempt.ids.map(id => byId.get(id))
   if (records.length && records.every(isPublished)) return { ...attempt, state: 'sent', note: '' }
   if (attempt.state !== 'unknown') return attempt
+  // A saved error that says the send may already be public is not a refusal.
   const failed = records.find(record => record?.status === 'prepared' && record.last_submit_error
-    && Date.parse(record.updated_at) > attempt.at)
+    && !uncertainPublication(record) && Date.parse(record.updated_at) > attempt.at)
   return failed ? { ...attempt, state: 'failed', note: text(failed.last_submit_error) } : attempt
 }
 
@@ -154,6 +164,15 @@ export const HOLD = Object.freeze({ review: 'Needs review', notSent: 'Not sent',
   source: 'Source changed', later: 'Sent after its stack', stack: 'Stack incomplete', relay: 'Send in Contribute', sending: 'Sending',
   checking: 'Checking GitHub', gone: 'Not in Contribute', unread: 'Couldn’t check' })
 export const UNREAD_NOTE = 'Could not read this contribution. Try again; nothing was sent.'
+// What observation of an unknown send can conclude. A changed target holds
+// the row with this ask code; an update Autopilot owns gets a neutral pill.
+// Both stay locked; observation stops for them and for any other record the
+// platform does not observe (which keeps today's ledger-only recheck).
+export const PUBLICATION_CHANGED = 'publication_changed'
+export const CHANGED_PILL = 'Changed on GitHub'
+export const AUTOPILOT_PILL = 'With Autopilot'
+const CONCLUDED = new Set(['changed', 'autopilot'])
+const STOPPED = new Set(['changed', 'autopilot', 'ineligible'])
 export const CHANGED_NOTE = 'A contribution changed while it was being checked. Try again.'
 export const CONTINUED_TITLE = 'Continued below'
 // A tap reuses a source and review check this recent; a tab shown again
@@ -173,7 +192,9 @@ const confirmable = record => !relayed(record) && sized(record) && identified(re
 const CODE_PILL = Object.freeze({ upstream_conflict: 'Conflicts', upstream_base_moved: 'Upstream moved',
   commit_identity_mismatch: 'Wrong author', invalid_pr_text: 'Text not valid' })
 // The code for a record held by its own fields alone, before a tap.
-const localCode = record => relayed(record) ? '' : holdCode(record) || (sized(record) && identified(record) ? '' : 'restage')
+// A send that may already be public asks nothing here: only its observed
+// outcome asks (publication_changed, or result_unknown after the window).
+const localCode = record => relayed(record) || uncertainPublication(record) ? '' : holdCode(record) || (sized(record) && identified(record) ? '' : 'restage')
 
 
 // The row's quiet metadata line: project and lines changed (files and
@@ -189,6 +210,7 @@ export function rowMeta(record) {
 // The tap's check adds what only the source and GitHub can say.
 export function localHold(record) {
   if (relayed(record)) return HOLD.relay
+  if (uncertainPublication(record)) return HOLD.checking
   if (record?.last_submit_error) return HOLD.notSent
   if (record?.needs_attention === true) return HOLD.attention
   if (reviewIncomplete(record)) return HOLD.review
@@ -200,6 +222,7 @@ function holdFor(reason) {
   if (!reason) return ''
   if (/source changed/i.test(reason)) return HOLD.source
   if (/needs review/i.test(reason)) return HOLD.review
+  if (/confirmed the last send/i.test(reason)) return HOLD.checking
   if (/last send/i.test(reason)) return HOLD.notSent
   if (/no longer in Contribute/i.test(reason)) return HOLD.gone
   if (/not waiting to be sent/i.test(reason)) return HOLD.sending
@@ -214,7 +237,7 @@ const versionOf = record => [record?.plan?.head_sha, record?.plan?.base_sha, rec
 const readContext = value => value?.chatId ? { chatId: value.chatId, latest: value.latest !== false, intent: String(value.intent || '') } : null
 
 export function createInlineSession({ sessionId, actions, items = null, features = null, context = null, checkpoint = null, retain = false, recoveryError = false, publish, loadExact, onNeedRuntime,
-  timers = DEFAULT_TIMERS, now = () => Date.now() }) {
+  observe = null, timers = DEFAULT_TIMERS, now = () => Date.now() }) {
   const advertised = [...new Map((actions || []).filter(item => typeof item?.key === 'string').map(item => [item.key, item])).values()]
   const card = cardKind(advertised, items)
   // Record ids the card's items name: where to look, never what is sent.
@@ -273,6 +296,17 @@ export function createInlineSession({ sessionId, actions, items = null, features
   let alive = true
   let recheckTimer = null
   let rechecks = 0
+  // What observation found for a record whose send is unknown, with the
+  // record version it is about: 'pending', 'changed', 'autopilot' or
+  // 'ineligible'. A finding for another version is ignored. Session-only: a
+  // reloaded card asks again. `observeOff` once the host has no observe route.
+  const findings = new Map()
+  const findingOf = (id, record = current().get(id)) => {
+    const found = findings.get(id)
+    return found && record && found.version === publicationVersion(record) ? found.outcome : ''
+  }
+  let observeOff = !observe
+  let observing = false
 
   // The host attests the chat: only then does the card read or show records.
   const attested = () => ownRows && Boolean(chat)
@@ -436,7 +470,7 @@ export function createInlineSession({ sessionId, actions, items = null, features
     // size or identity. A record whose send is still being checked, or one
     // that only waits for its turn in a stack, has none.
     const code = holdCode(record, reviewStateFor(record, runtime.reviewStatus))
-      || (pill === HOLD.check ? 'restage' : '')
+      || (pill === HOLD.check && !uncertainPublication(record) ? 'restage' : '')
     // A check that can be retried says so; the row keeps its pill.
     return { id, pill: (pill === HOLD.source && CODE_PILL[code]) || pill, code, note: unit?.reason === RETRY_CHECK_REASON ? RETRY_CHECK_REASON : '' }
   }
@@ -450,8 +484,11 @@ export function createInlineSession({ sessionId, actions, items = null, features
       code: entry.record.status === 'submitting' ? '' : localCode(entry.record) } : null
   }
 
-  // An unknown outcome is still being checked until its window has passed.
-  const checkingAttempt = attempt => attempt.state === 'unknown' && now() - attempt.at < RECHECK_WINDOW_MS
+  // An unknown outcome is still being checked until its window has passed, or
+  // until observation concluded for each of its records (a changed target, or
+  // an update Autopilot owns): those stay locked but are no longer checked.
+  const concluded = attempt => attempt.ids.every(id => isPublished(current().get(id)) || CONCLUDED.has(findingOf(id)))
+  const checkingAttempt = attempt => attempt.state === 'unknown' && now() - attempt.at < RECHECK_WINDOW_MS && !concluded(attempt)
   const latestAttempt = id => attempts.filter(attempt => attempt.ids.includes(id)).at(-1)
 
   // This record's last send failed and it is not published.
@@ -470,7 +507,12 @@ export function createInlineSession({ sessionId, actions, items = null, features
       const [status, statusTone] = PULL_STATUS[record.status] || ['Sent', 'success']
       return { status, statusTone, links: [{ label: `#${pull.number}`, url: pull.url }] }
     }
-    if (attempt?.state === 'unknown') return checkingAttempt(attempt) ? { status: 'Checking GitHub', busy: true } : { status: 'Not confirmed' }
+    if (attempt?.state === 'unknown') {
+      // The card's action asks for its repair (fixFor, `publication_changed`).
+      if (findingOf(id) === 'changed') return { status: CHANGED_PILL, statusTone: 'attention' }
+      if (findingOf(id) === 'autopilot') return { status: AUTOPILOT_PILL }
+      return checkingAttempt(attempt) ? { status: 'Checking GitHub', busy: true } : { status: 'Not confirmed' }
+    }
     const failed = rowFailure(id)
     if (failed) return { status: 'Not sent', statusTone: failed.state === 'failed' ? 'danger' : 'neutral' }
     return null
@@ -522,7 +564,12 @@ export function createInlineSession({ sessionId, actions, items = null, features
         : count === 1 ? 'Contribution sent' : `${count} contributions sent`
       return { title, titleTone: 'success' }
     }
-    if (pending.some(entry => latestAttempt(entry.id)?.state === 'unknown')) return { title: sent.length ? `${sent.length} of ${counted.length} sent` : 'Result not confirmed', titleTone: 'attention' }
+    const unknown = pending.filter(entry => latestAttempt(entry.id)?.state === 'unknown')
+    if (unknown.length) {
+      if (unknown.every(entry => findingOf(entry.id) === 'autopilot')) return { title: sent.length ? `${sent.length} of ${counted.length} sent` : AUTOPILOT_PILL, titleTone: 'neutral' }
+      const changed = unknown.some(entry => findingOf(entry.id) === 'changed')
+      return { title: sent.length ? `${sent.length} of ${counted.length} sent` : changed ? CHANGED_PILL : 'Result not confirmed', titleTone: 'attention' }
+    }
     const failed = pending.filter(entry => rowFailure(entry.id))
     const hold = sendKey(key) ? heldNow(key) : null
     if (sent.length) return { title: `${sent.length} of ${counted.length} sent`, titleTone: failed.length || hold ? 'attention' : 'neutral' }
@@ -555,7 +602,12 @@ export function createInlineSession({ sessionId, actions, items = null, features
     if (!asks || fault) return null
     if (found?.account) return { account: found.account }
     if (expired) {
-      const entry = list.find(item => item.kind === 'pending' && latestAttempt(item.id)?.state === 'unknown')
+      const unknown = list.filter(item => item.kind === 'pending' && latestAttempt(item.id)?.state === 'unknown')
+      // A target that changed asks for its own repair; a row Autopilot owns
+      // asks nothing. Any other unconfirmed result asks the agent to check it.
+      const changed = unknown.find(item => findingOf(item.id) === 'changed')
+      if (changed) return { id: changed.id, code: PUBLICATION_CHANGED }
+      const entry = unknown.find(item => findingOf(item.id) !== 'autopilot')
       return entry ? { id: entry.id, code: 'result_unknown', attempt: latestAttempt(entry.id) } : null
     }
     const held = hold || before
@@ -621,9 +673,12 @@ export function createInlineSession({ sessionId, actions, items = null, features
 
   // Re-read an unknown outcome on a backoff; reads never send.
   function scheduleRecheck() {
-    if (!alive || recheckTimer !== null) return
+    if (!alive) return
     const open = attempts.filter(checkingAttempt)
-    if (!open.length) return
+    // Nothing left to check (settled, or concluded by observation): drop a
+    // recheck scheduled before the answer arrived.
+    if (!open.length) { if (recheckTimer !== null) timers.clear(recheckTimer); recheckTimer = null; return }
+    if (recheckTimer !== null) return
     // The last check lands just after the window, so the card then settles on
     // "Not confirmed" without waiting for another report.
     const windowLeft = Math.max(0, Math.min(...open.map(attempt => attempt.at + RECHECK_WINDOW_MS - now())))
@@ -634,10 +689,42 @@ export function createInlineSession({ sessionId, actions, items = null, features
       if (!alive) return
       const ids = [...new Set(attempts.filter(attempt => attempt.state === 'unknown').flatMap(attempt => attempt.ids))]
       if (!ids.length) return
-      // The app's own refresh path re-reads the ledger and review status.
+      // The app's own refresh path re-reads the ledger and review status;
+      // observation asks GitHub, through the platform, what became of it.
       if (runtime && !runtime.refreshing) Promise.resolve().then(() => runtime.refresh?.()).catch(() => {})
-      void read(ids)
+      void read(ids).then(observeUnknown)
     }, delay)
+  }
+
+  // Ask the platform to read GitHub for each record of an unknown send, once
+  // at a time (the shared observer dedupes and backs off). Only reads: a
+  // settled answer brings the saved record, nothing else changes the ledger.
+  async function observeUnknown() {
+    if (observeOff || observing || !alive) return
+    const asked = new Map()
+    for (const id of new Set(attempts.filter(attempt => attempt.state === 'unknown').flatMap(attempt => attempt.ids))) {
+      const record = current().get(id)
+      if (record && !isPublished(record) && !STOPPED.has(findingOf(id, record))) asked.set(id, record)
+    }
+    if (!asked.size) return
+    observing = true
+    let answers
+    try { answers = await Promise.all([...asked.values()].map(record => Promise.resolve().then(() => observe(record)).catch(() => null))) } finally { observing = false }
+    if (!alive) return
+    ;[...asked].forEach(([id, record], index) => {
+      const answer = answers[index]
+      if (answer?.outcome === 'unsupported') { observeOff = true; return }
+      // Only an answer about the record as it still is: a newer read wins.
+      const version = publicationVersion(record)
+      if (!answer || (answer.version ?? version) !== version || publicationVersion(current().get(id)) !== version) return
+      // A settlement is newer than every exact read already in flight.
+      if (answer.outcome === 'settled' && answer.record?.id === id) { landExact(id, issueRead(id), { record: answer.record }); findings.delete(id) }
+      else if (['pending', 'changed'].includes(answer.outcome)) findings.set(id, { version, outcome: answer.outcome })
+      // The platform does not observe Autopilot's own update; whether this
+      // record is Autopilot's comes from the record, not from that answer.
+      else if (answer.outcome === 'not_eligible') findings.set(id, { version, outcome: isAutopilotEnabled(record) ? 'autopilot' : 'ineligible' })
+    })
+    settle(); emit()
   }
 
   function emit() {
@@ -701,22 +788,32 @@ export function createInlineSession({ sessionId, actions, items = null, features
     frozen = ready.length ? { key, units: copy(ready) } : null
   }
 
-  // Newest-issued exact read wins per record; reads never send.
+  // One ordering for every exact result of a record, read or observed: each
+  // result is issued a generation, and only the newest issued one lands. An
+  // older result still on its way (a stale copy, a missing or a failed read)
+  // is dropped.
+  function issueRead(id) {
+    const generation = (generations.get(id) || 0) + 1
+    generations.set(id, generation)
+    return generation
+  }
+  function landExact(id, generation, { record, failed }) {
+    if (generations.get(id) !== generation) return
+    reading.delete(id)
+    if (record?.id === id) { exact.set(id, record); unreadable.delete(id); absent.delete(id); return }
+    if (failed) { unreadable.add(id); absent.delete(id); return }
+    // An authoritative read found it gone: forget any earlier copy.
+    exact.delete(id); unreadable.delete(id); absent.add(id)
+  }
+
+  // Newest-issued exact result wins per record; reads never send.
   async function read(ids) {
     if (!ids.length) return
     lastRead = now()
-    const issued = ids.map(id => { const generation = (generations.get(id) || 0) + 1; generations.set(id, generation); reading.add(id); return generation })
+    const issued = ids.map(id => { reading.add(id); return issueRead(id) })
     const results = await Promise.all(ids.map(id => Promise.resolve().then(() => loadExact(id)).then(record => ({ record }), () => ({ failed: true }))))
     if (!alive) return
-    ids.forEach((id, index) => {
-      if (generations.get(id) !== issued[index]) return
-      reading.delete(id)
-      const { record, failed } = results[index]
-      if (record?.id === id) { exact.set(id, record); unreadable.delete(id); absent.delete(id); return }
-      if (failed) { unreadable.add(id); absent.delete(id); return }
-      // An authoritative read found it gone: forget any earlier copy.
-      exact.delete(id); unreadable.delete(id); absent.add(id)
-    })
+    ids.forEach((id, index) => landExact(id, issued[index], results[index]))
     settle(); emit()
   }
 
@@ -799,7 +896,9 @@ export function createInlineSession({ sessionId, actions, items = null, features
 
   return {
     sessionId,
-    start() { emit(); void readCard() },
+    // A restored unknown send is observed once its records are read, even
+    // past its window: the answer can settle it without the owner.
+    start() { emit(); void readCard().then(observeUnknown) },
     // A new envelope for this session: the host's verdict on whether the card
     // is still the newest of its chat. A card a newer one follows drops any
     // open confirmation or tap (nothing was sent) and can start no new send;
@@ -820,7 +919,8 @@ export function createInlineSession({ sessionId, actions, items = null, features
     refresh(reason) {
       if (!alive || !tracks() || folded()) return
       if (reason === 'visible' && now() - lastRead < VISIBLE_REREAD_MS) return
-      void readCard()
+      // A record that changed since its last answer is observed afresh.
+      void readCard().then(observeUnknown)
     },
     // The records this card's action would cover now.
     sendIds() { return idsFor(card?.key || '') },

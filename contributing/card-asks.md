@@ -35,6 +35,7 @@ review it as [ledger.md](ledger.md) describes:
 | `restage` | Restage it so its diff stat and identity are complete, then review again. |
 | `stack_incomplete` | Prepare, review and stage every layer of its stack from this chat, so the card can list the whole stack. |
 | `result_unknown` | Read only: look on GitHub for the exact branch and pull request. Record a PR you find; otherwise report what you saw. Never clear the error or send again. |
+| `publication_changed` | Read only: the platform's observation found that GitHub or the record no longer matches the signed attempt (a different head, base or text, or a closed target). That is not proof nothing was sent, so never clear the error or receipt, retry, reopen or replace the PR. Compare the record with the live branch and PR; tell the owner what changed and which decision it needs (update the existing PR, prepare a replacement, or dismiss). Restage only after the owner decides. |
 
 Then print a fresh card with `python3 /data/apps/contribute/prepared_block.py
 <record-id> …` ([publish.md](publish.md) "Offering Send in chat"), so the
