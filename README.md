@@ -375,8 +375,9 @@ intent is `chat:contributions`:
   unresolved send it keeps showing it, and otherwise folds to one line,
   "Continued below", and reads nothing.
 - **Unresolved records hold.** A named record (or successor) that is gone
-  shows **Not in Contribute**, and one that could not be read shows
-  **Couldn’t check** with **Try again**; either holds the card. A failed
+  shows **Not in Contribute**, and one whose fresh read failed shows
+  **Couldn’t check** with **Try again**, even if an earlier copy is cached;
+  either holds the card. A failed
   successor read is retried on the next trigger.
 - **Cheap freshness.** It reads its records (local storage, no network) when it
   mounts, on the host's `app-block-refresh` after a turn in its chat settles,
@@ -406,7 +407,8 @@ intent is `chat:contributions`:
   of ids, and lock their unit until a read shows the result. An unknown outcome
   is re-read on a backoff for ten minutes after the send (exact reads and the
   app's card refresh), then shows **Not confirmed** and opens Contribute; it is
-  never resent. A row whose send failed shows **Not sent**; the action is
+  never resent. A row whose send failed shows **Not sent**, with the reason as
+one line beside the action; the action is
   **Retry** when the guarded send path accepts those records again (sent rows
   are never resent), otherwise **Open Contribute**.
 

@@ -23,10 +23,12 @@ export function readBlockSession(value) {
       .filter((intent, index, list) => list.indexOf(intent) === index).map(intent => ({ intent })) : null,
     // What the host draws beyond the original report fields (`row-state`).
     features: Array.isArray(value.features) ? value.features.filter(feature => typeof feature === 'string').slice(0, 16) : [],
-    // The chat this card is rendered in and whether it is that chat's newest
-    // card, attested by the chat host (`rows-v2`). Never taken from the card.
+    // The chat this card is rendered in, the block intent the host groups it
+    // by, and whether it is that group's newest block, attested by the chat
+    // host (`rows-v2`). Never taken from the card.
     context: typeof value.context?.chatId === 'string' && CHAT_ID.test(value.context.chatId)
-      ? { chatId: value.context.chatId, latest: value.context.latest !== false } : null,
+      ? { chatId: value.context.chatId, latest: value.context.latest !== false,
+        intent: typeof value.context.intent === 'string' && INTENT.test(value.context.intent) ? value.context.intent : '' } : null,
     checkpoint: value.checkpoint && typeof value.checkpoint === 'object' ? { id: value.checkpoint.id, data: value.checkpoint.data } : null,
     retain: value.retain === true,
     recoveryError: Boolean(value.recoveryError),
@@ -63,4 +65,38 @@ export function publishBlockState(state, target = null) {
   if (!Number.isSafeInteger(target.generation)) return false
   window.parent.postMessage({ type: STATE, sessionId, generation: target.generation, ...body }, window.location.origin)
   return true
+}
+
+// The whole app side of a card session, as the headless component runs it:
+// the host's envelope and messages, read only through this adapter, drive one
+// inline session. `loadExact(id)` reads a record; `onNeedRuntime(ids)` asks for
+// the send runtime. Returns `updateRuntime(runtime)` and `dispose()`.
+export function connectInlineSession({ blockSession, createSession, loadExact, onNeedRuntime }) {
+  let session = null
+  let runtime = null
+  // Where this document's reports go: the host's handle when it gave one for
+  // this session, otherwise the latest envelope (with its generation).
+  let target = null
+  function start(init) {
+    target = blockSession?.sessionId === init.sessionId && typeof blockSession.setState === 'function'
+      && (init.generation === null || init.generation === blockSession.generation) ? blockSession : init
+    // A repeated init for this session carries the host's current verdict on
+    // the card's chat (for example that a newer card now follows it).
+    if (session?.sessionId === init.sessionId) { session.update(init); return }
+    session?.dispose()
+    session = createSession({ ...init, publish: state => publishBlockState(state, target), loadExact, onNeedRuntime: ids => onNeedRuntime?.(ids) })
+    if (runtime) session.updateRuntime(runtime)
+    session.start()
+  }
+  const stop = listenBlockSession({
+    onInit: start,
+    onAction: event => { if (event.sessionId === session?.sessionId) session.handleEvent(event) },
+    onRefresh: hint => { if (hint.sessionId === session?.sessionId) session.refresh(hint.reason) },
+  })
+  const initial = readBlockSession(blockSession)
+  if (initial) start(initial)
+  return {
+    updateRuntime(next) { runtime = next; if (next) session?.updateRuntime(next) },
+    dispose() { stop(); session?.dispose(); session = null },
+  }
 }

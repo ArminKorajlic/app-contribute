@@ -1253,7 +1253,7 @@ window.runWorkspaceChecks = async () => {
         data: { type: 'moebius:app-block-action', sessionId: 'card-1', key: 'chat-contribute:all', event: name, nonce } }))
       const before = calls.requests.length
       try {
-        root.render(<ContributeApp appId="fixture-app" token="fixture-only" blockSession={{ sessionId: 'card-1', generation: 4, features: ['row-state', 'rows-v2'], context: { chatId: 'fixture-chat', latest: true }, actions: [{ key: 'chat-contribute:all', label: 'Contribute' }], items: [{ intent: 'review:card-record' }] }} />)
+        root.render(<ContributeApp appId="fixture-app" token="fixture-only" blockSession={{ sessionId: 'card-1', generation: 4, features: ['row-state', 'rows-v2'], context: { chatId: 'fixture-chat', latest: true, intent: 'chat:contributions' }, actions: [{ key: 'chat-contribute:all', label: 'Contribute' }], items: [{ intent: 'review:card-record' }] }} />)
         await until(() => card() && !card().disabled, 'Card state was not published')
         ensure(!calls.requests.slice(before).some(call => call.url === '/api/github/status'), 'An idle card mounted the full app')
         fire('activate', 'card-n1')
@@ -1329,7 +1329,7 @@ window.runWorkspaceChecks = async () => {
         data: { type: 'moebius:app-block-action', sessionId: 'card-ledger', key: 'chat-contribute:all', event: name, nonce } }))
       const before = calls.requests.length
       try {
-        root.render(<ContributeApp appId="fixture-app" token="fixture-only" blockSession={{ sessionId: 'card-ledger', generation: 6, features: ['row-state', 'rows-v2'], context: { chatId: 'fixture-chat', latest: true }, actions: [{ key: 'chat-contribute:all', label: 'Contribute' }], items: [{ intent: 'review:ledger-record' }] }} />)
+        root.render(<ContributeApp appId="fixture-app" token="fixture-only" blockSession={{ sessionId: 'card-ledger', generation: 6, features: ['row-state', 'rows-v2'], context: { chatId: 'fixture-chat', latest: true, intent: 'chat:contributions' }, actions: [{ key: 'chat-contribute:all', label: 'Contribute' }], items: [{ intent: 'review:ledger-record' }] }} />)
         await until(() => card() && !card().disabled, 'Card state was not published')
         fire('activate', 'ledger-n1')
         for (let i = 0; i < 150 && !(card()?.label === 'Try again' && !card().disabled); i++) await new Promise(resolve => setTimeout(resolve, 50))
@@ -1376,7 +1376,7 @@ window.runWorkspaceChecks = async () => {
         data: { type: 'moebius:app-block-action', sessionId: 'card-2', key: stackKey, event: name, nonce } }))
       const before = calls.requests.length
       try {
-        root.render(<ContributeApp appId="fixture-app" token="fixture-only" blockSession={{ sessionId: 'card-2', generation: 5, features: ['row-state', 'rows-v2'], context: { chatId: 'fixture-chat', latest: true }, actions: [{ key: stackKey, label: 'Contribute all' }], items: [{ intent: 'review:stack-base' }, { intent: 'review:stack-top' }] }} />)
+        root.render(<ContributeApp appId="fixture-app" token="fixture-only" blockSession={{ sessionId: 'card-2', generation: 5, features: ['row-state', 'rows-v2'], context: { chatId: 'fixture-chat', latest: true, intent: 'chat:contributions' }, actions: [{ key: stackKey, label: 'Contribute all' }], items: [{ intent: 'review:stack-base' }, { intent: 'review:stack-top' }] }} />)
         await until(() => card() && !card().disabled, 'Stack card state was not published')
         fire('activate', 'stack-n1')
         // Wait on timers rather than animation frames: the hidden runtime mounts behind the card.

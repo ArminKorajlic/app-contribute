@@ -312,14 +312,18 @@ export function createInlineSession({ sessionId, actions, items = null, features
     const seen = new Set()
     const list = []
     for (const hint of hints) {
-      const { id, record, next } = resolve(hint, byId)
+      const { id, record, next, seen: chain } = resolve(hint, byId)
       if (seen.has(id)) continue
       seen.add(id)
       if (record && !inChat(record, chat.chatId)) continue
-      if (!record || next) {
+      // A fresh read that failed holds the row, whatever copy is cached: a
+      // record is never shown or sent as it was before a read that failed.
+      const failed = [...chain, ...(next ? [next] : [])].some(link => unreadable.has(link))
+      if (!record || next || failed) {
         // Not read yet: no row until its read answers.
         const target = next || id
-        if (absent.has(target) || unreadable.has(target)) list.push({ id, record, kind: absent.has(target) ? 'missing' : 'unread' })
+        if (absent.has(target)) list.push({ id, record, kind: 'missing' })
+        else if (failed) list.push({ id, record, kind: 'unread' })
         continue
       }
       const kind = isPublished(record) ? 'sent' : ['prepared', 'submitting'].includes(record.status) ? 'pending'
@@ -552,9 +556,10 @@ export function createInlineSession({ sessionId, actions, items = null, features
     const openOnly = stuck && !busy && !checking && !confirming
     const label = openOnly ? 'Open Contribute' : busy ? 'Sending…' : checkingResult || checking ? 'Checking…' : loading ? 'Loading…'
       : retry ? 'Try again' : failure ? 'Retry' : ids.length === 1 ? 'Contribute' : 'Contribute all'
-    // Rows carry each record's state; a line of text is only for a reason no
-    // row explains (a check to retry, the account, an older Möbius).
-    const note = busy || checkingResult || unknown ? '' : text(fault || (checking ? '' : refreshNote) || reason)
+    // Rows carry each record's state as a pill; one line of text says what a
+    // pill cannot: a check to retry, the account, an older Möbius, or why the
+    // last send was refused.
+    const note = busy || checkingResult || unknown ? '' : text(fault || (checking ? '' : refreshNote) || reason || failure?.note)
     return {
       ...quiet, key, label,
       disabled: !openOnly && (busy || checkingResult || checking || loading || sending() || Boolean(frozen) && !confirming || Boolean(reason) && !retry),

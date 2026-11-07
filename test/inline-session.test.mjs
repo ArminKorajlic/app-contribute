@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { CHAT_ACTION, CHAT_INTENT, cardKind, hintedIds, inChat } from '../chat-blocks.js'
 import { frontendModules, renderModule } from './render-harness.mjs'
-import { readBlockSession } from '../block-protocol.js'
+import { connectInlineSession, readBlockSession } from '../block-protocol.js'
 import { reviewAddressFor } from '../send-readiness.js'
 import { attemptOutcome, CHANGED_NOTE, confirmationItem, CONTINUED_TITLE, HOLD, LEDGER_NOTE, NEWER_NOTE, UNREAD_NOTE, RECHECK_DELAYS_MS, RECHECK_WINDOW_MS, RECOVERY_NOTE,
   REFRESH_FAILED_NOTE, REVIEW_REUSE_MS, TIMEOUT_NOTE, UNCHECKED_NOTE, VISIBLE_REREAD_MS, createInlineSession, decodeCheckpoint, encodeCheckpoint, localHold, observeAttempt, rowMeta } from '../inline-session.js'
@@ -47,9 +47,13 @@ function harness({ ids = null, actions = card(ids).actions, items = card(ids || 
   records, checkpoint = null, retain = false, send, sendStack, address = null, loadExact = null, runtime: extra = {}, timers, now }) {
   const store = new Map(records.map(record => [record.id, record]))
   const states = [], sends = [], needs = [], reads = []
-  const session = createInlineSession({ sessionId: 'session-1', actions, items, features, context, checkpoint, retain, publish: state => states.push(structuredClone(state)),
+  // Every envelope goes through the app's own protocol parser, as in the frame.
+  const parse = envelope => readBlockSession({ sessionId: 'session-1', generation: 1, actions: actions || [], ...envelope })
+  const session = createInlineSession({ ...parse({ items, features, context, checkpoint, retain }), publish: state => states.push(structuredClone(state)),
     loadExact: id => { reads.push(id); return loadExact ? loadExact(id, store) : Promise.resolve(store.has(id) ? structuredClone(store.get(id)) : null) },
     onNeedRuntime: ids => needs.push(ids), ...(timers ? { timers, now } : {}) })
+  const update = session.update
+  session.update = envelope => update(parse({ items, features, ...envelope }))
   const runtime = () => ({ records: [...store.values()], ledgerReady: true, connection: 'connected', frozenBinding: true,
     reviewStatus: serverReviewStatus(address || reviewAddressFor(needs.at(-1) || session.sendIds(), [...store.values()]), store),
     send: async rec => { sends.push({ kind: 'single', ids: [rec.id], records: [structuredClone(rec)] }); return send ? send(rec) : { ok: true } },
@@ -335,7 +339,7 @@ test('only uncertain sends lock after reload; a known failure allows a new expli
   h.fire(KEY, 'confirm'); await tick()
   assert.equal(h.last().checkpoint, null)
   assert.deepEqual([h.row('one').pill, h.row('one').tone], ['Not sent', 'neutral'], 'nothing was sent: no danger tone')
-  assert.equal(h.action(KEY).note, '')
+  assert.equal(h.action(KEY).note, 'The saved proposal changed.', 'the reason is said once, beside the action')
   h.fire(KEY, 'activate'); await tick()
   assert.equal(h.action(KEY).confirming, true, 'not attempted can be confirmed again')
   const lost = harness({ ids: ['one'], records: [prepared('one')], send: () => ({ uncertain: true }) })
@@ -800,7 +804,7 @@ test('a partly sent card links the sent rows, marks the failed one, and opens Co
   assert.deepEqual([h.last().title, h.last().titleTone], ['1 of 2 sent', 'attention'])
   assert.deepEqual(h.last().rows.map(row => [row.pill, row.tone, row.links]), [['Open', 'success', [{ label: '#21', url: 'https://github.com/owner/repo/pull/21' }]],
     ['Not sent', 'danger', []]])
-  assert.deepEqual([h.action(KEY).open, h.action(KEY).label, h.action(KEY).note], [true, 'Open Contribute', ''])
+  assert.deepEqual([h.action(KEY).open, h.action(KEY).label, h.action(KEY).note], [true, 'Open Contribute', 'The branch already exists.'])
 })
 
 test('a partly sent card retries only the failed contribution through a second Confirm', async () => {
@@ -1008,6 +1012,124 @@ test('triggers during a card read run one more read after it, not another alongs
   assert.equal(calls, 1)
   gate.resolve(); await tick(12)
   assert.equal(calls, 2, 'one coalesced rerun')
+})
+
+// ---- End to end through the app's own protocol adapter, as the frame runs it.
+async function hostEnvelope(session, generation) {
+  const BLOCKS = process.env.MOBIUS_BLOCKS_FRONTEND || ''
+  if (!BLOCKS) return { sessionId: session.sessionId, generation, actions: session.actions, items: session.items, features: session.features,
+    checkpoint: null, retain: false, recoveryError: null, ...(session.context ? { context: session.context } : {}) }
+  const { blockSessionEnvelope } = await import(`${BLOCKS}/src/components/AppCanvas/appBlockSessionHost.js`)
+  return blockSessionEnvelope(session, generation)
+}
+// Whether the host named by MOBIUS_BLOCKS_FRONTEND (if any) attests a chat.
+async function hostAttests() {
+  const BLOCKS = process.env.MOBIUS_BLOCKS_FRONTEND || ''
+  if (!BLOCKS) return true
+  const { SESSION_FEATURES = [] } = await import(`${BLOCKS}/src/components/ChatView/markdown/appBlockSession.js`)
+  return SESSION_FEATURES.includes('rows-v2')
+}
+async function wired({ context = { chatId: CHAT, latest: true, intent: CHAT_INTENT }, features = ['row-state', 'rows-v2'], records, loadExact = null }) {
+  const listeners = new Set(), posted = []
+  const parent = { postMessage: message => posted.push(structuredClone(message)) }
+  globalThis.window = { parent, location: { origin: 'https://mobius.example' },
+    addEventListener: (_, fn) => listeners.add(fn), removeEventListener: (_, fn) => listeners.delete(fn) }
+  const store = new Map(records.map(record => [record.id, record]))
+  const needs = [], sends = []
+  const { actions, items } = card(records.map(record => record.id))
+  const blockSession = await hostEnvelope({ sessionId: 'e2e', actions: actions.map(action => ({ key: action.key, intent: action.key, label: action.label })),
+    items, features, ...(context ? { context } : {}) }, 3)
+  const connection = connectInlineSession({ blockSession, createSession: createInlineSession, onNeedRuntime: ids => needs.push(ids),
+    loadExact: id => loadExact ? loadExact(id, store) : Promise.resolve(store.has(id) ? structuredClone(store.get(id)) : null) })
+  const deliver = data => [...listeners].forEach(fn => fn({ source: parent, origin: 'https://mobius.example', data }))
+  let nonce = 0
+  const fire = event => deliver({ type: 'moebius:app-block-action', sessionId: 'e2e', generation: 3, key: KEY, event, nonce: `e${++nonce}` })
+  const provide = () => connection.updateRuntime({ records: [...store.values()], ledgerReady: true, connection: 'connected', frozenBinding: true,
+    reviewStatus: serverReviewStatus(needs.at(-1) || [], store), refresh() {},
+    send: async rec => { sends.push(rec.id); return { ok: true } }, sendStack: async recs => { sends.push(recs.map(rec => rec.id).join('+')); return { ok: true } } })
+  const last = () => posted.at(-1)
+  return { connection, deliver, fire, provide, last, needs, sends, store, posted, done: () => { connection.dispose(); delete globalThis.window } }
+}
+
+test('end to end, the host envelope through the app\'s parser reaches Confirm and sends once', async t => {
+  if (!await hostAttests()) return t.skip('this host does not attest a chat (no rows-v2)')
+  const w = await wired({ records: [prepared('one'), prepared('two')] })
+  await tick()
+  assert.equal(w.last().type, 'moebius:app-block-state')
+  assert.equal(w.last().generation, 3, 'reports carry the document generation')
+  assert.deepEqual(w.last().rows.map(row => row.intent), ['review:one', 'review:two'])
+  assert.deepEqual([w.last().actions[0].label, w.last().actions[0].hidden], ['Contribute all', false])
+  w.fire('activate'); await tick(12)
+  assert.deepEqual(w.needs, [['one', 'two']])
+  w.provide(); await tick()
+  assert.equal(w.last().actions[0].confirming, true)
+  w.store.set('one', published(prepared('one'), 11)); w.store.set('two', published(prepared('two'), 12))
+  w.fire('confirm'); await tick(12)
+  assert.deepEqual(w.sends.sort(), ['one', 'two'])
+  w.deliver({ type: 'moebius:app-block-refresh', sessionId: 'e2e', generation: 3, reason: 'turn' }); await tick(12)
+  assert.equal(w.last().title, '2 pull requests opened')
+  // The host says a newer card now follows: the next init folds this one.
+  w.deliver({ type: 'moebius:app-block-init', ...(await hostEnvelope({ sessionId: 'e2e', actions: [{ key: KEY, intent: KEY, label: 'Contribute all' }],
+    items: reviewItems(['one', 'two']), features: ['row-state', 'rows-v2'], context: { chatId: CHAT, latest: false, intent: CHAT_INTENT } }, 3)) })
+  await tick()
+  assert.equal(w.last().title, CONTINUED_TITLE)
+  w.done()
+})
+
+test('end to end, another intent group, no chat or an older host never send', async () => {
+  for (const options of [{ context: { chatId: CHAT, latest: true, intent: 'review:one' } }, { context: null }, { features: ['row-state'] }]) {
+    const w = await wired({ records: [prepared('one')], ...options })
+    await tick()
+    w.fire('activate'); await tick(12)
+    w.provide(); await tick()
+    w.fire('confirm'); await tick(12)
+    assert.deepEqual([w.needs, w.sends], [[], []], JSON.stringify(options))
+    assert.equal(w.last().actions[0].confirming, false)
+    w.done()
+  }
+})
+
+test('end to end, a fresh read that fails on the tap holds the card instead of confirming a cached copy', async t => {
+  if (!await hostAttests()) return t.skip('this host does not attest a chat (no rows-v2)')
+  let failing = false
+  const w = await wired({ records: [prepared('one')], loadExact: async (id, store) => { if (failing) throw new Error('offline'); return structuredClone(store.get(id)) } })
+  await tick()
+  assert.equal(w.last().rows[0].pill, undefined, 'read and ready')
+  failing = true
+  w.fire('activate'); await tick(12)
+  w.provide(); await tick() // the runtime's ledger still has the record
+  const state = w.last()
+  assert.deepEqual([state.actions[0].confirming, state.actions[0].label, state.actions[0].note], [false, 'Try again', UNREAD_NOTE])
+  assert.equal(state.rows[0].pill, HOLD.unread)
+  failing = false
+  w.fire('activate'); await tick(12)
+  w.provide(); await tick()
+  assert.equal(w.last().actions[0].confirming, true, 'Try again reads again and can then confirm')
+  w.done()
+})
+
+test('a failed fresh read holds a row with a cached or ledger copy, named record or resolved successor', async () => {
+  // Read once, then the record cannot be read: the cached copy is not used.
+  let fail = new Set()
+  const loadExact = async (id, store) => { if (fail.has(id)) throw new Error('offline'); return structuredClone(store.get(id)) }
+  const h = harness({ ids: ['one'], records: [prepared('one')], loadExact })
+  h.session.start(); await tick()
+  fail = new Set(['one'])
+  await openConfirm(h).catch(() => {})
+  h.fire(KEY, 'activate'); await tick(12); h.provide(); await tick()
+  assert.deepEqual([h.action(KEY).confirming, h.row('one').pill], [false, HOLD.unread])
+  h.fire(KEY, 'confirm'); await tick()
+  assert.equal(h.sends.length, 0)
+  // A successor that read before and now fails holds the row too.
+  fail = new Set()
+  const chain = harness({ ids: ['old'], records: [prepared('old', { record: { status: 'superseded', superseded_by: 'new' } }), prepared('new')], loadExact })
+  chain.session.start(); await tick(12)
+  assert.equal(chain.row('new').pill, undefined)
+  fail = new Set(['new'])
+  chain.session.refresh('turn'); await tick(12)
+  assert.equal(chain.row('new').pill, HOLD.unread)
+  chain.fire(KEY, 'activate'); await tick(12); chain.provide(); await tick()
+  assert.equal(chain.action(KEY).confirming, false)
 })
 
 // ---- The printed card, read as the host reads it.
