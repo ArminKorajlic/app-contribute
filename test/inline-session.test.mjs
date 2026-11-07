@@ -1884,3 +1884,42 @@ test('an incomplete record whose saved send may be public shows Checking GitHub 
   plain.session.start(); await tick()
   assert.deepEqual(refsOf(plain), [['one', 'restage']])
 })
+
+// ---- Observation settlement and exact reads share one per-record ordering.
+async function settledDuringRead(late) {
+  const c = clock()
+  const old = encodeCheckpoint([{ id: 'a1', unitKey: 'record:one', ids: ['one'], at: c.now(), state: 'unknown' }])
+  const observed = deferred(), slow = deferred()
+  let reads = 0
+  const h = timed({ ids: ['one'], records: [prepared('one')], checkpoint: { id: 'cp', data: old }, retain: true,
+    observe: () => observed.promise,
+    loadExact: (id, store) => ++reads === 2 ? slow.promise : Promise.resolve(structuredClone(store.get(id))) }, c)
+  h.session.start(); await tick()
+  // A turn settles: an exact read starts before the observation answers.
+  h.session.refresh('turn'); await tick()
+  observed.resolve({ outcome: 'settled', record: published(prepared('one'), 33) }); await tick()
+  assert.deepEqual(h.row('one').links, [{ label: '#33', url: 'https://github.com/owner/repo/pull/33' }])
+  late(slow); await tick()
+  return { h, c }
+}
+
+for (const [name, late] of Object.entries({
+  'a stale prepared copy': slow => slow.resolve(prepared('one')),
+  'a missing record': slow => slow.resolve(null),
+  'a failed read': slow => slow.resolve(Promise.reject(new Error('offline'))),
+})) {
+  test(`an exact read issued before a settlement never undoes it: ${name}`, async () => {
+    const { h } = await settledDuringRead(late)
+    assert.deepEqual(h.row('one').links, [{ label: '#33', url: 'https://github.com/owner/repo/pull/33' }])
+    assert.equal(h.last().title, 'Pull request opened')
+    assert.equal(h.last().checkpoint, null)
+    assert.equal(h.sends.length, 0)
+  })
+}
+
+test('a read issued after a settlement still lands (control)', async () => {
+  const { h } = await settledDuringRead(slow => slow.resolve(prepared('one')))
+  h.store.set('one', { ...published(prepared('one'), 34), updated_at: '2026-10-20T12:00:00Z' })
+  h.session.refresh('turn'); await tick()
+  assert.deepEqual(h.row('one').links, [{ label: '#34', url: 'https://github.com/owner/repo/pull/34' }])
+})

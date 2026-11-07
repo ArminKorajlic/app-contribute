@@ -717,7 +717,8 @@ export function createInlineSession({ sessionId, actions, items = null, features
       // Only an answer about the record as it still is: a newer read wins.
       const version = publicationVersion(record)
       if (!answer || (answer.version ?? version) !== version || publicationVersion(current().get(id)) !== version) return
-      if (answer.outcome === 'settled' && answer.record?.id === id) { exact.set(id, answer.record); absent.delete(id); unreadable.delete(id); findings.delete(id) }
+      // A settlement is newer than every exact read already in flight.
+      if (answer.outcome === 'settled' && answer.record?.id === id) { landExact(id, issueRead(id), { record: answer.record }); findings.delete(id) }
       else if (['pending', 'changed'].includes(answer.outcome)) findings.set(id, { version, outcome: answer.outcome })
       // The platform does not observe Autopilot's own update; whether this
       // record is Autopilot's comes from the record, not from that answer.
@@ -787,22 +788,32 @@ export function createInlineSession({ sessionId, actions, items = null, features
     frozen = ready.length ? { key, units: copy(ready) } : null
   }
 
-  // Newest-issued exact read wins per record; reads never send.
+  // One ordering for every exact result of a record, read or observed: each
+  // result is issued a generation, and only the newest issued one lands. An
+  // older result still on its way (a stale copy, a missing or a failed read)
+  // is dropped.
+  function issueRead(id) {
+    const generation = (generations.get(id) || 0) + 1
+    generations.set(id, generation)
+    return generation
+  }
+  function landExact(id, generation, { record, failed }) {
+    if (generations.get(id) !== generation) return
+    reading.delete(id)
+    if (record?.id === id) { exact.set(id, record); unreadable.delete(id); absent.delete(id); return }
+    if (failed) { unreadable.add(id); absent.delete(id); return }
+    // An authoritative read found it gone: forget any earlier copy.
+    exact.delete(id); unreadable.delete(id); absent.add(id)
+  }
+
+  // Newest-issued exact result wins per record; reads never send.
   async function read(ids) {
     if (!ids.length) return
     lastRead = now()
-    const issued = ids.map(id => { const generation = (generations.get(id) || 0) + 1; generations.set(id, generation); reading.add(id); return generation })
+    const issued = ids.map(id => { reading.add(id); return issueRead(id) })
     const results = await Promise.all(ids.map(id => Promise.resolve().then(() => loadExact(id)).then(record => ({ record }), () => ({ failed: true }))))
     if (!alive) return
-    ids.forEach((id, index) => {
-      if (generations.get(id) !== issued[index]) return
-      reading.delete(id)
-      const { record, failed } = results[index]
-      if (record?.id === id) { exact.set(id, record); unreadable.delete(id); absent.delete(id); return }
-      if (failed) { unreadable.add(id); absent.delete(id); return }
-      // An authoritative read found it gone: forget any earlier copy.
-      exact.delete(id); unreadable.delete(id); absent.add(id)
-    })
+    ids.forEach((id, index) => landExact(id, issued[index], results[index]))
     settle(); emit()
   }
 
