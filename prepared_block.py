@@ -5,9 +5,10 @@ The card lists each contribution as one item that opens its exact entry in
 Contribute, with two snapshot facts from this read: the project and the change
 size. It has one action, Contribute (or Contribute all), covering exactly the
 records its items name. When the owner taps it, Contribute re-reads those
-records, checks they are reviewed and current, and shows the exact changes on
-the same button as Confirm. Nothing is sent before that Confirm. Independent
-contributions are sent in parallel; the layers of one stack are sent in order.
+records, checks they are reviewed and current, and its own rows for them, with
+the same facts, replace these items while the button becomes Confirm. Nothing
+is sent before that Confirm. Independent contributions are sent in parallel;
+the layers of one stack are sent in order.
 The card has no inline app view (`"expand": false`).
 """
 import argparse
@@ -107,7 +108,7 @@ def screenshot_count(plan):
 
 def change_text(plan):
   """The Change fact, with the screenshots the PR will publish, exactly as
-  Confirm shows it (inline-session.js confirmationItem)."""
+  Confirm's row shows it (inline-session.js confirmationItem)."""
   size, count = change_size(plan), screenshot_count(plan)
   shots = f'{count} {"screenshot" if count == 1 else "screenshots"}' if count else ''
   return ' · '.join(part for part in (size, shots) if part) or 'Size not recorded'

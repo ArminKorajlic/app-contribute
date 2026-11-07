@@ -7,7 +7,7 @@ import { join } from 'node:path'
 import { batchHandle, cardRecordIds, itemRecordIds, sendTarget } from '../chat-blocks.js'
 import { readBlockSession } from '../block-protocol.js'
 import { reviewAddressFor } from '../send-readiness.js'
-import { attemptOutcome, confirmationItem, descriptionExcerpt, LEDGER_NOTE, NEWER_NOTE, UNLISTED_LAYER_NOTE, REFRESH_FAILED_NOTE, SIZE_NOTE, TIMEOUT_NOTE, createInlineSession, decodeCheckpoint, encodeCheckpoint, observeAttempt, RECOVERY_NOTE } from '../inline-session.js'
+import { attemptOutcome, confirmationItem, LEDGER_NOTE, NEWER_NOTE, UNLISTED_LAYER_NOTE, REFRESH_FAILED_NOTE, SIZE_NOTE, TIMEOUT_NOTE, createInlineSession, decodeCheckpoint, encodeCheckpoint, observeAttempt, RECOVERY_NOTE } from '../inline-session.js'
 
 const HEAD = 'a'.repeat(40), NEXT = 'c'.repeat(40)
 function prepared(id, extra = {}) {
@@ -60,7 +60,7 @@ async function openConfirm(h, key) {
   h.provide(); await tick()
 }
 
-test('Contribute becomes Confirm with the complete app-sourced identity of each frozen change', async () => {
+test('Contribute becomes Confirm with each frozen change as the card shows it', async () => {
   const h = harness({ actions: [{ key: 'chat-send:one', label: 'Contribute' }], records: [prepared('one')] })
   h.session.start(); await tick()
   assert.equal(h.action('chat-send:one').disabled, false)
@@ -73,14 +73,14 @@ test('Contribute becomes Confirm with the complete app-sourced identity of each 
   assert.equal(item.title, 'Change one')
   assert.ok(item.facts.length <= 8)
   for (const fact of item.facts) assert.ok(fact.label && fact.value && fact.value.length <= 512, JSON.stringify(fact))
-  // The card's per-contribution facts (Project, Change) lead, with the card's values.
-  assert.deepEqual(item.facts.map(fact => fact.label), ['Project', 'Change', 'Action', 'Branch', 'Version', 'Reviewed diff', 'Review'])
-  assert.deepEqual(item.facts.slice(0, 2), [{ label: 'Project', value: 'owner/repo' }, { label: 'Change', value: '1 file · +2 −0' }])
+  // The host draws these rows in place of the card's, so they are the card's
+  // own facts with the card's values, and nothing more.
+  assert.deepEqual(item.facts, [{ label: 'Project', value: 'owner/repo' }, { label: 'Change', value: '1 file · +2 −0' }])
   const sized = confirmationItem(prepared('sized', { plan: { diff_stat: ' 3 files changed, 40 insertions(+), 2 deletions(-)' } }))
   assert.deepEqual(sized.facts.find(fact => fact.label === 'Change'), { label: 'Change', value: '3 files · +40 −2' }, 'Confirm shows how big the change is')
   const stacked = confirmationItem({ ...layer('base', 1, ''), plan: { ...layer('base', 1, '').plan, diff_stat: '1 file changed, 1 insertion(+)' } })
-  assert.equal(stacked.facts.length, 8, 'a stack layer with its size stays within the eight-fact limit')
-  assert.equal(stacked.facts.find(fact => fact.label === 'Change').value, '1 file · +1 −0')
+  assert.deepEqual(stacked.facts, [{ label: 'Project', value: 'owner/repo' }, { label: 'Change', value: '1 file · +1 −0' },
+    { label: 'Stack', value: 'Layer 1 of 2 · Stack' }], 'a stack layer also names its layer')
   assert.equal(h.sends.length, 0, 'activation is not approval')
 })
 
@@ -119,8 +119,8 @@ test('the newest attempt owns the checkpoint after fail, restage and retry (relo
   h.store.set('one', prepared('one', { head: NEXT, record: { updated_at: '2026-10-20T12:00:00Z' } }))
   h.provide()
   h.fire('chat-send:one', 'activate'); await tick()
-  assert.equal(h.action('chat-send:one').confirmation[0].facts.find(fact => fact.label === 'Version').value, NEXT.slice(0, 12))
   h.fire('chat-send:one', 'confirm'); await tick()
+  assert.equal(h.sends.at(-1).records[0].plan.head_sha, NEXT, 'the retry sends the new reviewed head')
   const saved = decodeCheckpoint(h.last().checkpoint)
   assert.equal(saved.length, 1, 'only the unresolved retry crosses reload')
   assert.deepEqual(saved[0].ids, ['one'])
@@ -352,7 +352,7 @@ test('checkpoint and outcome rules are bounded and conservative', () => {
   assert.equal(attemptOutcome({ notAttempted: true, failure: { owner: 'automatic' } }).state, 'not_attempted')
   assert.equal(attemptOutcome({ error: 'no', failure: { owner: 'agent' } }).state, 'failed')
   const update = confirmationItem({ ...prepared('u'), number: 12, plan: { ...prepared('u').plan, action: 'pr_update' } })
-  assert.equal(update.facts.find(fact => fact.label === 'Action').value, 'Update pull request #12')
+  assert.deepEqual(update, confirmationItem(prepared('u')), 'an update shows the same row as a new pull request')
 })
 
 // One card with a Contribute all action, opened to Confirm on that action.
@@ -500,20 +500,6 @@ test('a record whose own source check could not finish offers Try again; a recon
   h.fire('chat-send:one', 'activate'); await tick()
   assert.equal(h.action('chat-send:one').confirming, true)
   assert.equal(h.sends.length, 0)
-})
-
-test('Confirm shows the public PR title and the first line of its description within the fact limit', () => {
-  const item = confirmationItem(prepared('pub', { plan: { title: 'Fix the flaky upload retry', body_draft: '## Summary\n\nRetries uploads once on a reset connection.\n\nMore detail.' } }))
-  assert.equal(item.title, 'Fix the flaky upload retry', 'the PR title is the item heading')
-  assert.deepEqual(item.facts.find(fact => fact.label === 'Description'), { label: 'Description', value: 'Retries uploads once on a reset connection.' }, 'headings are skipped')
-  assert.equal(descriptionExcerpt('\n\n- First point\nSecond'), 'First point')
-  const long = descriptionExcerpt('x'.repeat(400))
-  assert.equal(long.length, 160); assert.ok(long.endsWith('…'))
-  assert.ok(item.facts.length <= 8)
-  // A stack layer with its size already uses all eight facts: the description is left out, never a ninth fact.
-  const full = confirmationItem({ ...layer('base', 1, ''), plan: { ...layer('base', 1, '').plan, diff_stat: '1 file changed, 1 insertion(+)', body_draft: 'Body' } })
-  assert.equal(full.facts.length, 8)
-  assert.equal(full.facts.some(fact => fact.label === 'Description'), false)
 })
 
 // The independent review's sequence: the review check fails before the first
@@ -680,20 +666,6 @@ test('a re-read that completes still incomplete goes back to Try again', async (
   assert.equal(loading.action('chat-send:one').label, 'Checking…')
 })
 
-test('the description excerpt keeps emphasis and skips comments and code fences', () => {
-  assert.equal(descriptionExcerpt('**Summary** of the fix'), '**Summary** of the fix', 'emphasis is not a list marker')
-  assert.equal(descriptionExcerpt('*important* change'), '*important* change')
-  assert.equal(descriptionExcerpt('- First point'), 'First point')
-  assert.equal(descriptionExcerpt('+ Added thing'), 'Added thing')
-  assert.equal(descriptionExcerpt('> Quoted'), 'Quoted')
-  assert.equal(descriptionExcerpt('1. Step one'), 'Step one')
-  assert.equal(descriptionExcerpt('#hashtag-like start'), '#hashtag-like start', 'not a heading without a space')
-  assert.equal(descriptionExcerpt('<!-- template: fill in -->\nReal summary'), 'Real summary')
-  assert.equal(descriptionExcerpt('<!--\nmulti-line\ncomment\n-->\nAfter the comment'), 'After the comment')
-  assert.equal(descriptionExcerpt('```js\nconst x = 1\n```\nProse after code'), 'Prose after code')
-  assert.equal(descriptionExcerpt('## Summary\n\nRetries once.'), 'Retries once.')
-})
-
 test('the card runtime reports the ledger as loading, current or incomplete', async () => {
   const { readFileSync } = await import('node:fs')
   const app = readFileSync(new URL('../index.jsx', import.meta.url), 'utf8')
@@ -835,9 +807,9 @@ test('the printed card has one action that reaches Confirm for exactly its items
   const state = h.action(view.actions[0].key)
   assert.equal(state.confirming, true)
   assert.deepEqual(state.confirmation.map(item => item.title), ['Change one', 'Change two', 'Change three'])
-  // Confirm repeats each item's card facts.
+  // The host draws Confirm's rows in place of the card's, so they are the same rows.
   const block = printedCard(records)
-  for (const [index, item] of block.items.entries()) assert.deepEqual(state.confirmation[index].facts.slice(0, 2), item.facts)
+  assert.deepEqual(state.confirmation, block.items.map(({ title, facts }) => ({ title, facts })))
   assert.equal(block.items[1].facts[1].value, '1 file · +2 −0 · 2 screenshots', 'the card and Confirm name the same screenshots')
   // A card printed for one stack layer lists the whole phase, so it reaches Confirm.
   const layers = [layer('base', 1, ''), layer('top', 2, 'base')]
@@ -854,29 +826,92 @@ test('the printed card has one action that reaches Confirm for exactly its items
   const stacked = harness({ actions: stackCard.actions, items: stackCard.items, records: layers })
   await openConfirm(stacked, stackCard.actions[0].key)
   assert.deepEqual(stacked.action(stackCard.actions[0].key).confirmation.map(item => item.title), ['Change base', 'Change top'])
+  // A layer's row adds only which layer it is.
+  assert.deepEqual(stacked.action(stackCard.actions[0].key).confirmation[1].facts.map(fact => fact.label), ['Project', 'Change', 'Stack'])
   const single = await hostView(printedCard([prepared('one')]))
   const one = harness({ actions: single.actions, items: single.items, records: [prepared('one')] })
   await openConfirm(one, single.actions[0].key)
   assert.deepEqual(one.action(single.actions[0].key).confirmation.map(item => item.title), ['Change one'])
 })
 
+test('Contribute all covers every listed record or none: one that needs attention holds the card and is named', async () => {
+  const ids = ['open-chats', 'media-call']
+  const actions = [{ key: `chat-send-batch:${batchHandle(ids)}`, label: 'Contribute all' }]
+  const blocked = prepared('open-chats', { plan: { title: 'Open chats without duplicate requests from a pull request link' },
+    record: { last_submit_error: 'Push outcome unknown' } })
+  const h = harness({ actions, items: reviewItems(ids), records: [blocked, prepared('media-call')] })
+  await openConfirm(h, actions[0].key)
+  const state = h.action(actions[0].key)
+  assert.equal(state.confirming, false, 'no Confirm for only part of the card')
+  assert.equal(state.confirmation, null)
+  assert.equal(state.disabled, true)
+  assert.equal(state.note, '“Open chats without duplicate requests…”: The last send needs attention in Contribute.')
+  h.fire(actions[0].key, 'confirm'); await tick()
+  assert.equal(h.sends.length, 0, 'nothing is sent')
+
+  // A single-record card keeps its own reason, unnamed.
+  const one = harness({ actions: [{ key: 'chat-send:open-chats' }], records: [blocked] })
+  await openConfirm(one, 'chat-send:open-chats')
+  assert.equal(one.action('chat-send:open-chats').note, 'The last send needs attention in Contribute.')
+  // An already published row does not hold the rest.
+  const sent = harness({ actions, items: reviewItems(ids), records: [published(prepared('open-chats')), prepared('media-call')] })
+  await openConfirm(sent, actions[0].key)
+  assert.deepEqual(sent.action(actions[0].key).confirmation.map(item => item.title), ['Change media-call'])
+})
+
+// A stack whose existing-PR prefix is updated first and whose new child opens
+// in a later phase, listed with an unrelated ready contribution.
+function mixedStack({ topError = null } = {}) {
+  const base = layer('base', 1, '')
+  base.plan.action = 'pr_update'
+  Object.assign(base, { number: 41 })
+  const top = layer('top', 2, 'base')
+  top.plan.base_sha = base.plan.head_sha
+  if (topError) top.last_submit_error = topError
+  return [base, top, prepared('solo')]
+}
+for (const [label, topError, reason] of [
+  ['a blocked deferred child', 'Needs attention', 'The last send needs attention in Contribute.'],
+  ['an otherwise ready deferred child', null, 'It is sent after the layers before it. Open Contribute to send them in order.'],
+]) {
+  test(`a listed stack layer outside the phase being confirmed holds the card: ${label}`, async () => {
+    const ids = ['base', 'top', 'solo']
+    const actions = [{ key: `chat-send-batch:${batchHandle(ids)}`, label: 'Contribute all' }]
+    const h = harness({ actions, items: reviewItems(ids), records: mixedStack({ topError }) })
+    await openConfirm(h, actions[0].key)
+    const state = h.action(actions[0].key)
+    assert.equal(state.confirming, false, 'Confirm never covers only the update phase')
+    assert.equal(state.disabled, true)
+    assert.equal(state.note, `“Change top”: ${reason}`, 'the held layer itself is named')
+    h.fire(actions[0].key, 'confirm'); await tick()
+    assert.equal(h.sends.length, 0, 'nothing freezes or sends for an incomplete listed set')
+  })
+}
+
+test('in one phase, the unsized layer is named with its own reason, not its sized parent', async () => {
+  const ids = ['base', 'top', 'solo']
+  const actions = [{ key: `chat-send-batch:${batchHandle(ids)}`, label: 'Contribute all' }]
+  const base = layer('base', 1, '')
+  const top = layer('top', 2, 'base')
+  top.plan.base_sha = base.plan.head_sha
+  top.plan.diff_stat = ''
+  const h = harness({ actions, items: reviewItems(ids), records: [base, top, prepared('solo')] })
+  await openConfirm(h, actions[0].key)
+  const state = h.action(actions[0].key)
+  assert.equal(state.confirming, false)
+  assert.equal(state.note, `“Change top”: ${SIZE_NOTE}`)
+  h.fire(actions[0].key, 'confirm'); await tick()
+  assert.equal(h.sends.length, 0)
+})
+
 const SHA = 'e'.repeat(64)
 const shot = (name, alt = name) => ({ name, sha256: SHA, size: 1200, alt })
-
-test('the description excerpt never shows raw screenshot markup', () => {
-  assert.equal(descriptionExcerpt('![Before, desktop](screenshot:before-desktop.png)\n\nMakes the header wrap on phones.'), 'Makes the header wrap on phones.', 'an image-only line is skipped')
-  assert.equal(descriptionExcerpt('| Before | After |\n| --- | --- |\n| ![Before](screenshot:before.png) | ![After](screenshot:after.png) |\n\nFixes the clipped title.'), 'Fixes the clipped title.', 'a before/after table is skipped')
-  assert.equal(descriptionExcerpt('The header now wraps ![After](screenshot:after.png) on phones.'), 'The header now wraps After on phones.', 'an inline image becomes its alt text')
-  assert.doesNotMatch(descriptionExcerpt('## Screenshots\n\n![Only](screenshot:only.png)'), /screenshot:|!\[/)
-})
 
 test('Confirm names the screenshots a new pull request will publish on its Change line', () => {
   const body = '## Summary\n\nFixes the clipped title.\n\n| Before | After |\n| --- | --- |\n| ![Before](screenshot:before.png) | ![After](screenshot:after.png) |'
   const item = confirmationItem(prepared('shots', { plan: { body_draft: body, screenshots: [shot('before.png'), shot('after.png')] } }))
   assert.equal(item.facts.find(fact => fact.label === 'Change').value, '1 file · +2 −0 · 2 screenshots')
-  assert.equal(item.facts.some(fact => fact.label === 'Screenshots'), false, 'no separate fact spends the limit')
-  assert.equal(item.facts.find(fact => fact.label === 'Description')?.value, 'Fixes the clipped title.', 'the excerpt is kept')
-  assert.ok(item.facts.length <= 8)
+  assert.equal(item.facts.some(fact => fact.label === 'Screenshots'), false, 'on the Change line, as on the card')
   assert.ok(item.facts.every(fact => !/screenshot:/.test(fact.value)))
   assert.equal(confirmationItem(prepared('one', { plan: { screenshots: [shot('one.png')] } })).facts.find(fact => fact.label === 'Change').value,
     '1 file · +2 −0 · 1 screenshot')
@@ -889,10 +924,8 @@ test('Confirm names the screenshots a new pull request will publish on its Chang
   const unsized = confirmationItem(prepared('unsized', { plan: { diff_stat: '', screenshots: [shot('a.png')] } }))
   assert.equal(unsized.facts.find(fact => fact.label === 'Change')?.value, '1 screenshot')
 
-  // A stack layer already uses all eight facts; the count still fits on its Change line.
   const base = layer('base', 1, '')
   const full = confirmationItem({ ...base, plan: { ...base.plan, diff_stat: '1 file changed, 1 insertion(+)', screenshots: [shot('a.png'), shot('b.png')] } })
-  assert.equal(full.facts.length, 8)
   assert.equal(full.facts.find(fact => fact.label === 'Change').value, '1 file · +1 −0 · 2 screenshots')
 })
 
@@ -908,6 +941,5 @@ test('the B2 host accepts a confirmation that names screenshots', async t => {
   const parsed = b2.confirmationOf(items)
   assert.ok(parsed, 'the host rejected the list, which would keep Confirm disabled')
   assert.equal(parsed[0].facts.find(fact => fact.label === 'Change').value, '1 file · +2 −0 · 2 screenshots')
-  assert.equal(parsed[0].facts.find(fact => fact.label === 'Description').value, 'Fix.')
   assert.match(parsed[1].facts.find(fact => fact.label === 'Change').value, /1 screenshot$/)
 })

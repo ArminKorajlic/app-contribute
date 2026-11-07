@@ -349,20 +349,28 @@ card performs only exact record reads; tapping **Contribute** (or **Contribute
 all**) starts a send-only runtime that renders nothing and reads only the
 complete ledger, the GitHub connection and the current review status of the
 card's records plus every prepared layer of their stacks. It then turns the same
-button into **Confirm** with the app-supplied identity and size of every change.
-Confirm calls the same guarded Send handlers as the workspace and passes the
-confirmed snapshot as `expected_record(s)`; without that platform binding the
+button into **Confirm** and reports its own row for every change it will send:
+the card's **Project** and **Change** facts from its current records, plus
+**Stack** for a stack layer. Möbius draws those rows in place of the card's,
+so they look the same unless something changed; an older Möbius lists them
+under the card instead. Confirm calls the same guarded Send handlers as the
+workspace and passes the confirmed snapshot as `expected_record(s)`; without
+that platform binding the
 card never sends, including when the binding disappears between Confirm and the
 write.
-Independent units are sent in parallel; a stack's layers in order. Only
+The action covers every record the card lists or none: if one listed record
+is neither already published nor in the exact phase Confirm would send (a
+stack layer due in a later phase included), the action stays disabled and its
+note names that record and why. Independent units are sent in parallel; a stack's
+layers in order. Only
 attempts whose outcome is unknown survive a reload, as a bounded checkpoint of
 ids, and lock their unit until a read shows the result.
 
 The card (`"expand": false`, so no inline app view) has one item per
 contribution: its title opens that entry (`review:<id>`) and its facts are
 **Project** and **Change** (`N files · +a −d`, from the staged shortstat,
-plus `· N screenshots` when the PR publishes staged screenshots, as Confirm
-shows it). The
+plus `· N screenshots` when the PR publishes staged screenshots, as Confirm's
+row shows it). The
 card itself opens the single entry, the stack all items belong to, or the
 review queue. There are no item actions; the one card action is
 `chat-send:<id>` for one item or `chat-send-batch:<16-hex handle>` over all
