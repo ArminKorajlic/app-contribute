@@ -132,7 +132,7 @@ export function changeSize(plan) {
   const stat = STAT.exec(String(plan?.diff_stat || '').trim())
   if (!stat) return ''
   const files = Number(stat[1])
-  return `${files} ${files === 1 ? 'file' : 'files'} · +${stat[2] || 0} −${stat[3] || 0}`
+  return `${files} ${files === 1 ? 'file' : 'files'} · +${stat[2] || 0}\u00a0−${stat[3] || 0}`
 }
 
 // ---- The row Confirm shows for each frozen record. The host draws these rows
@@ -203,7 +203,8 @@ const STAT_LINES = /^\d+ files? changed(?:, (\d+) insertions?\(\+\))?(?:, (\d+) 
 export function rowMeta(record) {
   const repo = text(record?.plan?.repo || record?.repo, 100)
   const stat = STAT_LINES.exec(String(record?.plan?.diff_stat || '').trim())
-  return [repo, stat ? `+${stat[1] || 0} −${stat[2] || 0}` : ''].filter(Boolean).join(' · ')
+  // A no-break space keeps + and − together where the line allows.
+  return [repo, stat ? `+${stat[1] || 0}\u00a0−${stat[2] || 0}` : ''].filter(Boolean).join(' · ')
 }
 
 // Why a prepared record cannot be sent, from the record alone, as its pill.
@@ -385,6 +386,14 @@ export function createInlineSession({ sessionId, actions, items = null, features
   const idsFor = key => sendKey(key) ? entries().filter(entry => entry.kind === 'pending').map(entry => entry.id) : []
   const versionKey = ids => [...ids].sort().map(id => `${id}@${versionOf(current().get(id))}`).join('\n')
   const unreadNow = () => !reading.size && entries().some(entry => entry.kind === 'unread')
+  // Before the first exact read of a named record answers, the card knows
+  // nothing: that is loading, never "No contributions". The host keeps the
+  // card's own saved rows meanwhile.
+  const firstRead = () => tracks() && !folded() && !entries().length && hints.some(hint => {
+    const found = resolve(hint)
+    const target = found.next || found.id
+    return !found.record && !absent.has(target) && !unreadable.has(target)
+  })
 
   const sending = () => attempts.some(attempt => attempt.state === 'sending')
   const overlaps = (attempt, unit) => attempt.unitKey === unit.key || attempt.ids.some(id => unit.records.some(record => record.id === id))
@@ -527,7 +536,9 @@ export function createInlineSession({ sessionId, actions, items = null, features
 
   // ---- The app's own rows (`rows-v2`).
   function rowFor({ id, record, kind }, hold) {
-    const row = { title: text(record?.plan?.title || record?.title || id, 120), meta: record ? rowMeta(record) : '', intent: `review:${id}` }
+    // A record that could not be read has no title to show; its id is not one.
+    const fallback = kind === 'unread' ? 'Couldn’t load this contribution' : kind === 'missing' ? 'Contribution no longer in Contribute' : id
+    const row = { title: text(record?.plan?.title || record?.title || fallback, 120), meta: record ? rowMeta(record) : '', intent: `review:${id}` }
     if (kind === 'missing') return { ...row, pill: HOLD.gone, tone: 'attention' }
     if (kind === 'unread') return { ...row, pill: HOLD.unread }
     if (kind === 'dismissed') return { ...row, pill: record.status === 'abandoned' ? 'Dismissed' : 'Replaced' }
@@ -545,7 +556,7 @@ export function createInlineSession({ sessionId, actions, items = null, features
   // ---- The header says what the card stands at.
   function heading(key) {
     if (folded()) return { title: CONTINUED_TITLE }
-    if (!tracks()) return { title: '' }
+    if (!tracks() || firstRead()) return { title: '' }
     const list = entries()
     const pending = list.filter(entry => entry.kind === 'pending')
     const sent = list.filter(entry => entry.kind === 'sent')
@@ -554,7 +565,12 @@ export function createInlineSession({ sessionId, actions, items = null, features
     // says the result is not confirmed (or how many were sent).
     const inFlight = counted.filter(entry => !isPublished(current().get(entry.id)) && (latestAttempt(entry.id)?.state === 'sending'
       || (latestAttempt(entry.id) && checkingAttempt(latestAttempt(entry.id)))))
-    if (inFlight.length) return { title: `Sending ${inFlight.length}`, titleBusy: true }
+    // A send still underway says Sending; once every one has left and only
+    // GitHub's answer is awaited, the card says so.
+    if (inFlight.length) {
+      const leaving = inFlight.some(entry => latestAttempt(entry.id)?.state === 'sending')
+      return { title: leaving ? `Sending ${inFlight.length}` : 'Checking GitHub', titleBusy: true }
+    }
     if (!counted.length) return { title: list.length ? 'Nothing left to send' : 'No contributions' }
     if (sent.length === counted.length) {
       const opened = attempts.some(attempt => attempt.ids.some(id => sent.some(entry => entry.id === id)))
@@ -562,18 +578,28 @@ export function createInlineSession({ sessionId, actions, items = null, features
       const count = sent.length
       const title = prs ? opened ? count === 1 ? 'Pull request opened' : `${count} pull requests opened` : count === 1 ? '1 pull request' : `${count} pull requests`
         : count === 1 ? 'Contribution sent' : `${count} contributions sent`
-      return { title, titleTone: 'success' }
+      // Success only on the live card and only when none was closed unmerged:
+      // a history card stays neutral.
+      return { title, titleTone: newest() && sent.every(entry => entry.record.status !== 'closed') ? 'success' : 'neutral' }
     }
     const unknown = pending.filter(entry => latestAttempt(entry.id)?.state === 'unknown')
     if (unknown.length) {
       if (unknown.every(entry => findingOf(entry.id) === 'autopilot')) return { title: sent.length ? `${sent.length} of ${counted.length} sent` : AUTOPILOT_PILL, titleTone: 'neutral' }
       const changed = unknown.some(entry => findingOf(entry.id) === 'changed')
-      return { title: sent.length ? `${sent.length} of ${counted.length} sent` : changed ? CHANGED_PILL : 'Result not confirmed', titleTone: 'attention' }
+      // An unconfirmed result is not a failure: it is counted as not confirmed.
+      const unconfirmed = unknown.filter(entry => findingOf(entry.id) !== 'autopilot').length
+      return { title: sent.length ? `${sent.length} of ${counted.length} sent · ${unconfirmed} not confirmed` : changed ? CHANGED_PILL : 'Result not confirmed', titleTone: 'attention' }
     }
     const failed = pending.filter(entry => rowFailure(entry.id))
     const hold = sendKey(key) ? heldNow(key) : null
-    if (sent.length) return { title: `${sent.length} of ${counted.length} sent`, titleTone: failed.length || hold ? 'attention' : 'neutral' }
-    if (hold) return { title: '1 needs a fix', titleTone: 'attention' }
+    // Real counts: every unreadable row, every row that needs a fix.
+    const unreadCount = list.filter(entry => entry.kind === 'unread').length
+    const fixCount = Math.max(1, pending.filter(entry => rowFailure(entry.id) || localHold(entry.record) || entry.id === hold?.id).length)
+    const needsFix = `${fixCount} ${fixCount === 1 ? 'needs' : 'need'} a fix`
+    if (sent.length) return { title: `${sent.length} of ${counted.length} sent${failed.length || hold ? ` · ${needsFix}` : ''}`, titleTone: failed.length || hold ? 'attention' : 'neutral' }
+    // A record that could not be read is not a contribution needing a fix.
+    if (hold?.pill === HOLD.unread) return { title: `Couldn’t load ${unreadCount || 1}`, titleTone: 'neutral' }
+    if (hold) return { title: needsFix, titleTone: 'attention' }
     return { title: plural(counted.length, 'contribution', 'contributions') }
   }
 
@@ -634,7 +660,7 @@ export function createInlineSession({ sessionId, actions, items = null, features
     const failure = mine.filter(attempt => ['failed', 'not_attempted'].includes(attempt.state) && attempt.ids.some(id => ids.includes(id))).at(-1)
     const confirming = frozen?.key === key
     const checking = activating === key
-    const loading = hints.some(id => reading.has(id)) && !list.length
+    const loading = (hints.some(id => reading.has(id)) || firstRead()) && !list.length
     const found = checking || confirming ? null : blocked(key)
     const hold = found?.id ? found : null
     const before = !runtime || !authoritative(key) ? localHeld() : null
@@ -659,7 +685,7 @@ export function createInlineSession({ sessionId, actions, items = null, features
       open: openOnly,
       confirming,
       confirmation: confirming ? frozen.units.flatMap(unit => unit.ready.map(confirmationItem)) : null,
-      hidden: nothingLeft && !busy && !unknown && !confirming && !fault && !retry,
+      hidden: nothingLeft && !busy && !unknown && !confirming && !fault && !retry && !loading && !firstRead(),
       note,
     }
     const fix = openOnly && sendable ? fixFor({ hold, before, found, expired: unknown && !checkingResult, list }) : null
@@ -742,7 +768,7 @@ export function createInlineSession({ sessionId, actions, items = null, features
       ...(asks ? { ask } : {}),
       // Rows only for the chat the host attests; otherwise the card's own
       // fallback rows stay, and nothing is read.
-      ...(tracks() ? { rows: ownRowsReport(key), titleTone, titleBusy } : {}),
+      ...(tracks() ? { ...(firstRead() ? {} : { rows: ownRowsReport(key) }), titleTone, titleBusy } : {}),
       retain: Boolean(fault || lastCheckpoint || frozen || activating || sending()),
       checkpoint: lastCheckpoint, checkpointAck, recoveryError: Boolean(fault), ackNonce,
     })

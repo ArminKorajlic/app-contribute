@@ -80,11 +80,11 @@ test('Contribute becomes Confirm with each frozen change as the card shows it', 
   for (const fact of item.facts) assert.ok(fact.label && fact.value && fact.value.length <= 512, JSON.stringify(fact))
   // The host draws these rows in place of the card's, so they are the card's
   // own facts with the card's values, and nothing more.
-  assert.deepEqual(item.facts, [{ label: 'Project', value: 'owner/repo' }, { label: 'Change', value: '1 file · +2 −0' }])
+  assert.deepEqual(item.facts, [{ label: 'Project', value: 'owner/repo' }, { label: 'Change', value: '1 file · +2\u00a0−0' }])
   const sized = confirmationItem(prepared('sized', { plan: { diff_stat: ' 3 files changed, 40 insertions(+), 2 deletions(-)' } }))
-  assert.deepEqual(sized.facts.find(fact => fact.label === 'Change'), { label: 'Change', value: '3 files · +40 −2' }, 'Confirm shows how big the change is')
+  assert.deepEqual(sized.facts.find(fact => fact.label === 'Change'), { label: 'Change', value: '3 files · +40\u00a0−2' }, 'Confirm shows how big the change is')
   const stacked = confirmationItem({ ...layer('base', 1, ''), plan: { ...layer('base', 1, '').plan, diff_stat: '1 file changed, 1 insertion(+)' } })
-  assert.deepEqual(stacked.facts, [{ label: 'Project', value: 'owner/repo' }, { label: 'Change', value: '1 file · +1 −0' },
+  assert.deepEqual(stacked.facts, [{ label: 'Project', value: 'owner/repo' }, { label: 'Change', value: '1 file · +1\u00a0−0' },
     { label: 'Stack', value: 'Layer 1 of 2 · Stack' }], 'a stack layer also names its layer')
   assert.equal(h.sends.length, 0, 'activation is not approval')
 })
@@ -677,16 +677,16 @@ test('a change without a readable size is never offered for Confirm, single or i
   const deletions = harness({ actions: [{ key: 'chat-send:one' }], records: [prepared('one', { plan: { diff_stat: ' 2 files changed, 7 deletions(-)' } })] })
   await openConfirm(deletions, 'chat-send:one')
   assert.equal(deletions.action('chat-send:one').confirming, true)
-  assert.equal(deletions.action('chat-send:one').confirmation[0].facts.find(fact => fact.label === 'Change').value, '2 files · +0 −7')
+  assert.equal(deletions.action('chat-send:one').confirmation[0].facts.find(fact => fact.label === 'Change').value, '2 files · +0\u00a0−7')
 })
 
 test('only a whole Git shortstat line counts as a change size', () => {
   const sizeOf = diffStat => confirmationItem(prepared('s', { plan: { diff_stat: diffStat } })).facts.find(fact => fact.label === 'Change')?.value
   for (const [stat, size] of [
-    [' 3 files changed, 40 insertions(+), 2 deletions(-)', '3 files · +40 −2'],
-    ['1 file changed, 1 insertion(+)', '1 file · +1 −0'],
-    [' 2 files changed, 7 deletions(-)\n', '2 files · +0 −7'],
-    ['1 file changed', '1 file · +0 −0'],
+    [' 3 files changed, 40 insertions(+), 2 deletions(-)', '3 files · +40\u00a0−2'],
+    ['1 file changed, 1 insertion(+)', '1 file · +1\u00a0−0'],
+    [' 2 files changed, 7 deletions(-)\n', '2 files · +0\u00a0−7'],
+    ['1 file changed', '1 file · +0\u00a0−0'],
   ]) assert.equal(sizeOf(stat), size, stat)
   for (const stat of ['1 file changed, lots of deletions', '2 files changed, 40 insertions(+), ??? deletions(-)',
     'about 1 file changed', '1 file changed, 2 insertions(+) and more', '1 file changed, 2 deletions(-), 3 insertions(+)',
@@ -901,7 +901,7 @@ test('the printed card has one action that reaches Confirm for exactly its items
   // The host draws Confirm's rows in place of the card's, so they are the same rows.
   const block = printedCard(records)
   assert.deepEqual(state.confirmation, block.items.map(({ title, facts }) => ({ title, facts })))
-  assert.equal(block.items[1].facts[1].value, '1 file · +2 −0 · 2 screenshots', 'the card and Confirm name the same screenshots')
+  assert.equal(block.items[1].facts[1].value, '1 file · +2\u00a0−0 · 2 screenshots', 'the card and Confirm name the same screenshots')
   // A card printed for one stack layer lists the whole phase, so it reaches Confirm.
   const layers = [layer('base', 1, ''), layer('top', 2, 'base')]
   layers[1].plan.base_sha = layers[0].plan.head_sha
@@ -1001,15 +1001,15 @@ const shot = (name, alt = name) => ({ name, sha256: SHA, size: 1200, alt })
 test('Confirm names the screenshots a new pull request will publish on its Change line', () => {
   const body = '## Summary\n\nFixes the clipped title.\n\n| Before | After |\n| --- | --- |\n| ![Before](screenshot:before.png) | ![After](screenshot:after.png) |'
   const item = confirmationItem(prepared('shots', { plan: { body_draft: body, screenshots: [shot('before.png'), shot('after.png')] } }))
-  assert.equal(item.facts.find(fact => fact.label === 'Change').value, '1 file · +2 −0 · 2 screenshots')
+  assert.equal(item.facts.find(fact => fact.label === 'Change').value, '1 file · +2\u00a0−0 · 2 screenshots')
   assert.equal(item.facts.some(fact => fact.label === 'Screenshots'), false, 'on the Change line, as on the card')
   assert.ok(item.facts.every(fact => !/screenshot:/.test(fact.value)))
   assert.equal(confirmationItem(prepared('one', { plan: { screenshots: [shot('one.png')] } })).facts.find(fact => fact.label === 'Change').value,
-    '1 file · +2 −0 · 1 screenshot')
+    '1 file · +2\u00a0−0 · 1 screenshot')
 
   // Malformed entries are not counted; none at all leaves the Change line as is.
   const plain = confirmationItem(prepared('plain', { plan: { screenshots: [{ name: '../x.png', sha256: SHA }, { name: 'ok.png', sha256: 'short' }] } }))
-  assert.equal(plain.facts.find(fact => fact.label === 'Change').value, '1 file · +2 −0')
+  assert.equal(plain.facts.find(fact => fact.label === 'Change').value, '1 file · +2\u00a0−0')
 
   // Without a readable diff stat, the count still gets its own Change line.
   const unsized = confirmationItem(prepared('unsized', { plan: { diff_stat: '', screenshots: [shot('a.png')] } }))
@@ -1017,7 +1017,7 @@ test('Confirm names the screenshots a new pull request will publish on its Chang
 
   const base = layer('base', 1, '')
   const full = confirmationItem({ ...base, plan: { ...base.plan, diff_stat: '1 file changed, 1 insertion(+)', screenshots: [shot('a.png'), shot('b.png')] } })
-  assert.equal(full.facts.find(fact => fact.label === 'Change').value, '1 file · +1 −0 · 2 screenshots')
+  assert.equal(full.facts.find(fact => fact.label === 'Change').value, '1 file · +1\u00a0−0 · 2 screenshots')
 })
 
 test('the B2 host accepts a confirmation that names screenshots', async t => {
@@ -1031,7 +1031,7 @@ test('the B2 host accepts a confirmation that names screenshots', async t => {
   ]
   const parsed = b2.confirmationOf(items)
   assert.ok(parsed, 'the host rejected the list, which would keep Confirm disabled')
-  assert.equal(parsed[0].facts.find(fact => fact.label === 'Change').value, '1 file · +2 −0 · 2 screenshots')
+  assert.equal(parsed[0].facts.find(fact => fact.label === 'Change').value, '1 file · +2\u00a0−0 · 2 screenshots')
   assert.match(parsed[1].facts.find(fact => fact.label === 'Change').value, /1 screenshot$/)
 })
 

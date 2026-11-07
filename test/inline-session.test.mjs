@@ -88,8 +88,8 @@ test('the card shows each named record as a row from the ledger, and reading nev
   const h = harness({ ids: ['one', 'two'], records: [prepared('one', { plan: { diff_stat: ' 3 files changed, 142 insertions(+), 38 deletions(-)' } }), prepared('two')] })
   h.session.start(); await tick()
   assert.deepEqual(h.last().rows, [
-    { title: 'Change one', meta: 'owner/repo · +142 −38', intent: 'review:one' },
-    { title: 'Change two', meta: 'owner/repo · +2 −0', intent: 'review:two' }])
+    { title: 'Change one', meta: 'owner/repo · +142\u00a0−38', intent: 'review:one' },
+    { title: 'Change two', meta: 'owner/repo · +2\u00a0−0', intent: 'review:two' }])
   assert.equal(h.last().title, '2 contributions')
   assert.equal(h.last().titleTone, 'neutral')
   assert.equal('items' in h.last(), false, 'the app\'s own rows replace the card\'s items')
@@ -157,7 +157,7 @@ test('a re-prepared record resolves through superseded_by to its successor, quie
   const latest = prepared('v3', { plan: { title: 'Calmer in-chat send states', diff_stat: '2 files changed, 96 insertions(+), 24 deletions(-)' } })
   const h = harness({ ids: ['v1'], records: [old, middle, latest] })
   await openConfirm(h)
-  assert.deepEqual(h.last().rows, [{ title: 'Calmer in-chat send states', meta: 'owner/repo · +96 −24', intent: 'review:v3' }])
+  assert.deepEqual(h.last().rows, [{ title: 'Calmer in-chat send states', meta: 'owner/repo · +96\u00a0−24', intent: 'review:v3' }])
   assert.deepEqual(h.needs.at(-1), ['v3'])
   assert.deepEqual(h.action(KEY).confirmation.map(item => item.title), ['Calmer in-chat send states'])
   // A loop or a dangling link never hangs the card.
@@ -269,9 +269,9 @@ test('Contribute becomes Confirm with each frozen change as the card shows it', 
   await openConfirm(h)
   const state = h.action(KEY)
   assert.equal(state.confirming, true)
-  assert.deepEqual(state.confirmation, [{ title: 'Change one', facts: [{ label: 'Project', value: 'owner/repo' }, { label: 'Change', value: '1 file · +2 −0' }] }])
+  assert.deepEqual(state.confirmation, [{ title: 'Change one', facts: [{ label: 'Project', value: 'owner/repo' }, { label: 'Change', value: '1 file · +2\u00a0−0' }] }])
   const sized = confirmationItem(prepared('sized', { plan: { diff_stat: ' 3 files changed, 40 insertions(+), 2 deletions(-)' } }))
-  assert.deepEqual(sized.facts.find(fact => fact.label === 'Change'), { label: 'Change', value: '3 files · +40 −2' })
+  assert.deepEqual(sized.facts.find(fact => fact.label === 'Change'), { label: 'Change', value: '3 files · +40\u00a0−2' })
   const stacked = confirmationItem({ ...layer('base', 1, ''), plan: { ...layer('base', 1, '').plan, diff_stat: '1 file changed, 1 insertion(+)' } })
   assert.deepEqual(stacked.facts.map(fact => fact.label), ['Project', 'Change', 'Stack'], 'a stack layer also names its layer')
   assert.equal(h.sends.length, 0, 'activation is not approval')
@@ -354,7 +354,7 @@ test('only uncertain sends lock after reload; a known failure allows a new expli
   lost.fire(KEY, 'confirm'); await tick()
   assert.ok(lost.last().checkpoint, 'a lost response stays owned')
   assert.deepEqual([lost.row('one').pill, lost.row('one').busy], ['Checking GitHub', true])
-  assert.equal(lost.last().title, 'Sending 1')
+  assert.equal(lost.last().title, 'Checking GitHub', 'the send left; only GitHub\'s answer is awaited')
 })
 
 test('Contribute all sends independent units in parallel and a stack as one ordered request', async () => {
@@ -374,7 +374,7 @@ test('Contribute all sends independent units in parallel and a stack as one orde
   h.store.set('base', published(h.store.get('base'), 9)); h.store.set('top', published(h.store.get('top'), 10))
   gates.stack.resolve({ ok: true }); await tick()
   gates.one.resolve({ error: 'Push rejected', failure: { owner: 'agent' } }); await tick()
-  assert.deepEqual([h.last().title, h.last().titleTone], ['3 of 4 sent', 'attention'])
+  assert.deepEqual([h.last().title, h.last().titleTone], ['3 of 4 sent · 1 needs a fix', 'attention'])
   assert.deepEqual(h.last().rows.map(row => [row.intent.slice(7), row.pill, row.links?.[0]?.label]), [['one', 'Not sent', undefined],
     ['two', 'Open', '#8'], ['base', 'Open', '#9'], ['top', 'Open', '#10']], 'a sibling failure never makes a sent unit pending')
   assert.equal(h.action(KEY).hidden, false)
@@ -496,7 +496,7 @@ test('a change without a readable size is never offered for Confirm, single or i
   }
   const deletions = harness({ ids: ['one'], records: [prepared('one', { plan: { diff_stat: ' 2 files changed, 7 deletions(-)' } })] })
   await openConfirm(deletions)
-  assert.equal(deletions.action(KEY).confirmation[0].facts.find(fact => fact.label === 'Change').value, '2 files · +0 −7')
+  assert.equal(deletions.action(KEY).confirmation[0].facts.find(fact => fact.label === 'Change').value, '2 files · +0\u00a0−7')
   assert.equal(rowMeta(prepared('x', { plan: { diff_stat: '' } })), 'owner/repo', 'no size, no lines on the row')
 })
 
@@ -586,7 +586,9 @@ test('a failed exact read holds the card with Try again, which reaches Confirm o
   const h = harness({ ids: ['one'], records: [prepared('one')], runtime: { records: [] },
     loadExact: async (id, store) => { if (failing) throw new Error('offline'); return structuredClone(store.get(id)) } })
   h.session.start(); await tick()
-  assert.deepEqual(h.last().rows, [{ title: 'one', meta: '', intent: 'review:one', pill: HOLD.unread }], 'an unread record is not called missing')
+  assert.deepEqual(h.last().rows, [{ title: 'Couldn’t load this contribution', meta: '', intent: 'review:one', pill: HOLD.unread }],
+    'an unread record is not called missing, and its id is not a title')
+  assert.deepEqual([h.last().title, h.last().titleTone], ['Couldn’t load 1', 'neutral'], 'an unread record is not one that needs a fix')
   assert.deepEqual([h.action(KEY).label, h.action(KEY).open], ['Try again', false])
   h.fire(KEY, 'activate'); await tick()
   h.provide(); await tick()
@@ -770,7 +772,7 @@ test('after the recheck window an unconfirmed push says Not confirmed and only o
   const h = timed({ ids: ['one'], records: [prepared('one')], send: () => ({ uncertain: true }) }, c)
   await openConfirm(h)
   h.fire(KEY, 'confirm'); await tick()
-  assert.equal(h.last().title, 'Sending 1')
+  assert.equal(h.last().title, 'Checking GitHub')
   for (let elapsed = 0; elapsed <= RECHECK_WINDOW_MS && c.pending().length; elapsed += 60000) await c.advance(60000)
   assert.equal(c.pending().length, 0, 'rechecks stop after the window')
   const state = h.action(KEY)
@@ -798,7 +800,7 @@ test('with another row sent, an expired check counts what is known', async () =>
   m.store.set('one', published(prepared('one'), 5))
   m.fire(KEY, 'confirm'); await tick()
   for (let i = 0; i < 20 && c.pending().length; i++) await c.advance(60000)
-  assert.equal(m.last().title, '1 of 2 sent')
+  assert.equal(m.last().title, '1 of 2 sent · 1 not confirmed', 'unknown is counted as not confirmed, never as failed')
 })
 
 test('a partly sent card links the sent rows, marks the failed one, and opens Contribute when it cannot retry', async () => {
@@ -808,7 +810,7 @@ test('a partly sent card links the sent rows, marks the failed one, and opens Co
   h.store.set('one', published(prepared('one'), 21))
   h.store.set('two', prepared('two', { record: { last_submit_error: 'The branch already exists.', updated_at: '2026-10-20T23:00:00Z' } }))
   h.fire(KEY, 'confirm'); await tick(); h.provide(); await tick()
-  assert.deepEqual([h.last().title, h.last().titleTone], ['1 of 2 sent', 'attention'])
+  assert.deepEqual([h.last().title, h.last().titleTone], ['1 of 2 sent · 1 needs a fix', 'attention'])
   assert.deepEqual(h.last().rows.map(row => [row.pill, row.tone, row.links]), [['Open', 'success', [{ label: '#21', url: 'https://github.com/owner/repo/pull/21' }]],
     ['Not sent', 'danger', []]])
   assert.deepEqual([h.action(KEY).open, h.action(KEY).label, h.action(KEY).note], [true, 'Open Contribute', 'The branch already exists.'])
@@ -1219,7 +1221,7 @@ test('the printed card reaches Confirm for the chat\'s waiting work, with the ro
   await openConfirm(h)
   const state = h.action(KEY)
   assert.deepEqual(state.confirmation, block.items.map(({ title, facts }) => ({ title, facts })), 'Confirm\'s rows are the printed rows')
-  assert.equal(block.items[1].facts[1].value, '1 file · +2 −0 · 2 screenshots')
+  assert.equal(block.items[1].facts[1].value, '1 file · +2\u00a0−0 · 2 screenshots')
   // A card printed for one stack layer lists the whole phase, so it reaches Confirm.
   const layers = [layer('base', 1, ''), layer('top', 2, 'base')]
   layers[1].plan.base_sha = layers[0].plan.head_sha
@@ -1278,7 +1280,7 @@ test('the host draws an old card as this chat\'s status rows, and only an open l
   if (host.features.includes('rows-v2')) {
     const context = { chatId: CHAT, latest: true, intent: 'review:one' }
     const rows = await rendered(published(prepared('one')), host.features, context)
-    assert.match(rows, /<p class="md-app-block__item-meta">owner\/repo · \+2 −0<\/p>/)
+    assert.match(rows, /<p class="md-app-block__item-meta">owner\/repo · \+2\u00a0−0<\/p>/)
     assert.match(rows, /md-app-block__title-mark is-success/)
     assert.doesNotMatch(rows, /Open a new pull request|<footer>/, 'the saved facts give way to the app\'s rows')
     const elsewhere = await rendered(published(prepared('one', { record: { chat_id: OTHER, chat_ids: [OTHER] } })), host.features, context)
@@ -1302,7 +1304,7 @@ test('the host draws the live card: ledger rows, one action, a sent ending, and 
   }
   const ready = await render({})
   assert.match(ready, /<strong>2 contributions<\/strong>/)
-  assert.match(ready, /intent=review%3Aone">Show confirmation rows in place<\/a><p class="md-app-block__item-meta">owner\/repo · \+142 −38<\/p>/)
+  assert.match(ready, /intent=review%3Aone">Show confirmation rows in place<\/a><p class="md-app-block__item-meta">owner\/repo · \+142\u00a0−38<\/p>/)
   assert.doesNotMatch(ready, /From this conversation|<dt>|Rows from/, 'every row is the app\'s')
   assert.match(ready, /<footer>[^]*>Contribute all<\/button>/)
   const confirming = await render({ confirm: true })
@@ -1368,10 +1370,10 @@ test('a card refresh runs one at a time, through the coordinator after the first
 test('only a whole Git shortstat line counts as a change size', () => {
   const sizeOf = diffStat => confirmationItem(prepared('s', { plan: { diff_stat: diffStat } })).facts.find(fact => fact.label === 'Change')?.value
   for (const [stat, size] of [
-    [' 3 files changed, 40 insertions(+), 2 deletions(-)', '3 files · +40 −2'],
-    ['1 file changed, 1 insertion(+)', '1 file · +1 −0'],
-    [' 2 files changed, 7 deletions(-)\n', '2 files · +0 −7'],
-    ['1 file changed', '1 file · +0 −0'],
+    [' 3 files changed, 40 insertions(+), 2 deletions(-)', '3 files · +40\u00a0−2'],
+    ['1 file changed, 1 insertion(+)', '1 file · +1\u00a0−0'],
+    [' 2 files changed, 7 deletions(-)\n', '2 files · +0\u00a0−7'],
+    ['1 file changed', '1 file · +0\u00a0−0'],
   ]) assert.equal(sizeOf(stat), size, stat)
   for (const stat of ['1 file changed, lots of deletions', '2 files changed, 40 insertions(+), ??? deletions(-)',
     'about 1 file changed', '1 file changed, 2 insertions(+) and more', '1 file changed, 2 deletions(-), 3 insertions(+)',
@@ -1425,15 +1427,15 @@ test('a card refresh settles as failed after its deadline or a rejection, never 
 test('Confirm names the screenshots a new pull request will publish on its Change line', () => {
   const body = '## Summary\n\nFixes the clipped title.\n\n| Before | After |\n| --- | --- |\n| ![Before](screenshot:before.png) | ![After](screenshot:after.png) |'
   const item = confirmationItem(prepared('shots', { plan: { body_draft: body, screenshots: [shot('before.png'), shot('after.png')] } }))
-  assert.equal(item.facts.find(fact => fact.label === 'Change').value, '1 file · +2 −0 · 2 screenshots')
+  assert.equal(item.facts.find(fact => fact.label === 'Change').value, '1 file · +2\u00a0−0 · 2 screenshots')
   assert.equal(item.facts.some(fact => fact.label === 'Screenshots'), false, 'on the Change line, as on the card')
   assert.ok(item.facts.every(fact => !/screenshot:/.test(fact.value)))
   assert.equal(confirmationItem(prepared('one', { plan: { screenshots: [shot('one.png')] } })).facts.find(fact => fact.label === 'Change').value,
-    '1 file · +2 −0 · 1 screenshot')
+    '1 file · +2\u00a0−0 · 1 screenshot')
 
   // Malformed entries are not counted; none at all leaves the Change line as is.
   const plain = confirmationItem(prepared('plain', { plan: { screenshots: [{ name: '../x.png', sha256: SHA }, { name: 'ok.png', sha256: 'short' }] } }))
-  assert.equal(plain.facts.find(fact => fact.label === 'Change').value, '1 file · +2 −0')
+  assert.equal(plain.facts.find(fact => fact.label === 'Change').value, '1 file · +2\u00a0−0')
 
   // Without a readable diff stat, the count still gets its own Change line.
   const unsized = confirmationItem(prepared('unsized', { plan: { diff_stat: '', screenshots: [shot('a.png')] } }))
@@ -1441,7 +1443,7 @@ test('Confirm names the screenshots a new pull request will publish on its Chang
 
   const base = layer('base', 1, '')
   const full = confirmationItem({ ...base, plan: { ...base.plan, diff_stat: '1 file changed, 1 insertion(+)', screenshots: [shot('a.png'), shot('b.png')] } })
-  assert.equal(full.facts.find(fact => fact.label === 'Change').value, '1 file · +1 −0 · 2 screenshots')
+  assert.equal(full.facts.find(fact => fact.label === 'Change').value, '1 file · +1\u00a0−0 · 2 screenshots')
 })
 
 test('the B2 host accepts a confirmation that names screenshots', async t => {
@@ -1455,7 +1457,7 @@ test('the B2 host accepts a confirmation that names screenshots', async t => {
   ]
   const parsed = b2.confirmationOf(items)
   assert.ok(parsed, 'the host rejected the list, which would keep Confirm disabled')
-  assert.equal(parsed[0].facts.find(fact => fact.label === 'Change').value, '1 file · +2 −0 · 2 screenshots')
+  assert.equal(parsed[0].facts.find(fact => fact.label === 'Change').value, '1 file · +2\u00a0−0 · 2 screenshots')
   assert.match(parsed[1].facts.find(fact => fact.label === 'Change').value, /1 screenshot$/)
 })
 
@@ -1501,7 +1503,7 @@ test('a published branch whose PR is not confirmed keeps Checking GitHub and kee
   assert.equal(o.calls.length, 2)
   assert.deepEqual([h.row('one').pill, h.row('one').busy], ['Checking GitHub', true])
   assert.deepEqual([h.action(KEY).label, h.action(KEY).disabled], ['Checking…', true])
-  assert.equal(h.last().title, 'Sending 1')
+  assert.equal(h.last().title, 'Checking GitHub')
   h.fire(KEY, 'activate'); await tick()
   assert.equal(h.action(KEY).confirming, false, 'still locked')
   // The window and its fallback stay: after it, Not confirmed and Contribute.
@@ -1923,3 +1925,41 @@ test('a read issued after a settlement still lands (control)', async () => {
   h.session.refresh('turn'); await tick()
   assert.deepEqual(h.row('one').links, [{ label: '#34', url: 'https://github.com/owner/repo/pull/34' }])
 })
+
+// ---- Truthful state: loading is not empty, and counts are real.
+test('before the first exact read answers, the card is loading, never empty', async () => {
+  const gate = deferred()
+  const h = harness({ ids: ['one', 'two'], records: [prepared('one'), prepared('two')], loadExact: async (id, store) => { await gate.promise; return structuredClone(store.get(id)) } })
+  h.session.start(); await tick()
+  assert.equal(h.last().title, '', 'the host keeps the saved title')
+  assert.equal('rows' in h.last(), false, 'the host keeps the printed rows; nothing claims there are none')
+  assert.deepEqual([h.action(KEY).label, h.action(KEY).hidden], ['Loading…', false])
+  gate.resolve(); await tick()
+  assert.equal(h.last().title, '2 contributions')
+  assert.equal(h.last().rows.length, 2)
+})
+
+test('every unreadable record and every row that needs a fix is counted', async () => {
+  const unread = harness({ ids: ['one', 'two'], records: [prepared('one'), prepared('two')], runtime: { records: [] },
+    loadExact: async () => { throw new Error('offline') } })
+  unread.session.start(); await tick()
+  assert.deepEqual([unread.last().title, unread.last().titleTone], ['Couldn’t load 2', 'neutral'])
+  assert.deepEqual(unread.last().rows.map(row => row.title), ['Couldn’t load this contribution', 'Couldn’t load this contribution'])
+  const failed = { last_submit_error: 'The branch already exists.', updated_at: '2026-10-20T23:00:00Z' }
+  const h = harness({ ids: ['one', 'two', 'three'], records: [prepared('one'), prepared('two', { record: failed }), prepared('three', { record: failed })] })
+  h.session.start(); await tick()
+  assert.deepEqual([h.last().title, h.last().titleTone], ['2 need a fix', 'attention'])
+})
+
+test('a sent card is green only while it is the newest and nothing was closed unmerged', async () => {
+  const newest = harness({ ids: ['one'], records: [published(prepared('one'), 9)] })
+  newest.session.start(); await tick()
+  assert.deepEqual([newest.last().title, newest.last().titleTone], ['1 pull request', 'success'])
+  const older = harness({ ids: ['one'], records: [published(prepared('one'), 9)], context: { chatId: CHAT, latest: false, intent: CHAT_INTENT } })
+  older.session.start(); await tick()
+  assert.equal(older.last().titleTone, 'neutral', 'history stays neutral')
+  const closed = harness({ ids: ['one'], records: [{ ...published(prepared('one'), 9), status: 'closed' }] })
+  closed.session.start(); await tick()
+  assert.equal(closed.last().titleTone, 'neutral')
+})
+

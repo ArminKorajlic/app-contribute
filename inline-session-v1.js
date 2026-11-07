@@ -112,7 +112,7 @@ export function changeSize(plan) {
   const stat = STAT.exec(String(plan?.diff_stat || '').trim())
   if (!stat) return ''
   const files = Number(stat[1])
-  return `${files} ${files === 1 ? 'file' : 'files'} · +${stat[2] || 0} −${stat[3] || 0}`
+  return `${files} ${files === 1 ? 'file' : 'files'} · +${stat[2] || 0}\u00a0−${stat[3] || 0}`
 }
 
 // ---- The row Confirm shows for each frozen record. The host draws these rows

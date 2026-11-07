@@ -98,7 +98,7 @@ def change_size(plan):
   if not stat:
     return ''
   files = int(stat[1])
-  return f'{files} {"file" if files == 1 else "files"} · +{stat[2] or 0} −{stat[3] or 0}'
+  return f'{files} {"file" if files == 1 else "files"} · +{stat[2] or 0}\u00a0−{stat[3] or 0}'
 
 
 def screenshot_count(plan):

@@ -41,7 +41,7 @@ class PreparedBlockTests(unittest.TestCase):
     self.assertEqual(block['item_facts'], 'values')
     self.assertEqual(block['title'], '1 contribution')
     self.assertEqual(block['items'], [{'title': 'Change one', 'intent': 'review:one',
-      'facts': [{'label': 'Project', 'value': 'owner/repo'}, {'label': 'Change', 'value': '2 files · +4 −1'}]}])
+      'facts': [{'label': 'Project', 'value': 'owner/repo'}, {'label': 'Change', 'value': '2 files · +4\u00a0−1'}]}])
     self.assertEqual(block['action'], {'label': 'Contribute', 'intent': 'chat-send:one'},
       'the earlier card\'s action, so a host without rows-v2 runs it as before')
     self.assertNotIn('facts', block)
@@ -144,8 +144,8 @@ class PreparedBlockTests(unittest.TestCase):
     self.assertTrue(out.getvalue().startswith('```mobius-app\n') and out.getvalue().endswith('\n```\n'))
 
   def test_change_size_is_the_whole_shortstat_line(self):
-    for stat, size in [(' 1 file changed, 2 insertions(+)\n', '1 file · +2 −0'), ('2 files changed, 7 deletions(-)', '2 files · +0 −7'),
-        ('1 file changed', '1 file · +0 −0')]:
+    for stat, size in [(' 1 file changed, 2 insertions(+)\n', '1 file · +2\u00a0−0'), ('2 files changed, 7 deletions(-)', '2 files · +0\u00a0−7'),
+        ('1 file changed', '1 file · +0\u00a0−0')]:
       self.assertEqual(module.change_size({'diff_stat': stat}), size)
     for stat in ['1 file changed, lots of deletions', 'about 1 file changed', '1 file changed, 2 insertions(+) and more', '']:
       self.assertEqual(module.change_size({'diff_stat': stat}), '', stat)
@@ -155,9 +155,9 @@ class PreparedBlockTests(unittest.TestCase):
   def test_change_names_the_screenshots_the_pr_will_publish(self):
     shot = lambda name: {'name': name, 'sha256': 'e' * 64, 'size': 1200, 'alt': name}
     two = self.card(record('one', plan={'screenshots': [shot('before.png'), shot('after.png'), {'name': '../x.png', 'sha256': 'e' * 64}]}))
-    self.assertEqual(two['items'][0]['facts'][1], {'label': 'Change', 'value': '2 files · +4 −1 · 2 screenshots'})
+    self.assertEqual(two['items'][0]['facts'][1], {'label': 'Change', 'value': '2 files · +4\u00a0−1 · 2 screenshots'})
     one = self.card(record('one', plan={'screenshots': [shot('a.png'), {'name': 'b.png', 'sha256': 'short'}]}))
-    self.assertEqual(one['items'][0]['facts'][1]['value'], '2 files · +4 −1 · 1 screenshot')
+    self.assertEqual(one['items'][0]['facts'][1]['value'], '2 files · +4\u00a0−1 · 1 screenshot')
     self.assertEqual(module.change_text({'diff_stat': '', 'screenshots': [shot('a.png')]}), '1 screenshot')
 
   def test_handle_matches_the_app(self):
