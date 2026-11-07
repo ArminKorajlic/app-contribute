@@ -170,6 +170,9 @@ export function createSyncHub({ policy = SYNC_POLICY, remainingPoints = () => nu
     fact.urgent = false
     let value
     try { value = await fact.spec.read() } catch (error) {
+      // A GitHub read that failed is still wanted: the cooldown reads it again, nothing else will
+      // (the probe reports a change once, and its answer is already taken).
+      if (fact.spec.github && facts.get(fact.name) === fact) fact.pending = true
       if (!fact.spec.failed) throw error
       if (stillWanted(fact, generation)) fact.spec.failed(error)
       return

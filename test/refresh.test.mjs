@@ -162,6 +162,71 @@ test('an automatic GitHub read waits out the cooldown, then reads once', async (
   assert.equal(state.reads.incoming, 2, 'a read nobody asked for ran')
 })
 
+// The review requests' failure mode: the probe saw a change once, the full read failed, and the probe
+// never reports that signature again. The read must stay wanted, not wait for another outside change.
+test('a GitHub read that failed stays wanted: read again after the cooldown though the probe sees nothing new', async () => {
+  const { hub, state, fact, setVisible } = setup()
+  let failing = false
+  hub.start()
+  fact('incoming', {
+    github: true,
+    read: async () => {
+      state.reads.incoming = (state.reads.incoming || 0) + 1
+      if (failing) throw new Error('GitHub did not answer')
+      return state.reads.incoming
+    },
+    failed: () => {},
+  })
+  hub.watch(async () => new Map(state.signature), keys => { if (keys.has('requests')) void hub.automatic('incoming') })
+  await setVisible(true)
+  await hub.refresh('incoming')
+  failing = true
+  state.signature = new Map([['requests', 'b']]) // a new review request arrives
+  await elapse(SYNC_POLICY.githubCooldownMs + 2000)
+  assert.equal(state.reads.incoming, 2, 'the probe-triggered read did not run')
+  failing = false
+  await elapse(SYNC_POLICY.githubCooldownMs - 10000)
+  assert.equal(state.reads.incoming, 2, 'the retry came before the cooldown ended')
+  await elapse(12000)
+  assert.equal(state.reads.incoming, 3, 'the failed read was never retried')
+  assert.equal(state.shown.incoming, 3)
+  await elapse(SYNC_POLICY.githubCooldownMs * 3)
+  assert.equal(state.reads.incoming, 3, 'a read that succeeded was repeated')
+})
+
+test('a failed GitHub read is retried only while the frame is shown, after the cooldown and with points left; Sync reads it at once', async () => {
+  const { hub, state, fact, setVisible } = setup()
+  let failing = true
+  hub.start()
+  fact('incoming', {
+    github: true,
+    read: async () => {
+      state.reads.incoming = (state.reads.incoming || 0) + 1
+      if (failing) throw new Error('GitHub did not answer')
+      return state.reads.incoming
+    },
+    failed: () => {},
+  })
+  await setVisible(true)
+  await hub.refresh('incoming')
+  await setVisible(false)
+  await elapse(60000)
+  await setVisible(true)
+  assert.equal(state.reads.incoming, 1, 'the frame shown again retried inside the cooldown')
+  await elapse(SYNC_POLICY.githubCooldownMs + 1000)
+  assert.equal(state.reads.incoming, 2, 'the failed read was not retried once the cooldown ended')
+  state.remaining = SYNC_POLICY.lowPoints - 1
+  await elapse(SYNC_POLICY.githubCooldownMs * 2)
+  assert.equal(state.reads.incoming, 2, 'a low account retried')
+  failing = false
+  await hub.refresh('incoming')
+  assert.equal(state.reads.incoming, 3, 'Sync did not read')
+  assert.equal(state.shown.incoming, 3)
+  state.remaining = 4000
+  await elapse(SYNC_POLICY.githubCooldownMs * 3)
+  assert.equal(state.reads.incoming, 3, 'a read that succeeded was repeated')
+})
+
 test('the owner can always read GitHub: a forced refresh ignores the cooldown and a low budget', async () => {
   const { hub, state, fact } = setup({ remaining: 10 })
   fact('incoming', { github: true })

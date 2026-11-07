@@ -562,10 +562,16 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
     if (sendOnly) return undefined
     return hub.fact('incoming', {
       github: true,
-      read: () => (connRef.current.state === 'connected' ? fetchIncomingReviews(token) : []),
-      // A read that failed leaves the list as it was; an empty one would clear every request.
-      apply: rows => { if (rows) setIncomingReviews(connRef.current.state === 'connected' ? rows : []) },
-      failed: () => {},
+      read: async () => {
+        if (connRef.current.state !== 'connected') return []
+        const rows = await fetchIncomingReviews(token)
+        // Not an empty list: that would clear every request. A failed read is reported to the hub
+        // instead, which keeps it wanted and reads again after the cooldown.
+        if (!rows) throw new Error('The review requests could not be read')
+        return rows
+      },
+      apply: rows => setIncomingReviews(connRef.current.state === 'connected' ? rows : []),
+      failed: () => {}, // the list stays as it was
     })
   }, [hub, token, sendOnly])
   const refreshIncomingReviews = useCallback(() => hub.refresh('incoming'), [hub])

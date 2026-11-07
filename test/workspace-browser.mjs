@@ -122,7 +122,7 @@ window.fetch = async (url, options = {}) => {
       if (call.body.query.includes('ContributeRepositories')) return response({data:{viewer:{repositories:{nodes:[],pageInfo:{hasNextPage:false,endCursor:null}}}}})
       // The Desk scenario asks the fixture PRs for review; everything else it reads falls through to the project mocks below.
       if (window.fullAppDesk && call.body.query.includes('ContributeIncomingReviews')) {
-        if (window.failIncoming) return new Response(JSON.stringify({detail:'Fixture GitHub error'}), {status:503})
+        if (window.failIncoming || window.failIncomingFull) return new Response(JSON.stringify({detail:'Fixture GitHub error'}), {status:503})
         return response({data:{rateLimit:charged(call.body.query),requested:{nodes:window.githubRequests || [pulls[0]]},involved:{nodes:[]}}})
       }
       // The change probe: only the review requests and the PRs the owner reviewed, one point.
@@ -1863,6 +1863,16 @@ window.runSyncChecks = async () => {
     const listed = !!rowOf('Contribution 8')
     await timed('a PR is merged or closed elsewhere: the row leaves', 61, () => listed && !rowOf('Contribution 8'))
     reads.githubUntilHidden = calls.requests.filter(call => call.url === '/api/github/graphql').map(call => Math.round((call.at - startedAt) / 1000) + ' s ' + /query (\w+)/.exec(call.body.query)[1].replace('Contribute', ''))
+    // 6. A new request arrives and the full read of the requests fails once: the probe reports the change
+    // only once, so the app must read again on its own after the cooldown, with no Sync.
+    const fullReads = () => graphqlReads('ContributeIncomingReviews')
+    const readsBeforeFailure = fullReads()
+    window.githubRequests = [pulls[1]]; window.failIncomingFull = true
+    for (let second = 0; second < 400 && fullReads() === readsBeforeFailure; second++) await clock.advance(1000)
+    window.failIncomingFull = false
+    await timed('a new request whose first read failed: the row appears on a later read', 301, () => asks('Contribution 8'), 400)
+    window.githubRequests = []
+    await minutes(6)
     // Hidden: not one read, however long. Visible again: the read comes at once.
     window.setFrameVisible(false)
     const hiddenFrom = calls.requests.length
