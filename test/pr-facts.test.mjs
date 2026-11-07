@@ -211,6 +211,30 @@ test('a plain comment arriving while an agent works leaves it working, then asks
   assert.equal(decideFor(mine(comment), [run({ state: 'all_clear' })]).state, 'author.feedback')
 })
 
+// A review that only comments, with words in it, is spoken in the PR's conversation (#129: two such reviews, no thread, no verdict).
+const wordsReview = (login, body, submittedAt, oid = HEAD) => ({ ...opinion(login, 'COMMENTED', oid), body, submittedAt })
+const talk = (login, createdAt) => ({ createdAt, author: { login, __typename: 'User' } })
+
+test('a review that only comments is feedback to answer until you reply, and it can be answered by a later comment', () => {
+  const review = wordsReview('Sam', 'I found the following concrete risks.', '2026-11-05T12:00:00Z')
+  const open = decideFor(mine({ latestReviews: { nodes: [review] } }))
+  assert.equal(open.state, 'author.feedback')
+  assert.equal(open.actions.find(action => action.id === 'respond').enabled, true, 'Respond to feedback is on, as #129 needed')
+  assert.equal(open.actions.find(action => action.id === 'ask_approval').enabled, true, 'and so is asking Sam to approve')
+  const answered = decideFor(mine({ latestReviews: { nodes: [review] }, comments: { nodes: [talk('alex', '2026-11-05T13:00:00Z')] } }))
+  assert.equal(answered.state, 'author.commented', 'your reply after the review answers it; Sam still has not approved')
+  assert.deepEqual(answered.approvalFrom, ['Sam'])
+  const again = decideFor(mine({ latestReviews: { nodes: [{ ...review, submittedAt: '2026-11-05T14:00:00Z' }] }, comments: { nodes: [talk('alex', '2026-11-05T13:00:00Z')] } }))
+  assert.equal(again.state, 'author.feedback', 'a newer review than your reply is waiting again')
+})
+
+test('a comment review with no words, from a bot, or by you is no feedback', () => {
+  for (const node of [wordsReview('Sam', '  ', '2026-11-05T12:00:00Z'), { ...wordsReview('ci-bot', 'Looks fine', '2026-11-05T12:00:00Z'), author: { login: 'ci-bot', __typename: 'Bot' } }, wordsReview('alex', 'Noted', '2026-11-05T12:00:00Z')]) {
+    assert.notEqual(decideFor(mine({ latestReviews: { nodes: [node] } })).state, 'author.feedback', JSON.stringify(node.author))
+  }
+  assert.equal(decideFor(mine({ latestReviews: { nodes: [wordsReview('Sam', 'Looks good', '2026-11-05T12:00:00Z', OLD)] } })).state, 'author.feedback', 'on an older version it is still words to answer')
+})
+
 const withComments = (reviews, ...nodes) => mine({ reviewDecision: 'CHANGES_REQUESTED', latestOpinionatedReviews: { nodes: reviews }, latestReviews: { nodes } })
 
 test('a reviewer who commented on this version after asking for changes is read as having looked again', () => {

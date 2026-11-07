@@ -299,15 +299,17 @@ test('Merge says plainly when an approval is of an older commit whose work is th
   assert.deepEqual(mixed, ['Approved at this version by kim', 'Approved by sam on a1b2c3d. The lines you added and removed have not changed since'])
 })
 
-test('Ask for approval shows the exact note it posts, naming only the people asked, and is off when nobody looked again', () => {
-  const standing = { lookedAgain: ['ReviewerOne', 'Kim'] }
+test('Ask for approval shows the exact note it posts, naming only the people asked, and is off when nobody commented without approving', () => {
+  const standing = { approvalFrom: ['ReviewerOne', 'Kim'], lookedAgain: ['Kim'] }
   const copy = askApprovalCopy(pr(), { standing })
   assert.equal(copy.title, 'Ask ReviewerOne, Kim to approve #9?')
-  assert.equal(copy.says.markdown, approvalNote(pr(), standing.lookedAgain))
-  assert.deepEqual(approvalNote(pr(), standing.lookedAgain).match(/@[A-Za-z0-9-]+/g), ['@ReviewerOne', '@Kim'])
+  assert.equal(copy.says.markdown, approvalNote(pr(), standing.approvalFrom, standing.lookedAgain))
+  assert.deepEqual(approvalNote(pr(), standing.approvalFrom).match(/@[A-Za-z0-9-]+/g), ['@ReviewerOne', '@Kim'])
   assert.match(copy.says.markdown, /\(`abcdef0`\)/)
+  assert.match(copy.says.markdown, /GitHub still holds an earlier change request from Kim; it lifts only when they approve or dismiss it\./, 'only a standing change request is explained')
+  assert.doesNotMatch(approvalNote(pr(), ['ReviewerOne']), /change request/, 'a plain comment holds nothing, so the note does not say it does')
   assert.equal(copy.disabled, false)
-  assert.equal(askApprovalCopy(pr(), { standing: { lookedAgain: [] } }).disabled, true)
+  assert.equal(askApprovalCopy(pr(), { standing: { approvalFrom: [], lookedAgain: [] } }).disabled, true)
   assert.equal(ACTION_COPY.ask_approval, askApprovalCopy)
 })
 

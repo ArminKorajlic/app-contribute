@@ -54,16 +54,20 @@ const commentsOf = pr => (pr?.latestReviews?.nodes || []).filter(node => node?.s
 
 // Threads a person other than you spoke last in (a bot's thread is input, never
 // waiting on you). The PR's own conversation counts as one more such thread: a plain
-// comment is feedback too, until you answer it. Whoever of the newest ten comments spoke
-// last among people decides, so a bot's update after a reviewer's comment does not hide it.
-// Null when the threads were not read.
+// comment is feedback too, until you answer it. A review that only comments, with words in it,
+// is spoken in that conversation too (its points are no inline thread, and GitHub gives it no verdict).
+// Whoever of the newest ten comments and those reviews spoke last among people decides, so a bot's
+// update after a reviewer's comment does not hide it. Null when the threads were not read.
 const waitsOnYou = (author, login) => !!author && !isBot(author) && lower(author.login) !== lower(login)
-const lastPersonIn = comments => (comments || []).filter(comment => !isBot(comment?.author)).at(-1)?.author
+const spokenAt = comment => Date.parse(comment?.createdAt || '') || 0
+const reviewWords = pr => (pr?.latestReviews?.nodes || [])
+  .filter(node => node?.state === 'COMMENTED' && node.body?.trim()).map(node => ({ author: node.author, createdAt: node.submittedAt }))
+const lastPersonIn = comments => [...(comments || [])].sort((a, b) => spokenAt(a) - spokenAt(b)).filter(comment => !isBot(comment?.author)).at(-1)?.author
 function openThreadsOf(pr, login) {
   const nodes = pr?.reviewThreads?.nodes
   if (!Array.isArray(nodes)) return null
   const threads = nodes.filter(thread => thread && thread.isResolved === false && waitsOnYou(thread.comments?.nodes?.at(-1)?.author, login)).length
-  return threads + (waitsOnYou(lastPersonIn(pr.comments?.nodes), login) ? 1 : 0)
+  return threads + (waitsOnYou(lastPersonIn([...(pr.comments?.nodes || []), ...reviewWords(pr)]), login) ? 1 : 0)
 }
 
 // The newest Contribute review of this PR (any version), with its run.

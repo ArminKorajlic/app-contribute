@@ -582,8 +582,8 @@ export function PullRequests({ appId, token, project, conn, onChanged, onReviewP
     close: ({ pr }) => pullAction(token, appId, pr, 'close'),
     ask_rereview: ({ pr }) => pullAction(token, appId, pr, 'request-reviewers', { reviewers: standingOf(pr).rereviewFrom }),
     ask_approval: ({ pr }) => {
-      const people = standingOf(pr).lookedAgain
-      return pullAction(token, appId, pr, 'ask-approval', { people, note: approvalNote(pr, people) })
+      const { approvalFrom: people, lookedAgain: holding } = standingOf(pr)
+      return pullAction(token, appId, pr, 'ask-approval', { people, note: approvalNote(pr, people, holding) })
     },
   }
   const closeAction = () => setActing(null)

@@ -161,20 +161,22 @@ export function askRereviewCopy(pr, { standing = null } = {}) {
 }
 
 // The one short note Ask for approval posts. Shown on the sheet and sent as it is, so it names only the people asked.
-export const approvalNote = (pr, people) => `${people.map(login => `@${login}`).join(' ')} you left a comment on this version (\`${short(pr.headRefOid)}\`), but GitHub still holds your change request from an earlier one. If your points are resolved, please approve, or dismiss the request. Sent from Contribute.`
+// `holding` are the people among them whose change request from an earlier version still stands.
+export const approvalNote = (pr, people, holding = []) => `${people.map(login => `@${login}`).join(' ')} you left a comment on this version (\`${short(pr.headRefOid)}\`) but haven’t approved it. If your points are resolved, please approve.${holding.length ? ` GitHub still holds an earlier change request from ${names(holding)}; it lifts only when they approve or dismiss it.` : ''} Sent from Contribute.`
 
-// Ask for approval: a reviewer who looked at this version and only commented still holds a change request, and GitHub
+// Ask for approval: a reviewer who only commented has not approved, and if they still hold a change request GitHub
 // lifts that only when they approve or dismiss it. The note says so, in public, from your account.
 export function askApprovalCopy(pr, { standing = null } = {}) {
-  const people = standing?.lookedAgain || []
+  const people = standing?.approvalFrom || []
+  const holding = standing?.lookedAgain || []
   return {
     icon: 'person', title: `Ask ${people.length ? names(people) : 'reviewers'} to approve #${pr.number}?`, confirm: NAMES.askApproval, working: 'Posting…',
     facts: [
-      { tone: 'ok', text: people.length ? `${names(people)} left a comment on this version; GitHub still holds their change request` : 'Nobody has looked again without approving' },
+      { tone: 'ok', text: people.length ? `${names(people)} left a comment on this version${holding.length ? `; GitHub still holds ${names(holding)}’s change request` : ' and has not approved'}` : 'Nobody has commented without approving' },
       { tone: 'warn', text: 'The note is public on the PR, from your GitHub account' },
     ],
-    says: people.length ? { label: 'The note that will be posted', markdown: approvalNote(pr, people) } : null,
-    footnote: 'Posts exactly this note, once. Nothing else changes: only their approval, or dismissing their request, lifts it.',
+    says: people.length ? { label: 'The note that will be posted', markdown: approvalNote(pr, people, holding) } : null,
+    footnote: holding.length ? 'Posts exactly this note, once. Nothing else changes: only their approval, or dismissing their request, lifts it.' : 'Posts exactly this note, once. Nothing else changes.',
     disabled: !people.length,
     done: () => ({ title: 'Note posted', text: `${names(people)} ${people.length === 1 ? 'is' : 'are'} asked to approve.` }),
   }

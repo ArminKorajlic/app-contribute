@@ -193,14 +193,14 @@ export const PR_FIELDS = `id number title url state headRefOid headRefName baseR
   repository { nameWithOwner viewerPermission squashMergeAllowed mergeCommitAllowed rebaseMergeAllowed }
   headRepository { nameWithOwner viewerPermission isArchived }
   labels(first:20) { nodes { name color } totalCount }
-  comments(last:10) { totalCount nodes { author { login __typename } } }
+  comments(last:10) { totalCount nodes { createdAt author { login __typename } } }
   reviews { totalCount }
   commits(last:1) { totalCount nodes { commit { statusCheckRollup { state contexts {
     totalCount checkRunCountsByState { state count } statusContextCountsByState { state count }
   } } } } }
   reviewDecision mergeable
   latestOpinionatedReviews(first:30, writersOnly:true) { nodes { state author { login __typename } commit { oid } } }
-  latestReviews(first:30) { nodes { state author { login __typename } commit { oid } } }
+  latestReviews(first:30) { nodes { state body submittedAt author { login __typename } commit { oid } } }
   viewerLatestReview { state commit { oid } }
   reviewThreads(last:50) { nodes { isResolved comments(last:1) { nodes { author { login __typename } } } } }`
 

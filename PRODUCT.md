@@ -235,9 +235,12 @@ checked over every case and every combination of the facts that matter):
    compares as the same, and so does a change only to a file's final newline. Only open PRs in repositories the
    viewer can write to are compared.
 3. Only new commits bring their PR back for re-review; a reply or a thank-you never does.
-   A reviewer who looked at this version and only commented has not approved: GitHub lifts a
-   change request only on their approval or a dismissal, so the PR reads *Looked again · not
-   approved* and the next step is Ask for approval, one note on the PR naming only them.
+   A reviewer who only commented has not approved. With a change request still standing, GitHub lifts it
+   only on their approval or a dismissal, so the PR reads *Looked again · not approved*; with none, it
+   reads *Commented · not approved*. Either way the next step is Ask for approval, one note on the PR
+   naming only them, and it can be sent while their comment still waits for your answer. A review that
+   only comments, with words in it, is feedback to answer like a comment in the PR's conversation: it
+   reads *Feedback to answer* until you reply (a reply, or the Ask for approval note, answers it).
 4. One agent job per PR at a time. A job that stalled holds nothing. A Respond to
    feedback conversation counts as the PR's job for as long as it can still move.
 5. Take over is for maintainers only, and needs a reason.
@@ -261,6 +264,6 @@ behind a confirm sheet and each shown only where this Möbius can do it.
 **States.** Shared: Merged · Closed · Couldn’t read · Not confirmed · Sending · Draft to
 send · Agent working · Agent asks you · Agent stopped. Your PR: Draft · Ready to open ·
 Findings · Checks or conflicts · Feedback to answer · Waiting on re-review · Looked again,
-not approved · Approval is old · Waiting on reviewers · Approved (checks pending or unknown) · Ready to merge. Their
+not approved · Commented, not approved · Approval is old · Waiting on reviewers · Approved (checks pending or unknown) · Ready to merge. Their
 PR: Draft · To review · Review ready · Waiting on the author · New commits · review
 again · Reviewed · Kept private · Ready to merge.
