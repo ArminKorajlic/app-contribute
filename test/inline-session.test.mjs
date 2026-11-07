@@ -13,7 +13,7 @@ import { attemptOutcome, confirmationItem, CONTINUED_TITLE, EXPIRED_NOTE, HOLD, 
 
 const HEAD = 'a'.repeat(40), NEXT = 'c'.repeat(40)
 // The chat the host attests the card is in, and another one.
-const CHAT = '4ed0eedd-8d65-4708-96a7-1c90cf8a5c3d', OTHER = '9b1c7a52-0d3e-4f1a-8c55-2e6f4b7d9a10'
+const CHAT = '00000000-0000-4000-8000-00000000c4a7', OTHER = '9b1c7a52-0d3e-4f1a-8c55-2e6f4b7d9a10'
 const KEY = CHAT_ACTION
 function prepared(id, extra = {}) {
   const head = extra.head || HEAD

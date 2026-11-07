@@ -65,8 +65,8 @@ test('the card item intents are read in card order, validated and deduplicated, 
 
 test('the chat context comes only from the host envelope, and refresh hints reach the card', () => {
   const read = context => readBlockSession({ sessionId: 's', actions: [], context })?.context
-  assert.deepEqual(read({ chatId: '4ed0eedd-8d65-4708-96a7-1c90cf8a5c3d', latest: false, other: 1 }),
-    { chatId: '4ed0eedd-8d65-4708-96a7-1c90cf8a5c3d', latest: false })
+  assert.deepEqual(read({ chatId: '00000000-0000-4000-8000-00000000c4a7', latest: false, other: 1 }),
+    { chatId: '00000000-0000-4000-8000-00000000c4a7', latest: false })
   assert.deepEqual(read({ chatId: 'chat-1' }), { chatId: 'chat-1', latest: true })
   for (const bad of [undefined, null, {}, { chatId: '' }, { chatId: 7 }, { chatId: '../other chat' }, { chatId: 'x'.repeat(65) }]) {
     assert.equal(read(bad), null, JSON.stringify(bad))
