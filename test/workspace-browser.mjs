@@ -1269,7 +1269,8 @@ window.runWorkspaceChecks = async () => {
         ensure(!document.querySelector('.co-root'), 'The card rendered the workspace')
         ensure(!submits.length, 'Activation sent')
         fire('confirm', 'card-n2'); fire('confirm', 'card-n3')
-        await until(() => card()?.hidden && card().links?.[0]?.url === 'https://github.com/owner/project/pull/9', 'Sent card did not settle to its PR')
+        // This host advertises no row state, so the settled action itself carries the PR link.
+        await until(() => !card()?.busy && !card()?.confirming && card().links?.[0]?.url === 'https://github.com/owner/project/pull/9', 'Sent card did not settle to its PR')
         ensure(submits.length === 1, 'Confirm did not send exactly once: ' + submits.length)
         ensure(submits[0].expected_record?.id === 'card-record' && submits[0].expected_record.plan.head_sha === HEAD, 'Send did not carry the confirmed snapshot')
         ensure(states.at(-1).checkpoint === null, 'A proven result kept its recovery checkpoint')
