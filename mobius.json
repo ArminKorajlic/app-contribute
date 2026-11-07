@@ -14,6 +14,10 @@
     "chat.blocks.passive": {
       "version": 1,
       "reason": "Shows the current state of the contributions a chat card names, and sends them to GitHub only after you press Confirm on that card."
+    },
+    "chat.blocks.ask": {
+      "version": 1,
+      "reason": "When a contribution on a chat card needs a fix, Fix in chat sends a short request naming it to that chat's agent as your message."
     }
   },
   "offline": {
@@ -81,6 +85,7 @@
     "contributing/adapter-mobius.md",
     "contributing/adapter-github.md",
     "contributing/legacy-bot.md",
+    "contributing/card-asks.md",
     "attached-work.md",
     "review-followup.md",
     "ui/Icons.jsx",
@@ -126,6 +131,7 @@
     "ui/RunDetail.jsx",
     "send-readiness.js",
     "inline-session.js",
+    "card-asks.js",
     "inline-session-v1.js",
     "block-protocol.js",
     "ui/InlineBlockSession.jsx",

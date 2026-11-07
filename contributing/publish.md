@@ -73,8 +73,11 @@ The card is that chat's live view of its contributions, read from the ledger:
   **Confirm**, listing exactly those, each with its **Project** and **Change**
   (Change also names any screenshots the PR will publish). All of them or
   none: a row that cannot be sent is marked with a short pill (Needs review,
-  Not sent, Needs a fresh check, …) and the action opens Contribute instead.
-  Fix that row's record and print a new card. Nothing is sent before Confirm,
+  Not sent, Conflicts, …) and the action becomes **Fix in chat**, which sends
+  you a `contribute · <id> · <code>` request in this chat ([SKILL.md](SKILL.md)
+  "Card asks"); on a Möbius without it, the action opens Contribute. A GitHub
+  connection problem offers the owner the account instead. Fix that row's
+  record and print a new card. Nothing is sent before Confirm,
   and the server refuses if a record changed after that snapshot.
   Independent contributions are sent in parallel; a stack's layers in order.
 - **The newest card wins.** Only the last card printed in a chat is live; an
