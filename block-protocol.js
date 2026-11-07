@@ -1,3 +1,7 @@
+import { cardRecordIds } from './chat-blocks.js'
+import { createInlineSession } from './inline-session.js'
+import { createInlineSession as createInlineSessionV1 } from './inline-session-v1.js'
+
 // The one adapter between Contribute's inline Send session and the chat
 // host's passive app-block protocol. Only this file knows message names and
 // envelope shapes, so a protocol revision changes nothing else.
@@ -67,11 +71,17 @@ export function publishBlockState(state, target = null) {
   return true
 }
 
+// Which card session a host gets: the ledger-backed card only where the host
+// draws the app's rows and attests the card's chat; anywhere else, exactly the
+// earlier card, whose record set is the host's items and nothing else.
+export const attestsChat = init => Array.isArray(init?.features) && init.features.includes('rows-v2') && Boolean(init.context?.chatId)
+
 // The whole app side of a card session, as the headless component runs it:
 // the host's envelope and messages, read only through this adapter, drive one
 // inline session. `loadExact(id)` reads a record; `onNeedRuntime(ids)` asks for
-// the send runtime. Returns `updateRuntime(runtime)` and `dispose()`.
-export function connectInlineSession({ blockSession, createSession, loadExact, onNeedRuntime }) {
+// the send runtime, checking exactly `ids`. Returns `updateRuntime(runtime)`
+// and `dispose()`.
+export function connectInlineSession({ blockSession, loadExact, onNeedRuntime }) {
   let session = null
   let runtime = null
   // Where this document's reports go: the host's handle when it gave one for
@@ -82,16 +92,19 @@ export function connectInlineSession({ blockSession, createSession, loadExact, o
       && (init.generation === null || init.generation === blockSession.generation) ? blockSession : init
     // A repeated init for this session carries the host's current verdict on
     // the card's chat (for example that a newer card now follows it).
-    if (session?.sessionId === init.sessionId) { session.update(init); return }
+    if (session?.sessionId === init.sessionId) { if (session.update) session.update(init); else session.start(); return }
     session?.dispose()
-    session = createSession({ ...init, publish: state => publishBlockState(state, target), loadExact, onNeedRuntime: ids => onNeedRuntime?.(ids) })
+    // The earlier card checks the records its action and items name, as before.
+    const v1 = !attestsChat(init)
+    const needs = v1 ? () => onNeedRuntime?.(cardRecordIds(init.actions.map(action => action.key), init.items)) : ids => onNeedRuntime?.(ids)
+    session = (v1 ? createInlineSessionV1 : createInlineSession)({ ...init, publish: state => publishBlockState(state, target), loadExact, onNeedRuntime: needs })
     if (runtime) session.updateRuntime(runtime)
     session.start()
   }
   const stop = listenBlockSession({
     onInit: start,
     onAction: event => { if (event.sessionId === session?.sessionId) session.handleEvent(event) },
-    onRefresh: hint => { if (hint.sessionId === session?.sessionId) session.refresh(hint.reason) },
+    onRefresh: hint => { if (hint.sessionId === session?.sessionId) session.refresh?.(hint.reason) },
   })
   const initial = readBlockSession(blockSession)
   if (initial) start(initial)

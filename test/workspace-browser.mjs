@@ -33,6 +33,7 @@ import { ReviewPlan } from './ui/ContributionCard.jsx'
 import { ScreenshotLoaderContext } from './ui/useScreenshots.js'
 import { fetchContributionScreenshot } from './api.js'
 import { organizePrivateWorkAction } from './review.js'
+import { batchHandle } from './chat-blocks.js'
 import { CSS } from './theme.js'
 import ContributeApp, { GithubPullsUnavailable } from './index.jsx'
 
@@ -1250,12 +1251,12 @@ window.runWorkspaceChecks = async () => {
       const states = []
       const realPost = window.postMessage
       window.postMessage = (message, target) => message?.type === 'moebius:app-block-state' ? states.push(structuredClone(message)) : realPost.call(window, message, target)
-      const card = () => states.at(-1)?.actions?.find(action => action.key === 'chat-contribute:all')
+      const card = () => states.at(-1)?.actions?.find(action => action.key === 'chat-send:card-record')
       const fire = (name, nonce) => window.dispatchEvent(new MessageEvent('message', { source: window, origin: location.origin,
-        data: { type: 'moebius:app-block-action', sessionId: 'card-1', key: 'chat-contribute:all', event: name, nonce } }))
+        data: { type: 'moebius:app-block-action', sessionId: 'card-1', key: 'chat-send:card-record', event: name, nonce } }))
       const before = calls.requests.length
       try {
-        root.render(<ContributeApp appId="fixture-app" token="fixture-only" blockSession={{ sessionId: 'card-1', generation: 4, features: ['row-state', 'rows-v2'], context: { chatId: 'fixture-chat', latest: true, intent: 'chat:contributions' }, actions: [{ key: 'chat-contribute:all', label: 'Contribute' }], items: [{ intent: 'review:card-record' }] }} />)
+        root.render(<ContributeApp appId="fixture-app" token="fixture-only" blockSession={{ sessionId: 'card-1', generation: 4, features: ['row-state', 'rows-v2'], context: { chatId: 'fixture-chat', latest: true, intent: 'chat:contributions' }, actions: [{ key: 'chat-send:card-record', label: 'Contribute' }], items: [{ intent: 'review:card-record' }] }} />)
         await until(() => card() && !card().disabled, 'Card state was not published')
         ensure(!calls.requests.slice(before).some(call => call.url === '/api/github/status'), 'An idle card mounted the full app')
         fire('activate', 'card-n1')
@@ -1283,7 +1284,7 @@ window.runWorkspaceChecks = async () => {
         root.render(null)
       }
     })
-    await check('A card on a Möbius that does not attest its chat never offers Confirm', async () => {
+    await check('A card session without its items (an older Möbius) never offers Confirm', async () => {
       root.render(null)
       await frame(); await frame()
       values.clear()
@@ -1293,16 +1294,16 @@ window.runWorkspaceChecks = async () => {
       const states = []
       const realPost = window.postMessage
       window.postMessage = (message, target) => message?.type === 'moebius:app-block-state' ? states.push(structuredClone(message)) : realPost.call(window, message, target)
-      const card = () => states.at(-1)?.actions?.find(action => action.key === 'chat-contribute:all')
+      const card = () => states.at(-1)?.actions?.find(action => action.key === 'chat-send:card-record')
       const before = calls.requests.length
       try {
-        root.render(<ContributeApp appId="fixture-app" token="fixture-only" blockSession={{ sessionId: 'card-old', generation: 2, actions: [{ key: 'chat-contribute:all', label: 'Contribute' }], items: [{ intent: 'review:card-record' }] }} />)
+        root.render(<ContributeApp appId="fixture-app" token="fixture-only" blockSession={{ sessionId: 'card-old', generation: 2, actions: [{ key: 'chat-send:card-record', label: 'Contribute' }] }} />)
         await until(() => card(), 'Card state was not published')
         window.dispatchEvent(new MessageEvent('message', { source: window, origin: location.origin,
-          data: { type: 'moebius:app-block-action', sessionId: 'card-old', key: 'chat-contribute:all', event: 'activate', nonce: 'old-n1' } }))
+          data: { type: 'moebius:app-block-action', sessionId: 'card-old', key: 'chat-send:card-record', event: 'activate', nonce: 'old-n1' } }))
         await new Promise(resolve => setTimeout(resolve, 300))
         ensure(card().disabled && /newer Möbius/.test(card().note) && !card().confirming, 'A card without items offered Confirm: ' + JSON.stringify(card()))
-        ensure(!calls.requests.slice(before).some(call => call.url.includes('/review-status?record_id=')), 'A card without a chat addressed a review status')
+        ensure(!calls.requests.slice(before).some(call => call.url.includes('/review-status?record_id=')), 'A card without items addressed a review status')
       } finally {
         window.postMessage = realPost
         window.fullAppBinding = false
@@ -1328,12 +1329,12 @@ window.runWorkspaceChecks = async () => {
       const states = []
       const realPost = window.postMessage
       window.postMessage = (message, target) => message?.type === 'moebius:app-block-state' ? states.push(structuredClone(message)) : realPost.call(window, message, target)
-      const card = () => states.at(-1)?.actions?.find(action => action.key === 'chat-contribute:all')
+      const card = () => states.at(-1)?.actions?.find(action => action.key === 'chat-send:ledger-record')
       const fire = (name, nonce) => window.dispatchEvent(new MessageEvent('message', { source: window, origin: location.origin,
-        data: { type: 'moebius:app-block-action', sessionId: 'card-ledger', key: 'chat-contribute:all', event: name, nonce } }))
+        data: { type: 'moebius:app-block-action', sessionId: 'card-ledger', key: 'chat-send:ledger-record', event: name, nonce } }))
       const before = calls.requests.length
       try {
-        root.render(<ContributeApp appId="fixture-app" token="fixture-only" blockSession={{ sessionId: 'card-ledger', generation: 6, features: ['row-state', 'rows-v2'], context: { chatId: 'fixture-chat', latest: true, intent: 'chat:contributions' }, actions: [{ key: 'chat-contribute:all', label: 'Contribute' }], items: [{ intent: 'review:ledger-record' }] }} />)
+        root.render(<ContributeApp appId="fixture-app" token="fixture-only" blockSession={{ sessionId: 'card-ledger', generation: 6, features: ['row-state', 'rows-v2'], context: { chatId: 'fixture-chat', latest: true, intent: 'chat:contributions' }, actions: [{ key: 'chat-send:ledger-record', label: 'Contribute' }], items: [{ intent: 'review:ledger-record' }] }} />)
         await until(() => card() && !card().disabled, 'Card state was not published')
         fire('activate', 'ledger-n1')
         for (let i = 0; i < 150 && !(card()?.label === 'Try again' && !card().disabled); i++) await new Promise(resolve => setTimeout(resolve, 50))
@@ -1374,7 +1375,7 @@ window.runWorkspaceChecks = async () => {
       const states = []
       const realPost = window.postMessage
       window.postMessage = (message, target) => message?.type === 'moebius:app-block-state' ? states.push(structuredClone(message)) : realPost.call(window, message, target)
-      const stackKey = 'chat-contribute:all'
+      const stackKey = 'chat-send-batch:' + batchHandle(['stack-base', 'stack-top'])
       const card = () => states.at(-1)?.actions?.find(action => action.key === stackKey)
       const fire = (name, nonce) => window.dispatchEvent(new MessageEvent('message', { source: window, origin: location.origin,
         data: { type: 'moebius:app-block-action', sessionId: 'card-2', key: stackKey, event: name, nonce } }))

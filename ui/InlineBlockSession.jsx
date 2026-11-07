@@ -1,5 +1,4 @@
 import { useEffect, useLayoutEffect, useRef } from 'react'
-import { createInlineSession } from '../inline-session.js'
 import { connectInlineSession } from '../block-protocol.js'
 import { loadFreshContributionRecord } from '../storage.js'
 
@@ -12,7 +11,7 @@ export function InlineBlockSession({ blockSession, runtime, onNeedRuntime }) {
   const latest = useRef({ runtime, onNeedRuntime })
   latest.current = { runtime, onNeedRuntime }
   useLayoutEffect(() => {
-    connection.current = connectInlineSession({ blockSession, createSession: createInlineSession,
+    connection.current = connectInlineSession({ blockSession,
       loadExact: id => loadFreshContributionRecord(id, { strict: true }), onNeedRuntime: ids => latest.current.onNeedRuntime?.(ids) })
     if (latest.current.runtime) connection.current.updateRuntime(latest.current.runtime)
     return () => { connection.current?.dispose(); connection.current = null }

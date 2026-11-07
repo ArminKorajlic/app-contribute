@@ -124,6 +124,7 @@
     "ui/RunDetail.jsx",
     "send-readiness.js",
     "inline-session.js",
+    "inline-session-v1.js",
     "block-protocol.js",
     "ui/InlineBlockSession.jsx",
     "prepared_block.py"

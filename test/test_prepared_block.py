@@ -42,7 +42,8 @@ class PreparedBlockTests(unittest.TestCase):
     self.assertEqual(block['title'], '1 contribution')
     self.assertEqual(block['items'], [{'title': 'Change one', 'intent': 'review:one',
       'facts': [{'label': 'Project', 'value': 'owner/repo'}, {'label': 'Change', 'value': '2 files · +4 −1'}]}])
-    self.assertEqual(block['action'], {'label': 'Contribute', 'intent': 'chat-contribute:all'})
+    self.assertEqual(block['action'], {'label': 'Contribute', 'intent': 'chat-send:one'},
+      'the earlier card\'s action, so a host without rows-v2 runs it as before')
     self.assertNotIn('facts', block)
 
   def test_many_contributions_share_the_one_fixed_action(self):
@@ -53,8 +54,9 @@ class PreparedBlockTests(unittest.TestCase):
     self.assertEqual([item['intent'] for item in block['items']], [f'review:{item}' for item in long_ids])
     for item in block['items']:
       self.assertEqual(set(item), {'title', 'intent', 'facts'}, 'no per-item action')
-    self.assertEqual(block['action'], {'label': 'Contribute all', 'intent': 'chat-contribute:all'},
-      'the action names no records: the app decides what it covers at the tap')
+    self.assertEqual(block['action'], {'label': 'Contribute all', 'intent': f'chat-send-batch:{module.batch_handle(long_ids)}'},
+      'one action over every item, matching them as before')
+    self.assertLessEqual(len(block['action']['intent']), 32)
 
   def test_a_card_for_one_stack_layer_lists_every_prepared_layer_in_order(self):
     stack = lambda position, sid='s1': {'stack': {'id': sid, 'name': 'Stack', 'position': position, 'total': 3}}
@@ -157,6 +159,11 @@ class PreparedBlockTests(unittest.TestCase):
     one = self.card(record('one', plan={'screenshots': [shot('a.png'), {'name': 'b.png', 'sha256': 'short'}]}))
     self.assertEqual(one['items'][0]['facts'][1]['value'], '2 files · +4 −1 · 1 screenshot')
     self.assertEqual(module.change_text({'diff_stat': '', 'screenshots': [shot('a.png')]}), '1 screenshot')
+
+  def test_handle_matches_the_app(self):
+    # chat-blocks.js: batchHandle(['b', 'a']) === '968bcf1a16b2b0ee'
+    self.assertEqual(module.batch_handle(['b', 'a']), '968bcf1a16b2b0ee')
+    self.assertEqual(module.batch_handle(['a', 'b', 'a']), module.batch_handle(['b', 'a']))
 
   def test_only_prepared_pull_requests_and_repeated_ids_once(self):
     with self.assertRaises(ValueError):

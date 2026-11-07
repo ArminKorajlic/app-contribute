@@ -345,9 +345,10 @@ existing action owners, and adds no alternate public authority or merge path.
 
 `prepared_block.py <record-id>…` prints the chat card for prepared work: block
 intent `chat:contributions` (the same for every card, so the chat host can tell
-the newest one), one action `chat-contribute:all`, `"expand": false` (no inline
-app view), and one fallback item per record (`review:<id>`, with **Project** and
-**Change** facts) for hosts that cannot run the card. It adds every other
+the newest one), one action in the earlier card's shape (`chat-send:<id>` for
+one record, `chat-send-batch:<16-hex handle>` over all of them), `"expand":
+false` (no inline app view), and one item per record (`review:<id>`, with
+**Project** and **Change** facts). It adds every other
 contribution of its chat that is ready with its whole stack (`--chat-id`,
 default `$CHAT_ID`, required) and every prepared layer of any stack it names,
 then refuses the card if any record in that final set is not all clear for its
@@ -413,15 +414,19 @@ one line beside the action; the action is
   **Retry** when the guarded send path accepts those records again (sent rows
   are never resent), otherwise **Open Contribute**.
 
-Every other card never sends. A card printed before this design
-(`chat-send:<id>` or `chat-send-batch:<handle>` action), or this card with
-another block intent, shows its records as rows, filtered to the attested chat
-exactly like the live card, and no action (**Try again** when a record could
-not be read, which only reads). Without a host-attested chat (a Möbius without
-`rows-v2`, or outside a chat) the card reads and reports nothing: the printed
-fallback rows stay, and the action opens Contribute (or, on a host without
-open-only actions, is disabled with one line saying to open Contribute). Opening `chat:contributions` or `chat-contribute:all` in the app
-shows the contributions waiting for review.
+On a host that attests its chat, a card printed before this design (a block
+intent other than `chat:contributions`) never sends: it shows its records as
+rows, filtered to the attested chat exactly like the live card, and no action
+(**Try again** when a record could not be read, which only reads).
+
+**Older hosts.** On a Möbius without `rows-v2`, or outside a chat, there is no
+attested chat, so every card, this one included, runs exactly as the earlier
+card did (`inline-session-v1.js`, unchanged): its record set is the host's
+`items` and nothing else, its action must match them exactly (the one record,
+or the handle over all of them), and Confirm sends exactly those, all of them
+or none, with the same frozen, server-bound snapshot. Nothing an older host
+can send is widened. Opening `chat:contributions` in the app shows the
+contributions waiting for review.
 
 ### PR links from chat
 

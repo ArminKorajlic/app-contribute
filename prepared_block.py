@@ -33,11 +33,23 @@ SCREENSHOT_NAME = re.compile(r'[a-z0-9][a-z0-9-]{0,60}\.png')
 SHA256 = re.compile(r'[0-9a-f]{64}')
 # The chat host shows at most 12 rows, and one action covers at most 12.
 MAX_ITEMS = 12
-# One intent for every card, so the chat host can tell the newest card in a
-# chat; one action, whose records the app decides at the owner's tap.
+# One intent for every card, so a chat host that attests it can tell the
+# newest card in a chat. The one action keeps the earlier card's shape: on a
+# host without `rows-v2` it must match the items, which are then exactly what
+# it sends; on one with it, the app decides at the owner's tap.
 CHAT_INTENT = 'chat:contributions'
-CHAT_ACTION = 'chat-contribute:all'
 JSON_LIMIT = 16384
+
+
+def batch_handle(ids):
+  """FNV-1a 64 over the sorted ids; chat-blocks.js computes the same handle."""
+  value = '\n'.join(['contribute-batch-v1', *sorted(set(ids))])
+  digest = 0xcbf29ce484222325
+  units = value.encode('utf-16-le')
+  for index in range(0, len(units), 2):
+    digest ^= units[index] | units[index + 1] << 8
+    digest = digest * 0x100000001b3 & 0xFFFFFFFFFFFFFFFF
+  return f'{digest:016x}'
 
 
 def read_record(record_id, ledger):
@@ -173,7 +185,8 @@ def card_block(records, ledger=None, chat_id=None):
     'inline': True, 'interaction': 'inline', 'expand': False,
     # Project and size read on their own, so fallback rows show values only.
     'item_facts': 'values', 'items': items,
-    'action': {'label': 'Contribute' if len(records) == 1 else 'Contribute all', 'intent': CHAT_ACTION}}
+    'action': ({'label': 'Contribute', 'intent': f'chat-send:{records[0]["id"]}'} if len(records) == 1
+      else {'label': 'Contribute all', 'intent': f'chat-send-batch:{batch_handle([record["id"] for record in records])}'})}
   if utf16_length(json.dumps(block, ensure_ascii=False)) > JSON_LIMIT:
     raise ValueError('This card is too large for chat. Print fewer contributions per card.')
   return block

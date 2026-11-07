@@ -27,7 +27,7 @@
 // The card reports calm state to the host: a live title, and per row a status
 // pill, the pull request link once published, and one short reason when a
 // send failed (building-apps.md "Passive block sessions").
-import { cardKind, CHAT_ACTION, CHAT_INTENT, inChat, validRecordId } from './chat-blocks.js'
+import { cardKind, CHAT_INTENT, inChat, validRecordId } from './chat-blocks.js'
 import { planScreenshots, screenshotCountText } from './domain.js'
 import { isPublished, publicationUnits, publishedPull, reviewIncomplete, sendBlocker } from './send-readiness.js'
 import { RETRY_CHECK_REASON, reviewStateFor } from './review.js'
@@ -263,13 +263,13 @@ export function createInlineSession({ sessionId, actions, items = null, features
   const attested = () => ownRows && Boolean(chat)
   const tracks = () => attested() && Boolean(card)
   // This card, in the group its host computes `latest` for.
-  const ours = () => tracks() && card.kind === 'chat' && chat.intent === CHAT_INTENT
+  const ours = () => tracks() && chat.intent === CHAT_INTENT
   // Only the newest card of its chat may start or confirm a send.
   const newest = () => ours() && chat.latest !== false
   const unresolved = () => attempts.some(attempt => UNRESOLVED.has(attempt.state))
   // An earlier card folds once it owns nothing unresolved.
   const folded = () => ours() && !newest() && !unresolved()
-  const sendKey = key => newest() && key === CHAT_ACTION
+  const sendKey = key => newest() && key === card?.key
 
   // Newest saved copy wins between the app's ledger and exact reads; a record
   // an exact read found gone is gone.
@@ -529,7 +529,7 @@ export function createInlineSession({ sessionId, actions, items = null, features
     const key = item.key
     if (folded()) return { ...quiet, key, label: item.label || 'Contribute', disabled: true, hidden: true, open: false, note: '' }
     if (!attested()) return unattestedAction(item)
-    if (key !== CHAT_ACTION || !ours()) return statusAction(item)
+    if (key !== card?.key || !ours()) return statusAction(item)
     const sendable = newest()
     const ids = idsFor(key)
     const list = entries()

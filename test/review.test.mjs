@@ -96,7 +96,7 @@ test('shell review intents name one ledger record without encoding presentation 
     queue: true,
   })
   // A chat card, and its action opened from a static card, open the queue.
-  for (const intent of ['chat:contributions', 'chat-contribute:all']) {
+  for (const intent of ['chat:contributions']) {
     assert.deepEqual(contributionReviewTargetFromIntent(intent), { queue: true }, intent)
   }
 })

@@ -91,8 +91,8 @@ The card is not approval: do not describe a printed card as sent or approved,
 and do not send the same work again yourself while the card owns it. Cards
 printed before this design only show their records' status (this chat's
 records only); print a new card to send what they list. On a Möbius too old to
-say which chat a card is in, a card shows only what you printed and opens
-Contribute.
+say which chat a card is in, the card works as before: it sends exactly the
+records it lists, after the same Confirm.
 
 ## Updating an existing PR after approval
 
