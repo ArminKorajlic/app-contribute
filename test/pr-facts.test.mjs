@@ -73,7 +73,8 @@ test('a write nobody confirmed is held when the PR moves on: a new head neither 
       assert.equal(decision.state, 'unconfirmed', `${state} on ${role}`)
       for (const id of ['merge', 'check_my_pr', 'respond', 'finish_it', 'review', 'take_over'].filter(id => actionOf(decision, id))) {
         assert.equal(actionOf(decision, id).enabled, false, `${id} stays off while ${state} is unresolved`)
-        assert.match(actionOf(decision, id).reason, /not confirmed yet|Nobody|Needs|Only/, `${id}: ${actionOf(decision, id).reason}`)
+        // A review whose turn ended on an unconfirmed push still reads as working (a review waiting on its helper), so that reason may come first.
+        assert.match(actionOf(decision, id).reason, /not confirmed yet|already working|Nobody|Needs|Only/, `${id}: ${actionOf(decision, id).reason}`)
       }
     }
   }
@@ -215,6 +216,13 @@ test('a run that is working still names the job before a Respond conversation do
   assert.deepEqual(prFacts({ pr: pull(), login: 'alex', runs: [working], chats: [respond()] }).job, { kind: 'review', state: 'running' })
   assert.deepEqual(prFacts({ pr: pull(), login: 'alex', runs: [stalled], chats: [respond()] }).job, { kind: 'respond', state: 'running' })
   assert.equal(prFacts({ pr: pull(), login: 'alex', runs: [stalled] }).job.state, 'stalled')
+})
+
+test('a review whose own turn ended while its reviewer helper works is still running; an interrupted one has stalled', () => {
+  const waitingOnHelper = run({ state: 'reviewing' }, { state: 'reviewing', execution_state: 'completed' })
+  const interrupted = run({ state: 'reviewing' }, { state: 'reviewing', execution_state: 'interrupted' })
+  assert.deepEqual(prFacts({ pr: pull(), login: 'alex', runs: [waitingOnHelper] }).job, { kind: 'review', state: 'running' })
+  assert.equal(prFacts({ pr: pull(), login: 'alex', runs: [interrupted] }).job.state, 'stalled')
 })
 
 test('findings of an older version of your PR no longer wait on you', () => {
