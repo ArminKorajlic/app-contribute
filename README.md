@@ -589,8 +589,11 @@ until the host can vouch for the owner's press**: an approval file is not proof,
 agent can write it, so Post works only on a Möbius that advertises the `owner_grant`
 capability (none does yet); until then the button is disabled with its reason and `post`
 refuses. Past that gate, `post` refuses unless the approval names this result, its content
-is unchanged and the PR is still where the work was built; then it pushes the commits (a
-fast-forward, never forced, so they keep their ids), posts the replies, updates the
+is unchanged and the PR is still where the work was built; then it uploads any screenshots
+the answer attaches (to the repository's `mobius-screenshots` branch; the card lists each one
+on its own and Post stays off until it is on screen, so the owner has read every byte; an
+earlier upload is reused only once its public addresses serve those bytes), pushes the
+commits (a fast-forward, never forced, so they keep their ids), posts the replies, updates the
 description and asks for the re-review, recording each step so a second run repeats
 nothing. The files, rules, exit codes and the app side are in `respond-result.md`.
 

@@ -11,8 +11,8 @@ that result in the PR's Review tab (each point and how it ended, the exact repli
 the commits and changed files, the tests) and the owner presses **Post**, **Reply in
 chat** or **Discard**. Post sends the same chat one message that tells it to run
 `respond_result.py post`; that command checks the owner's approval and posts exactly
-what was shown, in a fixed order: push the commits, post the replies, update the
-description, ask for the re-review. **Until the host can vouch for the owner's press
+what was shown, in a fixed order: upload the screenshots, push the commits, post the replies,
+update the description, ask for the re-review. **Until the host can vouch for the owner's press
 (the gate, below), Post is off**: the card still shows everything, and nothing is posted.
 
 ## Where things live
@@ -26,6 +26,7 @@ whose slug is `contribute`; the helper finds it in the database, like
 |---|---|---|
 | `respond-results/<slug>.json` | the helper only | the result (below) |
 | `respond-results/<result id>.bundle` | the helper only | the commits as a Git bundle (absent when there are no commits) |
+| `respond-screenshots/<result id>/<name>` | the helper only | the PNG bytes of each screenshot (absent when there are none) |
 | `respond-decisions/<slug>.json` | the app only | the owner's decision about one result |
 
 One result per PR: saving again replaces it. Two writers never share a file, so nothing
@@ -82,6 +83,7 @@ show that the owner pressed Post. Until the host can show it, nothing is publish
   "description": null,
   "rerequest": ["alex"],
   "tests": "803 pass, 0 fail (node)",
+  "screenshots": [ { "name": "before-desktop.png", "sha256": "<64 hex>", "size": 48213, "alt": "The list before, desktop" } ],
   "commits": [ { "sha": "<40 hex>", "title": "First line of the commit message" } ],
   "files": [ { "path": "ui/x.jsx", "status": "modified", "added": 12, "removed": 3, "patch": "@@ -1,3 +1,4 @@\n..." } ],
   "bundle": "r-3f9a1c2b04d5.bundle",
@@ -90,6 +92,9 @@ show that the owner pressed Post. Until the host can show it, nothing is publish
   "error": null
 }
 ```
+
+`screenshots` is absent when the answer adds none (a result saved before screenshots existed has no such key, and
+keeps its digest). `receipts.screenshots` appears only for a result that has screenshots.
 
 * `state`: `ready` (saved, nothing public done) → `posting` (the `post` command is running)
   → `posted`, or `failed` (it stopped part-way; see `error` and `receipts`).
@@ -106,6 +111,15 @@ show that the owner pressed Post. Until the host can show it, nothing is publish
   GitHub's REST `patch`), or `null` for a binary file or one over the caps, in which case
   `patch_omitted` is `true` (binary files also have `binary: true`).
 * A point answering the owner's saved agent-review findings has the reviewer `Agent review`, exactly.
+* `screenshots` (at most 8) are PNG files that the description shows as `![alt](screenshot:NAME)`. `name` is lower
+  case letters, digits and hyphens ending in `.png`; each file is at most 2 MB and is stored under its name in
+  `respond-screenshots/<result id>/`; `alt` is one line of at most 200 characters. Every screenshot must be
+  referenced by the description and every reference must name a screenshot (a reference inside code does not
+  count), so `post` can fill every link and no attachment is forgotten. A reference does not prove the description
+  shows the image (inside a comment, or as a plain link, it shows nothing), so the card also lists every attached
+  screenshot on its own, and Post stays off until each one is on screen: the owner approves exactly the bytes
+  that are uploaded, however the description names them. These are the rules of the platform's screenshots for a
+  new PR (`contribution_screenshots.py`).
 * Caps: 30 points; point title 160, answer 400, reviewer 60 characters; 12 replies of at
   most 20 000 characters; description at most 60 000; 10 logins; tests 500; 60 commits;
   300 files; a file's path 4 096 (Linux's `PATH_MAX`, so every path Git reports fits); a file's
@@ -116,9 +130,10 @@ show that the owner pressed Post. Until the host can show it, nothing is publish
 * `digest` is the SHA-256 (lower-case hex) of the UTF-8 bytes of this object written with
   `json.dumps(..., sort_keys=True, separators=(",", ":"), ensure_ascii=False)`:
   `{"v": 1, "pr_head": pr.head_sha, "tip": tip_sha, "points": [{reviewer, title, ending, commit, answer}…],
-  "replies": [{body, reply_to}…], "description": …, "rerequest": […], "commits": [sha…]}`.
-  It binds what the owner read to what gets posted.
-* `receipts`: `push` is `{"sha", "at"}` once done; `replies` is a list of
+  "replies": [{body, reply_to}…], "description": …, "rerequest": […], "commits": [sha…]}`, plus
+  `"screenshots": [{name, sha256}…]` when there are any. It binds what the owner read to what gets posted.
+* `receipts`: `screenshots` is `{"commit", "at"}` once uploaded (a claim outside the digest: `post` reuses it only after
+  the commit's public addresses serve the approved bytes, see below); `push` is `{"sha", "at"}` once done; `replies` is a list of
   `{"index", "url", "at"}`; `description` is `{"at"}`; `rerequest` is `{"at", "reviewers"}`.
   `sending` is `{"index", "at"}` while a reply may be on its way or is unknown (below), else `null`.
   `error` is `{"step", "message"}` when `state` is `failed`.
@@ -148,11 +163,12 @@ You run this when the work is finished, from your private copy (`--repo-path`), 
   "replies": [ { "body": "…", "reply_to": null } ],
   "description": null,
   "rerequest": ["…"],
-  "tests": "…"
+  "tests": "…",
+  "screenshots": [ { "name": "before-desktop.png", "path": "/absolute/path/to/file.png", "alt": "one line saying what it shows" } ]
 }
 ```
 
-`commit` may be a prefix of at least 7 hex characters of one of your commits. Git supplies
+`screenshots` is optional. `commit` may be a prefix of at least 7 hex characters of one of your commits. Git supplies
 everything else (commits, files, patches, the bundle), the PR's head comes from GitHub.
 
 It refuses (exit 2, nothing written) when: the input breaks a rule above; the PR is not open
@@ -180,6 +196,16 @@ Then, in this order, it:
    push already happened, see below);
 5. with `--dry-run`, prints the plan and stops here;
 6. sets `state` to `posting`, then does each step that has no receipt yet:
+   * **screenshots** (only when the result has some): before any step, each stored file must still have its
+     approved SHA-256 (otherwise Post refuses). A receipt from an earlier run is only a claim, so its commit is
+     reused only when it is a full commit id whose anonymous `raw.githubusercontent.com` addresses serve images
+     that each hash to the approved SHA-256; otherwise the receipt is ignored and the images are uploaded again.
+     Uploading adds them in one commit on top of the `mobius-screenshots` branch of `pr.head_repo`
+     (`screenshots/<head_ref>/<result id>/<name>`, fast-forward only, created when it does not exist;
+     a branch that holds anything but `screenshots/` is refused), then proves anonymous
+     `raw.githubusercontent.com` addresses of that commit serve exactly those bytes. A repository GitHub does
+     not serve publicly stops Post here, before anything else is public. The commit is the receipt, and the only
+     commit the description links is the one proven in this run;
    * **push**: `tip_sha` to `refs/heads/<pr.head_ref>` of `pr.head_repo`, fast-forward only
      (never forced), from the bundle (fetch the PR head, fetch the bundle, push); then check
      GitHub shows `tip_sha` as that branch's head. Skipped when there are no commits;
@@ -195,7 +221,8 @@ Then, in this order, it:
      stops (exit 4) and the reply stays unknown, because a request that timed out can still finish
      on GitHub after any one lookup. If GitHub cannot be asked, the step stops too. Only the owner
      settles a reply that never shows up: posting that exact reply by hand, which the next look finds;
-   * **description**: `PATCH pulls/<n>` with the new body, when `description` is not `null`;
+   * **description**: `PATCH pulls/<n>` with the new body, when `description` is not `null`; each
+     `(screenshot:NAME)` is replaced by its commit-pinned address, so the approved text keeps its references;
    * **re-request**: `POST pulls/<n>/requested_reviewers`, when `rerequest` is not empty;
    each success is written to `receipts` at once, so a second run continues where the first
    stopped and never repeats a step. The PR is read again (open, same head branch, same base,
@@ -228,11 +255,19 @@ Exit codes: 0 done, 2 bad input, 3 refused, 4 failed part-way.
 * **PR logic** (unchanged): `ready` and `approved` supply the existing "draft" fact, `posting` the
   "sending" fact, `failed` the "unconfirmed" fact. `stale` and none supply nothing, so the PR
   reads "Feedback to answer" again.
-* **Review tab card**: points with their ending, the replies word for word, the description,
-  commits and changed files, the tests, what Post will do in order, and Post, Reply in chat and
+* **Review tab card**: points with their ending, the replies word for word, the description (with its
+  screenshots shown, each read from `respond-screenshots/` and only shown when its SHA-256 is the one in the
+  result), a list of every attached screenshot on its own with a line saying they are uploaded to the PR's
+  repository (Post is off until each one has been read and matched), commits and changed files, the tests, what Post will do in order, and Post, Reply in chat and
   Discard. Post is off without the host's owner grant (the gate), while the PR moved, while the
   chat is working, and while the chat waits on one of its own cards (a chat with an open card
   refuses new messages); the card says why in words.
+* **Screenshots are required for any front-end change.** The brief says so (a screen, component, style or theme
+  file; before and after, desktop and 390 px; the same exception as for a new PR: a picture that cannot show the
+  change is explained in the description). The card flags an answer whose changed files include front-end files
+  (`.jsx .tsx .vue .svelte .css .scss .html` or a `*theme*.js`, never under `test/`) and that lists no screenshots,
+  in the same place the owner decides. It warns; it does not block, because whether a change is visible is the
+  owner's call.
 * **Post** re-reads the result, checks its digest is the one on screen and the PR head is still
   `pr.head_sha`, writes the decision (`approved`), then sends the chat (`chat_id`) this message
   with the stable id `respond-post-<result id>`; if the platform definitely refuses it, the

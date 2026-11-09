@@ -226,14 +226,19 @@ function base64(bytes) {
 // current entry for that name, which a restage can replace while this plan is on
 // screen, so the bytes are shown only when they hash to the plan's own sha256.
 // Send uploads from the platform's own copy.
-export async function fetchContributionScreenshot(token, appId, recordId, shot) {
+export function fetchContributionScreenshot(token, appId, recordId, shot) {
+  return fetchVerifiedScreenshot(token, shot, '/api/github/contributions/' + encodeURIComponent(appId) + '/' +
+    encodeURIComponent(recordId) + '/screenshots/' + encodeURIComponent(shot.name))
+}
+
+// One screenshot of a saved Respond answer, read from the app's own storage (the helper wrote it there, respond-result.md).
+export function fetchStoredScreenshot(token, appId, shot) {
+  return fetchVerifiedScreenshot(token, shot, '/api/storage/apps/' + encodeURIComponent(appId) + '/' + shot.storagePath.split('/').map(encodeURIComponent).join('/'))
+}
+
+async function fetchVerifiedScreenshot(token, shot, url) {
   try {
-    const r = await fetchRead(
-      '/api/github/contributions/' + encodeURIComponent(appId) + '/' +
-        encodeURIComponent(recordId) + '/screenshots/' + encodeURIComponent(shot.name),
-      { headers: authHeaders(token) },
-      20000,
-    )
+    const r = await fetchRead(url, { headers: authHeaders(token) }, 20000)
     if (!r.ok) return null
     const bytes = new Uint8Array(await r.arrayBuffer())
     const digest = new Uint8Array(await globalThis.crypto.subtle.digest('SHA-256', bytes))

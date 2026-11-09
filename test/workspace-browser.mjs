@@ -2024,6 +2024,82 @@ window.runRespondResultChecks = async () => {
     ensure(!reviewBody().includes('No review yet'), 'The tab still said No review yet')
     ensure(button(NAMES.postAnswer) && !button(NAMES.postAnswer).disabled, 'Post is not offered')
     checks.push({ name: 'a saved answer is a draft to send: the row, the panel and the Review tab all say so', status: 'pass' })
+    // An answer that adds screenshots to the description shows them, read from the app's storage and checked against the digest the owner approves.
+    {
+      const canvas = document.createElement('canvas'); canvas.width = 480; canvas.height = 140
+      const paint = canvas.getContext('2d'); paint.fillStyle = '#0a7'; paint.fillRect(0, 0, 480, 140)
+      paint.fillStyle = '#fff'; paint.font = '28px sans-serif'; paint.fillText('A fixture screenshot', 24, 80)
+      const bytes = await new Promise(resolve => canvas.toBlob(resolve, 'image/png')).then(blob => blob.arrayBuffer())
+      const sha256 = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)), b => b.toString(16).padStart(2, '0')).join('')
+      const folder = '/api/storage/apps/fixture-app/respond-screenshots/r-3f9a1c2b04d5/', original = window.fetch
+      const shot = { name: 'before-desktop.png', sha256, size: bytes.byteLength, alt: 'the list before, desktop' }
+      window.fetch = (url, options) => (String(url) === folder + 'before-desktop.png' ? Promise.resolve(new Response(bytes.slice(0), { headers: { 'Content-Type': 'image/png' } }))
+        : String(url) === folder + 'unreadable.png' ? Promise.resolve(new Response('missing', { status: 404 })) : original(url, options))
+      try {
+        await answer({ description: 'Adds a list.\n\n![the list before, desktop](screenshot:before-desktop.png)', screenshots: [shot] }, null)
+        await until(() => query('.co-pr-detail-body .co-markdown img.co-markdown-shot')?.getAttribute('src')?.startsWith('data:image/png;base64,'), 'The answer\'s screenshot did not show in its description: ' + reviewBody())
+        ensure(query('.co-pr-detail-body img.co-markdown-shot').alt === 'the list before, desktop', 'The screenshot lost its description')
+        ensure(reviewBody().includes('1 screenshot will be uploaded to owner/project') && reviewBody().includes('Upload 1 screenshot to the PR’s repository'), 'The card did not say the screenshot is uploaded: ' + reviewBody())
+        await until(() => query('.co-pr-detail-body .co-response-shots img.co-markdown-shot'), 'The answer’s screenshot was not listed on its own: ' + reviewBody())
+        ensure(!button(NAMES.postAnswer).disabled, 'Post stayed off with its screenshot shown')
+        query('.co-pr-detail-body .co-response').scrollIntoView({ block: 'start' })
+        await captureShot('respond-screenshots-card')
+        checks.push({ name: 'an answer with screenshots shows them in its new description and lists their upload as the first step', status: 'pass' })
+        // How the description names an image decides whether it shows there (a comment or a plain link shows nothing); the answer's own
+        // list shows the same checked bytes whatever it does, so the owner approves every image that is uploaded.
+        for (const description of ['Adds a list.\n\n<!-- ![the list before, desktop](screenshot:before-desktop.png) -->', 'Adds a list.\n\n[the list before, desktop](screenshot:before-desktop.png)']) {
+          await answer({ description, screenshots: [shot] }, null)
+          await until(() => query('.co-pr-detail-body .co-response-shots img.co-markdown-shot')?.getAttribute('src')?.startsWith('data:image/png;base64,') && !query('.co-pr-detail-body .co-markdown .co-markdown-shot-pending'),
+            'An image the description does not render was not listed on its own: ' + reviewBody())
+          ensure(!query('.co-pr-detail-body .co-markdown img.co-markdown-shot') && !button(NAMES.postAnswer).disabled, 'The description showed an image its text does not render, or Post stayed off: ' + reviewBody())
+        }
+        // An image that cannot be read keeps Post off and says why: nobody approves bytes they did not see.
+        await answer({ description: 'Adds a list.\n\n![the list after, desktop](screenshot:unreadable.png)', screenshots: [{ name: 'unreadable.png', sha256: 'e'.repeat(64), size: 10, alt: 'the list after, desktop' }] }, null)
+        await until(() => reviewBody().includes('Post is off until the screenshot it uploads shows here') && button(NAMES.postAnswer)?.disabled, 'Post was not held back for a screenshot that could not be read: ' + reviewBody())
+        checks.push({ name: 'every attached screenshot is listed on its own, even when the description does not render it, and Post waits for one that cannot be read', status: 'pass' })
+      } finally {
+        window.fetch = original
+        await answer({}, null)
+      }
+    }
+    // A real screenshot is wider than the card: the list of what Post uploads shows it within the card at every width, not at its natural size
+    // running past the card's edge (the image outside the Markdown view has no width rule of its own, so the list needs one).
+    {
+      const canvas = document.createElement('canvas'); canvas.width = 1088; canvas.height = 240
+      const paint = canvas.getContext('2d'); paint.fillStyle = '#0a7'; paint.fillRect(0, 0, 1088, 240)
+      paint.fillStyle = '#fff'; paint.font = '40px sans-serif'; paint.fillText('A wide fixture screenshot', 40, 130)
+      const bytes = await new Promise(resolve => canvas.toBlob(resolve, 'image/png')).then(blob => blob.arrayBuffer())
+      const sha256 = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)), b => b.toString(16).padStart(2, '0')).join('')
+      const folder = '/api/storage/apps/fixture-app/respond-screenshots/r-3f9a1c2b04d5/', original = window.fetch
+      const shot = { name: 'wide.png', sha256, size: bytes.byteLength, alt: 'a wide screenshot' }
+      window.fetch = (url, options) => (String(url) === folder + 'wide.png' ? Promise.resolve(new Response(bytes.slice(0), { headers: { 'Content-Type': 'image/png' } })) : original(url, options))
+      try {
+        await answer({ description: 'Adds a list.\n\n![a wide screenshot](screenshot:wide.png)', screenshots: [shot] }, null)
+        await until(() => query('.co-pr-detail-body .co-response-shots img.co-markdown-shot')?.complete && query('.co-pr-detail-body .co-markdown img.co-markdown-shot')?.complete, 'The wide screenshot did not load in the list and the description: ' + reviewBody())
+        const listed = query('.co-pr-detail-body .co-response-shots img.co-markdown-shot'), copy = query('.co-pr-detail-body .co-markdown img.co-markdown-shot')
+        const card = query('.co-pr-detail-body .co-response'), column = query('.co-pr-detail-body .co-response-shots')
+        const right = node => node.getBoundingClientRect().right
+        ensure(listed.naturalWidth === 1088 && card.getBoundingClientRect().width < 1088, 'The picture is not wider than the card here: ' + listed.naturalWidth + ' in ' + card.getBoundingClientRect().width)
+        ensure(right(listed) <= right(card) + 0.5 && right(listed) <= right(column) + 0.5, 'The listed screenshot runs past the card: its right edge is ' + right(listed) + ', the list ends at ' + right(column) + ' and the card at ' + right(card))
+        ensure(right(copy) <= right(card) + 0.5, 'The description’s copy of the screenshot runs past the card: ' + right(copy) + ' of ' + right(card))
+        ensure(Math.abs(listed.clientWidth / listed.clientHeight - 1088 / 240) < 0.1, 'The listed screenshot lost its proportions: ' + listed.clientWidth + ' x ' + listed.clientHeight)
+        ensure(!button(NAMES.postAnswer).disabled, 'Post stayed off with the wide screenshot shown')
+        checks.push({ name: 'a screenshot wider than the card stays inside the card in the list of what Post uploads', status: 'pass' })
+      } finally {
+        window.fetch = original
+        await answer({}, null)
+      }
+    }
+    // Screenshots are required for any front-end change: an answer that changes a screen without any says so where the owner decides.
+    await answer({ files: [{ path: 'ui/Page.jsx', status: 'modified', added: 3, removed: 1, patch: null, patch_omitted: true }] }, null)
+    await until(() => query('.co-pr-detail-body [data-missing-screenshots]'), 'An answer changing a screen without screenshots was not flagged: ' + reviewBody())
+    ensure(text(query('[data-missing-screenshots]')).includes('required for any front-end change'), 'The flag said: ' + text(query('[data-missing-screenshots]')))
+    query('[data-missing-screenshots]').scrollIntoView({ block: 'center' })
+    await captureShot('respond-missing-screenshots')
+    await answer({ files: [{ path: 'api.js', status: 'modified', added: 3, removed: 1, patch: null, patch_omitted: true }] }, null)
+    await until(() => !query('.co-pr-detail-body [data-missing-screenshots]') && reviewBody().includes('Replies ready'), 'A change with no screen in it was flagged: ' + reviewBody())
+    await answer({}, null)
+    checks.push({ name: 'an answer that changes front-end files without screenshots is flagged; one that changes none is not', status: 'pass' })
     // Post: the owner's approval is written for exactly this answer, and the chat is told to run the helper. The reads that follow are
     // held for a moment: until the refreshed answer is on screen the card stays busy, so Post cannot be pressed twice in that gap.
     window.holdResponsesRead = true

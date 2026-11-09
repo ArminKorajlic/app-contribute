@@ -59,6 +59,7 @@ import {
   fetchLiveStates,
   fetchMobiusContributionStatus,
   fetchContributionScreenshot,
+  fetchStoredScreenshot,
   fetchReviewStatus,
   fetchSourceDiff,
   fetchSourceStatus,
@@ -1819,7 +1820,10 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
   }, [onPublicationRuntime, records, ledgerReady, reviewStatus, reviewAddressKey, conn, onSend, onSendStack, newPrStage, cardRefresh, cardRefreshes])
 
   // Staged screenshots a prepared card shows in its description.
-  const loadScreenshot = useCallback((recordId, shot) => fetchContributionScreenshot(token, appId, recordId, shot), [token, appId])
+  // A saved Respond answer's screenshots (they carry their storage path) are read from the app's storage; a prepared record's from the platform.
+  const loadScreenshot = useCallback((recordId, shot) => (shot.storagePath
+    ? fetchStoredScreenshot(token, appId, shot)
+    : fetchContributionScreenshot(token, appId, recordId, shot)), [token, appId])
 
   if (sendOnly) return null
   if (!booted) {

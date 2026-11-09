@@ -1,11 +1,13 @@
 import { ReviewFrame } from './ReviewFrame.jsx'
-import { MarkdownView } from './MarkdownView.jsx'
+import { MarkdownView, isPngDataUrl } from './MarkdownView.jsx'
 import { PullFiles } from './PullFiles.jsx'
 import { openAgentConversation } from './BatchAction.jsx'
 import { Icon } from './Icons.jsx'
 import { RunTag } from './RunTag.jsx'
 import { NAMES } from '../names.js'
-import { chatStarting, planSteps, POST_OFF_REASON, stepDone } from '../respond-result.js'
+import { SCREENSHOT_FOLDER, changesFrontEnd, chatStarting, planSteps, POST_OFF_REASON, stepDone } from '../respond-result.js'
+import { screenshotCountText } from '../domain.js'
+import { useScreenshots } from './useScreenshots.js'
 
 // A saved Respond-to-feedback answer on its PR's Review tab: what each point came to, the replies word for word, the commits and
 // changed files, and what Post will do. Reading it is the owner's side of the approval; Post only writes the decision (respond-flow.js).
@@ -44,6 +46,8 @@ function holdReason(chat) {
   if (chat?.state === 'needs_answer') return 'The conversation is waiting for your answer to its own card. Answer it in the chat first.'
   return chat?.state === 'running' ? 'The agent is working on this PR right now.' : ''
 }
+// Post approves the images it uploads, so it stays off until each one is on screen with the bytes the answer was saved with.
+const imagesReason = unseen => (unseen ? `Post is off until ${unseen === 1 ? 'the screenshot it uploads shows' : 'every screenshot it uploads shows'} here, read from what was saved.` : '')
 
 function Points({ points }) {
   return <ul className="co-response-points" aria-label="Points answered">
@@ -58,18 +62,43 @@ function Points({ points }) {
   </ul>
 }
 
-function Details({ result, open }) {
-  const { commits, files, replies, description } = result
+// The answer's screenshots as the description shows them, each tagged with where the app reads its bytes.
+const responseShots = result => ({ id: result.id, plan: { screenshots: result.screenshots.map(shot => ({ ...shot, storagePath: `${SCREENSHOT_FOLDER}${result.id}/${shot.name}` })) } })
+// An image counts as seen only once its bytes were read and matched the digest the owner approves (useScreenshots resolves nothing else).
+const unseenScreenshots = (result, images) => result.screenshots.filter(shot => !isPngDataUrl(images?.[shot.name]))
+
+// Every screenshot Post uploads, each shown here on its own. Whether the description shows an image depends on how it names it (inside a
+// comment or as a plain link it shows nothing), so approving the images must never depend on the description.
+export function AttachedScreenshots({ result, images, open = true }) {
+  const { screenshots } = result
+  return <details className="co-task-details" open={open}>
+    <summary>{plural(screenshots.length, 'screenshot', 'screenshots')} Post will upload</summary>
+    <ul className="co-response-shots">
+      {screenshots.map(shot => <li key={shot.name}>
+        {isPngDataUrl(images?.[shot.name]) ? <img className="co-markdown-shot" src={images[shot.name]} alt={shot.alt} /> : <span className="co-markdown-shot-pending">{`Screenshot: ${shot.alt}`}</span>}
+        <small><code>{shot.name}</code> · {shot.alt}</small>
+      </li>)}
+    </ul>
+    <p className="co-shot-note">{screenshotCountText(screenshots.length)} will be uploaded to {result.pr.head_repo}, on a branch only screenshots go to, so the description can show {screenshots.length === 1 ? 'it' : 'them'}.</p>
+  </details>
+}
+
+function Details({ result, open, images }) {
+  const { commits, files, replies, description, screenshots } = result
   return <>
     <details className="co-task-details" open={open}><summary>{plural(replies.length, 'reply', 'replies')}, word for word</summary>
       {replies.map((reply, index) => <div className="co-response-reply" key={index}>
         {reply.reply_to ? <small>In reply to comment {reply.reply_to}</small> : null}<MarkdownView markdown={reply.body} /></div>)}
     </details>
-    {description !== null ? <details className="co-task-details"><summary>New description</summary><MarkdownView markdown={description} /></details> : null}
+    {description !== null ? <details className="co-task-details" open={open && screenshots.length > 0}><summary>New description</summary>
+      <MarkdownView markdown={description} images={images} />
+    </details> : null}
+    {screenshots.length ? <AttachedScreenshots result={result} images={images} open={open} /> : null}
     {commits.length || files.length ? <details className="co-task-details"><summary>Changes: {plural(commits.length, 'commit', 'commits')} · {plural(files.length, 'file', 'files')} · +{sum(files, 'added')} −{sum(files, 'removed')}</summary>
       <ul className="co-response-commits">{commits.map(commit => <li key={commit.sha}><code>{short(commit.sha)}</code> {commit.title}</li>)}</ul>
       <PullFiles data={filesData(result)} />
     </details> : null}
+    {open && changesFrontEnd(result) && !screenshots.length ? <p className="co-review-note" role="status" data-missing-screenshots>This answer changes front-end files but adds no screenshots. They are required for any front-end change: ask for another pass, or say in a reply why none can show it.</p> : null}
     {result.tests ? <p className="co-review-note">Checked: {result.tests}</p> : null}
   </>
 }
@@ -94,12 +123,12 @@ function Steps({ result, status }) {
   </div>
 }
 
-// Why Post, Send again and Try again are off, or ''. The host's owner grant (the gate) comes before anything about the chat.
-const postBlocker = (status, chat, ownerGrant) => (ownerGrant ? (status === 'ready' ? holdReason(chat) : '') : POST_OFF_REASON)
+// Why Post, Send again and Try again are off, or ''. The host's owner grant (the gate) comes before anything about the chat or the screenshots.
+const postBlocker = (status, chat, ownerGrant, unseen) => (ownerGrant ? (status === 'ready' ? holdReason(chat) || imagesReason(unseen) : '') : POST_OFF_REASON)
 
-function Actions({ view, chat, busy, readOnly, ownerGrant, starting, onPost, onDiscard, onRespondAgain }) {
+function Actions({ view, chat, unseen, busy, readOnly, ownerGrant, starting, onPost, onDiscard, onRespondAgain }) {
   const { status, result } = view
-  const blocked = postBlocker(status, chat, ownerGrant)
+  const blocked = postBlocker(status, chat, ownerGrant, unseen)
   const chatButton = label => <button key={label} type="button" className="co-btn" onClick={() => openAgentConversation(result.chat_id)}>{label}</button>
   if (readOnly || status === 'posted') return null
   const buttons = {
@@ -122,6 +151,7 @@ function Actions({ view, chat, busy, readOnly, ownerGrant, starting, onPost, onD
 // `now` is the time the card judges "just sent" by (the tests set it).
 export function ResponseCard({ pr, response: view, chat = null, busy = false, error = '', readOnly = false, ownerGrant = false, now = Date.now(), onPost, onDiscard, onRespondAgain }) {
   const { status, result } = view
+  const screenshots = useScreenshots(responseShots(result), true)
   // While the chat holds the PR (it works, or waits on a card of its own) its box above is the one that asks for you.
   const held = status === 'ready' && Boolean(holdReason(chat))
   // A failed message to the chat is no "starting": Send again is offered at once, with the error.
@@ -138,10 +168,10 @@ export function ResponseCard({ pr, response: view, chat = null, busy = false, er
       <p className="co-review-note">{statusLine(view, pr, starting)}</p>
       {status === 'ready' ? <p className="co-response-fresh">The PR has not changed since this answer.</p> : null}
       {status === 'posted' ? null : <Points points={result.points} />}
-      {status === 'posted' ? null : <Details result={result} open={['ready', 'approved', 'stale'].includes(status)} />}
+      {status === 'posted' ? null : <Details result={result} open={['ready', 'approved', 'stale'].includes(status)} images={screenshots.images} />}
       {status === 'stale' ? null : <Steps result={result} status={status} />}
       {error ? <p role="alert" className="co-run-error">{error}</p> : null}
-      <Actions view={view} chat={chat} busy={busy} readOnly={readOnly} ownerGrant={ownerGrant} starting={starting} onPost={onPost} onDiscard={onDiscard} onRespondAgain={onRespondAgain} />
+      <Actions view={view} chat={chat} unseen={unseenScreenshots(result, screenshots.images).length} busy={busy} readOnly={readOnly} ownerGrant={ownerGrant} starting={starting} onPost={onPost} onDiscard={onDiscard} onRespondAgain={onRespondAgain} />
     </div>
   </ReviewFrame>
 }

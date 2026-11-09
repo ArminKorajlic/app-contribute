@@ -4,6 +4,7 @@ import DOMPurify from 'dompurify'
 
 const SCREENSHOT_SCHEME = 'screenshot:'
 const PNG_DATA_URL = /^data:image\/png;base64,[A-Za-z0-9+/]+=*$/
+export const isPngDataUrl = value => typeof value === 'string' && PNG_DATA_URL.test(value)
 
 // Like marked's own attribute escape: an entity the text already carries is
 // kept, so marked's escaped alt text is not escaped twice.
@@ -43,7 +44,7 @@ function screenshotImage(token, alt, images) {
   if (!href.toLowerCase().startsWith(SCREENSHOT_SCHEME)) return false
   const name = href.slice(SCREENSHOT_SCHEME.length)
   const src = Object.hasOwn(images || {}, name) ? images[name] : null
-  if (typeof src === 'string' && PNG_DATA_URL.test(src)) {
+  if (isPngDataUrl(src)) {
     return `<img class="co-markdown-shot" src="${src}" alt="${escapeHtml(alt || 'Screenshot')}">`
   }
   return `<span class="co-markdown-shot-pending">${escapeHtml(alt ? `Screenshot: ${alt}` : 'Screenshot')}</span>`
