@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test, { after } from 'node:test'
 import { readFileSync } from 'node:fs'
 import vm from 'node:vm'
-import { classifyReview, mergeReviewPulls, reviewCounts, reviewEntries, reviewKey } from '../review-list.js'
+import { classifyReview, mergeReviewPulls, respondEntries, reviewCounts, reviewEntries, reviewKey } from '../review-list.js'
 import { createSyncHub } from '../refresh.js'
 
 // Runs the real hook with minimal hook stand-ins (as focus-lease.test.mjs does): state and memo slots
@@ -39,7 +39,7 @@ function harness() {
     },
     useEffect(run, deps) { queued.push({ index: cursor++, run, deps }) },
     createContext: () => ({}), useContext: () => null,
-    classifyReview, mergeReviewPulls, reviewCounts, reviewEntries, reviewKey,
+    classifyReview, mergeReviewPulls, respondEntries, reviewCounts, reviewEntries, reviewKey,
     fetchChangeProbe: async () => null,
     readReviewPulls(token, refs, keys) {
       const asked = (keys ? refs.filter(ref => keys.has(reviewKey(ref.repo, ref.number))) : refs).map(ref => reviewKey(ref.repo, ref.number))
@@ -61,7 +61,8 @@ function harness() {
     return view
   }
   unmounts.push(() => { effects.forEach(effect => effect?.cleanup?.()); stopHub() })
-  const rows = () => view.entries.map(entry => `${entry.bucket}:${entry.chips.map(chip => chip.label).join('+')}`)
+  // The entries come out of the evaluated hook's realm: copy them so the arrays compare with the test's own.
+  const rows = () => [...view.entries].map(entry => `${entry.bucket}:${entry.chips.map(chip => chip.label).join('+')}`)
   const flush = () => new Promise(resolve => setImmediate(resolve))
   return { render, reads, rows, flush, counts: () => JSON.parse(JSON.stringify(view.counts)), retry: () => view.retry(), sync: () => view.syncPulls() }
 }

@@ -1592,7 +1592,7 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
   }, [appId, token, applyRecordUpdates, replaceFeed, refreshReviewStatus])
 
   // Reviews you started: one row per PR for the Agent runs page, counted in the rail.
-  const reviewList = useReviewList({ hub, enabled: !sendOnly && conn.state === 'connected', token, runs: reviewRuns, chats: respondChats, responses, ignored: ignoredReviews, login: conn.login || '' })
+  const reviewList = useReviewList({ hub, enabled: !sendOnly && conn.state === 'connected', token, runs: reviewRuns, chats: respondChats, responses, pulls: incomingReviews, ignored: ignoredReviews, login: conn.login || '' })
   reviewListRef.current = reviewList
 
   // A linked repository outside the owner's lists still opens as a project.

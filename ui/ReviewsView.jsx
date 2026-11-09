@@ -26,7 +26,7 @@ export function ReviewRow({ entry, project, onOpenPull }) {
       <span className="co-desk-row-main">
         <span className="co-desk-row-title">{item.title || `Pull request #${item.number}`}</span>
         <span className="co-desk-row-meta">
-          <span>#{item.number} · <TimeAgo prefix="reviewed " value={run.created_at} /></span>
+          <span>#{item.number} · {run ? <TimeAgo prefix="reviewed " value={run.created_at} /> : 'responding to feedback'}</span>
           {chips.map(chip => <span key={chip.label} className={'co-desk-chip ' + CHIP_CLASS[chip.tone]}>{chip.label}</span>)}
         </span>
       </span>
