@@ -193,9 +193,11 @@ the owner, and folds apps with nothing to do.
   the answer, Reply in chat and Discard keep working. The PR reads **Draft
   to send** while the answer waits, **Sending** while it posts and **Not confirmed** if it
   stops part-way (a retry skips what already went out, and a reply that may have gone out
-  is only looked for, never sent again). When the PR moves after the answer, the card says
-  it is out of date and offers **Respond again** or **Discard**, and while the chat waits
-  on a card of its own, its box asks first and Post says why it is off.
+  is only looked for, never sent again). Right after Post the card says
+  **Sent to the chat** with a spinner, and **Send again** appears only if the chat has not
+  started after 30 seconds (at once if the message to the chat failed). When the PR moves after the
+  answer, the card says it is out of date and offers **Respond again** or **Discard**, and
+  while the chat waits on a card of its own, its box asks first and Post says why it is off.
 - **PR reviews** (side menu) lists the reviews the owner started, by project, in
   two tabs: **In progress** (waiting on the owner first, then agents at work, then
   anything stuck or unreadable) and **Done**. Every PR is read live, in batches of
