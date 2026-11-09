@@ -4,8 +4,11 @@
 // The app reads strictly: a file that breaks a rule is not a response at all, never half shown. The helper
 // has already enforced the same rules, so a file that fails here was edited or is from another version.
 
+import { SCREENSHOT_NAME } from './domain.js'
+
 export const RESULT_FOLDER = 'respond-results/'
 export const DECISION_FOLDER = 'respond-decisions/'
+export const SCREENSHOT_FOLDER = 'respond-screenshots/'
 const VERSION = 1
 const SHA = /^[0-9a-f]{40}$/
 const RESULT_ID = /^r-[0-9a-f]{12}$/
@@ -51,6 +54,12 @@ function readFile(file) {
   return read
 }
 
+// The screenshots the answer adds to the description, as the helper listed them; a malformed entry makes the whole list unreadable.
+function readScreenshot(shot) {
+  const ok = shot && typeof shot === 'object' && SCREENSHOT_NAME.test(shot.name) && DIGEST.test(shot.sha256) && isCount(shot.size) && isText(shot.alt, 200)
+  return ok ? { name: shot.name, sha256: shot.sha256, size: shot.size, alt: shot.alt } : null
+}
+
 const stamped = value => (value && typeof value === 'object' && typeof value.at === 'string' ? value : null)
 
 // What the helper recorded as done. Anything unreadable counts as not done, so the card never claims a step went out.
@@ -60,7 +69,8 @@ function readReceipts(raw) {
   const replies = (Array.isArray(raw.replies) ? raw.replies : []).filter(item => item && Number.isInteger(item.index) && typeof item.url === 'string' && typeof item.at === 'string')
     .map(item => ({ index: item.index, url: item.url, at: item.at }))
   const rerequest = stamped(raw.rerequest)
-  return { push, replies, description: stamped(raw.description) ? { at: raw.description.at } : null, rerequest: rerequest ? { at: rerequest.at, reviewers: Array.isArray(rerequest.reviewers) ? rerequest.reviewers.filter(login => typeof login === 'string') : [] } : null }
+  const screenshots = stamped(raw.screenshots) && typeof raw.screenshots.commit === 'string' ? { commit: raw.screenshots.commit, at: raw.screenshots.at } : null
+  return { push, replies, screenshots, description: stamped(raw.description) ? { at: raw.description.at } : null, rerequest: rerequest ? { at: rerequest.at, reviewers: Array.isArray(rerequest.reviewers) ? rerequest.reviewers.filter(login => typeof login === 'string') : [] } : null }
 }
 
 function readEach(raw, read, max) {
@@ -82,11 +92,12 @@ export function normalizeResult(raw) {
   const commits = readEach(raw.commits, readCommit, 60)
   const files = readEach(raw.files, readFile, 300)
   const receipts = readReceipts(raw.receipts)
-  if (!rerequest || !rerequest.every(login => LOGIN.test(login)) || !points || !replies || !commits || !files || !receipts) return null
+  const screenshots = raw.screenshots === undefined ? [] : readEach(raw.screenshots, readScreenshot, 8)
+  if (!screenshots || !rerequest || !rerequest.every(login => LOGIN.test(login)) || !points || !replies || !commits || !files || !receipts) return null
   const failure = error && typeof error === 'object' && typeof error.step === 'string' && typeof error.message === 'string' ? { step: error.step, message: error.message } : null
   if (error !== null && !failure) return null
   return { version: VERSION, id, repo, number, chat_id: chatId, created_at: createdAt, state, pr: { head_sha: pr.head_sha, head_ref: pr.head_ref, base_ref: pr.base_ref, head_repo: pr.head_repo },
-    tip_sha: tip, points, replies, description, rerequest, tests, commits, files, digest, receipts, error: failure }
+    tip_sha: tip, points, replies, description, rerequest, tests, screenshots, commits, files, digest, receipts, error: failure }
 }
 
 // What the owner decided: only Post (approved) and Discard are ever written.
@@ -170,6 +181,7 @@ const names = logins => (logins.length < 2 ? logins.join('') : `${logins.slice(0
 // What Post will do, in the order the helper does it, and only what there is to do.
 export function planSteps(result) {
   return [
+    result.screenshots.length ? { key: 'screenshots', text: `Upload ${plural(result.screenshots.length, 'screenshot', 'screenshots')} to the PR’s repository, so the description can show them` } : null,
     result.commits.length ? { key: 'push', text: `Push ${plural(result.commits.length, 'commit', 'commits')} to the PR’s branch, on top of ${result.pr.head_sha.slice(0, 7)}` } : null,
     result.replies.length ? { key: 'replies', text: `Post ${plural(result.replies.length, 'reply', 'replies')}, as you` } : null,
     result.description !== null ? { key: 'description', text: 'Update the description' } : null,

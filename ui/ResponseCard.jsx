@@ -5,7 +5,9 @@ import { openAgentConversation } from './BatchAction.jsx'
 import { Icon } from './Icons.jsx'
 import { RunTag } from './RunTag.jsx'
 import { NAMES } from '../names.js'
-import { chatStarting, planSteps, stepDone } from '../respond-result.js'
+import { SCREENSHOT_FOLDER, chatStarting, planSteps, stepDone } from '../respond-result.js'
+import { screenshotCountText } from '../domain.js'
+import { useScreenshots } from './useScreenshots.js'
 
 // A saved Respond-to-feedback answer on its PR's Review tab: what each point came to, the replies word for word, the commits and
 // changed files, and what Post will do. Reading it is the owner's side of the approval; Post only writes the decision (respond-flow.js).
@@ -58,14 +60,20 @@ function Points({ points }) {
   </ul>
 }
 
-function Details({ result, open }) {
-  const { commits, files, replies, description } = result
+// The answer's screenshots as the description shows them, each tagged with where the app reads its bytes.
+const responseShots = result => ({ id: result.id, plan: { screenshots: result.screenshots.map(shot => ({ ...shot, storagePath: `${SCREENSHOT_FOLDER}${result.id}/${shot.name}` })) } })
+
+function Details({ result, open, images }) {
+  const { commits, files, replies, description, screenshots } = result
   return <>
     <details className="co-task-details" open={open}><summary>{plural(replies.length, 'reply', 'replies')}, word for word</summary>
       {replies.map((reply, index) => <div className="co-response-reply" key={index}>
         {reply.reply_to ? <small>In reply to comment {reply.reply_to}</small> : null}<MarkdownView markdown={reply.body} /></div>)}
     </details>
-    {description !== null ? <details className="co-task-details"><summary>New description</summary><MarkdownView markdown={description} /></details> : null}
+    {description !== null ? <details className="co-task-details" open={open && screenshots.length > 0}><summary>New description</summary>
+      <MarkdownView markdown={description} images={images} />
+      {screenshots.length ? <p className="co-shot-note">{screenshotCountText(screenshots.length)} will be uploaded to {result.pr.head_repo}, on a branch only screenshots go to, so the description can show {screenshots.length === 1 ? 'it' : 'them'}.</p> : null}
+    </details> : null}
     {commits.length || files.length ? <details className="co-task-details"><summary>Changes: {plural(commits.length, 'commit', 'commits')} · {plural(files.length, 'file', 'files')} · +{sum(files, 'added')} −{sum(files, 'removed')}</summary>
       <ul className="co-response-commits">{commits.map(commit => <li key={commit.sha}><code>{short(commit.sha)}</code> {commit.title}</li>)}</ul>
       <PullFiles data={filesData(result)} />
@@ -118,6 +126,7 @@ function Actions({ view, chat, busy, readOnly, starting, onPost, onDiscard, onRe
 // `now` is the time the card judges "just sent" by (the tests set it).
 export function ResponseCard({ pr, response: view, chat = null, busy = false, error = '', readOnly = false, now = Date.now(), onPost, onDiscard, onRespondAgain }) {
   const { status, result } = view
+  const screenshots = useScreenshots(responseShots(result), true)
   // While the chat holds the PR (it works, or waits on a card of its own) its box above is the one that asks for you.
   const held = status === 'ready' && Boolean(holdReason(chat))
   // A failed message to the chat is no "starting": Send again is offered at once, with the error.
@@ -134,7 +143,7 @@ export function ResponseCard({ pr, response: view, chat = null, busy = false, er
       <p className="co-review-note">{statusLine(view, pr, starting)}</p>
       {status === 'ready' ? <p className="co-response-fresh">The PR has not changed since this answer.</p> : null}
       {status === 'posted' ? null : <Points points={result.points} />}
-      {status === 'posted' ? null : <Details result={result} open={['ready', 'approved', 'stale'].includes(status)} />}
+      {status === 'posted' ? null : <Details result={result} open={['ready', 'approved', 'stale'].includes(status)} images={screenshots.images} />}
       {status === 'stale' ? null : <Steps result={result} status={status} />}
       {error ? <p role="alert" className="co-run-error">{error}</p> : null}
       <Actions view={view} chat={chat} busy={busy} readOnly={readOnly} starting={starting} onPost={onPost} onDiscard={onDiscard} onRespondAgain={onRespondAgain} />

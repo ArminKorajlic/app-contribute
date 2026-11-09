@@ -182,6 +182,7 @@
     "respond-store.js",
     "respond-flow.js",
     "respond_result.py",
+    "respond_screenshots.py",
     "respond-result.md",
     "ui/ResponseCard.jsx",
     "ui/RunTag.jsx",

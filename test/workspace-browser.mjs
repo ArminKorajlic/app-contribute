@@ -1932,6 +1932,28 @@ window.runRespondResultChecks = async () => {
     ensure(!reviewBody().includes('No review yet'), 'The tab still said No review yet')
     ensure(button(NAMES.postAnswer) && !button(NAMES.postAnswer).disabled, 'Post is not offered')
     checks.push({ name: 'a saved answer is a draft to send: the row, the panel and the Review tab all say so', status: 'pass' })
+    // An answer that adds screenshots to the description shows them, read from the app's storage and checked against the digest the owner approves.
+    {
+      const canvas = document.createElement('canvas'); canvas.width = 480; canvas.height = 140
+      const paint = canvas.getContext('2d'); paint.fillStyle = '#0a7'; paint.fillRect(0, 0, 480, 140)
+      paint.fillStyle = '#fff'; paint.font = '28px sans-serif'; paint.fillText('A fixture screenshot', 24, 80)
+      const bytes = await new Promise(resolve => canvas.toBlob(resolve, 'image/png')).then(blob => blob.arrayBuffer())
+      const sha256 = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)), b => b.toString(16).padStart(2, '0')).join('')
+      const route = '/api/storage/apps/fixture-app/respond-screenshots/r-3f9a1c2b04d5/before-desktop.png', original = window.fetch
+      window.fetch = (url, options) => String(url) === route ? Promise.resolve(new Response(bytes.slice(0), { headers: { 'Content-Type': 'image/png' } })) : original(url, options)
+      try {
+        await answer({ description: 'Adds a list.\n\n![the list before, desktop](screenshot:before-desktop.png)', screenshots: [{ name: 'before-desktop.png', sha256, size: bytes.byteLength, alt: 'the list before, desktop' }] }, null)
+        await until(() => query('.co-pr-detail-body .co-markdown img.co-markdown-shot')?.getAttribute('src')?.startsWith('data:image/png;base64,'), 'The answer\'s screenshot did not show in its description: ' + reviewBody())
+        ensure(query('.co-pr-detail-body img.co-markdown-shot').alt === 'the list before, desktop', 'The screenshot lost its description')
+        ensure(reviewBody().includes('1 screenshot will be uploaded to owner/project') && reviewBody().includes('Upload 1 screenshot to the PR’s repository'), 'The card did not say the screenshot is uploaded: ' + reviewBody())
+        query('.co-pr-detail-body .co-response').scrollIntoView({ block: 'start' })
+        await captureShot('respond-screenshots-card')
+        checks.push({ name: 'an answer with screenshots shows them in its new description and lists their upload as the first step', status: 'pass' })
+      } finally {
+        window.fetch = original
+        await answer({}, null)
+      }
+    }
     // Post: the owner's approval is written for exactly this answer, and the chat is told to run the helper. The reads that follow are
     // held for a moment: until the refreshed answer is on screen the card stays busy, so Post cannot be pressed twice in that gap.
     window.holdResponsesRead = true

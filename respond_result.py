@@ -4,6 +4,10 @@
 An agent answering a PR's review feedback never publishes anything itself. `save`
 records the finished work for the owner to read in Contribute; `post` is the only
 command with public effects, and it re-checks the owner's approval and the PR first.
+
+The input of `save` is JSON: points, replies, description, rerequest, tests, and optionally screenshots
+(`[{"name": "before-desktop.png", "path": "/absolute/file.png", "alt": "one line"}]`, each shown in the
+description as `![alt](screenshot:before-desktop.png)`). The full contract is respond-result.md.
 """
 
 from __future__ import annotations
@@ -19,6 +23,7 @@ import os
 from pathlib import Path
 import re
 import secrets
+import shutil
 import sqlite3
 import subprocess
 import sys
@@ -27,6 +32,7 @@ from typing import Any, Iterator
 from urllib.parse import quote
 
 from agent_snapshot import find_ledger
+import respond_screenshots as shots
 
 
 EXIT_BAD_INPUT = 2  # nothing was written
@@ -55,6 +61,7 @@ MAX_ALL_PATCHES = 400_000
 MAX_SAFE_INTEGER = 2**53 - 1
 
 INPUT_KEYS = ("points", "replies", "description", "rerequest", "tests")
+OPTIONAL_INPUT_KEYS = ("screenshots",)  # absent means none, so an older brief still saves
 POINT_KEYS = ("reviewer", "title", "ending", "commit", "answer")
 REPLY_KEYS = ("body", "reply_to")
 ENDINGS = ("fixed", "not_valid", "out_of_scope")
@@ -201,6 +208,9 @@ class Store:
   def decision_file(self, pull: PullRef) -> Path:
     return self.root / "respond-decisions" / f"{pull.slug}.json"
 
+  def screenshot_dir(self, result_id: str) -> Path:
+    return self.root / "respond-screenshots" / result_id
+
 
 def open_store() -> Store:
   override = os.environ.get("RESPOND_APP_DIR")
@@ -234,10 +244,9 @@ def read_json(path: Path) -> Any:
     return None
 
 
-def write_json_atomic(path: Path, value: Any) -> None:
+def write_bytes_atomic(path: Path, data: bytes) -> None:
   """Temporary file, then rename: a reader never sees half a file, and a crash keeps the old one."""
   path.parent.mkdir(parents=True, exist_ok=True)
-  data = (json.dumps(value, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
   temporary = path.with_name(f".{path.name}.{secrets.token_hex(4)}.tmp")
   try:
     with open(temporary, "xb") as handle:
@@ -248,6 +257,10 @@ def write_json_atomic(path: Path, value: Any) -> None:
   except BaseException:
     temporary.unlink(missing_ok=True)
     raise
+
+
+def write_json_atomic(path: Path, value: Any) -> None:
+  write_bytes_atomic(path, (json.dumps(value, indent=2, ensure_ascii=False) + "\n").encode("utf-8"))
 
 
 # --- the digest, shared with the app ----------------------------------------------------
@@ -266,6 +279,8 @@ def compute_digest(result: dict[str, Any]) -> str:
     "rerequest": result["rerequest"],
     "commits": [commit["sha"] for commit in result["commits"]],
   }
+  if result.get("screenshots"):  # only when there are some, so a result saved without them keeps its digest
+    content["screenshots"] = [{"name": shot["name"], "sha256": shot["sha256"]} for shot in result["screenshots"]]
   text = json.dumps(content, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
   return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
@@ -295,11 +310,11 @@ def text_field(value: Any, label: str, limit: int, blank: bool = False) -> str:
   return value
 
 
-def object_field(value: Any, label: str, keys: tuple[str, ...]) -> dict[str, Any]:
+def object_field(value: Any, label: str, keys: tuple[str, ...], optional: tuple[str, ...] = ()) -> dict[str, Any]:
   if not isinstance(value, dict):
     raise BadInput(f"{label} must be a JSON object with {', '.join(keys)}.")
   missing = [key for key in keys if key not in value]
-  unknown = [key for key in value if key not in keys]
+  unknown = [key for key in value if key not in keys + optional]
   if missing:
     raise BadInput(f"{label} is missing {', '.join(missing)}.")
   if unknown:
@@ -359,16 +374,21 @@ def parse_input(path: Path) -> dict[str, Any]:
     raise BadInput(f"The input file {path} does not exist.") from error
   except (ValueError, RecursionError) as error:
     raise BadInput(f"The input file {path} is not valid UTF-8 JSON ({scrub(str(error), 120)}).") from error
-  top = object_field(raw, "The input", INPUT_KEYS)
+  top = object_field(raw, "The input", INPUT_KEYS, OPTIONAL_INPUT_KEYS)
   points = list_field(top["points"], "points", MAX_POINTS)
   replies = list_field(top["replies"], "replies", MAX_REPLIES)
-  description = top["description"]
+  description = None if top["description"] is None else text_field(top["description"], "description", MAX_DESCRIPTION)
+  try:
+    pictures = shots.requested(top.get("screenshots", []), description)
+  except shots.ScreenshotError as error:
+    raise BadInput(str(error)) from error
   return {
     "points": [point_entry(item, f"points[{n}]") for n, item in enumerate(points, 1)],
     "replies": [reply_entry(item, f"replies[{n}]") for n, item in enumerate(replies, 1)],
-    "description": None if description is None else text_field(description, "description", MAX_DESCRIPTION),
+    "description": description,
     "rerequest": logins_field(top["rerequest"]),
     "tests": text_field(top["tests"], "tests", MAX_TESTS, blank=True),
+    "screenshots": pictures,
   }
 
 
@@ -544,6 +564,7 @@ def create_bundle(repo: Path, bundle: Path, pr_head: str, tip: str) -> None:
 
 def build_result(
   pull: PullRef, chat_id: str, proposal: dict[str, Any], facts: dict[str, Any], work: Work,
+  pictures: list[dict[str, Any]],
 ) -> dict[str, Any]:
   result_id = f"r-{secrets.token_hex(6)}"
   result: dict[str, Any] = {
@@ -567,6 +588,7 @@ def build_result(
     "description": proposal["description"],
     "rerequest": proposal["rerequest"],
     "tests": proposal["tests"],
+    **({"screenshots": pictures} if pictures else {}),
     "commits": work.commits,
     "files": work.files,
     "bundle": f"{result_id}.bundle" if work.commits else None,
@@ -578,9 +600,17 @@ def build_result(
   return result
 
 
-def store_result(store: Store, pull: PullRef, result: dict[str, Any], repo: Path) -> None:
-  """Replace the PR's saved result. The new file is the commit point: the old bundle and the
-  old decision go only after it, and a decision never approves a result it does not name."""
+def store_pictures(folder: Path, pictures: list[dict[str, Any]], payloads: list[bytes]) -> None:
+  folder.mkdir(parents=True, exist_ok=True)
+  for picture, data in zip(pictures, payloads):
+    write_bytes_atomic(folder / picture["name"], data)
+
+
+def store_result(
+  store: Store, pull: PullRef, result: dict[str, Any], repo: Path, payloads: list[bytes] | None = None,
+) -> None:
+  """Replace the PR's saved result. The new file is the commit point: the old bundle, screenshots and
+  decision go only after it, and a decision never approves a result it does not name."""
   with locked(store, pull):
     try:
       previous = read_json(store.result_file(pull))
@@ -591,14 +621,19 @@ def store_result(store: Store, pull: PullRef, result: dict[str, Any], repo: Path
     bundle = store.bundle_file(result["id"])
     if result["bundle"]:
       create_bundle(repo, bundle, result["pr"]["head_sha"], result["tip_sha"])
+    pictures = store.screenshot_dir(result["id"])
     try:
+      if payloads:
+        store_pictures(pictures, result["screenshots"], payloads)
       write_json_atomic(store.result_file(pull), result)
     except BaseException:
       bundle.unlink(missing_ok=True)
+      shutil.rmtree(pictures, ignore_errors=True)
       raise
     previous_id = previous.get("id") if isinstance(previous, dict) else None
     if isinstance(previous_id, str) and RESULT_ID.fullmatch(previous_id):
       store.bundle_file(previous_id).unlink(missing_ok=True)
+      shutil.rmtree(store.screenshot_dir(previous_id), ignore_errors=True)
     store.decision_file(pull).unlink(missing_ok=True)
 
 
@@ -610,6 +645,7 @@ def save_summary(result: dict[str, Any]) -> str:
   ]
   extras = [
     "the description will be replaced" if result["description"] is not None else "",
+    f"{counted(len(result.get('screenshots') or []), 'screenshot')} will be added to it" if result.get("screenshots") else "",
     f"a new review will be asked of {', '.join(result['rerequest'])}" if result["rerequest"] else "",
     f"{counted(omitted, 'patch', 'patches')} left out (binary or over a cap)" if omitted else "",
   ]
@@ -634,9 +670,10 @@ def save_command(args: argparse.Namespace) -> int:
     work = inspect_work(args.repo_path, facts["head_sha"])
     if not work.commits and not proposal["replies"]:
       raise BadInput("There is nothing to show: no new commits and no replies.")
-    result = build_result(pull, chat_id, proposal, facts, work)
-    store_result(store, pull, result, args.repo_path)
-  except CommandError as error:
+    pictures, payloads = shots.read_all(proposal["screenshots"])
+    result = build_result(pull, chat_id, proposal, facts, work, pictures)
+    store_result(store, pull, result, args.repo_path, payloads)
+  except (CommandError, shots.ScreenshotError) as error:
     raise BadInput(str(error)) from error
   print(save_summary(result))
   return 0
@@ -663,6 +700,11 @@ def shape_problem(result: Any, pull: PullRef) -> str | None:
   if not (isinstance(receipts, dict) and all(key in receipts for key in RECEIPT_KEYS)
           and isinstance(receipts["replies"], list)):
     return "its receipts are missing"
+  pictures = result.get("screenshots", [])
+  if not (isinstance(pictures, list) and all(
+      isinstance(shot, dict) and isinstance(shot.get("name"), str) and shots.NAME.fullmatch(shot["name"])
+      and isinstance(shot.get("sha256"), str) and shots.SHA256.fullmatch(shot["sha256"]) for shot in pictures)):
+    return "its screenshot list is malformed"
   return None
 
 
@@ -743,6 +785,12 @@ def require_postable(store: Store, pull: PullRef, result: dict[str, Any]) -> Non
   except CommandError as error:
     raise Refused(f"Could not confirm the PR on GitHub ({error}), so nothing was posted.") from error
   require_same_pull(result, facts)
+  if not result["receipts"].get("screenshots"):
+    try:
+      for shot in result.get("screenshots") or []:
+        shots.approved_bytes(store.screenshot_dir(result["id"]), shot)
+    except shots.ScreenshotError as error:
+      raise Refused(f"{error} Nothing was posted.") from error
   needs_bundle = result["commits"] and not result["receipts"]["push"]
   if needs_bundle and not store.bundle_file(result["id"]).is_file():
     raise Refused("The saved commits (the bundle file) are missing, so nothing was posted.")
@@ -809,6 +857,19 @@ class Posting:
     self.persist()
     print(f"Pushed {counted(len(commits), 'commit')} to {pr['head_repo']}:{pr['head_ref']} (tip {tip[:7]}).")
 
+  def upload_screenshots(self) -> None:
+    result = self.result
+    pictures = result.get("screenshots") or []
+    if not pictures or result["receipts"].get("screenshots"):
+      return
+    folder = self.store.screenshot_dir(result["id"])
+    payloads = [(shot, shots.approved_bytes(folder, shot)) for shot in pictures]
+    pr = result["pr"]
+    commit = shots.publish(gh_api, pr["head_repo"], pr["head_ref"], result["id"], payloads)
+    result["receipts"]["screenshots"] = {"commit": commit, "at": utc_now()}
+    self.persist()
+    print(f"Uploaded {counted(len(pictures), 'screenshot')} to {pr['head_repo']} ({shots.ASSETS_BRANCH}, commit {commit[:7]}).")
+
   def post_replies(self) -> None:
     repo, number, replies = self.result["repo"], self.result["number"], self.result["replies"]
     receipts = self.result["receipts"]["replies"]
@@ -831,7 +892,14 @@ class Posting:
     result = self.result
     if result["description"] is None or result["receipts"]["description"]:
       return
-    gh_api(f"repos/{result['repo']}/pulls/{result['number']}", "PATCH", {"body": result["description"]})
+    body = result["description"]
+    uploaded = result["receipts"].get("screenshots")
+    if result.get("screenshots") and not uploaded:
+      raise CommandError("the screenshots are not uploaded yet, so the description would show broken images")
+    if uploaded:
+      pr = result["pr"]
+      body = shots.pin(body, result["screenshots"], pr["head_repo"], uploaded["commit"], pr["head_ref"], result["id"])
+    gh_api(f"repos/{result['repo']}/pulls/{result['number']}", "PATCH", {"body": body})
     result["receipts"]["description"] = {"at": utc_now()}
     self.persist()
     print("Updated the PR description.")
@@ -847,7 +915,7 @@ class Posting:
     print(f"Asked {', '.join(reviewers)} for a new review.")
 
   def fail(self, step: str, error: Exception) -> PostFailed:
-    message = str(error) if isinstance(error, CommandError) else f"unexpected {type(error).__name__}: {error}"
+    message = str(error) if isinstance(error, (CommandError, shots.ScreenshotError)) else f"unexpected {type(error).__name__}: {error}"
     self.result["state"] = "failed"
     self.result["error"] = {"step": step, "message": message}
     self.persist()
@@ -857,11 +925,11 @@ class Posting:
     )
 
   def run(self) -> None:
-    if any(self.result["receipts"][key] for key in RECEIPT_KEYS):
+    if any(self.result["receipts"].get(key) for key in (*RECEIPT_KEYS, "screenshots")):
       print("Resuming an earlier post: the steps already done are skipped.")
     self.result["state"], self.result["error"] = "posting", None
     self.persist()
-    steps = (("push", self.push), ("replies", self.post_replies),
+    steps = (("screenshots", self.upload_screenshots), ("push", self.push), ("replies", self.post_replies),
              ("description", self.update_description), ("rerequest", self.request_review))
     for name, step in steps:
       try:
@@ -876,6 +944,12 @@ class Posting:
 def plan_lines(result: dict[str, Any]) -> list[str]:
   pr, receipts, replies = result["pr"], result["receipts"], result["replies"]
   lines = []
+  pictures = result.get("screenshots") or []
+  if pictures:
+    lines.append(
+      f"upload {counted(len(pictures), 'screenshot')} to the {shots.ASSETS_BRANCH} branch of {pr['head_repo']}"
+      f"{done_note(receipts.get('screenshots'))}"
+    )
   if result["commits"]:
     lines.append(
       f"push {counted(len(result['commits']), 'commit')} (tip {result['tip_sha'][:7]}) "
@@ -928,7 +1002,7 @@ def build_parser() -> argparse.ArgumentParser:
   save = commands.add_parser("save", help="record the finished work for the owner to approve")
   save.add_argument("--pr", required=True, help="owner/repo#123")
   save.add_argument("--repo-path", required=True, type=Path, help="your private copy, with the work committed")
-  save.add_argument("--input", required=True, type=Path, help="JSON file: points, replies, description, rerequest, tests")
+  save.add_argument("--input", required=True, type=Path, help="JSON file: points, replies, description, rerequest, tests, and optionally screenshots")
   save.add_argument("--chat-id", help="the chat Post messages (default: $CHAT_ID)")
   save.set_defaults(run=save_command)
   show = commands.add_parser("show", help="print the saved result without patches, and whether it is approved")
