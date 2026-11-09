@@ -188,6 +188,7 @@ export const WORKSPACE_CSS = `
 .co-agent-trigger { display:flex; align-items:center; gap:10px; width:100%; min-height:48px; padding:6px 10px; border:1px solid var(--border); border-radius:var(--co-radius-control); background:var(--surface); color:var(--text); font:inherit; text-align:left; cursor:pointer; }
 .co-agent-trigger:hover { background:var(--surface-2,var(--surface)); }
 .co-agent-trigger:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+.co-agent-kept, .co-agent-kept:hover { cursor:default; background:var(--surface); }
 .co-agent-trigger-label { color:var(--muted); font-size:var(--co-text-meta); min-width:44px; }
 .co-agent-trigger-value { flex:1; min-width:0; display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; }
 .co-agent-trigger-value strong { font-size:var(--co-text-meta); font-weight:500; }

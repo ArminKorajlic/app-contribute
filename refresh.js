@@ -42,6 +42,7 @@ export function onShownAgain(listener, host = globalThis.window) {
 export const SYNC_POLICY = Object.freeze({
   runsLiveMs: 10000, // a review or Respond conversation is at work
   runsIdleMs: 30000,
+  respondStartGraceMs: 60000, // a started Respond conversation shows as at work until the platform lists it, or this long
   responsesLiveMs: 2500, // a Respond answer is being posted: the card follows the posting script step by step
   probeMs: 60000, // the GitHub change probe
   githubCooldownMs: 300000, // between automatic reads of one GitHub fact
