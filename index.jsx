@@ -20,6 +20,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CSS } from './theme.js'
 import {
   attachSourceProjects,
+  localChangeSentence,
+  localChangeSummary,
   proposalSourceCommits,
   recordsForProject,
 } from './source-map.js'
@@ -35,12 +37,15 @@ import {
   upsertRecord,
 } from './domain.js'
 import { contributionActionScope, contributionApprovalIsCurrent, contributionPhaseApprovalIsCurrent, contributionReviewTargetFromIntent, focusedContributionNavigationReady, focusedContributionReady, indexReviewStatus, qualityReviewFor } from './review.js'
-import { buildContributionRun, findRunItemByRecord, ownerAttentionCount } from './run.js'
+import { buildContributionRun, findRunItemByRecord } from './run.js'
 import { stackPublicationRecords } from './stack.js'
 import { deliverCycleMessage } from './cycle-delivery.js'
 import { abandonPrepared, cacheFeed, cacheSourceSnapshot, loadAppSettings, loadCachedFeed, loadCachedSourceSnapshot, loadContributionRecord, loadFreshContributionRecord, loadFreshContributionRecords, loadCycleState, loadFullDiff, loadLedger, restoreAbandoned, saveAppSettings } from './storage.js'
-import { createRefreshCoordinator, isVisibleFrameMessage } from './refresh.js'
+import { createRefreshCoordinator } from './refresh.js'
 import { checkUpstream } from './upstream-check.js'
+import { DESK_LAST_LOOKED_KEY, deskCounts, projectNeedsCount } from './desk.js'
+import { hasActiveReview } from './review-frame.js'
+import { loadReviewRuns } from './collaboration.js'
 import { sharedPublicationObserver } from './publication-observer.js'
 import {
   contributionPathDecision,
@@ -71,6 +76,8 @@ import { ContributionRun } from './ui/Feed.jsx'
 import { ScreenshotLoaderContext } from './ui/useScreenshots.js'
 import { Icon } from './ui/Icons.jsx'
 import { SourceMap } from './ui/SourceMap.jsx'
+import { SyncNote } from './ui/GithubParts.jsx'
+import { ProjectEdits } from './ui/ProjectEdits.jsx'
 import { RepositoryPicker } from './ui/RepositoryPicker.jsx'
 import { ReviewSelection } from './ui/ReviewSelection.jsx'
 import { reviewSelectionIdFromIntent } from './review-selection.js'
@@ -207,7 +214,7 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
   const [ledgerReady, setLedgerReady] = useState(false)
   const [omittedCount, setOmittedCount] = useState(0)
   const [sourceSnapshot, setSourceSnapshot] = useState(null)
-  // The last Check GitHub answer per project key; empty until the owner asks.
+  // The last upstream answer per project key; empty until Refresh has asked.
   const [upstreamChecks, setUpstreamChecks] = useState({})
   const [projectFocus, setProjectFocus] = useState(null)
   // A chat PR link leases one exact PR in its project; the PR view hands the
@@ -310,6 +317,11 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
   // Whether a new Send grants autopilot. Default on; consulted only at Send
   // time (job.sh keys off each record's stamped grant, never this preference).
   const [autopilotDefault, setAutopilotDefault] = useState(true)
+  const [deskView, setDeskView] = useState('needs')
+  const [lastLooked, setLastLooked] = useState('')
+  // The PR page the desk pane shows, over whatever view or project is behind
+  // it. Back only clears this, so the place the owner came from is untouched.
+  const [pullPage, setPullPage] = useState(null)
   const submissionMethod = 'github'
   const [refreshKey, setRefreshKey] = useState(0)
   const [earlierCycle, setEarlierCycle] = useState(null)
@@ -567,8 +579,30 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
     return rows
   }, [token])
 
+  // Review requests count toward the first full sync, so the workspace never
+  // opens with an empty inbox that fills in a beat later.
+  // Review runs for the whole desk: its rows show which PRs are under review.
+  // Read once at open and on Refresh; polled only while a review is running.
+  const [reviewRuns, setReviewRuns] = useState([])
+  const [runsReady, setRunsReady] = useState(false)
+  const refreshReviewRuns = useCallback(async () => {
+    try { setReviewRuns((await loadReviewRuns(token, appId)).runs || []) } catch { /* the rows simply show no frame */ }
+  }, [token, appId])
   useEffect(() => {
-    if (!sendOnly) refreshIncomingReviews()
+    if (sendOnly || conn.state === 'checking') return
+    if (conn.state !== 'connected') { setRunsReady(true); return }
+    void refreshReviewRuns().finally(() => setRunsReady(true))
+  }, [conn.state, refreshReviewRuns, sendOnly])
+  const reviewActive = hasActiveReview(reviewRuns)
+  useEffect(() => {
+    if (!reviewActive) return undefined
+    const timer = window.setInterval(() => { void refreshReviewRuns() }, 15000)
+    return () => window.clearInterval(timer)
+  }, [reviewActive, refreshReviewRuns])
+  const [incomingReady, setIncomingReady] = useState(false)
+  useEffect(() => {
+    if (sendOnly || conn.state === 'checking') return
+    Promise.resolve(refreshIncomingReviews()).finally(() => setIncomingReady(true))
   }, [conn.state, refreshIncomingReviews, sendOnly])
 
   // Mount: the cached first screen, GitHub status, and app preferences are all
@@ -603,6 +637,12 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
       if (typeof appSettings.autopilot_default === 'boolean') {
         setAutopilotDefault(appSettings.autopilot_default)
       }
+      // The previous visit's time marks what changed "since you last looked";
+      // this visit becomes the next one's mark. One write per app open.
+      if (typeof appSettings[DESK_LAST_LOOKED_KEY] === 'string') {
+        setLastLooked(appSettings[DESK_LAST_LOOKED_KEY])
+      }
+      void saveAppSettings({ ...appSettings, [DESK_LAST_LOOKED_KEY]: new Date().toISOString() })
       connRef.current = status
       setConn(status)
 
@@ -650,13 +690,13 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
     return () => { cancelled = true }
   }, [token, fetchRefreshed, replaceFeed, signalReady, sendOnly])
 
-  // Event-driven liveness: refresh when the app becomes actionable again.
-  // Focus + visibility can fire together, and an online transition can land
-  // during either refresh, so one coordinator deduplicates concurrent work and
-  // preserves exactly one trailing refresh when an event arrives mid-flight.
-  // The app itself has no timer: a hidden/idle app consumes no resources. The
-  // one exception is a chat card with an unconfirmed send, which calls the
-  // card refresh below on a bounded backoff for ten minutes (inline-session.js).
+  // One coordinator owns every later full pass (the header's Refresh, a chat
+  // card's Try again, a focused link's catch-up): concurrent requests dedupe
+  // into one run plus at most one trailing run. GitHub is synced once when the
+  // app opens; there is deliberately no app timer and no hidden focus/visibility
+  // re-sync — the owner refreshes explicitly from the header. The one exception
+  // is a chat card with an unconfirmed send, which calls the card refresh below
+  // on a bounded backoff for ten minutes (inline-session.js).
   const refreshWorkRef = useRef(null)
   const forceRefreshRef = useRef(false)
   const runRefreshWork = useCallback(async () => {
@@ -695,22 +735,6 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
     )
   }
 
-  useEffect(() => {
-    const requestRefresh = refreshCoordinatorRef.current
-    const refreshOnForeground = (event) => {
-      if (isVisibleFrameMessage(event, window.parent)) requestRefresh()
-    }
-    document.addEventListener('visibilitychange', requestRefresh)
-    window.addEventListener('focus', requestRefresh)
-    window.addEventListener('online', requestRefresh)
-    window.addEventListener('message', refreshOnForeground)
-    return () => {
-      document.removeEventListener('visibilitychange', requestRefresh)
-      window.removeEventListener('focus', requestRefresh)
-      window.removeEventListener('online', requestRefresh)
-      window.removeEventListener('message', refreshOnForeground)
-    }
-  }, [])
 
   // Shell review cards use the platform's one-shot app-intent rail. The card
   // names only the ledger record; this app resolves the record's current stage
@@ -1544,28 +1568,125 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
     setProjectFocus({ key: focusedProjectKey, nonce: reviewFocus.nonce })
   }, [reviewFocus, focusedReviewReady, sourceLoading, focusedProjectKey])
 
-  // What waits on the owner in each project, for the projects list.
+  // What waits on the owner in each project: the same count its Needs you
+  // card lists, so the rail and the card never disagree.
   const projectAttention = useMemo(() => Object.fromEntries(sourceProjects
-    .filter(project => recordsForProject(records, project).length)
-    .map(project => [project.key, ownerAttentionCount(projectRun(project).decisions)])), [sourceProjects, records, reviewStatus])
+    .map(project => [project.key, projectNeedsCount(project, projectRun(project).decisions, conn.login || '')])), [sourceProjects, records, reviewStatus, conn.login])
+  // The home's clickable counts: every number names a next step and its view.
+  const deskCountsValue = useMemo(() => deskCounts({
+    projects: sourceProjects,
+    decisions: contributionRun.decisions,
+    incoming: incomingReviews,
+    records,
+    login: conn.login || '',
+  }), [sourceProjects, contributionRun, incomingReviews, records, conn.login])
+  const desk = {
+    view: deskView,
+    onView: setDeskView,
+    counts: deskCountsValue,
+    login: conn.login || '',
+    records,
+    runs: reviewRuns,
+    lastLooked,
+    decisionsFor: project => projectRun(project).decisions,
+    onOpenPull: openPullPage,
+    pull: pullPage,
+    onClosePull: () => setPullPage(null),
+    renderPull: () => {
+      if (!pullPage) return null
+      const project = sourceProjects.find(item => item.key === pullPage.key)
+        || sourceProjects.find(item => item.canonical_repo?.toLowerCase() === pullPage.repo.toLowerCase())
+        || null
+      return renderPullRequests(project, null, null, pullPage)
+    },
+  }
   function projectRun(project) {
     return project ? buildContributionRun({
       records: recordsForProject(records, project), reviewStatus, projects: [project],
       incomingReviews: [],
     }) : contributionRun
   }
+  function openPullPage(project, pr, tab = 'conversation') {
+    const repo = pr?.repository?.nameWithOwner || project?.canonical_repo || ''
+    if (!repo || !pr?.number) return
+    setPullPage({ key: project?.key || '', repo, number: pr.number, tab, nonce: crypto.randomUUID() })
+  }
   // `view` comes from the project tabs: which PRs to show, how to switch tabs,
   // and where to report the open PR count. Without it the list shows all PRs.
-  function renderPullRequests(project, navigation, view = null) {
+  function renderPullRequests(project, navigation, view = null, page = null) {
+    if (page) {
+      return <PullRequests key={`page:${page.repo}#${page.number}`} appId={appId} token={token}
+        project={project} conn={conn} refreshKey={refreshKey} onChanged={refreshIncomingReviews}
+        presentation="page" focusPull={page} onFocusRelease={() => {}} onStartAgent={startAgentTask}
+        records={recordsForProject(records, project)} onRecord={record => {
+          setPullPage(null)
+          if (project?.key) setProjectFocus({ key: project.key, nonce: crypto.randomUUID() })
+        }} />
+    }
     return <PullRequests key={`pulls:${project?.key || 'all'}`} appId={appId} token={token}
       project={project} conn={conn} refreshKey={refreshKey} onChanged={refreshIncomingReviews}
-      scope={view?.scope || 'all'} onScope={view?.onScope} onTotal={view?.onTotal}
+      scope={view?.scope || 'all'} onScope={view?.onScope} onTotal={view?.onTotal} onStartAgent={startAgentTask}
+      onOpenPage={(pr, tab) => openPullPage(project, pr, tab)}
       focusPull={pullFocus?.number ? pullFocus : null} focusRun={pullFocus?.runId ? pullFocus : null} onFocusRelease={releasePullFocus}
       records={recordsForProject(records, project)} onRecord={record => {
         const found = findRunItemByRecord(projectRun(project), record.id)
         if (found) navigation.onSelect(found.item.id)
       }} />
   }
+
+  // The one refresh path after the open-time sync: the header's Refresh and
+  // the header's Refresh renews everything on screen — local
+  // sources, the contribution feed, review requests, repositories, upstream
+  // checks — and bump refreshKey so every cached PR list reloads too.
+  async function refreshEverything() {
+    const [sourceOk] = await Promise.all([
+      refreshSources(),
+      refreshCoordinatorRef.current(),
+    ])
+    let upstream = null
+    if (conn.state === 'connected') {
+      const [, , checked] = await Promise.all([loadRepositories(), refreshIncomingReviews(), checkUpstream(token, sourceProjects), refreshReviewRuns()])
+      upstream = checked
+      if (checked.ok) setUpstreamChecks(checked.results)
+    }
+    setRefreshKey(value => value + 1)
+    return { ok: sourceOk && ledgerCurrentRef.current, upstream }
+  }
+  const [refreshingAll, setRefreshingAll] = useState(false)
+  // Whether the last input was the keyboard or a pointer. A row shows its
+  // hover-only controls for keyboard focus, but a mouse user who closed a
+  // picker must not be left with them showing (focus returning from a text
+  // field counts as focus-visible in every browser).
+  useEffect(() => {
+    const root = document.documentElement
+    const keyboard = () => { root.dataset.input = 'keyboard' }
+    const pointer = () => { root.dataset.input = 'pointer' }
+    document.addEventListener('keydown', keyboard, true)
+    document.addEventListener('pointerdown', pointer, true)
+    return () => { document.removeEventListener('keydown', keyboard, true); document.removeEventListener('pointerdown', pointer, true) }
+  }, [])
+  // What the last Refresh found, shown under the page title.
+  const [refreshNote, setRefreshNote] = useState(null)
+  async function refreshAll() {
+    if (refreshingAll) return undefined
+    setRefreshingAll(true)
+    try {
+      const outcome = await refreshEverything()
+      setRefreshNote({ outcome, at: new Date().toISOString() })
+      return outcome
+    } catch {
+      setRefreshNote({ outcome: null, at: new Date().toISOString() })
+      return null
+    } finally { setRefreshingAll(false) }
+  }
+
+  // The workspace opens only once its first sync is complete — the saved
+  // ledger, the project snapshot, the GitHub account and the review-request
+  // inbox — so nothing visibly reloads right after it appears. Latched: a
+  // later manual refresh never drops the app back to the opening screen.
+  const [booted, setBooted] = useState(false)
+  const bootReady = ledgerReady && !sourceLoading && conn.state !== 'checking' && (incomingReady || conn.state !== 'connected') && runsReady
+  useEffect(() => { if (bootReady) setBooted(true) }, [bootReady])
 
   // The toolbar reflects only the app's first connection/feed read. Once that
   // read settles, an unavailable GitHub status is rendered as a retryable
@@ -1636,13 +1757,30 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
   const loadScreenshot = useCallback((recordId, shot) => fetchContributionScreenshot(token, appId, recordId, shot), [token, appId])
 
   if (sendOnly) return null
+  if (!booted) {
+    return (
+      <div className="co-root" data-design-seed="ae1883df">
+        <style>{CSS}</style>
+        <div className="co-boot" role="status">
+          <span className="ma-spinner" aria-hidden="true" />
+          <strong>Opening Contribute…</strong>
+          <span>Reading your projects and pull requests from GitHub.</span>
+        </div>
+      </div>
+    )
+  }
   // One workspace owns project context and the exact contribution beneath it.
   return (
     <ScreenshotLoaderContext.Provider value={loadScreenshot}>
     <div className="co-root" data-design-seed="ae1883df">
       <style>{CSS}</style>
       <div className="co-header-shell">
-        <Header appId={appId} fromCache={fromCache} checking={checking} onBack={projectOpen ? () => setProjectFocus({ key: '', nonce: crypto.randomUUID() }) : null}>
+        <Header appId={appId} fromCache={fromCache} checking={checking} onBack={projectOpen && !pullPage ? () => setProjectFocus({ key: '', nonce: crypto.randomUUID() }) : null}>
+          <SyncNote note={refreshNote} />
+          <button type="button" className="co-btn co-toolbar-refresh" onClick={refreshAll} disabled={refreshingAll} aria-busy={refreshingAll} aria-label="Sync with GitHub">
+            <Icon name={refreshingAll ? 'refresh' : 'github'} size={16} className={'co-icon' + (refreshingAll ? ' is-spinning' : '')} />
+            <span>{refreshingAll ? 'Syncing…' : 'Sync with GitHub'}</span>
+          </button>
           <ConnectionSettings
             appId={appId} conn={conn} token={token} onChanged={refreshConnection}
             autopilotDefault={autopilotDefault} onToggleAutopilotDefault={onToggleAutopilotDefault}
@@ -1652,26 +1790,10 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
       <main ref={pageRef} className="co-page is-sources">
         {selectionError ? <p className="co-run-error" role="alert">{selectionError}</p> : null}
         {selectionFocus ? <ReviewSelection selectionId={selectionFocus} appId={appId} token={token} onClose={closeSelection} /> : <SourceMap
-          snapshot={sourceSnapshot} projects={sourceProjects} focusKey={projectFocus}
+          snapshot={sourceSnapshot} projects={sourceProjects} focusKey={projectFocus} desk={desk}
           onProjectOpenChange={setProjectOpen}
           conn={conn} loading={sourceLoading} error={sourceError}
-          onRetry={async () => {
-            // The one visible refresh control renews everything the screen
-            // shows, including the contribution feed: otherwise a stale or
-            // partial feed has no manual way back to current.
-            const [sourceOk] = await Promise.all([
-              refreshSources(),
-              refreshCoordinatorRef.current(),
-            ])
-            let upstream = null
-            if (conn.state === 'connected') {
-              const [, , checked] = await Promise.all([loadRepositories(), refreshIncomingReviews(), checkUpstream(token, sourceProjects)])
-              upstream = checked
-              if (checked.ok) setUpstreamChecks(checked.results)
-            }
-            setRefreshKey(value => value + 1)
-            return { ok: sourceOk && ledgerCurrentRef.current, upstream }
-          }} checks={upstreamChecks} attention={projectAttention} loadProjectDiff={loadProjectDiff}
+          onRetry={refreshAll} checks={upstreamChecks} attention={projectAttention} loadProjectDiff={loadProjectDiff}
           repositoryPicker={<RepositoryPicker token={token} connected={conn.state === 'connected'} onAdded={(repo, followed) => {
             setFollowedRepos(followed)
             setRepositoryAccess(old => ({ ...old, repositories: [...old.repositories.filter(item => item.nameWithOwner.toLowerCase() !== repo.nameWithOwner.toLowerCase()), repo] }))
@@ -1686,6 +1808,8 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
             {({ controls, progress }) => <ContributionRun
               renderPublicWork={project ? view => renderPullRequests(project, navigation, view) : null}
               reviewRequestCount={project?.reviewRequests?.length || 0}
+              edits={project && localChangeSentence(project).edits ? <ProjectEdits project={project} run={projectRun(project)} loadProjectDiff={loadProjectDiff} onRefresh={refreshAll} /> : null}
+              editsCount={project && localChangeSentence(project).edits ? localChangeSummary(project).changed : null}
               controls={controls}
               projectProgress={progress}
               run={projectRun(project)} presentation={project ? 'project' : 'overview'}
@@ -1701,6 +1825,7 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
               focusTarget={(project?.key || '') === focusedProjectKey ? reviewFocus : null}
               focusReady={focusedReviewReady && !sourceLoading}
               onFocusConsumed={consumeReviewFocus}
+              onOpenPull={project ? pr => openPullPage(project, pr) : null}
             />}
             </ProjectControls> : null}
             </>

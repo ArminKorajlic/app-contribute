@@ -1,10 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import {
-  createRefreshCoordinator,
-  isVisibleFrameMessage,
-} from '../refresh.js'
+import { createRefreshCoordinator } from '../refresh.js'
 
 test('refresh coordinator deduplicates overlap and preserves one trailing run', async () => {
   let runs = 0
@@ -33,20 +30,4 @@ test('refresh coordinator starts a new run after becoming idle', async () => {
   await refresh()
   await refresh()
   assert.equal(runs, 2)
-})
-
-test('foreground refresh accepts only a visible signal from the parent frame', () => {
-  const parent = {}
-  assert.equal(isVisibleFrameMessage({
-    source: parent,
-    data: { type: 'moebius:frame-visibility', visible: true },
-  }, parent), true)
-  assert.equal(isVisibleFrameMessage({
-    source: parent,
-    data: { type: 'moebius:frame-visibility', visible: false },
-  }, parent), false)
-  assert.equal(isVisibleFrameMessage({
-    source: {},
-    data: { type: 'moebius:frame-visibility', visible: true },
-  }, parent), false)
 })

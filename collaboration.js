@@ -1,18 +1,8 @@
 // GitHub owns people, permissions and assignments. Contribute owns the private
 // review journey; a repository role never becomes an automatic merge grant.
-import { fetchLiveStates } from './api.js'
+import { PR_FIELDS, fetchLiveStates } from './api.js'
 
-export const PR_FIELDS = `id number title url headRefOid headRefName baseRefName baseRefOid baseRef { target { oid } } isDraft
-  additions deletions changedFiles createdAt updatedAt
-  author { login } assignees(first:100) { nodes { login } }
-  repository { nameWithOwner viewerPermission }
-  headRepository { nameWithOwner viewerPermission isArchived }
-  labels(first:20) { nodes { name color } totalCount }
-  comments { totalCount }
-  commits(last:1) { nodes { commit { statusCheckRollup { state contexts {
-    totalCount checkRunCountsByState { state count } statusContextCountsByState { state count }
-  } } } } }
-  reviewDecision mergeable`
+export { PR_FIELDS } from './api.js'
 export const mayAssign = permission => ['TRIAGE', 'WRITE', 'MAINTAIN', 'ADMIN'].includes(permission)
 export const mayMerge = permission => ['WRITE', 'MAINTAIN', 'ADMIN'].includes(permission)
 // This is discovery, not authority: the server rechecks exact repositories at
@@ -55,13 +45,25 @@ export function checkSummary(pr) {
 // while a run is bound to the target branch's live tip when the owner
 // consents (the server checks exactly that). Runs and review links use the tip.
 export const baseTip = pr => pr?.baseRef?.target?.oid || null
+// The conversation count a row shows: issue-style comments plus review
+// submissions, the same two sources the PR page's Comments tab lists.
+export const conversationCount = pr => (pr?.comments?.totalCount || 0) + (pr?.reviews?.totalCount || 0)
 export const prKey = pr => `${pr.repository.nameWithOwner.toLowerCase()}#${pr.number}`
 export const mergeSelection = (old, next) => [...new Map([...old, ...next].map(pr => [prKey(pr), pr])).values()]
+const BOT_LOGINS = new Set(['dependabot', 'renovate', 'github-actions'])
+export const isBotAuthor = login => /\[bot\]$|bot$/i.test(login || '') || BOT_LOGINS.has((login || '').toLowerCase())
+
 export function matchingPulls(pulls, filter, login) {
   const same = value => value?.toLowerCase() === login?.toLowerCase()
-  return pulls.filter(pr => filter === 'unassigned' ? !pr.assignees?.nodes?.length
-    : filter === 'assigned' ? pr.assignees?.nodes?.some(user => same(user.login))
-      : filter === 'authored' ? same(pr.author?.login) : true)
+  const test = {
+    unassigned: pr => !pr.assignees?.nodes?.length,
+    assigned: pr => pr.assignees?.nodes?.some(user => same(user.login)),
+    authored: pr => same(pr.author?.login),
+    drafts: pr => pr.isDraft,
+    failing: pr => checkSummary(pr)?.failed > 0,
+    bots: pr => isBotAuthor(pr.author?.login),
+  }[filter]
+  return test ? pulls.filter(test) : pulls
 }
 
 async function graph(token, query) {
@@ -269,4 +271,29 @@ export function reviewForPull(runs, pr) {
   })
   // Prefer the run on the current branch tip; otherwise the newest for this code.
   return matches.find(match => match.exactBase) || matches[0] || null
+}
+
+// The newest review of this PR at some other version, for when the PR has
+// changed since it was reviewed: reviewForPull only matches the current head, and
+// "never reviewed" would be wrong.
+export function earlierReviewForPull(runs, pr) {
+  const key = `${pr.repository.nameWithOwner.toLowerCase()}#${pr.number}`
+  const matches = (runs || []).flatMap(run => (run.items || [])
+    .filter(item => `${item.repo.toLowerCase()}#${item.number}` === key && item.head_sha !== pr.headRefOid)
+    .map(item => ({ run, item })))
+  return matches.sort((a, b) => Date.parse(b.run.created_at || '') - Date.parse(a.run.created_at || ''))[0] || null
+}
+
+// The Agent menu's jobs as the platform sees them. Review opens private and
+// the window switches it to a GitHub review; Review and merge is the same
+// window with merging on; Hand it over is the takeover mode. A raw mode (a
+// retry, a saved link) passes through with its own defaults.
+const REVIEW_INTENTS = {
+  review: { mode: 'review', options: { post_review: false, propose_verdict: false } },
+  merge: { mode: 'review_merge', options: { post_review: true, propose_verdict: true } },
+  review_fix_merge: { mode: 'review_fix_merge' },
+}
+export function reviewIntent(choice) {
+  const known = REVIEW_INTENTS[choice]
+  return known ? { intent: choice, ...known } : { mode: choice }
 }

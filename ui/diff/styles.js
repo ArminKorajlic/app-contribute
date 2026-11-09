@@ -4,6 +4,10 @@
 
 export const DIFF_VIEWER_STYLES = `
 .diff-view {
+  /* Each line-number column fits the file's longest number (set by
+     DiffView as --diff-digits) plus its padding, so 4- and 5-digit lines
+     never run into the neighbouring column. */
+  --diff-num: calc(var(--diff-digits, 3) * 1ch + 8px);
   width: 100%;
   min-width: 0;
   box-sizing: border-box;
@@ -32,7 +36,7 @@ export const DIFF_VIEWER_STYLES = `
 
 .diff-view__hunk-header {
   display: grid;
-  grid-template-columns: 8ch minmax(0, 1fr);
+  grid-template-columns: calc(var(--diff-num) * 2) minmax(0, 1fr);
   min-width: 0;
   background: var(--surface-2, #212121);
   color: var(--muted, #a8a8a8);
@@ -51,7 +55,7 @@ export const DIFF_VIEWER_STYLES = `
 
 .diff-view__line {
   display: grid;
-  grid-template-columns: 7ch 1.6ch minmax(0, 1fr);
+  grid-template-columns: calc(var(--diff-num) * 2) 1.6ch minmax(0, 1fr);
   min-width: 0;
 }
 
@@ -78,7 +82,7 @@ export const DIFF_VIEWER_STYLES = `
 
 .diff-view__numbers {
   display: grid;
-  grid-template-columns: repeat(2, 3.5ch);
+  grid-template-columns: repeat(2, var(--diff-num));
   color: var(--muted, #a8a8a8);
   background: color-mix(
     in srgb,
@@ -317,17 +321,14 @@ export const DIFF_VIEWER_STYLES = `
     font-size: 11px;
   }
 
-  .diff-view__hunk-header {
-    grid-template-columns: 6ch minmax(0, 1fr);
+  .diff-view {
+    --diff-num: calc(var(--diff-digits, 3) * 1ch + 4px);
   }
 
   .diff-view__line {
-    grid-template-columns: 5.5ch 1.4ch minmax(0, 1fr);
+    grid-template-columns: calc(var(--diff-num) * 2) 1.4ch minmax(0, 1fr);
   }
 
-  .diff-view__numbers {
-    grid-template-columns: repeat(2, 2.75ch);
-  }
 
   .diff-view__line-number {
     padding-inline: 2px;

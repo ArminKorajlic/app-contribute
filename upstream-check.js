@@ -59,28 +59,3 @@ export async function checkUpstream(token, projects, now = new Date().toISOStrin
   if (!data) return { ok: false, results: {} }
   return { ok: true, results: readUpstreamCheck(targets, data, now) }
 }
-
-// One sentence for the result of Check GitHub. `outcome` is what the screen's
-// check returned: { ok } for the local reload plus `upstream` when GitHub was
-// asked (null when GitHub is not connected).
-export function upstreamCheckSummary(outcome, projects) {
-  if (!outcome?.ok) return 'Could not reload this Möbius. Try again.'
-  const upstream = outcome.upstream
-  if (!upstream) return 'Reloaded. Connect GitHub to check it for new changes.'
-  if (!upstream.ok) return 'Reloaded, but GitHub could not be reached.'
-  const results = upstream.results || {}
-  const asked = upstreamCheckTargets(projects)
-  if (!asked.length) return 'Reloaded. Nothing here can be compared with GitHub yet.'
-  const nameOf = key => (projects || []).find(project => project.key === key)?.name || key
-  const moved = asked.filter(target => results[target.key]?.newCommits > 0).map(target => nameOf(target.key))
-  // "Nothing new" needs an answer for every project asked about.
-  const unanswered = asked.filter(target => !results[target.key]).map(target => nameOf(target.key))
-  const sentences = []
-  if (moved.length) sentences.push(`New on GitHub: ${nameList(moved)}.`)
-  if (unanswered.length) sentences.push(`Couldn’t check ${nameList(unanswered)}.`)
-  return sentences.join(' ') || 'Nothing new on GitHub.'
-}
-
-function nameList(names) {
-  return names.length <= 2 ? names.join(' and ') : `${names.slice(0, 2).join(', ')} and ${names.length - 2} more`
-}

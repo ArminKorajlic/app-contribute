@@ -247,3 +247,18 @@ export function parseUnifiedDiff(diffText) {
   if (entry) parsed.push(finishEntry(entry))
   return parsed
 }
+
+// Digits in the largest old or new line number in the file, at least 3, so
+// the number gutter is exactly as wide as the file needs.
+export function lineNumberDigits(hunks) {
+  // A loop, not Math.max(...numbers): a large file has more line numbers than a
+  // function call can take as arguments.
+  let largest = 0
+  for (const hunk of Array.isArray(hunks) ? hunks : []) {
+    for (const line of Array.isArray(hunk.lines) ? hunk.lines : []) {
+      if (typeof line.oldNo === 'number' && line.oldNo > largest) largest = line.oldNo
+      if (typeof line.newNo === 'number' && line.newNo > largest) largest = line.newNo
+    }
+  }
+  return Math.max(3, String(largest).length)
+}

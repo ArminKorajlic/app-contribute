@@ -6,13 +6,14 @@ import {
   projectReadyToPrepare,
   projectBoardFacts,
 } from '../source-map.js'
-import { upstreamCheckSummary } from '../upstream-check.js'
 import { Icon } from './Icons.jsx'
 import { ProjectIcon } from './ProjectIcon.jsx'
 import { TimeAgo } from './GithubParts.jsx'
-import UnifiedDiff from './diff/UnifiedDiff.jsx'
-import { parseUnifiedDiff } from './diff/parseUnifiedDiff.js'
+import { ProjectFileChanges } from './ProjectEdits.jsx'
 import { TaskContext, TaskPane } from './TaskPane.jsx'
+import { DESK_VIEWS, splitProjects } from '../desk.js'
+import { DeskChips, DeskCounts, DeskRail } from './Desk.jsx'
+import { DeskView } from './DeskViews.jsx'
 import { openGithubSettings } from '../github-connection.js'
 
 const FILTERS = [
@@ -57,75 +58,8 @@ function ProjectPosition({ project }) {
   )
 }
 
-// Check GitHub reloads this Möbius and asks GitHub whether anything is new;
-// the note under it says what the last check found.
-// `scope` is the projects the note speaks about: every project on the list,
-// only the open project on its own page.
-function CheckGithub({ state, note, onCheck, scope }) {
-  const running = state === 'running'
-  return <div className="co-check-github">
-    <button type="button" className="co-btn" onClick={onCheck} disabled={running} aria-busy={running}>
-      <Icon name="refresh" size={16} className={'co-icon' + (running ? ' is-spinning' : '')} />{running ? 'Checking…' : 'Check GitHub'}
-    </button>
-    {note && !running ? <p className="co-check-note" role="status">{upstreamCheckSummary(note.outcome, scope)} <TimeAgo prefix="Checked " value={note.at} /></p> : null}
-  </div>
-}
-
 function ProjectGlyph({ project }) {
   return <ProjectIcon project={project} className="co-source-glyph" />
-}
-
-function ProjectFileChanges({ project, loadProjectDiff, onRefresh }) {
-  const [state, setState] = useState({ phase: 'loading', data: null })
-  const [retry, setRetry] = useState(0)
-  useEffect(() => {
-    let cancelled = false
-    setState({ phase: 'loading', data: null })
-    Promise.resolve(loadProjectDiff?.(project))
-      .then((result) => {
-        if (cancelled) return
-        if (result?.ok) setState({ phase: 'ready', data: result.data })
-        else setState({ phase: result?.stale ? 'stale' : 'error', data: null })
-      })
-      .catch(() => {
-        if (!cancelled) setState({ phase: 'error', data: null })
-      })
-    return () => { cancelled = true }
-  }, [project.key, project.head_sha, project.comparison_sha, project.base_sha, loadProjectDiff, retry])
-
-  const files = state.phase === 'ready' ? parseUnifiedDiff(state.data?.diff) : []
-  const countLabel = state.phase === 'ready'
-    ? `${files.length} ${files.length === 1 ? 'file' : 'files'}${state.data?.diff_truncated ? ' shown' : ''}`
-    : null
-
-  return (
-    <section className="co-project-files">
-      <header><span>Changed files</span>{countLabel ? <small>{countLabel}</small> : null}</header>
-      {state.phase === 'ready' ? (
-        files.length ? <>
-          {state.data?.diff_truncated ? (
-            <p className="co-project-diff-note">This is a large change, so only the available part of the diff is shown.</p>
-          ) : null}
-          <UnifiedDiff
-            diff={state.data?.diff}
-            diffTruncated={state.data?.diff_truncated === true}
-            initiallyOpenFirst
-          />
-        </> : <p className="co-project-diff-empty">No changed files in this comparison.</p>
-      ) : state.phase === 'loading' ? (
-        <div className="co-project-diff-loading" role="status"><span className="ma-spinner is-compact" aria-hidden="true" /> Loading file diffs…</div>
-      ) : (
-        <button
-          type="button"
-          className="co-project-files-toggle"
-          onClick={state.phase === 'stale' ? onRefresh : () => setRetry(value => value + 1)}
-        >
-          {state.phase === 'stale' ? 'Project changed · check again' : 'Could not load diffs · try again'}
-          <Icon name="refresh" size={15} />
-        </button>
-      )}
-    </section>
-  )
 }
 
 function ProjectDetail({
@@ -135,8 +69,6 @@ function ProjectDetail({
   renderActivity,
   navigation,
   sourceRevision,
-  checkState,
-  checkNote,
 }) {
   const [publicKeys, setPublicKeys] = useState(new Set())
   const projectView = useRef(null)
@@ -168,7 +100,6 @@ function ProjectDetail({
             <p>{project.canonical_repo ? <a href={`https://github.com/${project.canonical_repo}`} target="_blank" rel="noopener noreferrer">{project.canonical_repo}</a> : <span>Only on your Möbius</span>}
             </p>
           </div></div>
-          <CheckGithub state={checkState} note={checkNote} onCheck={onRefresh} scope={[project]} />
         </header>
         <div className="co-workspace-body">
           <div className="co-workspace-inventory">
@@ -263,6 +194,19 @@ function QuietProjects({ projects, onSelect, checks, searching }) {
   </details>
 }
 
+// The PR page is its own task surface: the review window, assignment pane and
+// agent panes need the same open/close plumbing a project page gives them.
+// Without it, every pane renders bare, always, and with no way to close.
+function PullPageTask({ children }) {
+  const [publicKeys, setPublicKeys] = useState(new Set())
+  const [activeId, setActiveId] = useState('')
+  const task = {
+    publicKeys, setPublicKeys, activeId, explicit: true,
+    open: setActiveId, close: () => setActiveId(''),
+  }
+  return <TaskContext.Provider value={task}>{children}</TaskContext.Provider>
+}
+
 function LoadingState() {
   return <div className="co-source-loading" role="status"><span className="ma-spinner" aria-hidden="true" /><div><strong>Checking projects…</strong><span>Comparing local, shared, and prepared work.</span></div></div>
 }
@@ -281,11 +225,11 @@ export function SourceMap({
   onProjectOpenChange,
   checks = {},
   attention = {},
+  desk = { view: 'projects', onView: () => {}, counts: {}, login: '', records: [], lastLooked: '', decisionsFor: () => [], onOpenPull: () => {}, pull: null, onClosePull: () => {}, renderPull: () => null },
 }) {
-  const [manualRefresh, setManualRefresh] = useState('idle')
-  const [checkNote, setCheckNote] = useState(null)
   const [filter, setFilter] = useState('all')
   const [query, setQuery] = useState('')
+  const [deskQuery, setDeskQuery] = useState('')
   const filtered = useMemo(
     () => projects.filter((project) => (
       projectMatchesJourney(project, filter)
@@ -310,19 +254,6 @@ export function SourceMap({
   const workTriggerRef = useRef(null)
   const [navigationError, setNavigationError] = useState('')
   const pageScroller = () => document.querySelector('.co-page')
-
-  async function refreshProjects() {
-    if (loading || manualRefresh === 'running') return
-    setManualRefresh('running')
-    try {
-      const outcome = await onRetry?.()
-      setManualRefresh(outcome?.ok ? 'done' : 'failed')
-      setCheckNote({ outcome, at: new Date().toISOString() })
-    } catch {
-      setManualRefresh('failed')
-      setCheckNote({ outcome: null, at: new Date().toISOString() })
-    }
-  }
 
   function closeWork() {
     setSelectedWorkId('')
@@ -424,20 +355,45 @@ export function SourceMap({
   const trackedActive = tracked.filter((project) => !isQuiet(project))
   const trackedQuiet = tracked.filter(isQuiet)
   const external = filtered.filter((project) => project.kind === 'external')
+  // The rail and the side views keep the directory's own order: active work
+  // first, then local-only apps, quiet apps, and repositories on GitHub.
+  const deskGroups = splitProjects(projects, attention)
+  const orderedProjects = [...deskGroups.active, ...deskGroups.builtHere, ...deskGroups.quiet, ...deskGroups.external]
+  const openView = key => { desk.onClosePull(); if (selected) closeProject(); desk.onView(key) }
+  const openProjectFromRail = key => { desk.onClosePull(); void openProject(key) }
+  function openRecordFromDesk(project, item) {
+    void openProject(project.key)
+    if (item?.id) openWork(item.id)
+  }
   const externalQuestions = external.reduce((count, project) => count + (project.reviewRequests?.length || 0), 0)
   if (loading && !snapshot && !projects.length) return <LoadingState />
+  const viewLabel = DESK_VIEWS.find(item => item.key === desk.view)?.label || 'Your projects'
   return (
     <section className={'co-projects-view' + (selectedProject ? ' is-focus' : '')} aria-label="Project details">
+      <div className="co-desk">
+      <DeskRail view={desk.view} counts={desk.counts} projects={projects} attention={attention} selectedKey={selected} onView={openView} onOpenProject={openProjectFromRail} />
+      <div className="co-desk-pane">
+      {desk.pull ? (
+        <div className="co-pull-page">
+          <button type="button" className="co-desk-back" onClick={desk.onClosePull}><Icon name="left" size={16} />Back to {selectedProject ? selectedProject.name : viewLabel}</button>
+          <PullPageTask>{desk.renderPull()}</PullPageTask>
+        </div>
+      ) : (
+      <>
       {selectedProject ? <h2 className="co-visually-hidden">Project detail</h2> : (
+        <>
+        <DeskChips view={desk.view} counts={desk.counts} onView={openView} />
         <header className="co-view-heading">
           <div>
-            <h2>Your projects</h2>
+            <h2>{viewLabel}</h2>
           </div>
           <div className="co-project-view-actions">
-            <CheckGithub state={loading ? 'running' : manualRefresh} note={checkNote} onCheck={refreshProjects} scope={projects} />
             {repositoryPicker}
           </div>
         </header>
+        {desk.view === 'needs' ? <DeskCounts counts={desk.counts} onView={openView} /> : null}
+        {desk.view !== 'projects' && desk.lastLooked ? <p className="co-desk-legend"><span className="co-newdot" /><TimeAgo prefix="marks what changed since you last looked, " value={desk.lastLooked} /></p> : null}
+        </>
       )}
 
       {navigationError ? <p className="co-run-error" role="alert">{navigationError}</p> : null}
@@ -458,8 +414,16 @@ export function SourceMap({
       ) : null}
 
       {!selectedProject ? (
+        desk.view !== 'projects' ? (
+          <>
+            <label className="co-desk-search">
+              <Icon name="search" size={16} />
+              <input type="search" placeholder="Find a PR, person or project" aria-label="Find a PR, person or project" value={deskQuery} onChange={event => setDeskQuery(event.target.value)} />
+            </label>
+            <DeskView view={desk.view} projects={orderedProjects} records={desk.records} login={desk.login} decisionsFor={desk.decisionsFor} lastLooked={desk.lastLooked} query={deskQuery} runs={desk.runs} onOpenProject={openProject} onOpenPull={desk.onOpenPull} onOpenRecord={openRecordFromDesk} />
+          </>
+        ) : (
         <>
-          {renderActivity?.(null, activityNavigation)}
           <div className="co-directory">
           <label className="co-project-search">
             <span className="co-visually-hidden">Find a project</span>
@@ -509,21 +473,24 @@ export function SourceMap({
           </details> : null}
           </div>
         </>
+        )
       ) : (
         <div className="co-project-layout">
           <ProjectDetail
             key={selectedProject.key}
             project={selectedProject}
             loadProjectDiff={loadProjectDiff}
-            onRefresh={refreshProjects}
-            checkState={manualRefresh}
-            checkNote={checkNote}
+            onRefresh={onRetry}
             renderActivity={renderActivity}
             navigation={activityNavigation}
             sourceRevision={snapshot?.generated_at}
           />
         </div>
       )}
+      </>
+      )}
+      </div>
+      </div>
     </section>
   )
 }

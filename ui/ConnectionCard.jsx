@@ -4,23 +4,28 @@ import { Icon } from './Icons.jsx'
 import { ReviewPromptSettings } from './ReviewPromptSettings.jsx'
 // Component-local settings layout. The app shell keeps its existing theme tokens.
 export const SETTINGS_CSS = `
-.co-settings-workspace { box-sizing:border-box; width:min(820px,calc(100vw - 32px)); max-height:calc(100dvh - 110px); padding:24px; }
-.co-settings-workspace > header { padding-bottom:14px; border-bottom:1px solid var(--border); }
-.co-settings-layout { display:block; }
-.co-settings-content { min-width:0; padding-top:15px; }
-.co-settings-content h3 { margin:0 0 12px; font-size:18px; line-height:1.4; font-weight:650; }
-.co-settings-content .co-prompt-settings { margin:0; padding:0; border:0; }
-.co-settings-content .co-prompt-settings textarea { min-height:270px; font-size:16px; line-height:1.6; }
-.co-settings-skeleton { min-height:420px; padding:24px 0; color:var(--muted); }
-.co-prompt-editor-group { padding:8px 0 16px; border-bottom:1px solid var(--border); }
-.co-prompt-editor-group .co-quiet-action { margin-top:4px; }
-.co-prompt-settings > label { font-weight:650; }
-.co-settings-account { padding-bottom:24px; margin-bottom:24px; border-bottom:1px solid var(--border); }
-.co-settings-workspace > header .co-quiet-action { min-height:44px; padding:8px 12px; border:0; border-radius:8px; background:none; color:var(--muted); font:inherit; cursor:pointer; }
+.co-settings-workspace { box-sizing:border-box; width:min(820px,calc(100vw - 32px)); height:min(947px,calc(100dvh - 110px)); max-height:calc(100dvh - 110px); display:flex; flex-direction:column; padding:20px; overflow:hidden; }
+.co-settings-workspace > header { flex:0 0 auto; display:flex; align-items:center; justify-content:space-between; margin:0; padding-bottom:12px; border-bottom:1px solid var(--border); }
+.co-settings-layout { flex:1; min-height:0; display:flex; }
+.co-settings-content { flex:1; min-width:0; min-height:0; display:flex; flex-direction:column; padding-top:4px; }
+.co-settings-content h3 { margin:14px 0 8px; font-size:14px; line-height:1.4; font-weight:650; color:var(--muted); }
+.co-settings-content .co-prompt-settings { flex:1; min-height:0; display:flex; flex-direction:column; margin:0; padding:0; border:0; }
+.co-settings-content .co-prompt-settings textarea { flex:1; min-height:150px; font-size:15px; line-height:1.55; resize:none; }
+.co-settings-skeleton { min-height:240px; padding:24px 0; color:var(--muted); }
+.co-prompt-editor-group { flex:1; min-height:0; display:flex; flex-direction:column; padding:0; }
+.co-settings-account { flex:0 0 auto; }
+.co-settings-account .co-conn { display:block; }
+.co-set-card { border:1px solid var(--border); border-radius:12px; background:var(--bg); }
+.co-set-row { display:flex; align-items:center; gap:12px; min-height:56px; padding:8px 12px; }
+.co-set-row + .co-set-row { border-top:1px solid var(--border); }
+.co-set-tile { flex:0 0 auto; display:grid; place-items:center; width:36px; height:36px; border-radius:9px; background:var(--surface-2,var(--surface)); color:var(--muted); }
+.co-set-text { flex:1; min-width:0; display:flex; flex-direction:column; gap:1px; cursor:default; }
+.co-set-text strong { font-size:15px; font-weight:650; }
+.co-set-text small { color:var(--muted); font-size:14px; line-height:1.4; }
+.co-set-row .co-btn { flex:0 0 auto; gap:8px; height:40px; min-height:40px; padding:0 12px; font-size:14px; }
+.co-settings-workspace > header .co-quiet-action { display:grid; place-items:center; width:44px; min-height:44px; padding:0; border:0; border-radius:8px; background:none; color:var(--muted); cursor:pointer; }
 .co-settings-workspace > header .co-quiet-action:hover { background:var(--surface-2); color:var(--text); }
-.co-settings-account .co-conn-settings { display:block; }
-.co-settings-account .co-conn-actions { margin-top:10px; }
-@media(max-width:650px) { .co-settings-workspace { position:fixed; inset:68px 16px auto; width:auto; max-height:calc(100dvh - 84px); padding:18px; } .co-settings-content { padding-top:16px; } }
+@media(max-width:650px) { .co-settings-workspace { position:fixed; inset:68px 16px auto; width:auto; height:auto; max-height:calc(100dvh - 84px); padding:16px; overflow-y:auto; } .co-settings-content .co-prompt-settings textarea { flex:none; min-height:240px; } .co-set-row { flex-wrap:wrap; } }
 `
 
 
@@ -51,11 +56,10 @@ export function ConnectionSettings(props) {
       <Icon name="settings" size={20} /><span>Settings</span>
     </summary>
     {open ? <div className="co-settings-panel co-settings-workspace"><style>{SETTINGS_CSS}</style>
-      <header><h2>Settings</h2><button type="button" className="co-quiet-action" onClick={() => { ref.current.open = false; ref.current.querySelector('summary')?.focus() }}>Done</button></header>
+      <header><h2>Settings</h2><button type="button" className="co-quiet-action" aria-label="Close settings" title="Close" onClick={() => { ref.current.open = false; ref.current.querySelector('summary')?.focus() }}><Icon name="close" size={18} /></button></header>
       <div className="co-settings-layout">
         <div className="co-settings-content">
-          <section className="co-settings-account" aria-label="GitHub account"><h3>GitHub account</h3><ConnectionCard {...props} /></section>
-          <h3>Agent prompts</h3>
+          <section className="co-settings-account" aria-label="GitHub account"><h3>GitHub</h3><ConnectionCard {...props} /></section>
           <ReviewPromptSettings token={props.token} appId={props.appId} />
         </div>
       </div>
@@ -85,10 +89,7 @@ export function ConnectionCard({
   autopilotDefault = true,
   onToggleAutopilotDefault,
 }) {
-  const [autopilotHelpOpen, setAutopilotHelpOpen] = useState(false)
   const [statusRetrying, setStatusRetrying] = useState(false)
-  const autopilotHelpRef = useRef(null)
-  const autopilotInfoRef = useRef(null)
 
   const retryStatus = useCallback(async () => {
     if (statusRetrying) return
@@ -100,23 +101,6 @@ export function ConnectionCard({
     }
   }, [statusRetrying, onRetry, onChanged])
 
-  useEffect(() => {
-    if (!autopilotHelpOpen) return undefined
-    const dismissOutside = (event) => {
-      if (!autopilotHelpRef.current?.contains(event.target)) setAutopilotHelpOpen(false)
-    }
-    const dismissWithEscape = (event) => {
-      if (event.key !== 'Escape') return
-      setAutopilotHelpOpen(false)
-      autopilotInfoRef.current?.focus()
-    }
-    document.addEventListener('pointerdown', dismissOutside)
-    document.addEventListener('keydown', dismissWithEscape)
-    return () => {
-      document.removeEventListener('pointerdown', dismissOutside)
-      document.removeEventListener('keydown', dismissWithEscape)
-    }
-  }, [autopilotHelpOpen])
 
   const state = conn?.state
 
@@ -145,32 +129,19 @@ export function ConnectionCard({
   if (state === 'connected') {
     return (
       <div className="co-conn is-connected">
-        <p className="co-account-login"><Icon name="github" size={18} /> {conn.login}</p>
-        <p className="co-conn-note">This account is shared across Möbius apps.</p>
-        <div className="co-conn-settings" role="group" aria-label="Contribution settings">
+        <div className="co-set-card" role="group" aria-label="GitHub account and contribution settings">
+          <div className="co-set-row">
+            <span className="co-set-tile" aria-hidden="true"><Icon name="github" size={18} /></span>
+            <div className="co-set-text"><strong>{conn.login}</strong><small>This account is shared across Möbius apps.</small></div>
+            <button type="button" className="co-btn" onClick={openGithubSettings}><Icon name="settings" size={15} />Manage account</button>
+          </div>
           {conn.autopilotAvailable && typeof onToggleAutopilotDefault === 'function' && (
-            <div className="co-autopilot-setting">
-              <label htmlFor="co-follow-sent-prs">Follow sent PRs</label>
-              <div className="co-setting-help" ref={autopilotHelpRef}>
-                <button
-                  ref={autopilotInfoRef}
-                  type="button"
-                  className="co-setting-info"
-                  aria-label="What Follow sent PRs does"
-                  aria-expanded={autopilotHelpOpen}
-                  aria-controls="co-follow-sent-prs-help"
-                  aria-describedby={autopilotHelpOpen ? 'co-follow-sent-prs-help' : undefined}
-                  title="What Follow sent PRs does"
-                  onClick={() => setAutopilotHelpOpen((open) => !open)}
-                >
-                  <Icon name="info" size={15} />
-                </button>
-                {autopilotHelpOpen ? (
-                  <p id="co-follow-sent-prs-help" className="co-setting-popover" role="tooltip">
-                    Follows sent PRs through checks and review, addresses comments automatically, and asks when it needs you.
-                  </p>
-                ) : null}
-              </div>
+            <div className="co-set-row">
+              <span className="co-set-tile" aria-hidden="true"><Icon name="cycle" size={18} /></span>
+              <label className="co-set-text" htmlFor="co-follow-sent-prs">
+                <strong>Follow sent PRs</strong>
+                <small>Follows sent PRs through checks and review, addresses comments automatically, and asks when it needs you.</small>
+              </label>
               <span className="co-setting-switch">
                 <input
                   id="co-follow-sent-prs"
@@ -182,7 +153,6 @@ export function ConnectionCard({
               </span>
             </div>
           )}
-          <div className="co-conn-actions">{settingsButton('GitHub account settings')}</div>
         </div>
       </div>
     )

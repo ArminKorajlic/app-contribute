@@ -8,6 +8,7 @@ const apiSource = readFileSync(new URL('../api.js', import.meta.url), 'utf8')
 const connectionSource = readFileSync(new URL('../ui/ConnectionCard.jsx', import.meta.url), 'utf8')
 const controlsSource = readFileSync(new URL('../ui/ProjectControls.jsx', import.meta.url), 'utf8')
 const sourceMapSource = readFileSync(new URL('../ui/SourceMap.jsx', import.meta.url), 'utf8')
+const projectEditsSource = readFileSync(new URL('../ui/ProjectEdits.jsx', import.meta.url), 'utf8')
 const fileDiffListSource = readFileSync(new URL('../ui/FileDiffList.jsx', import.meta.url), 'utf8')
 const batchActionSource = readFileSync(new URL('../ui/BatchAction.jsx', import.meta.url), 'utf8')
 const feedSource = readFileSync(new URL('../ui/Feed.jsx', import.meta.url), 'utf8')
@@ -177,7 +178,7 @@ test('contribution details retain their project parent and refresh only source d
   assert.equal((appSource.match(/<SourceMap/g) || []).length, 1)
   assert.match(sourceMapSource, /\? projects\.find\(\(project\) => project\.key === selected\)/)
   assert.match(sourceMapSource, /<ProjectFileChanges key=\{sourceRevision\}/)
-  assert.match(sourceMapSource, /initiallyOpenFirst/)
+  assert.match(projectEditsSource, /initiallyOpenFirst/)
   assert.doesNotMatch(sourceMapSource, /Review file diffs|\+\{rows\.length - preview\.length\} more files/)
   assert.match(sourceMapSource, /sourceRevision=\{snapshot\?\.generated_at\}/)
   assert.match(sourceMapSource, /renderActivity\?\.\(project, navigation\)/)
@@ -206,9 +207,9 @@ test('preparation runs as one cycle while every public send stays explicit', () 
 })
 
 test('project changed-file review loads the real diff and opens its first file immediately', () => {
-  assert.match(sourceMapSource, /initiallyOpenFirst/)
+  assert.match(projectEditsSource, /initiallyOpenFirst/)
   assert.doesNotMatch(fileDiffListSource, /initiallyOpenFirst/)
-  assert.match(sourceMapSource, /Promise\.resolve\(loadProjectDiff\?\.\(project\)\)/)
+  assert.match(projectEditsSource, /Promise\.resolve\(loadProjectDiff\?\.\(project\)\)/)
   assert.doesNotMatch(sourceMapSource, /Review file diffs|projectFileRows/)
 })
 
@@ -335,7 +336,7 @@ test('GitHub account changes live only in Möbius Settings', () => {
   assert.doesNotMatch(connectionSource, /personal access token|connectToken|runDeviceConnection|startDeviceFlow|migrateLimitedConnection/)
   assert.doesNotMatch(apiSource, /connectStart|connectPoll|connectCancel|export function disconnect/)
   assert.match(connectionSource, /settingsButton\('Go to Settings to connect', true\)/)
-  assert.match(connectionSource, /GitHub account settings/)
+  assert.match(connectionSource, /Manage account/)
   assert.doesNotMatch(connectionSource, /hasFullPrAccess|unsupported|open-contribute-settings/)
 })
 
@@ -343,20 +344,14 @@ test('one on-demand settings surface owns account setup in the toolbar', () => {
   assert.equal((appSource.match(/<ConnectionSettings/g) || []).length, 1)
   assert.match(connectionSource, /open \? <div className="co-settings-panel co-settings-workspace"/)
   assert.match(connectionSource, /Contribute settings/)
-  assert.match(connectionSource, /className="co-autopilot-setting"/)
+  assert.match(connectionSource, /className="co-set-card"/)
   assert.match(themeSource, /\.co-settings-panel \{[\s\S]*?position: absolute/)
 })
 
-test('Follow sent PRs help opens as an anchored dismissible popover', () => {
-  assert.match(connectionSource, /className="co-setting-help" ref=\{autopilotHelpRef\}/)
-  assert.match(connectionSource, /role="tooltip"/)
-  assert.match(connectionSource, /aria-describedby=\{autopilotHelpOpen/)
-  assert.match(connectionSource, /document\.addEventListener\('pointerdown', dismissOutside\)/)
-  assert.match(connectionSource, /event\.key !== 'Escape'/)
-  assert.match(connectionSource, /autopilotInfoRef\.current\?\.focus\(\)/)
-  assert.match(themeSource, /\.co-setting-help \{ position: relative/)
-  assert.match(themeSource, /\.co-setting-popover \{[\s\S]*?position: absolute/)
-  assert.doesNotMatch(connectionSource, /className="co-autopilot-help"/)
+test('Follow sent PRs says what it does in its own row, with no hidden help to open', () => {
+  assert.match(connectionSource, /<small>Follows sent PRs through checks and review, addresses comments automatically, and asks when it needs you\.<\/small>/)
+  assert.doesNotMatch(connectionSource, /autopilotHelp|role="tooltip"|co-setting-info/)
+  assert.doesNotMatch(themeSource, /co-setting-popover|co-setting-info|co-autopilot-setting/)
 })
 
 test('background checks have one shared accessible toolbar indicator', () => {
@@ -381,8 +376,6 @@ test('the Projects summary reserves its row while source checks refresh', () => 
   assert.match(appSource, /loading=\{sourceLoading\}/)
   assert.match(appSource, /if \(!quiet\) setSourceLoading\(true\)/)
   assert.match(sourceMapSource, /function LoadingState\(\)/)
-  assert.match(sourceMapSource, /running \? 'Checking…' : 'Check GitHub'/)
-  assert.match(sourceMapSource, /className="co-check-note" role="status"/)
   assert.match(sourceMapSource, /className="co-source-loading" role="status"/)
   assert.match(sourceMapSource, /Checking projects…/)
   assert.match(sourceMapSource, /No projects with edits/)
@@ -391,7 +384,6 @@ test('the Projects summary reserves its row while source checks refresh', () => 
 test('project status and essential controls remain visible with a readable type floor', () => {
   assert.doesNotMatch(controlsSource, /More actions|View reviews/)
   assert.match(controlsSource, /className="co-btn co-btn-primary co-task-primary"/)
-  assert.match(sourceMapSource, /<CheckGithub state=\{checkState\} note=\{checkNote\} onCheck=\{onRefresh\} scope=\{\[project\]\} \/>/)
   assert.match(sourceMapSource, /<span>\{facts\.work\}<\/span>/)
   assert.match(sourceMapSource, /className="co-source-shared">\{shared\}/)
   const sizes = [...(themeSource + workspaceTheme).matchAll(/font-size:\s*(\d+(?:\.\d+)?)px/g)].map(match => Number(match[1]))
@@ -412,11 +404,12 @@ test('project chrome consolidates navigation, refresh, files, and preparation ch
   assert.match(appSource, /className="co-header-back"/)
   assert.match(appSource, /onProjectOpenChange=\{setProjectOpen\}/)
   assert.doesNotMatch(sourceMapSource, /className="co-project-switcher"/)
-  // One labelled Check GitHub control on the list and on each project.
-  assert.equal((sourceMapSource.match(/<CheckGithub /g) || []).length, 2)
+  // One refresh control, the header's: no second button on the list or a project.
+  assert.doesNotMatch(sourceMapSource, /CheckGithub|Check GitHub/)
+  assert.doesNotMatch(sourceMapSource, /RefreshNote|refreshNote/)
   assert.doesNotMatch(sourceMapSource, /Refresh project status|Refresh projects/)
   assert.doesNotMatch(sourceMapSource, /Files, branch and versions <Icon/)
-  assert.match(controlsSource, /className="co-link-action" onClick=\{\(\) => task\?\.open\('task:files'\)\}>See the files/)
+  assert.match(controlsSource, /className="co-btn is-icon" onClick=\{\(\) => task\?\.open\('task:files'\)\} aria-label="See the files" title="See the files"><Icon name="review" size=\{16\} \/>/)
 })
 
 test('private proposals have one actionable home without another merge workflow', () => {
@@ -428,11 +421,103 @@ test('private proposals have one actionable home without another merge workflow'
   assert.doesNotMatch(controlsSource, /Options & process/)
 })
 
-test('the projects refresh control also renews the contribution feed and reports a partial one', () => {
-  const retry = appSource.match(/onRetry=\{async \(\) => \{[\s\S]*?\n          \}\}/)?.[0] || ''
-  assert.match(retry, /refreshCoordinatorRef\.current\(\)/)
-  assert.match(retry, /checkUpstream\(token, sourceProjects\)/)
-  assert.match(retry, /return \{ ok: sourceOk && ledgerCurrentRef\.current, upstream \}/)
+test('every refresh control renews the contribution feed and reports a partial one', () => {
+  // The header's Sync with GitHub is the one full pass, and it keeps when it last ran.
+  const refresh = appSource.match(/async function refreshEverything\(\) \{[\s\S]*?\n  \}/)?.[0] || ''
+  assert.match(refresh, /refreshCoordinatorRef\.current\(\)/)
+  assert.match(refresh, /checkUpstream\(token, sourceProjects\)/)
+  assert.match(refresh, /return \{ ok: sourceOk && ledgerCurrentRef\.current, upstream \}/)
+  assert.match(appSource, /onRetry=\{refreshAll\} checks=\{upstreamChecks\}/)
+  // The sync says when it last ran, beside its own button, and is named for what it does.
+  assert.match(appSource, /<SyncNote note=\{refreshNote\} \/>\s*<button[^>]*co-toolbar-refresh[^>]*aria-label="Sync with GitHub"/)
+  assert.match(appSource, /Sync with GitHub/)
+  assert.match(appSource, /setRefreshNote\(\{ outcome, at: new Date\(\)\.toISOString\(\) \}\)/)
+  assert.match(appSource, /onClick=\{refreshAll\}/)
+})
+
+test('GitHub is synced once per open: no hidden foreground re-sync, one explicit Sync with GitHub', () => {
+  // The owner refreshes from the header; returning to the
+  // app or a focus/visibility flip must not quietly reload everything.
+  assert.doesNotMatch(appSource, /isVisibleFrameMessage/)
+  assert.doesNotMatch(appSource, /addEventListener\('visibilitychange', requestRefresh\)/)
+  assert.match(appSource, /className="co-btn co-toolbar-refresh"/)
+})
+
+test('the workspace opens only after its first sync and never falls back to the boot screen', () => {
+  assert.match(appSource, /const bootReady = ledgerReady && !sourceLoading && conn\.state !== 'checking'/)
+  assert.match(appSource, /if \(bootReady\) setBooted\(true\)/)
+  assert.match(appSource, /className="co-boot" role="status"/)
+})
+
+test('a review chip opens the PR on its Review tab, and a started review no longer opens a pane in the list', () => {
+  const pullsSource = readFileSync(new URL('../ui/PullRequests.jsx', import.meta.url), 'utf8')
+  assert.match(pullsSource, /onOpenPage \? onOpenPage\(pr, 'review'\)/)
+  // The title opens Comments, or the Review tab while a review is running.
+  assert.match(pullsSource, /onOpenPage\(pr, frameState\(statusFor\(pr\)\) === 'reviewing' \? 'review' : 'conversation'\)/)
+  assert.doesNotMatch(pullsSource, /setChoice\(null\); setSelected\(new Set\(\)\)\n\s*task\?\.open\(`task:run:\$\{result\.run\.id\}`\)/)
+  // The row wears the comet frame while an agent works; the Review tab knows your own PRs.
+  assert.match(pullsSource, /<ReviewFrame key=\{key\} state=\{framed\}/)
+  assert.match(pullsSource, /own: isOwnPull\(pr, conn\.login\)/)
+  assert.match(appSource, /setPullPage\(\{ key: project\?\.key \|\| '', repo, number: pr\.number, tab,/)
+})
+
+test('the desk reads review runs once, wraps its rows in the frame, and opens a reviewed PR on its Review tab', () => {
+  const deskSource = readFileSync(new URL('../ui/DeskViews.jsx', import.meta.url), 'utf8')
+  assert.match(deskSource, /<ReviewFrame state=\{framed\} inset=\{3\}/)
+  assert.match(deskSource, /onOpenPull\(project, pr, framed === 'idle' \? 'conversation' : 'review'\)/)
+  assert.match(deskSource, /frameState\(reviewForRecord\(runs, item\.record\)\)/)
+  assert.match(appSource, /const reviewActive = hasActiveReview\(reviewRuns\)/)
+  assert.match(appSource, /runs: reviewRuns,/)
+  // Refresh renews the runs with everything else; nothing polls unless a review is working.
+  assert.match(appSource, /checkUpstream\(token, sourceProjects\), refreshReviewRuns\(\)/)
+  assert.match(appSource, /if \(!reviewActive\) return undefined/)
+  assert.match(sourceMapSource, /runs=\{desk\.runs\}/)
+})
+
+test('a running review is shown by the frame and the Review tab only: no Reviewing tag, no Agent spinner or highlight', () => {
+  const pullsSource = readFileSync(new URL('../ui/PullRequests.jsx', import.meta.url), 'utf8')
+  const deskSource = readFileSync(new URL('../ui/DeskViews.jsx', import.meta.url), 'utf8')
+  const menuSource = readFileSync(new URL('../ui/AgentMenu.jsx', import.meta.url), 'utf8')
+  const detailSource = readFileSync(new URL('../ui/PullRequestDetail.jsx', import.meta.url), 'utf8')
+  // Tags for finished or waiting reviews stay; the one for a running review goes.
+  assert.match(pullsSource, /\{status && framed !== 'reviewing' \? <button className=\{'co-pr-agent-state'/)
+  assert.match(deskSource, /\{framed === 'verdict' \? <span className="co-desk-chip is-waiting">/)
+  assert.doesNotMatch(deskSource, /is-review/)
+  assert.doesNotMatch(menuSource, /co-arc|is-active|active =/)
+  assert.doesNotMatch(pullsSource, /<AgentMenu active=/)
+  assert.doesNotMatch(detailSource, /<AgentMenu[^>]* active=/)
+  assert.doesNotMatch(workspaceTheme, /co-agent-menu-button\.is-active/)
+})
+
+test('the spinner turns: both ends of its animation are rotations, with no base transform to cancel it', () => {
+  // A base translateZ(0) next to a keyframe rotate(360deg) interpolates to no movement at all.
+  const arc = workspaceTheme.match(/\.co-arc \{[^}]*\}/)?.[0] || ''
+  assert.doesNotMatch(arc, /transform\s*:/)
+  assert.match(workspaceTheme, /@keyframes co-arc-spin \{ from \{ transform:rotate\(0deg\); \} to \{ transform:rotate\(360deg\); \} \}/)
+})
+
+test('the PR page is a task surface: the review window opens, panes close, the detail stays put', () => {
+  const pullsSource = readFileSync(new URL('../ui/PullRequests.jsx', import.meta.url), 'utf8')
+  // Without a TaskContext every TaskPane renders bare, always, and cannot
+  // close; the desk PR page provides one of its own.
+  assert.match(sourceMapSource, /function PullPageTask/)
+  assert.match(sourceMapSource, /<PullPageTask>\{desk\.renderPull\(\)\}<\/PullPageTask>/)
+  // The detail is the page itself, never hidden behind a swappable pane.
+  assert.doesNotMatch(pullsSource, /<TaskPane id="task:detail"[^>]*><PullRequestDetail[^]*?holdUntilLoaded/)
+  // People load as a skeleton, not a sentence.
+  assert.doesNotMatch(pullsSource, /Loading people…/)
+})
+
+test('an external image in GitHub markdown becomes a labelled link, never a broken icon', () => {
+  const markdownSource = readFileSync(new URL('../ui/MarkdownView.jsx', import.meta.url), 'utf8')
+  assert.match(markdownSource, /function linkExternalImages/)
+  assert.match(markdownSource, /img\.replaceWith\(link\)/)
+  assert.match(markdownSource, /linkExternalImages\(DOMPurify\.sanitize/)
+})
+
+test('To look at feedback on a published PR opens the PR page, not the saved card', () => {
+  assert.match(feedSource, /function openAttentionItem\(item\) \{\s*\n\s*const target = feedbackPull\(item\)/)
+  assert.match(feedSource, /onSelect=\{openAttentionItem\}/)
 })
 
 test('the stale-feed note says offline only when the device is offline', () => {
@@ -459,7 +544,8 @@ test('feedback on a published pull request is news for the owner, not a private 
   const runSource = readFileSync(new URL('../run.js', import.meta.url), 'utf8')
   assert.match(runSource, /export const isPublicFeedback = item => item\.kind === 'private_review'/)
   assert.match(feedSource, /privateItems = decisions\.filter\(item => item\.kind === 'private_review' && !isPublicFeedback\(item\)\)/)
-  assert.match(feedSource, /ownerDecisions = decisions\.filter\(item => isPublicFeedback\(item\) \|\|/)
+  assert.match(runSource, /attentionListItems = \(decisions = \[\]\) => decisions\.filter\(item => isPublicFeedback\(item\) \|\| !\[/)
+  assert.match(feedSource, /ownerDecisions = attentionListItems\(decisions\)/)
   assert.match(feedSource, /<AttentionList items=\{ownerDecisions\}/)
 })
 

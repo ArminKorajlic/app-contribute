@@ -41,7 +41,7 @@ test('connected Contribute shows the account read-only with a Settings link', as
   const html = renderConnection({ state: 'connected', login: 'octocat', scopes: ['repo', 'workflow'] })
   assert.match(html, /octocat/)
   assert.match(html, /This account is shared across Möbius apps/)
-  assert.match(html, />GitHub account settings</)
+  assert.match(html, />Manage account</)
   assert.doesNotMatch(html, /Disconnect|Add access/)
 })
 

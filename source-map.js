@@ -269,6 +269,14 @@ export function localChangeSentence(project) {
   }
 }
 
+// "N files differ from GitHub." for a card or tab already named for its project.
+// A file that differs may already be in an open PR, so this never says unpublished.
+export function deskEditsSentence(project) {
+  const sentence = localChangeSentence(project)
+  if (!sentence.edits || project?.builtHere) return sentence
+  return { ...sentence, text: ` ${localChangeSummary(project).changed === 1 ? 'differs' : 'differ'} from GitHub.` }
+}
+
 function workFacts(project, prepared, preparedUpdates, publicReviews) {
   const work = []
   const { changed } = localChangeSummary(project)

@@ -13,6 +13,27 @@ function escapeHtml(value) {
   })[char])
 }
 
+// The app frame's sandbox lets only same-origin and data: images load, by
+// design (an external image is also a tracking beacon). A GitHub screenshot
+// or badge therefore becomes a labelled link instead of a broken icon.
+function linkExternalImages(html) {
+  if (typeof document === 'undefined') return html
+  const box = document.createElement('div')
+  box.innerHTML = html
+  for (const img of [...box.querySelectorAll('img')]) {
+    const src = img.getAttribute('src') || ''
+    if (src.startsWith('data:') || src.startsWith('/') || src.startsWith(window.location.origin + '/')) continue
+    const link = document.createElement('a')
+    link.setAttribute('href', src)
+    link.setAttribute('target', '_blank')
+    link.setAttribute('rel', 'noopener noreferrer')
+    link.className = 'co-md-image'
+    link.textContent = `Image: ${img.getAttribute('alt') || 'open on GitHub'}`
+    img.replaceWith(link)
+  }
+  return box.innerHTML
+}
+
 // A prepared PR description names staged screenshots with a screenshot:NAME
 // pseudo-URL that only Send turns into a public link. Such an image renders
 // from the caller's resolved data: URL, or as a neutral placeholder; it never
@@ -46,7 +67,7 @@ export function markdownHtml(markdown, images = null) {
 }
 
 function renderMarkdown(markdown, images) {
-  return DOMPurify.sanitize(markdownHtml(markdown, images), { USE_PROFILES: { html: true } })
+  return linkExternalImages(DOMPurify.sanitize(markdownHtml(markdown, images), { USE_PROFILES: { html: true } }))
 }
 
 // `images` optionally maps a screenshot name to its data:image/png URL.

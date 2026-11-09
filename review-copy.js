@@ -18,7 +18,7 @@ function versionNote(count, bindCurrentTarget, merges) {
   return `It uses ${prs} now${target}. If ${code} before the start, you confirm again.`
 }
 
-function takeoverCopy({ count, draftScope, bindCurrentTarget }) {
+function takeoverCopy({ count, draftScope, bindCurrentTarget, intent = '' }) {
   const it = count === 1 ? 'the PR' : 'each PR'
   const steps = [
     { text: `The agent reviews ${it}.` },
@@ -29,7 +29,7 @@ function takeoverCopy({ count, draftScope, bindCurrentTarget }) {
   ]
   const scope = count === 1 ? 'this PR' : 'these PRs'
   return {
-    title: 'Review, fix and merge',
+    title: intent === 'review_fix_merge' ? 'Hand it over' : 'Review, fix and merge',
     steps,
     publicEffect: {
       tone: 'public',
@@ -77,8 +77,12 @@ function reviewStartLabel({ merge, posting, verdict }) {
   return 'Start private review'
 }
 
-export function reviewWindowCopy({ mode, posting = false, verdict = false, draftScope = false, count = 1, bindCurrentTarget = false }) {
-  if (mode === 'review_fix_merge') return takeoverCopy({ count, draftScope, bindCurrentTarget })
+// Review and merge is the Review window with merging on; if merging is switched
+// off there, it is a plain Review again.
+const INTENT_TITLES = { review: 'Review' }
+
+export function reviewWindowCopy({ mode, intent = '', posting = false, verdict = false, draftScope = false, count = 1, bindCurrentTarget = false }) {
+  if (mode === 'review_fix_merge') return takeoverCopy({ count, draftScope, bindCurrentTarget, intent })
   const merge = mode === 'review_merge'
   const proposing = posting && verdict
   const it = count === 1 ? 'the PR' : 'each PR'
@@ -90,7 +94,7 @@ export function reviewWindowCopy({ mode, posting = false, verdict = false, draft
     { text: 'If it has a question, it asks you first.' },
   ]
   return {
-    title: 'Review only',
+    title: intent === 'merge' ? (merge ? 'Review and merge' : 'Review') : INTENT_TITLES[intent] || 'Review only',
     steps,
     publicEffect: reviewPublicEffect({ merge, posting, verdict: proposing, count }),
     startLabel: reviewStartLabel({ merge, posting, verdict: proposing }),

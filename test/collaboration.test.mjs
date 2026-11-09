@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { discoverPull, discoverPulls, discoverRepositories, matchingPulls, mayAssign, mayMerge, mergeSelection, collaborationRequest, reviewRunRequest, assignPulls, loadReviewRuns, awaitsGithub, OBSERVE_EVERY_MS, reviewRunTitle, reviewForPull, runDetailsElsewhere, notOursToObserve } from '../collaboration.js'
+import { conversationCount, isBotAuthor, discoverPull, discoverPulls, discoverRepositories, matchingPulls, mayAssign, mayMerge, mergeSelection, collaborationRequest, reviewRunRequest, assignPulls, loadReviewRuns, awaitsGithub, OBSERVE_EVERY_MS, reviewRunTitle, reviewForPull, runDetailsElsewhere, notOursToObserve } from '../collaboration.js'
 import { attachSourceProjects } from '../source-map.js'
 import { frontendModules, renderModule } from './render-harness.mjs'
 const pull = (number, extra = {}) => ({ number, title: 'A clear change', url: 'https://github.com/team/repo/pull/' + number,
@@ -277,4 +277,45 @@ test('a minimized run detail points to the owning conversation and offers no Sto
   assert.match(html, /View the posted review on GitHub/)
   assert.doesNotMatch(html, /Stop workflow|prompt snapshot|Older PR version|Instructions used by this run|findings will appear here|not a new approval/)
   assert.match(render({ id: 'own', app_id: 80, mode: 'review', state: 'reviewing', items: [] }, []), /This older run did not save a prompt snapshot/)
+})
+
+test('the Agent menu jobs map to exact platform modes and publishing presets', async () => {
+  const { reviewIntent } = await import('../collaboration.js')
+  // Review opens private; Review and merge is the merge mode with a GitHub review.
+  assert.deepEqual(reviewIntent('review'), { intent: 'review', mode: 'review', options: { post_review: false, propose_verdict: false } })
+  assert.deepEqual(reviewIntent('merge'), { intent: 'merge', mode: 'review_merge', options: { post_review: true, propose_verdict: true } })
+  assert.deepEqual(reviewIntent('review_fix_merge'), { intent: 'review_fix_merge', mode: 'review_fix_merge' })
+  // A raw mode (a retry) passes through with its own defaults.
+  assert.deepEqual(reviewIntent('review_merge'), { mode: 'review_merge' })
+})
+
+test('a PR changed after its review still finds that review, as an earlier version', async () => {
+  const { earlierReviewForPull, reviewForPull } = await import('../collaboration.js')
+  const pr = { number: 233, headRefOid: 'new'.padEnd(40, '1'), baseRefName: 'main', repository: { nameWithOwner: 'Team/Repo' } }
+  const run = (id, at, head, number = 233, repo = 'team/repo') => ({ id, created_at: at, items: [{ repo, number, head_sha: head, base_ref: 'main', state: 'all_clear' }] })
+  const older = run('older', '2026-11-03T08:00:00Z', 'old'.padEnd(40, '0'))
+  const newest = run('newest', '2026-11-03T09:30:00Z', 'mid'.padEnd(40, '0'))
+  const runs = [older, newest, run('other-pr', '2026-11-03T09:40:00Z', 'zzz'.padEnd(40, '0'), 9), run('other-repo', '2026-11-03T09:50:00Z', 'yyy'.padEnd(40, '0'), 233, 'team/else')]
+  // Nothing was reviewed at the current head, so it is not "never reviewed".
+  assert.equal(reviewForPull(runs, pr), null)
+  assert.equal(earlierReviewForPull(runs, pr).run.id, 'newest')
+  assert.equal(earlierReviewForPull([], pr), null)
+  // A review of the current head is the review, not an earlier one.
+  const current = run('current', '2026-11-03T10:00:00Z', pr.headRefOid)
+  assert.equal(earlierReviewForPull([current], pr), null)
+})
+
+test('a row counts the conversation the PR page lists: comments plus reviews', () => {
+  assert.equal(conversationCount({ comments: { totalCount: 1 }, reviews: { totalCount: 2 } }), 3)
+  assert.equal(conversationCount({ comments: { totalCount: 0 }, reviews: { totalCount: 2 } }), 2)
+  assert.equal(conversationCount({}), 0)
+})
+
+test('drafts, failing checks and bots are filters of their own', () => {
+  const failing = { commits: { nodes: [{ commit: { statusCheckRollup: { contexts: { totalCount: 2, checkRunCountsByState: [{ state: 'FAILURE', count: 1 }, { state: 'SUCCESS', count: 1 }], statusContextCountsByState: [] } } } }] } }
+  const rows = [{ number: 1, isDraft: true, author: { login: 'owner' } }, { number: 2, author: { login: 'dependabot' }, ...failing }, { number: 3, author: { login: 'renovate[bot]' } }]
+  assert.deepEqual(matchingPulls(rows, 'drafts', 'owner').map(pr => pr.number), [1])
+  assert.deepEqual(matchingPulls(rows, 'failing', 'owner').map(pr => pr.number), [2])
+  assert.deepEqual(matchingPulls(rows, 'bots', 'owner').map(pr => pr.number), [2, 3])
+  assert.equal(isBotAuthor('ArminKorajlic'), false)
 })

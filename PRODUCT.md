@@ -130,10 +130,10 @@ fixed run brief and mandatory instructions.
 ## Plain words (owner direction, 2026-10-26)
 
 Every control says what it does for someone who has never used Contribute:
-"Make PRs from my edits" rather than "Prepare changes", "Check GitHub" with a
-visible result rather than a silent refresh icon, "Mark ready for review" for
+"Make PRs from my edits" rather than "Prepare changes", **Sync with GitHub** with
+its last time written beside it rather than a silent refresh icon, "Mark ready for review" for
 an own draft, and labelled **Assign** and **Agent ▾** actions on PR rows. An
-action shows feedback when used. Check GitHub asks GitHub read-only whether a
+action shows feedback when used. Sync with GitHub asks GitHub read-only whether a
 repository moved past the compared commit; a quiet project reads "Up to date at
 the last check" until a fresh check says more. The agent review window states
 its steps, what GitHub will see and which model runs it before anything starts.

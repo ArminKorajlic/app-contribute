@@ -13,14 +13,16 @@ async function render(t, name, props) {
   `)
   return (await renderer).render(name, props)
 }
-test('detail opens on the GitHub-style Conversation tab with Files changed and Checks beside it', async t => {
+test('detail opens on the GitHub-style Comments tab with Files changed and Checks beside it', async t => {
   const html = await render(t, 'PullRequestDetail', { pr: { number: 7, repository: { nameWithOwner: 'team/repo' }, headRefOid: 'a'.repeat(40), baseRefOid: 'b'.repeat(40), baseRefName: 'main', url: 'https://github.com/team/repo/pull/7' } })
   if (!html) return
-  assert.match(html, /aria-pressed="true">Conversation/)
-  assert.match(html, />Files changed</)
+  assert.match(html, /aria-pressed="true">Comments/)
+  assert.match(html, />Files<span class="co-tab-more"> changed<\/span></)
   assert.match(html, />Checks<\/button>/)
-  assert.match(html, /wants to merge into <code>main<\/code>/)
-  assert.match(html, /Loading description/)
+  // The header keeps the state and the author; branch names live in the Description fold.
+  assert.doesNotMatch(html, /co-branch-flow/)
+  assert.match(html, /by <b>/)
+  assert.match(html, /Loading the conversation/)
   assert.match(html, /aria-label="Choose what an agent does with PR \d+"/)
 })
 for (const items of [[], [{ __typename: 'Issue', number: 2, title: 'Usable issue', url: 'https://github.com/team/repo/issues/2', repository: { nameWithOwner: 'team/repo' }, relationships: ['May close'] }]]) {
@@ -38,8 +40,14 @@ for (const items of [[], [{ __typename: 'Issue', number: 2, title: 'Usable issue
     assert.match(html, /Cross-references are unavailable\./)
     assert.match(html, /role="alert"/)
     assert.match(html, />Retry<\/button>/)
-    assert.match(html, /Open on GitHub/)
-    if (items.length) assert.match(html, /Issue team\/repo#2 · Usable issue/)
+    assert.match(html, /View on GitHub/)
+    if (items.length) {
+      // A boxed row with the issue icon, the title leading, and the reference line under it.
+      assert.match(html, /class="co-related-row"/)
+      assert.match(html, /co-related-icon is-issue/)
+      assert.match(html, /<strong>Usable issue<\/strong>/)
+      assert.match(html, /Issue team\/repo#2 · May close/)
+    }
     else assert.doesNotMatch(html, /Related issues &amp; PRs/)
   })
 }
@@ -111,3 +119,172 @@ for (const [additions, deletions, expected] of [
     if (deletions === null) assert.doesNotMatch(html, /[0-9]+ deletions/)
   })
 }
+
+const loadedConversation = (items = []) => ({ entries: {
+  'description:1': { data: { body: 'Body' }, loading: false },
+  'activity:1': { data: { items }, loading: false },
+  'threads:': { data: { threads: [] }, loading: false },
+  related: { data: { items: [] }, loading: false },
+} })
+
+test('the description starts folded and unanswered feedback stays visible under it, its review id copyable from the review itself', async t => {
+  const pr = { number: 9, repository: { nameWithOwner: 'team/repo' }, headRefOid: 'a'.repeat(40), baseRefOid: 'b'.repeat(40), baseRefName: 'main', url: 'https://github.com/team/repo/pull/9' }
+  const requested = [{ kind: 'review', id: 777, state: 'CHANGES_REQUESTED', user: { login: 'miljanm' }, date: '2026-11-01T10:00:00Z', body: 'Please fix' }]
+  const html = await render(t, 'PullRequestDetail', { pr, cacheStore: loadedConversation(requested),
+    record: { attention: { type: 'changes_requested', url: 'https://github.com/team/repo/pull/9#pullrequestreview-777' } } })
+  if (!html) return
+  assert.doesNotMatch(html, /<details class="co-gh-description" open/)
+  assert.match(html, /class="co-desc-content"><p class="co-branch-flow" aria-label="Branches"><code>main<\/code>/)
+  assert.match(html, /class="co-pr-feedback-flag is-blocker"/)
+  assert.match(html, /Changes requested/)
+  assert.match(html, /Not addressed yet\. Read the review under Comments/)
+  // The banner stays one calm sentence; the id lives on the review it names.
+  assert.doesNotMatch(html.slice(html.indexOf('co-pr-feedback-flag'), html.indexOf('</p>', html.indexOf('co-pr-feedback-flag'))), /co-copy-id/)
+  assert.match(html, /Copy review id 777/)
+})
+
+test('an approving review or a recorded all-clear turns the flag green', async t => {
+  const pr = { number: 9, repository: { nameWithOwner: 'team/repo' }, headRefOid: 'a'.repeat(40), baseRefOid: 'b'.repeat(40), baseRefName: 'main', url: 'https://github.com/team/repo/pull/9' }
+  const approving = [{ kind: 'review', id: 555, state: 'APPROVED', user: { login: 'irfan' }, date: '2026-11-01T10:00:00Z', body: 'LGTM' }]
+  const viaReview = await render(t, 'PullRequestDetail', { pr, cacheStore: loadedConversation(approving),
+    record: { attention: { type: 'github_activity', url: 'https://github.com/team/repo/pull/9#pullrequestreview-555' } } })
+  if (!viaReview) return
+  assert.match(viaReview, /class="co-pr-feedback-flag is-clear"/)
+  assert.match(viaReview, /Review clear/)
+  assert.match(viaReview, /Copy review id 555/)
+  const viaRun = await render(t, 'PullRequestDetail', { pr, cacheStore: loadedConversation(),
+    record: { attention: { type: 'github_activity', url: 'https://github.com/team/repo/pull/9#pullrequestreview-888' } },
+    status: { item: { state: 'all_clear', public_review: { state: 'posted', url: 'https://github.com/team/repo/pull/9#pullrequestreview-888' } } } })
+  assert.match(viaRun, /is-clear/)
+})
+
+test('an all-clear run turns the flag green only for the review it posted, never for a later comment', async t => {
+  const pr = { number: 9, repository: { nameWithOwner: 'team/repo' }, headRefOid: 'a'.repeat(40), baseRefOid: 'b'.repeat(40), baseRefName: 'main', url: 'https://github.com/team/repo/pull/9' }
+  const run = { item: { state: 'all_clear', public_review: { state: 'posted', url: 'https://github.com/team/repo/pull/9#pullrequestreview-888' } } }
+  const later = [{ kind: 'comment', id: 999, user: { login: 'irfan' }, date: '2026-11-02T10:00:00Z', body: 'There is still a bug in the diff view.' }]
+  const afterwards = await render(t, 'PullRequestDetail', { pr, cacheStore: loadedConversation(later), status: run,
+    record: { attention: { type: 'github_activity', url: 'https://github.com/team/repo/pull/9#issuecomment-999' } } })
+  if (!afterwards) return
+  assert.doesNotMatch(afterwards, /is-clear/)
+  assert.match(afterwards, /class="co-pr-feedback-flag is-news"/)
+  assert.match(afterwards, /New feedback/)
+  // An all-clear run that posted nothing public cannot vouch for a GitHub event either.
+  const unposted = await render(t, 'PullRequestDetail', { pr, cacheStore: loadedConversation(), status: { item: { state: 'all_clear', public_review: null } },
+    record: { attention: { type: 'github_activity', url: 'https://github.com/team/repo/pull/9#pullrequestreview-888' } } })
+  assert.doesNotMatch(unposted, /is-clear/)
+  assert.match(unposted, /New feedback/)
+})
+
+test('a PR without your tracked record, or with answered feedback, carries no feedback flag', async t => {
+  const pr = { number: 9, repository: { nameWithOwner: 'team/repo' }, headRefOid: 'a'.repeat(40), baseRefOid: 'b'.repeat(40), baseRefName: 'main', url: 'https://github.com/team/repo/pull/9' }
+  const bare = await render(t, 'PullRequestDetail', { pr })
+  if (!bare) return
+  assert.doesNotMatch(bare, /co-pr-feedback-flag/)
+  const answered = await render(t, 'PullRequestDetail', { pr, record: { attention: null } })
+  assert.doesNotMatch(answered, /co-pr-feedback-flag/)
+})
+
+test('comments carry their verdict color, a clock time, a Show more clamp, and no View link', async t => {
+  const pr = { number: 9, repository: { nameWithOwner: 'team/repo' }, headRefOid: 'a'.repeat(40), baseRefOid: 'b'.repeat(40), baseRefName: 'main', url: 'https://github.com/team/repo/pull/9' }
+  const html = await render(t, 'PullRequestDetail', { pr, cacheStore: { entries: {
+    'description:1': { data: { body: 'Body' }, loading: false },
+    'activity:1': { data: { items: [
+      { kind: 'review', id: 1, state: 'CHANGES_REQUESTED', user: { login: 'miljanm' }, date: '2026-10-30T21:40:00Z', body: 'Please fix', html_url: 'https://github.com/x' },
+      { kind: 'review', id: 2, state: 'APPROVED', user: { login: 'irfan' }, date: '2026-10-30T22:05:00Z', body: 'LGTM', html_url: 'https://github.com/y' },
+      { kind: 'comment', id: 3, user: { login: 'armin' }, date: '2026-10-31T08:15:00Z', body: 'Note', html_url: 'https://github.com/z' },
+    ] }, loading: false },
+    'threads:': { data: { threads: [] }, loading: false },
+    related: { data: { items: [] }, loading: false },
+  } } })
+  if (!html) return
+  assert.match(html, /co-gh-comment is-changes/)
+  assert.match(html, /co-gh-comment is-approved/)
+  assert.match(html, /class="co-gh-comment"[\s\S]*?armin/) // plain comment keeps the quiet border
+  assert.match(html, / · \d{2}:\d{2}</) // time beside the date
+  assert.doesNotMatch(html, />View<\/a>/)
+  assert.match(html, /co-comment-body/)
+  assert.match(html, /class="co-desc-body/)
+  // Every comment header carries its copyable id after the time.
+  assert.match(html, /Copy review id 1/)
+  assert.match(html, /Copy comment id 3/)
+})
+
+test('a fresh read shows a skeleton, never a Loading sentence', async t => {
+  const pr = { number: 9, repository: { nameWithOwner: 'team/repo' }, headRefOid: 'a'.repeat(40), baseRefOid: 'b'.repeat(40), baseRefName: 'main', url: 'https://github.com/team/repo/pull/9' }
+  const html = await render(t, 'PullRequestDetail', { pr })
+  if (!html) return
+  // One skeleton stands in for the whole conversation: no separate
+  // description/comments loaders, no partial reveal.
+  assert.match(html, /class="co-skel" role="status" aria-label="Loading the conversation"/)
+  assert.doesNotMatch(html, /Loading comments…|Loading description…/)
+  assert.doesNotMatch(html, /co-gh-description/)
+  assert.equal((html.match(/class="co-skel"/g) || []).length, 1)
+})
+
+test('more than four comments fold to the first four, Show all reveals the rest in order', async t => {
+  const pr = { number: 9, repository: { nameWithOwner: 'team/repo' }, headRefOid: 'a'.repeat(40), baseRefOid: 'b'.repeat(40), baseRefName: 'main', url: 'https://github.com/team/repo/pull/9' }
+  const items = [1, 2, 3, 4, 5, 6].map(n => ({ kind: 'comment', id: n, user: { login: `user${n}` }, date: `2026-10-0${n}T10:00:00Z`, body: `Comment ${n}` }))
+  const html = await render(t, 'PullRequestDetail', { pr, cacheStore: loadedConversation(items) })
+  if (!html) return
+  assert.match(html, /Show all 6 comments/)
+  assert.match(html, /user1\b/)
+  assert.match(html, /user4\b/)
+  assert.doesNotMatch(html, /user5\b|user6\b/) // the later ones wait behind Show all
+  const few = await render(t, 'PullRequestDetail', { pr, cacheStore: loadedConversation(items.slice(0, 4)) })
+  assert.doesNotMatch(few, /Show all|co-comments-toggle/)
+})
+
+test('tabs carry GitHub-style count pills: comments, files and a checks dot, no inline diff stats', async t => {
+  const pr = { number: 9, repository: { nameWithOwner: 'team/repo' }, headRefOid: 'a'.repeat(40), baseRefOid: 'b'.repeat(40), baseRefName: 'main', headRefName: 'fix/thing', url: 'https://github.com/team/repo/pull/9', changedFiles: 11, additions: 637, deletions: 45, comments: { totalCount: 2 },
+    commits: { nodes: [{ commit: { statusCheckRollup: { state: 'FAILURE', contexts: { totalCount: 42, checkRunCountsByState: [{ state: 'SUCCESS', count: 38 }, { state: 'FAILURE', count: 4 }], statusContextCountsByState: [] } } } }] } }
+  const items = [1, 2, 3, 4].map(n => ({ kind: 'comment', id: n, user: { login: `u${n}` }, date: `2026-10-0${n}T10:00:00Z`, body: `C${n}` }))
+  const html = await render(t, 'PullRequestDetail', { pr, cacheStore: loadedConversation(items) })
+  if (!html) return
+  assert.match(html, /Comments<span class="co-tab-count">4<\/span>/)
+  assert.match(html, /Files<span class="co-tab-more"> changed<\/span><span class="co-tab-count">11<\/span>/)
+  assert.match(html, /co-tab-dot is-failure/)
+  // Passed over total stays readable beside the dot.
+  assert.match(html, /Checks<span[^>]*class="co-tab-dot is-failure"[^>]*><\/span><span class="co-tab-count">38\/42<\/span>/)
+  assert.doesNotMatch(html, /co-change-total/) // the +adds −dels stay inside the Files tab
+})
+
+test('several conversations of one kind fold into a Source chats dropdown, one stays a plain button', async t => {
+  const pr = { number: 9, repository: { nameWithOwner: 'team/repo' }, headRefOid: 'a'.repeat(40), baseRefOid: 'b'.repeat(40), baseRefName: 'main', url: 'https://github.com/team/repo/pull/9' }
+  const two = await render(t, 'PullRequestDetail', { pr, cacheStore: loadedConversation(), provenance: [
+    { chat_id: 'c1', role: 'source', title: 'Build the thing' },
+    { chat_id: 'c2', role: 'source', title: 'Fix the thing' },
+    { chat_id: 'c3', role: 'review', title: 'Review it' },
+  ] })
+  if (!two) return
+  assert.match(two, /Source chats/)
+  assert.match(two, /co-chat-group/)
+  assert.doesNotMatch(two, /Source chat 2|Source chat #1/) // the list opens on demand, closed by default
+  assert.match(two, /Review chat</) // a single review chat stays a plain button
+  const one = await render(t, 'PullRequestDetail', { pr, cacheStore: loadedConversation(), provenance: [{ chat_id: 'c1', role: 'source', title: 'Build the thing' }] })
+  assert.match(one, /Source chat</)
+  assert.doesNotMatch(one, /Source chats|co-chat-group/)
+})
+
+test('files read as one line each, coloured by change, and filter once the list is long', async t => {
+  const file = (name, extra = {}) => ({ filename: name, status: 'modified', additions: 4, deletions: 1, patch: '@@ -1 +1 @@\n-a\n+b', ...extra })
+  const few = await render(t, 'PullFiles', { data: { totals: { files: 2, additions: 8, deletions: 2 }, files: [file('a.js'), file('b.js', { status: 'added' })] } })
+  if (!few) return
+  assert.match(few, /<span class="co-file-name">a\.js<\/span><span class="co-file-stat"><b class="co-file-add">\+4<\/b><b class="co-file-del">−1<\/b>/)
+  // A plain modified file needs no status; an added one says so.
+  assert.doesNotMatch(few, /co-file-status">modified/)
+  assert.match(few, /co-file-status">added/)
+  assert.doesNotMatch(few, /co-file-tools/)
+  const many = await render(t, 'PullFiles', { data: { totals: { files: 12, additions: 48, deletions: 12 }, files: Array.from({ length: 12 }, (_, index) => file(`f${index}.js`)) } })
+  assert.match(many, /aria-label="Filter files by name"/)
+  assert.match(many, />Expand all</)
+})
+
+test('on a phone the secondary PR actions keep a name for screen readers', async t => {
+  const html = await render(t, 'PullRequestDetail', { pr: { number: 7, repository: { nameWithOwner: 'team/repo' }, headRefOid: 'a'.repeat(40), baseRefOid: 'b'.repeat(40), baseRefName: 'main', url: 'https://github.com/team/repo/pull/7' } })
+  if (!html) return
+  assert.match(html, /aria-label="View on GitHub: PR 7" title="View on GitHub"/)
+  const css = (await import('node:fs')).readFileSync(new URL('../workspace-theme.js', import.meta.url), 'utf8')
+  assert.match(css, /\.co-pr-detail-actions \.co-btn-label, \.co-pr-detail \.co-tab-more \{ display:none/)
+  // The checks dot says pass or fail on a phone; the passed/total pill needs room the Review tab uses.
+  assert.match(css, /\.co-pr-detail \.co-tab-dot \+ \.co-tab-count \{ display:none/)
+})

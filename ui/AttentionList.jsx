@@ -4,21 +4,23 @@ import { Icon } from './Icons.jsx'
 import { TimeAgo } from './GithubParts.jsx'
 
 // Why a contribution is in To look at. A blocker stops the PR from merging;
-// news is feedback to read. Every button only opens the saved detail, so its
-// label says what it opens, never that it fixes anything.
+// news is feedback to read. `key` names the colour (see .is-<key> in the
+// stylesheet): one general icon, a different colour per reason. Every button
+// only opens the saved detail, so its label says what it opens, never that it
+// fixes anything.
 const ATTENTION_REASONS = {
-  merge_conflict: { label: 'Merge blocked', tone: 'blocker', icon: 'fix', action: 'Review conflict' },
-  checks_failed: { label: 'Checks failing', tone: 'blocker', icon: 'fix', action: 'Review checks' },
-  changes_requested: { label: 'Changes requested', tone: 'blocker', icon: 'feedback', action: 'Read feedback' },
-  github_activity: { label: 'New feedback', tone: 'news', icon: 'feedback', action: 'Read feedback' },
+  merge_conflict: { key: 'conflict', label: 'Merge blocked', tone: 'blocker', action: 'Review conflict' },
+  checks_failed: { key: 'checks', label: 'Checks failing', tone: 'blocker', action: 'Review checks' },
+  changes_requested: { key: 'changes', label: 'Changes requested', tone: 'blocker', action: 'View PR' },
+  github_activity: { key: 'feedback', label: 'New feedback', tone: 'news', action: 'View PR' },
 }
 // Decisions about publishing itself, whatever the record's GitHub attention.
 const KIND_REASONS = {
-  ready_attention: { label: 'Not marked ready', tone: 'blocker', icon: 'info', action: 'Review' },
-  route_attention: { label: 'Choose where to send', tone: 'blocker', icon: 'send', action: 'Choose' },
+  ready_attention: { key: 'ready', label: 'Not marked ready', tone: 'blocker', action: 'Review' },
+  route_attention: { key: 'route', label: 'Choose where to send', tone: 'blocker', action: 'Choose' },
 }
 const FEEDBACK = ATTENTION_REASONS.github_activity
-const DECISION = { label: 'Needs your decision', tone: 'blocker', icon: 'info', action: 'Open' }
+const DECISION = { key: 'decision', label: 'Needs your decision', tone: 'blocker', action: 'Open' }
 
 export function lookAtReason(item) {
   return KIND_REASONS[item?.kind]
@@ -42,23 +44,23 @@ export function groupNote(item) {
   return `${affected}${records.length} related PRs${numbers.length ? `: ${numbers.join(', ')}` : ''}`
 }
 
-function AttentionRow({ item, heading, onSelect }) {
+// One thing that needs the owner: a colour-coded icon, the PR on one line, why
+// on the second. The whole row opens it.
+export function AttentionRow({ item, heading, onSelect }) {
   const reason = lookAtReason(item)
   const detectedAt = item.record?.attention?.detected_at
   const group = groupNote(item)
+  const why = [group, item.detail].filter(Boolean).join(' · ')
   return (
-    <article className={'co-attention-row is-' + reason.tone}>
-      <Icon name={reason.icon} size={18} />
-      <button type="button" className="co-attention-main" onClick={() => onSelect?.(item)}>
-        <span className="co-attention-reason">{reason.label}</span>
+    <button type="button" className={'co-attention-row is-' + reason.tone + ' is-' + reason.key} onClick={() => onSelect?.(item)}>
+      <Icon name="info" size={18} />
+      <span className="co-attention-main">
         <strong>{heading(item)}</strong>
-        {item.detail ? <small>{item.detail}</small> : null}
-        {group || detectedAt ? <small className="co-attention-meta">
-          {group}{group && detectedAt ? ' · ' : ''}{detectedAt ? <TimeAgo prefix="Detected " value={detectedAt} /> : null}
-        </small> : null}
-      </button>
-      <button type="button" className="co-run-row-action" onClick={() => onSelect?.(item)}>{reason.action}</button>
-    </article>
+        <small><span className="co-attention-reason">{reason.label}</span>{why ? <>{why}</> : null}{detectedAt ? <>{why ? ' · ' : ''}<TimeAgo value={detectedAt} /></> : null}</small>
+      </span>
+      <Icon name="right" size={16} className="co-attention-go" />
+      <span className="co-visually-hidden">{reason.action}</span>
+    </button>
   )
 }
 
@@ -66,17 +68,37 @@ const VISIBLE_ROWS = 3
 
 // What on the owner's tracked contributions needs them, blockers first. Review
 // requests and agent questions keep their own places below.
+// What is waiting, counted by reason and ordered by urgency, so the folded bar
+// can say "1 changes requested, 4 new feedback" without picking a PR.
+function reasonCounts(items) {
+  const counts = new Map()
+  for (const item of byUrgency(items)) {
+    const reason = lookAtReason(item)
+    counts.set(reason.key, { reason, count: (counts.get(reason.key)?.count || 0) + 1 })
+  }
+  return [...counts.values()]
+}
+
+// Nothing to look at renders nothing: an empty bar would read as an all-clear
+// the app cannot prove (GitHub may be unreachable or partly loaded).
 export function AttentionList({ items = [], heading, onSelect }) {
   const [showAll, setShowAll] = useState(false)
   if (!items.length) return null
   const ordered = byUrgency(items)
   const shown = showAll ? ordered : ordered.slice(0, VISIBLE_ROWS)
+  const rest = items.length - VISIBLE_ROWS
   return (
-    <details className="co-run-fold co-look-at" aria-label="To look at" open>
-      <summary><span>To look at</span><b>{items.length}</b><Icon name="chevron" size={14} /></summary>
-      <p className="co-attention-scope">On your tracked contributions. Review requests have their own tab below.</p>
+    <details className="co-attn co-look-at" aria-label="To look at">
+      <summary>
+        <b className="co-attn-count">{items.length}</b>
+        <span className="co-attn-text">
+          <strong>{items.length === 1 ? '1 thing needs you' : `${items.length} things need you`}</strong>
+          <span className="co-attn-sum">{reasonCounts(items).map(({ reason, count }) => <span key={reason.key} className={'co-attn-rs is-' + reason.key}><i aria-hidden="true" /><b>{count}</b> {reason.label.toLowerCase()}</span>)}</span>
+        </span>
+        <span className="co-attn-toggle"><span className="co-attn-show">{items.length === 1 ? 'Show' : `Show ${items.length}`}</span><span className="co-attn-hide">Hide</span><Icon name="chevron" size={14} /></span>
+      </summary>
       <div className="co-run-list">{shown.map(item => <AttentionRow key={item.id} item={item} heading={heading} onSelect={onSelect} />)}</div>
-      {items.length > VISIBLE_ROWS ? <button type="button" className="co-quiet-action" onClick={() => setShowAll(!showAll)}>{showAll ? 'Show fewer' : `Show all ${items.length}`}</button> : null}
+      {rest > 0 ? <button type="button" className="co-attn-more" onClick={() => setShowAll(!showAll)}><Icon name="chevron" size={14} />{showAll ? 'Show fewer' : rest === 1 ? 'Show the other one' : `Show the other ${rest}`}</button> : null}
     </details>
   )
 }

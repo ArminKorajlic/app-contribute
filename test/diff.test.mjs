@@ -142,3 +142,26 @@ test('parseDiffStat splits on the last pipe for paths containing " | "', () => {
   assert.equal(stat.files[0].path, 'docs/a | b.md')
   assert.equal(stat.files[0].additions, 2)
 })
+
+test('the line-number gutter grows with the file so 4-digit numbers never run together', async () => {
+  const { lineNumberDigits } = await import('../ui/diff/parseUnifiedDiff.js')
+  const source = (await import('node:fs')).readFileSync(new URL('../ui/diff/styles.js', import.meta.url), 'utf8')
+  assert.match(source, /--diff-num: calc\(var\(--diff-digits, 3\) \* 1ch \+ 8px\)/)
+  assert.match(source, /grid-template-columns: repeat\(2, var\(--diff-num\)\)/)
+  assert.doesNotMatch(source, /repeat\(2, 3\.5ch\)/)
+  assert.equal(lineNumberDigits([{ lines: [{ oldNo: 9, newNo: 12 }] }]), 3)
+  assert.equal(lineNumberDigits([{ lines: [{ oldNo: 1084, newNo: 1504 }] }]), 4)
+  assert.equal(lineNumberDigits([{ lines: [{ oldNo: 99999, newNo: null }] }]), 5)
+})
+
+test('the gutter width of a very large file is computed without a call argument per line', async () => {
+  const { lineNumberDigits, parseUnifiedDiff } = await import('../ui/diff/parseUnifiedDiff.js')
+  const blank = 140000
+  const patch = `diff --git a/big.txt b/big.txt\nnew file mode 100644\n--- /dev/null\n+++ b/big.txt\n@@ -0,0 +1,${blank} @@\n${'+\n'.repeat(blank)}`
+  const [file] = parseUnifiedDiff(patch)
+  assert.equal(file.insertions, blank)
+  assert.equal(lineNumberDigits(file.hunks), 6)
+  // Missing, empty and non-numeric lines still fall back to the three-digit minimum.
+  assert.equal(lineNumberDigits(undefined), 3)
+  assert.equal(lineNumberDigits([{ lines: [{ oldNo: null, newNo: NaN }, {}] }, {}]), 3)
+})

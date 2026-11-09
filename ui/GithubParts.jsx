@@ -2,7 +2,7 @@
  *  Colors follow GitHub's own label and state treatment so a PR reads the same
  *  here as on github.com, in both shell themes. */
 import { Icon } from './Icons.jsx'
-import { checkSummary } from '../collaboration.js'
+import { checkSummary, isBotAuthor } from '../collaboration.js'
 
 function rgbToHsl(r, g, b) {
   const [rn, gn, bn] = [r / 255, g / 255, b / 255]
@@ -32,6 +32,36 @@ export function labelColors(hex) {
     '--co-label-light-fg': perceived > 0.453 ? '#1f2328' : '#ffffff',
     '--co-label-light-border': perceived > 0.96 ? hsl(Math.max(0, l - 25)) : 'transparent',
   }
+}
+
+// What the header's sync last did, beside its button: when it finished, or that it failed.
+export function SyncNote({ note }) {
+  if (!note) return null
+  return <span className="co-sync-note" role="status">{note.outcome?.ok ? <TimeAgo prefix="Checked " value={note.at} /> : 'Couldn’t reach GitHub'}</span>
+}
+
+// Labels in a list keep their meaning and lose the loud fill: a dot in the
+// label's own colour and plain text, "area: " dropped, two at most, and a
+// bot's PR says "bot" instead (its labels say nothing a person would use).
+// The PR page keeps GitHub's exact, filled labels.
+export function QuietLabels({ pr }) {
+  if (isBotAuthor(pr?.author?.login)) return <span className="co-quiet-label is-bot">bot</span>
+  const labels = pr?.labels?.nodes || []
+  const shown = labels.slice(0, 2)
+  const more = labels.length - shown.length
+  return <>
+    {shown.map(label => <span key={label.name} className="co-quiet-label" style={labelColors(label.color) || undefined}><i aria-hidden="true" />{label.name.replace(/^area:\s*/i, '')}</span>)}
+    {more > 0 ? <span className="co-quiet-label is-more" title={labels.slice(2).map(label => label.name).join(', ')}>+{more}</span> : null}
+  </>
+}
+
+// Where the PR stands, at the right of its row: draft, and the review decision.
+export function PullStateChips({ pr }) {
+  const decision = { CHANGES_REQUESTED: ['is-blocker', 'Changes requested'], APPROVED: ['is-ready', 'Approved'] }[pr?.reviewDecision]
+  return <>
+    {pr?.isDraft ? <span className="co-desk-chip">Draft</span> : null}
+    {decision ? <span className={'co-desk-chip ' + decision[0]}>{decision[1]}</span> : null}
+  </>
 }
 
 export function GithubLabel({ name, color }) {

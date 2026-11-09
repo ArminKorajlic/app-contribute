@@ -87,7 +87,11 @@ Run the cheapest focused checks that cover the changed files. For platform
 checks, use `scripts/wt-pytest.sh` and `scripts/wt-npm.sh` from the staged
 checkout. The Python wrapper uses the shared test runtime, and the npm wrapper
 temporarily borrows the primary checkout's dependency tree only when
-`package-lock.json` matches exactly. Do not run a direct `npm ci` or create a
+`package-lock.json` matches exactly **and the checkout is a git-registered
+worktree of the live source** — a standalone scratch clone is ineligible and
+the wrapper exits 2 with "no registered worktree has a verified matching
+install". Work from the linked worktree at `/data/contrib/<record-id>/worktree`
+rather than a scratch clone. Do not run a direct `npm ci` or create a
 checkout-local `.venv` when either wrapper can supply the exact environment.
 
 For `mobius-os/mobius` PRs, upstream CI (`.github/workflows/test.yml`) runs

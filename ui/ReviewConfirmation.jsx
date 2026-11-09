@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
+import { OPENABLE_JOBS } from '../agent-menu.js'
 import { baseTip, DRAFT_TAKEOVER_SCOPE, mayMerge, prKey, takeoverBlocker } from '../collaboration.js'
 import { mergeWhenSafeBlocker, reviewSwitchHints, reviewWindowCopy } from '../review-copy.js'
 import { focusActionRegion } from './TaskPane.jsx'
@@ -26,6 +27,18 @@ function Switch({ checked, disabled, label, detail, onChange }) {
     <span><strong>{label}</strong><small>{detail}</small></span>
     <input type="checkbox" role="switch" className="co-switch" checked={checked} disabled={disabled} aria-checked={checked} onChange={event => onChange(event.target.checked)} />
   </label>
+}
+
+// Review: who sees the result is the first choice. Posting is the only way
+// anything reaches GitHub, so the switches below it appear only then.
+function WhoSees({ posting, disabled, onChange }) {
+  return <div className="co-rw-who">
+    <h4 className="co-rw-label">Who sees the result?</h4>
+    <div className="co-seg" role="radiogroup" aria-label="Who sees the result">
+      {[['Keep private', false], ['Post to GitHub', true]].map(([label, github]) => <button key={label} type="button" role="radio" aria-checked={posting === github}
+        className={posting === github ? 'is-on' : ''} disabled={disabled} onClick={() => onChange(github)}>{label}</button>)}
+    </div>
+  </div>
 }
 
 function PullHeading({ pulls, title, titleId, onCancel, takeover }) {
@@ -76,6 +89,30 @@ function ReviewSwitches({ choice, promptOptions, capabilities, onModeChange, onO
   const setOption = (key, checked) => onOptionsChange({ ...promptOptions, ...choice.options, [key]: checked,
     ...(key === 'post_review' && !checked ? { propose_verdict: false } : {}) })
   if (!canPost && !onModeChange) return null
+  // Review starts private; the owner chooses whether it posts. Review and
+  // merge is the same window with merging on, so the verdict form and the
+  // merge switch are its real choices.
+  if (choice.intent === 'review') {
+    if (!canPost) return null
+    return <>
+      <WhoSees posting={posting} disabled={busy || !promptOptions}
+        onChange={github => onOptionsChange({ ...promptOptions, ...choice.options, post_review: github, propose_verdict: github && canPropose })} />
+      {posting && canPropose ? <div className="co-rw-options"><Switch checked={verdict} disabled={busy || !promptOptions}
+        label="Approve or request changes"
+        detail={verdict ? 'It proposes approve or request changes with its wording. You submit or discard each one here before anything is posted.' : 'Off: it posts a plain review comment and never approves or asks for changes.'}
+        onChange={checked => setOption('propose_verdict', checked)} /></div> : null}
+    </>
+  }
+  if (choice.intent === 'merge') return <div className="co-rw-options">
+    {canPropose ? <Switch checked={verdict} disabled={busy || !promptOptions}
+      label="Approve or request changes"
+      detail={verdict ? 'It proposes approve or request changes with its wording. You submit or discard each one here before anything is posted.' : 'Off: it posts a plain review comment and never approves or asks for changes.'}
+      onChange={checked => setOption('propose_verdict', checked)} /> : null}
+    {onModeChange ? <Switch checked={merge} disabled={busy || (!merge && !!mergeBlocker)}
+      label="Merge when safe"
+      detail={!merge && mergeBlocker ? mergeBlocker : hints.merge}
+      onChange={checked => onModeChange(checked ? 'review_merge' : 'review')} /> : null}
+  </div>
   return <div className="co-rw-options">
     {canPost ? <Switch checked={posting} disabled={busy || !promptOptions || (merge && !combines)}
       label="Allow posting the review on GitHub"
@@ -139,15 +176,17 @@ export function ReviewConfirmation({ choice, busy, disabled, error, onConfirm, o
   const saved = !!choice.preview_sha256
   const { draftScope, blocker } = takeoverState(choice, capabilities, saved)
   const { posting, verdict } = takeover ? {} : publicChoice(choice, promptOptions, capabilities)
-  const copy = reviewWindowCopy({ mode: choice.mode, posting, verdict, draftScope, count: choice.pulls.length, bindCurrentTarget })
+  const copy = reviewWindowCopy({ mode: choice.mode, intent: choice.intent, posting, verdict, draftScope, count: choice.pulls.length, bindCurrentTarget })
+  const postingUnavailable = choice.intent === 'merge' && !!capabilities && capabilities.post_review !== true
   const startBlocked = takeover && !!blocker
   return <section ref={confirmation} tabIndex={-1} className="co-review-window" aria-labelledby={titleId}>
     <PullHeading pulls={choice.pulls} title={copy.title} titleId={titleId} onCancel={onCancel} takeover={takeover} />
     <div className="co-rw-body">
       {takeover
-        ? <p className="co-rw-note">No options here. The agent keeps going until {choice.pulls.length === 1 ? 'the PR is' : 'the PRs are'} merged, or until it needs you.</p>
+        ? <p className="co-rw-note">No options here. The agent keeps going until {choice.pulls.length === 1 ? 'the PR is' : 'the PRs are'} merged, or until it needs you. It fixes what its own review finds.{OPENABLE_JOBS.includes('address') ? ' To act on your reviewers’ comments, use Address feedback.' : ''}</p>
         : <ReviewSwitches choice={choice} promptOptions={promptOptions} capabilities={capabilities} onModeChange={onModeChange} onOptionsChange={onOptionsChange} busy={busy} />}
       {startBlocked ? <p className="co-rw-blocker" role="status">{blocker}</p> : null}
+      {postingUnavailable ? <p className="co-rw-blocker" role="status">Posting reviews on GitHub needs a newer Möbius. This would run as a private review.</p> : null}
       <WhatHappens copy={copy} />
       {onAgentChange ? <AgentModelSettings token={token} choice={choice.agent} defaultChoice={defaultChoice} defaultHint="Your background agent setting" onChange={next => { onAgentChange(next); return true }} /> : null}
       {appId && token ? <ReviewPromptPreview token={token} appId={appId} choice={choice} onResolved={resolve} onUnsupported={() => setUnsupported(true)} /> : null}

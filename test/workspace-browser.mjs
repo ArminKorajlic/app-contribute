@@ -352,7 +352,7 @@ async function fill(node, value) {
 }
 // A launch resolves its frozen prompts/model before its approval is enabled.
 // Agent ▾ → one job. Choosing only opens the review window.
-async function chooseAgent(root, choice = 'Review only') {
+async function chooseAgent(root, choice = 'Private review') {
   await click(root.querySelector('.co-agent-menu-button'))
   await until(() => root.querySelector('[role=menuitem]'), 'Agent menu did not open')
   await click([...root.querySelectorAll('[role=menuitem]')].find(node => text(node).startsWith(choice)))
@@ -516,7 +516,7 @@ window.runWorkspaceChecks = async () => {
       ensure(text(query('.co-pr-box-head')).includes('2 selected'),'Filtering discarded hidden selection')
       // A Möbius without the core review routes: optional workflows say so, never "Checking…" forever.
       window.presetsMissing=true
-      await chooseAgent(query('.co-pr-box-head'), 'Review, fix and merge')
+      await chooseAgent(query('.co-pr-box-head'), 'Fix and merge')
       ensure(text(review()).includes('Contribution 7') && text(review()).includes('Contribution 8'),'Hidden selected identity omitted from confirmation')
       await until(()=>text(review()).includes('Needs a newer Möbius'),'A missing review-presets route kept checking')
       ensure(!text(review()).includes('Checking what this Möbius supports'),'Unsupported workflows still read as a pending check')
@@ -741,7 +741,7 @@ window.runWorkspaceChecks = async () => {
       ensure(!query('.co-pr-row'),'Empty result kept stale rows')
       window.emptyPulls=false; window.holdPulls=true
       await click(checkButton())
-      await until(()=>window.releasePulls && text(query('.co-pr-empty')).includes('Loading pull requests'),'Loading confused with empty')
+      await until(()=>window.releasePulls && query('.co-pr-skel'),'Loading confused with empty')
       ensure(!text(query('.co-pr-empty')).includes('No pull requests'),'Loading claimed an empty result')
       window.holdPulls=false; window.releasePulls(); window.releasePulls=null
       await until(()=>document.querySelectorAll('.co-pr-row').length===3,'Released inventory did not load')
@@ -1018,7 +1018,7 @@ window.runWorkspaceChecks = async () => {
       ensure(exactReads() - exactBefore === 2 && listReads() === listBefore, 'Links scanned open pages instead of exact identities')
       const provenance = query('.co-gh-provenance')
       const links = [...provenance.querySelectorAll('.co-gh-chat-link')]
-      ensure(links.map(text).join('|') === 'Local preparation|Source conversation|Review conversation', 'Provenance is not one combined section: ' + links.map(text))
+      ensure(links.map(text).join('|') === 'Saved work|Source chat|Review chat', 'Provenance is not one combined section: ' + links.map(text))
       ensure(document.querySelectorAll('.co-gh-provenance').length === 1, 'Provenance repeated')
       for (const link of links) {
         const box = link.getBoundingClientRect()

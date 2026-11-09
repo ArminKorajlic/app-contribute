@@ -7,10 +7,26 @@ export function pullPath(pr) {
   if (!/^[\w.-]+\/[\w.-]+$/.test(repo || '') || repo.split('/').some(part => part === '.' || part === '..') || !Number.isInteger(pr.number) || pr.number < 1) throw new Error('Choose a valid pull request.')
   return `repos/${repo}/pulls/${pr.number}`
 }
-export async function githubRead(token, path, signal) {
+const RETRY_DELAY_MS = 600
+const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
+
+// One quiet retry for a dropped connection or a GitHub 5xx: the failure the
+// owner would only fix by pressing Try again. A real answer (401, 404, 403)
+// and an abort are never retried.
+async function fetchGithub(token, path, signal, retry) {
   const response = await fetch(`/api/github/api/${path}`, { signal, headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json' } })
-  const data = await response.json().catch(() => null)
-  if (!response.ok || data === null) throw new Error(response.status === 401 ? 'Reconnect GitHub in Möbius Settings → Accounts to read this contribution.' : 'Could not load this information from GitHub. Try again.')
+    .catch(error => (signal?.aborted ? Promise.reject(error) : null))
+  if (retry && (!response || response.status >= 500)) {
+    await wait(RETRY_DELAY_MS)
+    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
+    return fetchGithub(token, path, signal, false)
+  }
+  return response
+}
+export async function githubRead(token, path, signal) {
+  const response = await fetchGithub(token, path, signal, true)
+  const data = response ? await response.json().catch(() => null) : null
+  if (!response?.ok || data === null) throw new Error(response?.status === 401 ? 'Reconnect GitHub in Möbius Settings → Accounts to read this contribution.' : `Could not load this information from GitHub${response ? ` (HTTP ${response.status})` : ' (no connection)'}. Try again.`)
   return data
 }
 export function assertPullVersion(pr, detail) {
@@ -134,6 +150,38 @@ export async function loadPullThreads(token, pr, after = null, signal) {
   const connection = data.reviewThreads
   return { threads: connection?.nodes?.filter(Boolean) || [], hasMore: connection?.pageInfo?.hasNextPage === true,
     nextCursor: connection?.pageInfo?.endCursor || null, errors }
+}
+const FEEDBACK_PAGE_LIMIT = 20
+
+// A checklist is complete only when nothing was left unread, so these walk
+// every page rather than the first. `partial` says a page failed, GitHub capped
+// the list, or the walk stopped at the page limit, so the list may be missing
+// items. A page that fails after the first keeps what was read; a PR that moved
+// (stale) still throws.
+async function readEveryPage(readPage, firstAt, nextAt) {
+  const pages = []
+  let at = firstAt
+  for (;;) {
+    let page
+    try { page = await readPage(at) } catch (error) {
+      if (!pages.length || error.code === 'stale') throw error
+      return { pages, partial: true }
+    }
+    pages.push(page)
+    if (!page.hasMore) return { pages, partial: pages.some(read => read.errors?.length || read.capped) }
+    at = nextAt(page)
+    if (at === null || pages.length >= FEEDBACK_PAGE_LIMIT) return { pages, partial: true }
+  }
+}
+export async function loadAllPullActivity(token, pr, signal) {
+  const { pages, partial } = await readEveryPage(page => loadPullActivity(token, pr, page, signal), 1, page => page.page + 1)
+  // Each page is ordered on its own; the whole conversation must be in time order.
+  const items = pages.flatMap(page => page.items).sort((a, b) => (Date.parse(a.date) || 0) - (Date.parse(b.date) || 0))
+  return { items, partial }
+}
+export async function loadAllPullThreads(token, pr, signal) {
+  const { pages, partial } = await readEveryPage(after => loadPullThreads(token, pr, after, signal), null, page => page.nextCursor)
+  return { threads: pages.flatMap(page => page.threads), partial }
 }
 export async function loadPullRelated(token, pr, signal) {
   const { data, errors } = await pullGraphRead(token, pr, `

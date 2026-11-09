@@ -54,9 +54,9 @@ export const isPublicFeedback = item => item.kind === 'private_review'
 
 // Decisions that wait on the owner: the project's Needs you, Mark ready and
 // Send rows. Private review work and requests belong to Prepared work.
-export function ownerAttentionCount(decisions = []) {
-  return decisions.filter(item => isPublicFeedback(item) || !['private_review', 'request'].includes(item.kind)).length
-}
+export const attentionListItems = (decisions = []) => decisions.filter(item => isPublicFeedback(item) || ![
+  'publish', 'mark_ready', 'private_review', 'request',
+].includes(item.kind))
 
 export function runUnitRecords(value) {
   const unit = value?.unit || value

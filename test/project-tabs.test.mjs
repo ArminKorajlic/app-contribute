@@ -1,26 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { ownerAttentionCount } from '../run.js'
 import { frontendModules, renderModule } from './render-harness.mjs'
-
-const open = { status: 'open', type: 'pr' }
-const unit = records => ({ type: 'record', records })
-
-test('the owner attention count covers Needs you, Mark ready and Send, not private review work', () => {
-  const decisions = [
-    { kind: 'public_attention', unit: unit([open]) },
-    { kind: 'mark_ready', unit: unit([{ status: 'draft' }]) },
-    { kind: 'publish', unit: unit([{ status: 'prepared' }]) },
-    { kind: 'private_review', unit: unit([{ status: 'prepared' }]) },
-    { kind: 'request', unit: unit([{ status: 'prepared' }]) },
-    // Feedback on a published PR is news for the owner.
-    { kind: 'private_review', unit: unit([open]), record: { ...open, needs_attention: true } },
-    // A healthy published parent does not make its private child's review news.
-    { kind: 'private_review', unit: unit([open, { status: 'prepared' }]), record: open },
-  ]
-  assert.equal(ownerAttentionCount(decisions), 4)
-  assert.equal(ownerAttentionCount([]), 0)
-})
 
 let renderer
 async function ui(t) {
@@ -64,7 +44,7 @@ test('the PR list follows its tab: requests explain themselves and My work shows
   const base = { appId: 'app', token: 'token', project, conn: { state: 'connected', login: 'owner' } }
   const all = render('PullRequests', base)
   assert.match(all, /aria-label="Filter pull requests"/)
-  assert.match(all, /Show: opened by me/)
+  assert.match(all, />Opened by me</)
   const requests = render('PullRequests', { ...base, scope: 'requests' })
   assert.match(requests, /PRs where someone asked for your review/)
   assert.doesNotMatch(requests, /aria-label="Filter pull requests"/)
@@ -99,4 +79,18 @@ test('the Review requests tab never calls the inbox empty while more PRs can loa
   assert.doesNotMatch(searched, /You have/, 'a search may exclude the waiting requests, so their count is not claimed')
   const done = render('EmptyPulls', { scope: 'requests', filter: 'all', query: '', hasNextPage: false, waiting: 0 })
   assert.match(done, /No review requests right now/)
+})
+
+test('Edits is a tab only while the project has edits, with its count, and the PR list stays mounted', async t => {
+  const { render } = await ui(t) || {}
+  if (!render) return
+  const scopes = []
+  const html = render('ProjectTabs', { reviewCount: 0, renderPullRequests: view => { scopes.push(view.scope); return 'PR-LIST' }, edits: 'EDITS-PANEL', editsCount: 22, defaultTab: 'edits' })
+  assert.match(html, />Edits<span class="co-tab-count">22<\/span>/)
+  assert.match(html, /PR-LIST[\s\S]*EDITS-PANEL/)
+  assert.deepEqual(scopes, ['edits'])
+  const none = render('ProjectTabs', { reviewCount: 0, renderPullRequests: () => null, defaultTab: 'edits' })
+  assert.doesNotMatch(none, />Edits</)
+  // With no edits the tab falls back to All PRs rather than showing an empty panel.
+  assert.match(none, /aria-selected="true"[^>]*>All PRs/)
 })
