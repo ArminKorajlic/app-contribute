@@ -3,7 +3,8 @@
 
 An agent answering a PR's review feedback never publishes anything itself. `save`
 records the finished work for the owner to read in Contribute; `post` is the only
-command with public effects, and it re-checks the owner's approval and the PR first.
+command with public effects. It publishes only when the host offers an owner grant (the gate,
+below), and then re-checks the owner's approval and the PR first.
 """
 
 from __future__ import annotations
@@ -27,6 +28,7 @@ from typing import Any, Iterator
 from urllib.parse import quote
 
 from agent_snapshot import find_ledger
+from review_prs import capabilities, find_app_id, load_core
 
 
 EXIT_BAD_INPUT = 2  # nothing was written
@@ -34,6 +36,10 @@ EXIT_REFUSED = 3  # a check failed before any public step
 EXIT_FAILED = 4  # `post` stopped part-way; its receipts keep what was done
 
 RESULT_VERSION = 1
+# THE GATE on `post` (respond-result.md, "The gate"). The agent can write the approval file itself, so a matching approval does not
+# show the owner pressed Post. `post` publishes only when this Möbius advertises an owner grant the agent cannot mint, as this
+# capability of review-presets. No Möbius does yet. The app holds the same name (respond-result.js, OWNER_GRANT_CAPABILITY).
+OWNER_GRANT_CAPABILITY = "owner_grant"
 GH_TIMEOUT = 60
 GIT_TIMEOUT = 300
 
@@ -48,7 +54,10 @@ MAX_DESCRIPTION = 60_000
 MAX_LOGINS = 10
 MAX_TESTS = 500
 MAX_COMMITS = 60
+MAX_COMMIT_TITLE = 300
 MAX_FILES = 300
+MAX_LOOKUP_PAGES = 10  # of 100 comments: where a reply that may have gone out is looked for
+MAX_PATH = 4096  # Linux PATH_MAX: no checkout holds a longer one, so the app can read every path Git reports
 MAX_FILE_PATCH = 60_000
 MAX_ALL_PATCHES = 400_000
 # The app reads these numbers in JavaScript, where larger integers lose precision.
@@ -95,6 +104,21 @@ class CommandError(Exception):
   """A `gh` or `git` call failed. The message is safe to print: no credentials, one line."""
 
 
+class WriteRefused(CommandError):
+  """GitHub answered a write with a 4xx, so it was not applied. Any other failure (a 5xx, a timeout,
+  a dropped connection) leaves it unknown whether the write landed or still will."""
+
+
+def owner_grant_offered() -> bool:
+  """Whether this Möbius advertises the owner grant. Any failure to ask (no core, no network, an unexpected
+  answer) counts as no: Post is never allowed on a guess."""
+  try:
+    core = load_core()
+    return capabilities(core, find_app_id(core)).get(OWNER_GRANT_CAPABILITY) is True
+  except Exception:  # fail closed, whatever the reason
+    return False
+
+
 # --- running programs -------------------------------------------------------------------
 
 
@@ -131,6 +155,13 @@ def git(repo: Path, *args: str, timeout: int = GIT_TIMEOUT) -> str:
   return done.stdout.decode("utf-8", "replace")
 
 
+def refused_by_github(stderr: bytes) -> bool:
+  """Whether `gh` reported a 4xx: its first error line ends "(HTTP 422)". A 408 is a timeout, not a refusal."""
+  first_line = stderr.decode("utf-8", "replace").strip().split("\n", 1)[0]
+  status = re.search(r"\(HTTP ([0-9]{3})\)\s*$", first_line)
+  return bool(status) and 400 <= int(status[1]) < 500 and status[1] != "408"
+
+
 def gh_api(path: str, method: str = "GET", body: dict[str, Any] | None = None) -> Any:
   """The one door to GitHub. A body travels on standard input, so any text reaches GitHub
   exactly as stored, whatever quotes, newlines or Unicode it holds."""
@@ -140,7 +171,8 @@ def gh_api(path: str, method: str = "GET", body: dict[str, Any] | None = None) -
   stdin = json.dumps(body, ensure_ascii=False).encode("utf-8") if body is not None else None
   done = run(command, stdin=stdin)
   if done.returncode != 0:
-    raise CommandError(f"GitHub did not accept {method} {path}: {scrub(done.stderr or done.stdout)}")
+    failure = WriteRefused if method != "GET" and refused_by_github(done.stderr) else CommandError
+    raise failure(f"GitHub did not accept {method} {path}: {scrub(done.stderr or done.stdout)}")
   text = done.stdout.decode("utf-8", "replace").strip()
   if not text:
     return None
@@ -446,7 +478,10 @@ def list_commits(repo: Path, pr_head: str) -> list[dict[str, str]]:
   commits = []
   for record in filter(None, output.split("\0")):
     sha, _, message = record.lstrip("\n").partition("\n")
-    commits.append({"sha": sha, "title": message.split("\n", 1)[0].strip()})
+    title = message.split("\n", 1)[0].strip()
+    if len(title) > MAX_COMMIT_TITLE:
+      title = title[:MAX_COMMIT_TITLE - 1].rstrip() + "…"  # a label, cut for display: the SHA names the commit
+    commits.append({"sha": sha, "title": title})
   if len(commits) > MAX_COMMITS:
     raise BadInput(f"There are {len(commits)} new commits; the limit is {MAX_COMMITS}. Split the work.")
   return commits
@@ -516,6 +551,10 @@ def changed_files(repo: Path, pr_head: str) -> list[dict[str, Any]]:
     files.append(entry)
   if len(files) > MAX_FILES:
     raise BadInput(f"{len(files)} files changed; the limit is {MAX_FILES}. Split the work.")
+  for entry in files:
+    for name in (entry["path"], entry.get("previous_path") or ""):
+      if len(name) > MAX_PATH:
+        raise BadInput(f"A changed file's path has {len(name)} characters; the limit is {MAX_PATH}.")
   add_patches(repo, pr_head, files)
   return files
 
@@ -571,7 +610,7 @@ def build_result(
     "files": work.files,
     "bundle": f"{result_id}.bundle" if work.commits else None,
     "digest": None,
-    "receipts": {"push": None, "replies": [], "description": None, "rerequest": None},
+    "receipts": {"push": None, "replies": [], "description": None, "rerequest": None, "sending": None},
     "error": None,
   }
   result["digest"] = compute_digest(result)
@@ -714,10 +753,11 @@ def show_command(args: argparse.Namespace) -> int:
 # --- post ---------------------------------------------------------------------------------
 
 
-def require_same_pull(result: dict[str, Any], facts: dict[str, Any]) -> None:
+def require_same_pull(result: dict[str, Any], facts: dict[str, Any], outcome: str = "nothing was posted") -> None:
+  """The PR is still the one the owner approved. `outcome` says what the refusal leaves undone."""
   pr = result["pr"]
   if facts["state"] != "open":
-    raise Refused(f"The PR is {facts['state']}, not open, so nothing was posted.")
+    raise Refused(f"The PR is {facts['state']}, not open, so {outcome}.")
   # Once the push is receipted, GitHub's head is the tip; before that it is still the head the
   # work was built on, or the tip when a finished push lost its receipt (the push step then
   # finds nothing left to send and only records it).
@@ -725,10 +765,14 @@ def require_same_pull(result: dict[str, Any], facts: dict[str, Any]) -> None:
   if facts["head_sha"] not in allowed:
     raise Refused(
       f"The PR moved: GitHub's head is {facts['head_sha'][:7]} but this result was built on "
-      f"{pr['head_sha'][:7]}, so nothing was posted. Ask for another Respond pass."
+      f"{pr['head_sha'][:7]}, so {outcome}. Ask for another Respond pass."
     )
   if facts["head_ref"] != pr["head_ref"] or str(facts["head_repo"]).lower() != pr["head_repo"].lower():
-    raise Refused("The PR's head branch is not the one this result was built on, so nothing was posted.")
+    raise Refused(f"The PR's head branch is not the one this result was built on, so {outcome}.")
+  if facts["base_ref"] != pr["base_ref"]:
+    raise Refused(
+      f"The PR now targets {facts['base_ref']}, not {pr['base_ref']} as when this result was approved, so {outcome}."
+    )
 
 
 def require_postable(store: Store, pull: PullRef, result: dict[str, Any]) -> None:
@@ -809,21 +853,92 @@ class Posting:
     self.persist()
     print(f"Pushed {counted(len(commits), 'commit')} to {pr['head_repo']}:{pr['head_ref']} (tip {tip[:7]}).")
 
+  def recheck(self) -> None:
+    """The PR is read again right before a public step, so a PR that moved, was retargeted or was
+    closed part-way through stops what is left. What already went out stays in the receipts."""
+    try:
+      facts = read_pull(self.pull)
+    except CommandError as error:
+      raise CommandError(f"could not confirm the PR on GitHub before this step ({error})") from error
+    require_same_pull(self.result, facts, "the steps still to do were not posted")
+
+  def published_reply(self, index: int, since: str) -> str | None:
+    """The link of the comment a reply that may have reached GitHub became, or None when none
+    of the owner's comments says exactly that since the attempt began."""
+    repo, number, reply = self.result["repo"], self.result["number"], self.result["replies"][index]
+    me = str(gh_api("user").get("login", "")).lower()
+    if not me:
+      raise CommandError("GitHub did not say whose comments to look for")
+    # Clocks differ a little: look from a minute before the attempt began.
+    cutoff = (dt.datetime.fromisoformat(since.replace("Z", "+00:00")) - dt.timedelta(minutes=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    thread = reply["reply_to"]
+    listing = (f"repos/{repo}/issues/{number}/comments" if thread is None else f"repos/{repo}/pulls/{number}/comments")
+    wanted = reply["body"].replace("\r\n", "\n").strip()
+    for page in range(1, MAX_LOOKUP_PAGES + 1):
+      comments = gh_api(f"{listing}?per_page=100&since={cutoff}&page={page}")
+      if not isinstance(comments, list):
+        raise CommandError("GitHub's list of comments was not a list")
+      for comment in comments:
+        if not isinstance(comment, dict) or str((comment.get("user") or {}).get("login", "")).lower() != me:
+          continue
+        if thread is not None and comment.get("in_reply_to_id") != thread:
+          continue
+        if str(comment.get("body", "")).replace("\r\n", "\n").strip() == wanted and str(comment.get("created_at", "")) >= cutoff:
+          return str(comment.get("html_url") or "")
+      if len(comments) < 100:
+        return None
+    raise CommandError("too many recent comments to tell whether the reply went out")
+
+  def settle_unknown_reply(self) -> None:
+    """A reply that was being sent when an earlier run ended (an answer lost, a timeout, a crash) stays
+    unknown until GitHub shows it: found, it is receipted and never sent again. Not found is not "never
+    sent": a request that timed out can still finish on GitHub after any one lookup, so the step stops and
+    the reply is not sent. Only a refusal from GitHub (WriteRefused) clears the record without a receipt."""
+    receipts = self.result["receipts"]
+    attempt = receipts.get("sending")
+    if not attempt:
+      return
+    if not (isinstance(attempt, dict) and isinstance(attempt.get("index"), int) and isinstance(attempt.get("at"), str)
+            and 0 <= attempt["index"] < len(self.result["replies"])):
+      raise CommandError("the record of the reply that was being sent is unreadable, so it was not sent again")
+    index, total = attempt["index"], len(self.result["replies"])
+    if all(receipt["index"] != index for receipt in receipts["replies"]):
+      url = self.published_reply(index, attempt["at"])
+      if url is None:
+        raise CommandError(
+          f"reply {index + 1} of {total} may still reach GitHub: its first attempt got no answer, none of your recent comments "
+          "shows it yet, and it was not sent again. Check the PR: once the comment is there, trying again records it; "
+          "if it never appears, post that reply by hand, then try again"
+        )
+      receipts["replies"].append({"index": index, "url": url, "at": utc_now()})
+      print(f"Reply {index + 1} of {total} had reached GitHub already: {url or 'no link returned'}")
+    receipts["sending"] = None
+    self.persist()
+
   def post_replies(self) -> None:
     repo, number, replies = self.result["repo"], self.result["number"], self.result["replies"]
-    receipts = self.result["receipts"]["replies"]
-    posted = {receipt["index"] for receipt in receipts}
+    receipts = self.result["receipts"]
+    self.settle_unknown_reply()
     for index, reply in enumerate(replies):
-      if index in posted:
+      if any(receipt["index"] == index for receipt in receipts["replies"]):
         continue
+      self.recheck()
       path = (f"repos/{repo}/issues/{number}/comments" if reply["reply_to"] is None
               else f"repos/{repo}/pulls/{number}/comments/{reply['reply_to']}/replies")
+      # Saved before the write: whatever happens to this process or the connection, the next run
+      # knows this reply may be out and looks for it before sending anything.
+      receipts["sending"] = {"index": index, "at": utc_now()}
+      self.persist()
       try:
         response = gh_api(path, "POST", {"body": reply["body"]})
       except CommandError as error:
+        if isinstance(error, WriteRefused):
+          receipts["sending"] = None  # GitHub said no: the reply is known not to be out, so nothing is left to look for
+          self.persist()
         raise CommandError(f"reply {index + 1} of {len(replies)}: {error}") from error
       url = response.get("html_url") if isinstance(response, dict) else None
-      receipts.append({"index": index, "url": url if isinstance(url, str) else "", "at": utc_now()})
+      receipts["replies"].append({"index": index, "url": url if isinstance(url, str) else "", "at": utc_now()})
+      receipts["sending"] = None
       self.persist()
       print(f"Posted reply {index + 1} of {len(replies)}: {url or 'no link returned'}")
 
@@ -831,6 +946,7 @@ class Posting:
     result = self.result
     if result["description"] is None or result["receipts"]["description"]:
       return
+    self.recheck()
     gh_api(f"repos/{result['repo']}/pulls/{result['number']}", "PATCH", {"body": result["description"]})
     result["receipts"]["description"] = {"at": utc_now()}
     self.persist()
@@ -840,6 +956,7 @@ class Posting:
     result = self.result
     if not result["rerequest"] or result["receipts"]["rerequest"]:
       return
+    self.recheck()
     reviewers = list(result["rerequest"])
     gh_api(f"repos/{result['repo']}/pulls/{result['number']}/requested_reviewers", "POST", {"reviewers": reviewers})
     result["receipts"]["rerequest"] = {"at": utc_now(), "reviewers": reviewers}
@@ -847,7 +964,7 @@ class Posting:
     print(f"Asked {', '.join(reviewers)} for a new review.")
 
   def fail(self, step: str, error: Exception) -> PostFailed:
-    message = str(error) if isinstance(error, CommandError) else f"unexpected {type(error).__name__}: {error}"
+    message = str(error) if isinstance(error, (CommandError, Stop)) else f"unexpected {type(error).__name__}: {error}"
     self.result["state"] = "failed"
     self.result["error"] = {"step": step, "message": message}
     self.persist()
@@ -899,8 +1016,18 @@ def print_plan(pull: PullRef, result: dict[str, Any]) -> None:
     print(f"  {number}. {line}")
 
 
+def require_owner_grant() -> None:
+  if not owner_grant_offered():
+    raise Refused(
+      "Post is off for now: this Möbius cannot yet confirm that the owner pressed it, and the approval file alone is not proof "
+      "because the agent can write it. Nothing was posted; post --dry-run still shows the plan."
+    )
+
+
 def post_command(args: argparse.Namespace) -> int:
   pull = parse_pull(args.pr)
+  if not args.dry_run:
+    require_owner_grant()  # before anything is read or written: a refused post leaves no trace
   store = open_store()
   # A dry run, or a PR with nothing saved, must leave no trace: not even a lock file.
   needs_lock = not args.dry_run and store.result_file(pull).exists()
@@ -934,7 +1061,7 @@ def build_parser() -> argparse.ArgumentParser:
   show = commands.add_parser("show", help="print the saved result without patches, and whether it is approved")
   show.add_argument("--pr", required=True, help="owner/repo#123")
   show.set_defaults(run=show_command)
-  post = commands.add_parser("post", help="publish the approved result: the only command that does")
+  post = commands.add_parser("post", help="publish the approved result: the only command that does (off until the host offers an owner grant)")
   post.add_argument("--pr", required=True, help="owner/repo#123")
   post.add_argument("--id", required=True, help="the result id Contribute named")
   post.add_argument("--dry-run", action="store_true", help="check everything and print the plan, change nothing")

@@ -15,7 +15,7 @@ import { ActionsMenu } from './ActionsMenu.jsx'
 import { ReviewDialog } from './ReviewDialog.jsx'
 import { AddressFeedbackWindow } from './AddressFeedback.jsx'
 import { savedFindings } from '../address-feedback.js'
-import { responseView } from '../respond-result.js'
+import { ownerGrantOffered, responseView } from '../respond-result.js'
 import { approveResponse, discardResponse } from '../respond-flow.js'
 import { ReviewConfirmation } from './ReviewConfirmation.jsx'
 import { ActionConfirm } from './ActionConfirm.jsx'
@@ -533,9 +533,10 @@ export function PullRequests({ appId, token, project, conn, onChanged, onReviewP
       onStart: job => choose([pr], job, prKey(pr)),
       onFix: onStartAgent ? () => choose([pr], 'respond', prKey(pr)) : undefined,
       response: answer,
+      ownerGrant: ownerGrantOffered(capabilities),
       respondBusy: respondBusy === prKey(pr),
       respondError: respondFailure?.key === prKey(pr) ? respondFailure.message : '',
-      onPostResponse: answer && (again => answerAction(pr, () => approveResponse({ slug: answer.slug, digest: answer.result.digest, pr, chat: respondChatOf(respondChats, pr), token, again }))),
+      onPostResponse: answer && (again => answerAction(pr, () => approveResponse({ slug: answer.slug, digest: answer.result.digest, pr, chat: respondChatOf(respondChats, pr), token, capabilities, again }))),
       onDiscardResponse: answer && (() => answerAction(pr, () => discardResponse({ slug: answer.slug, digest: answer.result.digest }))),
       onRespondAgain: onStartAgent ? () => choose([pr], 'respond', prKey(pr)) : undefined,
       onIgnore: onIgnoreReview ? item => setIgnoring({ pr, item }) : undefined,
@@ -587,8 +588,10 @@ export function PullRequests({ appId, token, project, conn, onChanged, onReviewP
     },
   }
   const closeAction = () => setActing(null)
-  // A merge changes the list (the PR leaves it), so it reads again once done.
-  const actionDialog = acting ? <ReviewDialog onClose={closeAction}><ActionConfirm pr={acting.pr} copy={ACTION_COPY[acting.intent](acting.pr, { status: statusFor(acting.pr), ignored: ignoredReviews, standing: standingOf(acting.pr) })} onConfirm={({ choice }) => actionHandlers[acting.intent]({ ...acting, choice })} onDone={() => { if (acting.intent !== 'open_for_review' || !isPersonalDraft(acting.record)) { void load(); void onChanged?.() } }} onClose={closeAction} /></ReviewDialog> : null
+  // A merge changes the list (the PR leaves it), so it reads again once done. A write GitHub may have
+  // taken reads it again too, and the sheet waits for that read before it lets the owner back to the list.
+  const readAgain = () => Promise.allSettled([load(), onChanged?.()])
+  const actionDialog = acting ? <ReviewDialog onClose={closeAction}><ActionConfirm pr={acting.pr} copy={ACTION_COPY[acting.intent](acting.pr, { status: statusFor(acting.pr), ignored: ignoredReviews, standing: standingOf(acting.pr) })} onConfirm={({ choice }) => actionHandlers[acting.intent]({ ...acting, choice })} onDone={() => { if (acting.intent !== 'open_for_review' || !isPersonalDraft(acting.record)) void readAgain() }} onUnconfirmed={readAgain} onClose={closeAction} /></ReviewDialog> : null
   const assignPane = <TaskPane id="task:assign" dock={false}>{assigning ? <AssigneePicker key={assigning.map(prKey).join(',')} pulls={assigning} appId={appId} token={token} ownLogin={conn.login} onClose={() => { setAssigning(null); task?.close() }} onAssigned={(login, keys) => {
       viewRef.current = acknowledgeAssignment(viewRef.current, keys, login, ++generation.current)
       setView(viewRef.current)

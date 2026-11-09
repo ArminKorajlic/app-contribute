@@ -12,7 +12,8 @@ the commits and changed files, the tests) and the owner presses **Post**, **Repl
 chat** or **Discard**. Post sends the same chat one message that tells it to run
 `respond_result.py post`; that command checks the owner's approval and posts exactly
 what was shown, in a fixed order: push the commits, post the replies, update the
-description, ask for the re-review.
+description, ask for the re-review. **Until the host can vouch for the owner's press
+(the gate, below), Post is off**: the card still shows everything, and nothing is posted.
 
 ## Where things live
 
@@ -29,6 +30,37 @@ whose slug is `contribute`; the helper finds it in the database, like
 
 One result per PR: saving again replaces it. Two writers never share a file, so nothing
 needs compare-and-swap. Every write is atomic (temporary file, then rename).
+
+## The gate: Post is off until the host vouches for the owner
+
+The decision file is an ordinary file in the app's storage, and the responding agent can
+write that storage itself, so a decision that names the right result and digest does not
+show that the owner pressed Post. Until the host can show it, nothing is published.
+
+* **The capability.** The host advertises `owner_grant` in the `capabilities` of
+  `GET /api/github/contributions/<app id>/review-presets`, the place the app already reads
+  `merge_now`, `review_fix_merge` and the other host features. `true` means: the host
+  provides an owner grant, bound to one result and digest, that only the owner's own
+  session can issue and the responding agent cannot mint. No Möbius advertises it today,
+  so the gate is **off**.
+* **Where it is checked, once on each side.** In the app, `ownerGrantOffered()` in
+  `respond-result.js` (constant `OWNER_GRANT_CAPABILITY`) decides whether the card's Post,
+  Send again and Try again are on (`ownerGrant` on `ResponseCard`, from `reviewProps` in
+  `ui/PullRequests.jsx`) and whether `approveResponse()` in `respond-flow.js` writes
+  anything. In the helper, `owner_grant_offered()` in `respond_result.py` (constant
+  `OWNER_GRANT_CAPABILITY`) is asked by `post` before it reads or writes anything. It asks
+  the host the way `review_prs.py` does (`SCRIPTS_DIR`, then review-presets) and counts any
+  failure to ask as no.
+* **Off means.** `post` exits 3 with one sentence and publishes nothing (no receipts, no
+  state change, not even a lock file); `post --dry-run`, `save` and `show` work as before.
+  In the app the Post button is disabled with the reason on the card ("Post is off for now:
+  Möbius cannot yet confirm it was you who pressed it. The answer stays saved. Copy the
+  replies to post them yourself, or use Reply in chat."); Reply in chat and Discard (which
+  publishes nothing) stay on; the answer, replies and description stay readable.
+* **On means only that the first check passes.** The approval, the digest and the PR checks
+  below stay exactly as they are and are the second check. The gate does not itself verify a
+  grant: whoever makes a host advertise `owner_grant` must also make Post obtain the grant
+  and `post` check it, or the approval file is trusted again.
 
 ## The result (`version: 1`)
 
@@ -76,8 +108,11 @@ needs compare-and-swap. Every write is atomic (temporary file, then rename).
 * A point answering the owner's saved agent-review findings has the reviewer `Agent review`, exactly.
 * Caps: 30 points; point title 160, answer 400, reviewer 60 characters; 12 replies of at
   most 20 000 characters; description at most 60 000; 10 logins; tests 500; 60 commits;
-  300 files; a file's patch 60 000 and all patches together 400 000 characters.
-  Text must be valid Unicode (no lone surrogates).
+  300 files; a file's path 4 096 (Linux's `PATH_MAX`, so every path Git reports fits); a file's
+  patch 60 000 and all patches together 400 000 characters. A commit title longer than 300
+  characters is cut to 300 (ending in `…`) when saved; the SHA is what names the commit. Every
+  count is in characters (Unicode code points), on both sides: an emoji is one character, in
+  Python and in the app's JavaScript. Text must be valid Unicode (no lone surrogates).
 * `digest` is the SHA-256 (lower-case hex) of the UTF-8 bytes of this object written with
   `json.dumps(..., sort_keys=True, separators=(",", ":"), ensure_ascii=False)`:
   `{"v": 1, "pr_head": pr.head_sha, "tip": tip_sha, "points": [{reviewer, title, ending, commit, answer}…],
@@ -85,6 +120,7 @@ needs compare-and-swap. Every write is atomic (temporary file, then rename).
   It binds what the owner read to what gets posted.
 * `receipts`: `push` is `{"sha", "at"}` once done; `replies` is a list of
   `{"index", "url", "at"}`; `description` is `{"at"}`; `rerequest` is `{"at", "reviewers"}`.
+  `sending` is `{"index", "at"}` while a reply may be on its way or is unknown (below), else `null`.
   `error` is `{"step", "message"}` when `state` is `failed`.
 
 ## The decision (`respond-decisions/<slug>.json`, written by the app)
@@ -133,12 +169,14 @@ Prints the saved result without patches, and whether the owner has approved it.
 ### `post --pr owner/repo#N --id RESULT_ID [--dry-run]`
 
 The only command that does public things. Contribute tells the chat to run it after the
-owner presses Post. In this order, it:
+owner presses Post. Unless `--dry-run` is given it first asks the gate (above) and, when
+the host does not offer the owner grant, refuses with exit 3 before touching anything.
+Then, in this order, it:
 
 1. loads the result (its `id` must match; `posted` means nothing to do, exit 0);
 2. requires the decision file to say `approved` for this `result_id` and the stored `digest`;
 3. recomputes the digest from the result's content and requires it to equal the stored one;
-4. reads the PR from GitHub: open, and its head is `pr.head_sha` (or `tip_sha` when the
+4. reads the PR from GitHub: open, still aimed at `pr.base_ref`, and its head is `pr.head_sha` (or `tip_sha` when the
    push already happened, see below);
 5. with `--dry-run`, prints the plan and stops here;
 6. sets `state` to `posting`, then does each step that has no receipt yet:
@@ -146,18 +184,33 @@ owner presses Post. In this order, it:
      (never forced), from the bundle (fetch the PR head, fetch the bundle, push); then check
      GitHub shows `tip_sha` as that branch's head. Skipped when there are no commits;
    * **replies**: one `POST` each (`issues/<n>/comments`, or
-     `pulls/<n>/comments/<reply_to>/replies` when `reply_to` is set), in order;
+     `pulls/<n>/comments/<reply_to>/replies` when `reply_to` is set), in order. Before each
+     write `receipts.sending` is saved; it is cleared once the receipt is, or when GitHub answers
+     the write with a 4xx (refused, so not applied). Any other end of the write (a timeout, a dropped
+     connection, a 5xx, a crash) leaves the reply **unknown**, and `post` never sends an unknown
+     reply again. A run that finds `sending` set only looks on GitHub, through the owner's recent
+     comments (`GET user`, then `issues/<n>/comments` or `pulls/<n>/comments` with `since` a minute
+     before `sending.at`), for one with exactly that body (and in that thread): found, it is
+     receipted with its link, `sending` is cleared and the post carries on; not found, the step
+     stops (exit 4) and the reply stays unknown, because a request that timed out can still finish
+     on GitHub after any one lookup. If GitHub cannot be asked, the step stops too. Only the owner
+     settles a reply that never shows up: posting that exact reply by hand, which the next look finds;
    * **description**: `PATCH pulls/<n>` with the new body, when `description` is not `null`;
    * **re-request**: `POST pulls/<n>/requested_reviewers`, when `rerequest` is not empty;
    each success is written to `receipts` at once, so a second run continues where the first
-   stopped and never repeats a step;
+   stopped and never repeats a step. The PR is read again (open, same head branch, same base,
+   head still `pr.head_sha` or the tip) right before every step after the first and before every
+   reply, so a PR that moved, was retargeted or was closed part-way stops what is left; what
+   already went out stays in the receipts;
 7. sets `state` to `posted`.
 
-Refusals before step 6 change nothing and exit 3 with the reason (not approved, digest or id
-mismatch, PR closed, PR moved). A failure inside step 6 sets `state` to `failed` with
+Refusals before step 6 change nothing and exit 3 with the reason (no owner grant from the
+host, not approved, digest or id mismatch, PR closed, PR moved or retargeted). A failure inside step 6 sets `state` to `failed` with
 `error`, keeps the receipts and exits 4. Every GitHub write goes through `gh api` with the
 JSON body on standard input. Test hooks: `RESPOND_APP_DIR` replaces the storage directory;
-`RESPOND_GIT_REMOTE` replaces the Git URL used to fetch and push.
+`RESPOND_GIT_REMOTE` replaces the Git URL used to fetch and push; the gate reads the host through
+`SCRIPTS_DIR` (its `github_review.py`), which the tests point at `test/fixtures/fake_host`, a fake
+host whose capabilities come from `FAKE_HOST_CAPABILITIES`.
 
 Exit codes: 0 done, 2 bad input, 3 refused, 4 failed part-way.
 
@@ -177,8 +230,9 @@ Exit codes: 0 done, 2 bad input, 3 refused, 4 failed part-way.
   reads "Feedback to answer" again.
 * **Review tab card**: points with their ending, the replies word for word, the description,
   commits and changed files, the tests, what Post will do in order, and Post, Reply in chat and
-  Discard. Post is off while the PR moved, while the chat is working, and while the chat waits on
-  one of its own cards (a chat with an open card refuses new messages).
+  Discard. Post is off without the host's owner grant (the gate), while the PR moved, while the
+  chat is working, and while the chat waits on one of its own cards (a chat with an open card
+  refuses new messages); the card says why in words.
 * **Post** re-reads the result, checks its digest is the one on screen and the PR head is still
   `pr.head_sha`, writes the decision (`approved`), then sends the chat (`chat_id`) this message
   with the stable id `respond-post-<result id>`; if the platform definitely refuses it, the

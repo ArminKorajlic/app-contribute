@@ -72,7 +72,7 @@ function ReviewCards(props) {
   // While the helper posts, the chat is not "working on feedback": the answer's own card says what it is doing.
   const posting = ['approved', 'posting'].includes(response?.status)
   const job = respondChat && standing?.jobKind === 'respond' && !posting ? <RespondJobBox chat={respondChat} pr={pr} standing={standing} /> : null
-  const answer = response ? <ResponseCard pr={pr} response={response} chat={respondChat} busy={props.respondBusy} error={props.respondError} readOnly={props.readOnly}
+  const answer = response ? <ResponseCard pr={pr} response={response} chat={respondChat} busy={props.respondBusy} error={props.respondError} readOnly={props.readOnly} ownerGrant={props.ownerGrant === true}
     onPost={props.onPostResponse} onDiscard={props.onDiscardResponse} onRespondAgain={allowed(standing, 'respond') ? props.onRespondAgain : undefined} /> : null
   if (!job && !answer) return <SavedReview {...props} />
   // A finished answer that is older than the saved review steps below it: the newer review is what needs you now.

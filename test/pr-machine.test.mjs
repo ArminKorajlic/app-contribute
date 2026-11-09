@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFileSync } from 'node:fs'
-import { ACTIONS, STATES, actionBlocker, decide } from '../pr-machine.js'
+import { ACTIONS, STATES, decide } from '../pr-machine.js'
 
 const { cases } = JSON.parse(readFileSync(new URL('./pr-machine.cases.json', import.meta.url), 'utf8'))
 const enabledIds = decision => decision.actions.filter(action => action.enabled).map(action => action.id)
@@ -61,10 +61,11 @@ test('every state and action named by the table exists, and every state is reach
   for (const state of Object.values(STATES)) if (state.next) assert.ok(ACTIONS.some(item => item.id === state.next), state.next)
 })
 
-test('the platform question names the same refusal the screen shows', () => {
+test('each action carries the one refusal the screen shows, and an action of the other role is not offered at all', () => {
   const facts = cases.find(item => item.name.startsWith('Your PR, nobody approved')).facts
-  assert.equal(actionBlocker(facts, 'merge'), 'Nobody but the author has approved it yet.')
-  assert.match(actionBlocker({ ...facts, role: 'author' }, 'take_over'), /as the author/)
+  const actions = decide(facts).actions
+  assert.equal(actions.find(action => action.id === 'merge').reason, 'Nobody but the author has approved it yet.')
+  assert.equal(actions.some(action => action.id === 'take_over'), false, 'Take over is for someone else’s PR')
 })
 
 test('a reply alone never brings their PR back for re-review; a new commit does', () => {
