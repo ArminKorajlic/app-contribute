@@ -1856,6 +1856,12 @@ window.runRespondAnswerChecks = async () => {
     checks.push({ name: 'a question has no button on the PR page, only a pointer to the Review tab', status: 'pass' })
     // The Desk opens a PR whose frame is not idle on its Review tab.
     await until(() => button('Answer in chat'), 'The Review tab did not offer Answer in chat: ' + reviewBody())
+    // From another tab the pointer is the way back: it opens the Review tab (on a phone that tab can be past the strip's edge).
+    await click([...document.querySelectorAll('.co-detail-tabs button')].find(node => text(node).startsWith('Comments')))
+    await until(() => !button('Answer in chat') && query('.co-next-pointer'), 'The pointer was not on screen from the Comments tab')
+    await click(query('.co-next-pointer'))
+    await until(() => button('Answer in chat'), 'The pointer did not open the Review tab: ' + reviewBody())
+    checks.push({ name: 'the question pointer opens the Review tab from another tab', status: 'pass' })
     ensure(reviewBody().includes('Waiting for your answer') && !reviewBody().includes('No review yet'), 'The Review tab said: ' + reviewBody())
     ensure(query('.co-gh-chat-link'), 'The PR header has no link to the Respond conversation')
     const sent = []
