@@ -3,7 +3,7 @@ import { collaborationRequest, requestOptions } from './collaboration.js'
 // The owner's editable workflow settings. Older builds also saved
 // `max_rounds` and `autopilot`; neither is offered any more (automatic
 // continuation is unsupported, and a round cap belongs to one takeover launch).
-const KEYS = ['review_prompt', 'fix_prompt', 'merge_prompt', 'post_review']
+const KEYS = ['review_prompt', 'fix_prompt', 'merge_prompt', 'post_review', 'propose_verdict']
 export function reviewOptions(value, defaults) {
   return Object.fromEntries(KEYS.map(key => [key, value?.[key] ?? defaults?.[key]]).filter(([,value]) => value !== undefined))
 }

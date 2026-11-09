@@ -36,8 +36,9 @@ export function upstreamCheckQuery(targets) {
   return 'query { ' + parts.join(' ') + ' }'
 }
 
-// key -> { newCommits, checkedAt } for every answered project. A missing,
-// private or diverged answer is left out: no answer is not "up to date".
+// key -> { newCommits, checkedAt } for every answered project. A missing or
+// private answer is left out: no answer is not "up to date". A diverged
+// project still reports how many upstream commits it lacks.
 export function readUpstreamCheck(targets, data, checkedAt) {
   const results = {}
   targets.forEach((target, index) => {
@@ -67,10 +68,19 @@ export function upstreamCheckSummary(outcome, projects) {
   const upstream = outcome.upstream
   if (!upstream) return 'Reloaded. Connect GitHub to check it for new changes.'
   if (!upstream.ok) return 'Reloaded, but GitHub could not be reached.'
-  const moved = (projects || [])
-    .filter(project => upstream.results?.[project.key]?.newCommits > 0)
-    .map(project => project.name)
-  if (!moved.length) return 'Nothing new on GitHub.'
-  const names = moved.length <= 2 ? moved.join(' and ') : `${moved.slice(0, 2).join(', ')} and ${moved.length - 2} more`
-  return `New on GitHub: ${names}.`
+  const results = upstream.results || {}
+  const asked = upstreamCheckTargets(projects)
+  if (!asked.length) return 'Reloaded. Nothing here can be compared with GitHub yet.'
+  const nameOf = key => (projects || []).find(project => project.key === key)?.name || key
+  const moved = asked.filter(target => results[target.key]?.newCommits > 0).map(target => nameOf(target.key))
+  // "Nothing new" needs an answer for every project asked about.
+  const unanswered = asked.filter(target => !results[target.key]).map(target => nameOf(target.key))
+  const sentences = []
+  if (moved.length) sentences.push(`New on GitHub: ${nameList(moved)}.`)
+  if (unanswered.length) sentences.push(`Couldn’t check ${nameList(unanswered)}.`)
+  return sentences.join(' ') || 'Nothing new on GitHub.'
+}
+
+function nameList(names) {
+  return names.length <= 2 ? names.join(' and ') : `${names.slice(0, 2).join(', ')} and ${names.length - 2} more`
 }

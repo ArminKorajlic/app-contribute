@@ -1,4 +1,5 @@
-import { baseTip, prKey, reviewItemProgress, reviewRunHalted, reviewRunStateLabel, reviewRunTitle, runDetailsElsewhere } from '../collaboration.js'
+import { baseTip, OWNER_ITEM_STATES, prKey, reviewItemProgress, reviewRunHalted, reviewRunStateLabel, reviewRunTitle, runDetailsElsewhere } from '../collaboration.js'
+import { verdictCopy } from '../review-copy.js'
 import { openAgentConversation } from './BatchAction.jsx'
 import { Icon } from './Icons.jsx'
 import { MarkdownView } from './MarkdownView.jsx'
@@ -15,11 +16,30 @@ export function savedVersion(item, pulls = [], listState = {}) {
   return item.base_sha === baseTip(pr) ? 'Matches loaded PR version' : 'Older base version'
 }
 
+// A proposed approve or request changes: the exact words GitHub would show,
+// and the owner's own Submit or Discard. Only a proposal still waiting offers them.
+function VerdictProposal({ proposal, mode, busy, onDecide }) {
+  const copy = verdictCopy(proposal, mode)
+  const waiting = proposal.state === 'proposed' && onDecide
+  return <div className={'co-verdict' + (proposal.event === 'APPROVE' ? ' is-approve' : ' is-changes')}>
+    <p className="co-verdict-status" role="status">{copy.status}</p>
+    {proposal.state === 'posted' && proposal.url ? <a href={proposal.url} target="_blank" rel="noopener noreferrer">View it on GitHub</a> : null}
+    {waiting ? <>
+      <details className="co-task-details" open><summary>What it would post</summary><MarkdownView markdown={proposal.body} /></details>
+      <p className="co-task-footnote">{copy.note}</p>
+      <div className="co-verdict-actions">
+        <button type="button" className="co-btn co-btn-primary" disabled={busy} onClick={() => onDecide(proposal, 'submit')}>{busy ? 'Working…' : copy.submit}</button>
+        <button type="button" className="co-btn" disabled={busy} onClick={() => onDecide(proposal, 'discard')}>Discard</button>
+      </div>
+    </> : null}
+  </div>
+}
+
 // The one presentation of a review run, wherever it is opened from: a PR row,
 // the project's review history, or a chat link to the run.
-export function RunDetail({ run, pulls, listState, busy = false, error = '', onStop, retryPulls = [], onRetry, updater = null }) {
+export function RunDetail({ run, pulls, listState, busy = false, error = '', onStop, retryPulls = [], onRetry, onVerdict, updater = null }) {
   const halted = reviewRunHalted(run)
-  const needsAnswer = run.execution_state === 'awaiting_owner' || run.items?.some(item => ['needs_you', 'failed', 'merge_unknown', 'ready_unknown'].includes(item.state))
+  const needsAnswer = run.execution_state === 'awaiting_owner' || run.items?.some(item => item.state !== 'verdict_pending' && OWNER_ITEM_STATES.has(item.state))
   const stoppable = run.can_stop && run.state !== 'complete' && !halted
   const retryable = halted && retryPulls.length > 0 && onRetry
   const elsewhere = runDetailsElsewhere(run)
@@ -35,6 +55,8 @@ export function RunDetail({ run, pulls, listState, busy = false, error = '', onS
       {item.public_review?.state === 'posted' && item.public_review.url ? <a href={item.public_review.url} target="_blank" rel="noopener noreferrer">View the posted review on GitHub</a>
         : item.public_review?.state === 'posting' ? <p className="co-task-footnote">Posting the review on GitHub…</p>
         : item.public_review?.summary ? <p className="co-task-footnote">{item.public_review.summary}</p> : null}
+      {item.verdict_proposal ? <VerdictProposal proposal={item.verdict_proposal} mode={run.mode} busy={busy}
+        onDecide={onVerdict && !elsewhere ? (proposal, decision) => onVerdict(item, proposal, decision) : null} /> : null}
     </div>)}</div>
     {run.chat_id ? <button className="co-btn co-btn-primary co-task-primary" onClick={() => openAgentConversation(run.chat_id)}>{needsAnswer ? 'Answer in review conversation' : elsewhere ? 'Open the owning conversation for details' : 'Open review conversation'}</button> : null}
     {stoppable && onStop ? <><button className="co-quiet-action" disabled={busy} onClick={onStop}>Stop workflow</button><p className="co-task-footnote">Stop prevents future actions. An already-started public action may finish; its outcome stays visible.</p></> : null}

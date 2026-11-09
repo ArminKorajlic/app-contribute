@@ -152,7 +152,7 @@ test('SSR local preparation remains inventory when another task owns the outlet'
   if (!ui) return
   const props = { project, run: { privateAction: { title: 'Prepare', draft: 'Private preparation' } }, cycle: { phase: 'idle' } }
   const html = ui.render('ProjectControls', props, { activeId: 'task:review', host: null })
-  assert.match(html, /1 file<\/strong> changed on this Möbius is not on GitHub yet\./)
+  assert.match(html, /1 file<\/strong> changed on this Möbius\./)
   assert.match(html, /Your edits and GitHub/)
   assert.match(html, /See the files/)
   assert.doesNotMatch(html, /Check &amp; update safely/)
@@ -376,7 +376,7 @@ test('SSR reviewed work waiting on a source check asks the owner, with the reaso
     assert.equal(item.kind, 'check_attention')
     const props = { run: current, reviewStatus, githubState: 'connected', onRefresh: async () => {} }
     const list = ui.render('ContributionRun', { ...props, selectedId: '' }, { activeId: '', host: null })
-    assert.match(list, /aria-label="Needs you"[\s\S]*Change one/, code)
+    assert.match(list, /aria-label="To look at"[\s\S]*Change one/, code)
     assert.doesNotMatch(list, /Prepared work/, code)
     const focus = ui.render('ContributionRun', { ...props, selectedId: item.id }, { activeId: item.id, host: null })
     assert.match(focus, message, code)

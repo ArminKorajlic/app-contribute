@@ -262,7 +262,7 @@ test('projects contain their contribution flow without a separate Reviews destin
   assert.doesNotMatch(appSource, /showProjects|<ProjectControl[ >]|contribute-reviews/)
   assert.doesNotMatch(appSource, /co-tab-prs|co-tab-issues/)
   assert.match(sourceMapSource, /renderActivity\?\.\(project, navigation\)/)
-  assert.match(feedSource, /<span>Needs you<\/span>/)
+  assert.match(feedSource, /<AttentionList items=\{ownerDecisions\}/)
   assert.match(feedSource, /agentActivity, 'Agent activity'/)
   assert.match(feedSource, />Finished and closed work</)
   assert.match(feedSource, /DECISION_ACTION_LABELS/)

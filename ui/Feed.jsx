@@ -26,6 +26,7 @@ import { ContributionCard, ContributionDecision } from './ContributionCard.jsx'
 import { Icon } from './Icons.jsx'
 import { ProjectIcon } from './ProjectIcon.jsx'
 import { ProjectTabs } from './ProjectTabs.jsx'
+import { AttentionList } from './AttentionList.jsx'
 
 function itemProject(item) {
   return item?.project || { name: item?.detail || 'Contribution' }
@@ -535,18 +536,7 @@ const STATE_LABELS = {
   request: 'Review draft',
 }
 
-// A public follow-up names what the owner will do; its attention type comes
-// from the scheduled job (job.sh) that noticed it.
-const ATTENTION_ACTION_LABELS = {
-  merge_conflict: 'Fix conflict',
-  checks_failed: 'Fix checks',
-  changes_requested: 'See feedback',
-  github_activity: 'See activity',
-}
-
 function decisionActionLabel(item) {
-  if (isPublicFeedback(item)) return 'See feedback'
-  if (item.kind === 'public_attention') return ATTENTION_ACTION_LABELS[item.record?.attention?.type] || 'Open'
   return DECISION_ACTION_LABELS[item.kind] || 'Review'
 }
 
@@ -926,7 +916,6 @@ export function ContributionRun({
 }) {
   const task = useProjectTask()
   const [missingTarget, setMissingTarget] = useState(false)
-  const [allDecisions, setAllDecisions] = useState(false)
   const [batchOwnership, setBatchOwnership] = useState({})
   const changeBatchOwnership = useCallback((mode, owned) => setBatchOwnership(old => old[mode] === owned ? old : { ...old, [mode]: owned }), [])
   const projectedDecisions = useMemo(() => (run?.decisions || []).map((item) => {
@@ -989,20 +978,12 @@ export function ContributionRun({
   const ownerDecisions = decisions.filter(item => isPublicFeedback(item) || ![
     'publish', 'mark_ready', 'private_review', 'request',
   ].includes(item.kind))
-  const ownerActionCount = ownerDecisions.length
-  const ownerContributionCount = ownerDecisions.reduce((total, item) => total + Math.max(1, runUnitRecords(item).length), 0)
-  const groupedDecisions = ownerDecisions.filter(item => runUnitRecords(item).length > 1).length
   const preparedItems = [...privateItems, ...decisions.filter(item => item.kind === 'request')]
 
   // What needs the owner opens by itself; it can still be folded away.
-  const needsYou = (presentation === 'project' && ownerActionCount > 0) ? (
-    <details className="co-run-fold" aria-label="Needs you" open>
-      <summary><span>Needs you</span><b>{ownerActionCount}</b><Icon name="chevron" size={14} /></summary>
-      {groupedDecisions ? <p className="co-inventory-note">{groupedDecisions} related {groupedDecisions === 1 ? 'group' : 'groups'} · {ownerContributionCount} contributions</p> : null}
-      <div className="co-run-list">{(allDecisions ? ownerDecisions : ownerDecisions.slice(0, 3)).map(item => <DecisionRow key={item.id} item={item} onSelect={selectRunItem} onAssignIncomingReview={onAssignIncomingReview} />)}</div>
-      {ownerActionCount > 3 ? <button className="co-quiet-action" onClick={() => setAllDecisions(!allDecisions)}>{allDecisions ? 'Show fewer' : `Show all ${ownerActionCount} decisions`}</button> : null}
-    </details>
-  ) : null
+  const needsYou = presentation === 'project'
+    ? <AttentionList items={ownerDecisions} heading={itemHeading} onSelect={selectRunItem} />
+    : null
 
   const missingSelection = selectedId && !selectedId.startsWith('task:') && !selected
   const focus = (selected || missingTarget || missingSelection) ? (
@@ -1065,9 +1046,8 @@ export function ContributionRun({
       {focus}
       {!actionCount(publishItems) && !batchOwnership.send ? <TaskPane id="task:send"><h3>Publication status</h3><p>No reviewed changes are waiting to send. Your contributions below show their current public or private status.</p><button className="co-btn co-btn-primary" onClick={() => task?.close()}>Review public contributions</button></TaskPane> : null}
       {!readyCount(readyItems) && !batchOwnership.ready ? <TaskPane id="task:ready"><h3>Review status</h3><p>No drafts are waiting for a review request. Check your public contributions for their current state.</p><button className="co-btn" onClick={() => task?.close()}>View public contributions</button></TaskPane> : null}
-      {presentation === 'project' ? controls : null}
-      {/* Everything that needs an owner decision sits in one GitHub-style box
-          above the PRs and disappears when there is nothing to act on. */}
+      {/* What needs the owner comes first, in one box that disappears when
+          there is nothing to act on; the project's status sits under it. */}
       <div className="co-decisions" aria-label="Ready for you">
       {needsYou}
       <ExactBatchAction
@@ -1099,6 +1079,7 @@ export function ContributionRun({
         <div className="co-run-list">{preparedItems.map(item => <DecisionRow key={item.id} item={item} onSelect={selectRunItem} />)}</div>
       </details> : null}
       </div>
+      {presentation === 'project' ? controls : null}
 
       {presentation === 'project' ? <ProjectTabs reviewCount={reviewRequestCount} renderPullRequests={renderPublicWork} inventory={inventory} myJobs={projectProgress} myWork={myWork} defaultTab={defaultTab} /> : null}
       {presentation !== 'project' ? renderPublicWork?.() : null}

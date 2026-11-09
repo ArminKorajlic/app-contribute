@@ -110,6 +110,7 @@
     "collaboration.js",
     "ui/PullRequests.jsx",
     "ui/AgentMenu.jsx",
+    "ui/AttentionList.jsx",
     "ui/ProjectTabs.jsx",
     "ui/ReviewDialog.jsx",
     "ui/ReviewConfirmation.jsx",

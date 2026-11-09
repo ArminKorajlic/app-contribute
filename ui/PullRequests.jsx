@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { awaitsGithub, collaborationRequest, discoverPull, discoverPulls, liveSelection, loadReviewRuns, matchingPulls, mayAssign, mergeSelection, prKey, reviewForPull, reviewItemProgress, reviewRunRequest, reviewRunTitle, runDetailsElsewhere, notOursToObserve, assignPulls, takeoverScope } from '../collaboration.js'
+import { awaitsGithub, OWNER_ITEM_STATES, collaborationRequest, discoverPull, discoverPulls, liveSelection, loadReviewRuns, matchingPulls, mayAssign, mergeSelection, prKey, reviewForPull, reviewItemProgress, reviewRunRequest, reviewRunTitle, runDetailsElsewhere, notOursToObserve, assignPulls, takeoverScope } from '../collaboration.js'
 import { acknowledgeAssignment, emptyPullView, invalidatedSelection, isOpenPull, observePulls, pullsInView } from '../pull-view.js'
 import { pullConversations, recordsForPull } from '../provenance.js'
 import { RunDetail, savedVersion } from './RunDetail.jsx'
@@ -379,6 +379,22 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
     } catch(error) {setRunError(error.message)}
     finally {setBusy(false)}
   }
+  // The owner's own submit or discard of one proposed verdict. The server
+  // posts exactly the saved proposal, once; an agent can never do this.
+  async function decideVerdict(run, item, proposal, decision) {
+    if (busy) return
+    setBusy(true); setRunError('')
+    runsEpoch.current++
+    try {
+      const result = await collaborationRequest(token, appId, `review-runs/${encodeURIComponent(run.id)}/verdict`,
+        { repo: item.repo, number: item.number, head_sha: item.head_sha, proposal_id: proposal.id, decision })
+      runsEpoch.current++
+      if (linkedRef.current?.id === run.id) setLinked(result.run)
+      setRuns(old => old.map(entry => entry.id === run.id ? result.run : entry))
+      if (result.merge_resumed === false) setRunError('Approved on GitHub. Open the review conversation and ask it to continue to the merge.')
+    } catch (error) { setRunError(error.message) }
+    finally { setBusy(false) }
+  }
   function toggle(pr) {
     setSelected(old => { const next = new Set(old); const key = prKey(pr); next.has(key) ? next.delete(key) : next.add(key); return next })
   }
@@ -392,7 +408,7 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
   const retryPulls = run => (run.items || []).map(item => pulls.find(pr => prKey(pr) === `${item.repo.toLowerCase()}#${item.number}`)).filter(pr => pr && isOpenPull(pr))
   const runPane = run => <TaskPane key={run.id} dock={false} id={`task:run:${run.id}`}>
       <RunDetail run={run} pulls={pulls} listState={data} busy={busy} error={runError}
-        onStop={() => stopRun(run)} retryPulls={retryPulls(run)} onRetry={retry => choose(retry, run.mode === 'review_merge' ? 'review' : run.mode, runAnchor(run))}
+        onStop={() => stopRun(run)} onVerdict={(item, proposal, decision) => decideVerdict(run, item, proposal, decision)} retryPulls={retryPulls(run)} onRetry={retry => choose(retry, run.mode === 'review_merge' ? 'review' : run.mode, runAnchor(run))}
         updater={projectUpdater(project)} />
     </TaskPane>
   const closeReview = () => { setChoice(null); task?.close() }
@@ -437,7 +453,7 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
       // A run whose conversation stopped or failed is not still reviewing.
       const progress = status ? reviewItemProgress(status.run, status.item) : null
       const halted = progress?.halted
-      const attention = halted || progress?.waiting || (status?.run.chat_id && ['needs_you', 'failed', 'merge_unknown', 'ready_unknown'].includes(status.item.state))
+      const attention = halted || progress?.waiting || (status?.run.chat_id && OWNER_ITEM_STATES.has(status.item.state))
       const assignees = pr.assignees?.nodes || []
       const comments = pr.comments?.totalCount || 0
       const open = isOpenPull(pr)

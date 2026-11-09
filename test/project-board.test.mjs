@@ -96,7 +96,7 @@ test('project controls state edits and GitHub status in plain words, with no Pul
   props.mergeRun = props.run
   const html = render(props)
   assert.match(html, /Actions for Contribute/)
-  assert.match(html, /2 files<\/strong> changed on this Möbius are not on GitHub yet\./)
+  assert.match(html, /2 files<\/strong> changed on this Möbius\./)
   assert.match(html, /Make PRs from my edits/)
   assert.match(html, /Up to date<\/strong> at the last check\./)
   // Settings and the App Store own updates; Contribute no longer starts its own pull.

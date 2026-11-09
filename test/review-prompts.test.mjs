@@ -63,11 +63,14 @@ test('preview and admission use the same explicit model, mode and mode-accepted 
   assert.deepEqual(request.options,calls[0].options,'the start sends exactly the previewed options')
   assert.equal(request.confirmation_scope,'named_pr_repairs_and_reviewed_successors')
   assert.equal(request.preview_sha256,'c'.repeat(64))
-  // Review and Review & merge never carry repair options; only Review carries the post-review grant.
+  // Review and Review & merge never carry repair options; both may carry the post-review grant.
   await previewWorkflow('fixture',80,options,agent,'review')
   assert.deepEqual(calls[1],{mode:'review',options:{review_prompt:defaults.review_prompt,merge_prompt:defaults.merge_prompt,post_review:true},agent})
-  await previewWorkflow('fixture',80,options,agent,'review_merge')
-  assert.deepEqual(calls[2].options,{review_prompt:defaults.review_prompt,merge_prompt:defaults.merge_prompt})
+  await previewWorkflow('fixture',80,{...options,propose_verdict:true},agent,'review_merge')
+  assert.deepEqual(calls[2].options,{review_prompt:defaults.review_prompt,merge_prompt:defaults.merge_prompt,post_review:true,propose_verdict:true})
+  // A verdict without posting is never sent.
+  await previewWorkflow('fixture',80,{...options,post_review:false,propose_verdict:true},agent,'review')
+  assert.deepEqual(calls[3].options,{review_prompt:defaults.review_prompt,merge_prompt:defaults.merge_prompt})
   assert.equal(workflowAgent({provider:'',model:''}),undefined)
   assert.deepEqual(workflowAgent({provider:'codex',model:'model-id',effort:''}),{provider:'codex',model:'model-id'})
 })

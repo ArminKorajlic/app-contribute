@@ -101,7 +101,11 @@ export function ReviewPromptPreview({ token, appId, choice, onResolved, onUnsupp
       // A saved selection keeps its exact frozen options; new work starts from the settings.
       const options=requestOptions(choice.preview_sha256 ? choice.options : reviewOptions(choice.options,data.options),choice.mode)
       // A Möbius without posted review does not accept the grant at all.
-      if(!choice.preview_sha256 && data.capabilities?.post_review !== true) delete options.post_review
+      if(!choice.preview_sha256) {
+        const caps=data.capabilities||{}
+        if(caps.post_review !== true || (choice.mode==='review_merge' && caps.post_review_merge !== true)) { delete options.post_review; delete options.propose_verdict }
+        if(caps.propose_verdict !== true) delete options.propose_verdict
+      }
       const agent=workflowAgent(choice.agent)
       const preview=await previewWorkflow(token,appId,options,agent,choice.mode)
       if(choice.preview_sha256 && choice.preview_sha256!==preview.preview_sha256) throw new Error('The saved instructions or model changed. Ask the agent to prepare a fresh review link; nothing was started.')

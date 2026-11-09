@@ -12,8 +12,9 @@ async function render(t, name, props) {
     import { PullRequests } from './ui/PullRequests.jsx'
     import { ReviewConfirmation } from './ui/ReviewConfirmation.jsx'
     import { PullRequestDetail } from './ui/PullRequestDetail.jsx'
-    export { draftCapabilityBlocker } from './ui/ReviewConfirmation.jsx'
-    export function render(name, props) { return renderToStaticMarkup(React.createElement({ ReviewConfirmation, PullRequestDetail, PullRequests }[name], props)) }
+    import { RunDetail } from './ui/RunDetail.jsx'
+    export { draftCapabilityBlocker, publicChoice } from './ui/ReviewConfirmation.jsx'
+    export function render(name, props) { return renderToStaticMarkup(React.createElement({ ReviewConfirmation, PullRequestDetail, PullRequests, RunDetail }[name], props)) }
   `)
   return (await renderer).render(name, props)
 }
@@ -128,9 +129,58 @@ test('draft-ready launch explicitly names marking ready without adding routine s
 test('posting a review on GitHub is an opt-in inside Review only, shown only when the server supports it', async t => {
   const source = await import('node:fs').then(fs => fs.readFileSync(new URL('../ui/ReviewConfirmation.jsx', import.meta.url), 'utf8'))
   assert.match(source, /const canPost = onOptionsChange && capabilities\?\.post_review === true/)
+  assert.match(source, /const canPropose = canPost && capabilities\?\.propose_verdict === true/)
   assert.match(source, /label="Allow posting the review on GitHub"/)
-  assert.match(source, /detail=\{merge \? 'Turn off Merge when safe to post a review\.' : hints\.posting\}/)
+  assert.match(source, /label="Allow approve or request changes"/)
+  // Only an older Möbius keeps posting and merging apart.
+  assert.match(source, /detail=\{merge && !combines \? 'Turn off Merge when safe to post a review\.' : hints\.posting\}/)
   const unresolved = await render(t, 'ReviewConfirmation', { choice:{ pulls:[pr], mode:'review', request_id:'fixed' }, onModeChange:()=>{}, onOptionsChange:()=>{} })
   if (!unresolved) return
   assert.doesNotMatch(unresolved, /posting the review on GitHub/, 'hidden until the served capability is known')
+})
+
+test('posting, verdict and merge combine only as far as the served Möbius supports', async t => {
+  const { publicChoice } = await renderModuleExports(t)
+  if (!publicChoice) return
+  const all = { post_review: true, propose_verdict: true, post_review_merge: true }
+  const choice = mode => ({ mode, pulls: [pr], options: { post_review: true, propose_verdict: true } })
+  assert.deepEqual(publicChoice(choice('review_merge'), null, all), { merge: true, posting: true, verdict: true })
+  // An older Möbius posts only in plain review and never proposes verdicts.
+  assert.deepEqual(publicChoice(choice('review_merge'), null, { post_review: true }), { merge: true, posting: false, verdict: false })
+  assert.deepEqual(publicChoice(choice('review'), null, { post_review: true }), { merge: false, posting: true, verdict: false })
+  // A verdict without posting is not a choice.
+  assert.equal(publicChoice({ mode: 'review', pulls: [pr], options: { propose_verdict: true } }, null, all).verdict, false)
+})
+
+test('the review window offers the verdict switch beside posting and merge', async t => {
+  const html = await render(t, 'ReviewConfirmation', { choice:{ pulls:[pr], mode:'review_merge', request_id:'fixed', options:{ post_review:true, propose_verdict:true } },
+    capabilities:{ post_review:true, post_review_merge:true, propose_verdict:true }, onModeChange:()=>{}, onOptionsChange:()=>{} })
+  if (!html) return
+  assert.match(html, /Allow approve or request changes/)
+  assert.match(html, /Start review, merge after your approval/)
+  assert.doesNotMatch(html, /Turn off Merge when safe to post a review/)
+})
+
+const verdictRun = (state, extra = {}) => ({ id:'run-1', mode:'review_merge', state:'needs_you', chat_id:'chat-1', can_stop:true, items:[{
+  repo:'team/repo', number:42, head_sha:'a'.repeat(40), base_ref:'main', base_sha:'b'.repeat(40), state:'verdict_pending', summary:'Looks right.',
+  verdict_proposal:{ id:'f'.repeat(32), state, event:'APPROVE', body:'**Möbius review: Approved**\n\nLooks right.', ...extra } }] })
+
+test('a proposed verdict shows its exact words with your own Submit and Discard', async t => {
+  const html = await render(t, 'RunDetail', { run: verdictRun('proposed'), pulls:[pr], listState:{}, onVerdict:()=>{} })
+  if (!html) return
+  assert.match(html, /Proposed verdict: Approve\. Nothing is on GitHub yet\./)
+  assert.match(html, /Möbius review: Approved/)
+  assert.match(html, />Approve on GitHub</)
+  assert.match(html, />Discard</)
+  assert.match(html, /merges the PR only if all required checks pass/)
+})
+
+test('a settled or foreign verdict offers no decision', async t => {
+  const posted = await render(t, 'RunDetail', { run: verdictRun('posted', { url:'https://github.com/team/repo/pull/42#r' }), pulls:[pr], listState:{}, onVerdict:()=>{} })
+  if (!posted) return
+  assert.match(posted, /Approve submitted on GitHub\./)
+  assert.match(posted, /View it on GitHub/)
+  assert.doesNotMatch(posted, />Discard</)
+  const noHandler = await render(t, 'RunDetail', { run: verdictRun('proposed'), pulls:[pr], listState:{} })
+  assert.doesNotMatch(noHandler, />Approve on GitHub</)
 })

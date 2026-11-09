@@ -53,22 +53,38 @@ function WhatHappens({ copy }) {
   </>
 }
 
-// Review only: the two switches. Posting and merging are separate platform
-// grants (posting is valid only in plain review), so one blocks the other.
-function ReviewSwitches({ choice, promptOptions, capabilities, onModeChange, onOptionsChange, busy }) {
+// What this choice actually grants on this Möbius. An older Möbius posts only
+// in plain review and never proposes verdicts, so those options fall away.
+export function publicChoice(choice, promptOptions, capabilities) {
+  const option = key => (choice.options?.[key] ?? promptOptions?.[key]) === true
   const merge = choice.mode === 'review_merge'
-  const posting = !merge && (choice.options?.post_review ?? promptOptions?.post_review) === true
+  const posting = option('post_review') && (!merge || capabilities?.post_review_merge === true)
+  return { merge, posting, verdict: posting && option('propose_verdict') && capabilities?.propose_verdict === true }
+}
+
+// Review only: posting, its verdict form, and merging. Posting and merging
+// combine: the review is posted first, and only a posted review can merge.
+function ReviewSwitches({ choice, promptOptions, capabilities, onModeChange, onOptionsChange, busy }) {
+  const { merge, posting, verdict } = publicChoice(choice, promptOptions, capabilities)
   const drafts = choice.pulls.some(pr => pr.isDraft)
   const mayMergeAll = choice.pulls.every(pr => mayMerge(pr.repository.viewerPermission))
-  const mergeBlocker = mergeWhenSafeBlocker({ drafts, mayMergeAll, posting })
+  const combines = capabilities?.post_review_merge === true
+  const mergeBlocker = mergeWhenSafeBlocker({ drafts, mayMergeAll, postingBlocks: posting && !combines })
   const canPost = onOptionsChange && capabilities?.post_review === true
+  const canPropose = canPost && capabilities?.propose_verdict === true
   const hints = reviewSwitchHints(choice.pulls.length)
+  const setOption = (key, checked) => onOptionsChange({ ...promptOptions, ...choice.options, [key]: checked,
+    ...(key === 'post_review' && !checked ? { propose_verdict: false } : {}) })
   if (!canPost && !onModeChange) return null
   return <div className="co-rw-options">
-    {canPost ? <Switch checked={posting} disabled={busy || !promptOptions || merge}
+    {canPost ? <Switch checked={posting} disabled={busy || !promptOptions || (merge && !combines)}
       label="Allow posting the review on GitHub"
-      detail={merge ? 'Turn off Merge when safe to post a review.' : hints.posting}
-      onChange={checked => onOptionsChange({ ...promptOptions, ...choice.options, post_review: checked })} /> : null}
+      detail={merge && !combines ? 'Turn off Merge when safe to post a review.' : hints.posting}
+      onChange={checked => setOption('post_review', checked)} /> : null}
+    {canPropose ? <Switch checked={verdict} disabled={busy || !promptOptions || !posting}
+      label="Allow approve or request changes"
+      detail={posting ? hints.verdict : 'Turn on posting first.'}
+      onChange={checked => setOption('propose_verdict', checked)} /> : null}
     {onModeChange ? <Switch checked={merge} disabled={busy || (!merge && !!mergeBlocker)}
       label="Merge when safe"
       detail={!merge && mergeBlocker ? mergeBlocker : hints.merge}
@@ -122,8 +138,8 @@ export function ReviewConfirmation({ choice, busy, disabled, error, onConfirm, o
   const takeover = choice.mode === 'review_fix_merge'
   const saved = !!choice.preview_sha256
   const { draftScope, blocker } = takeoverState(choice, capabilities, saved)
-  const posting = choice.mode === 'review' && (choice.options?.post_review ?? promptOptions?.post_review) === true
-  const copy = reviewWindowCopy({ mode: choice.mode, posting, draftScope, count: choice.pulls.length, bindCurrentTarget })
+  const { posting, verdict } = takeover ? {} : publicChoice(choice, promptOptions, capabilities)
+  const copy = reviewWindowCopy({ mode: choice.mode, posting, verdict, draftScope, count: choice.pulls.length, bindCurrentTarget })
   const startBlocked = takeover && !!blocker
   return <section ref={confirmation} tabIndex={-1} className="co-review-window" aria-labelledby={titleId}>
     <PullHeading pulls={choice.pulls} title={copy.title} titleId={titleId} onCancel={onCancel} takeover={takeover} />

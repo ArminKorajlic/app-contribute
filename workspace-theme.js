@@ -143,6 +143,12 @@ export const WORKSPACE_CSS = `
 .co-task-pulls .co-markdown { margin-top:8px; font-size:15px; }
 .co-task-pulls a { display:inline-flex; align-items:center; font-size:14px; color:var(--accent); min-height:44px; }
 .co-task-secondary { margin:12px 10px 0 0; }
+.co-verdict { margin-top:12px; padding:12px 14px; border-radius:12px; border:1px solid color-mix(in srgb,#cf9526 42%,transparent); background:color-mix(in srgb,#cf9526 8%,transparent); }
+.co-verdict.is-approve { border-color:color-mix(in srgb,var(--green) 40%,transparent); background:color-mix(in srgb,var(--green) 8%,transparent); }
+.co-verdict-status { margin:0; font-size:15px; font-weight:600; }
+.co-verdict .co-task-details { margin-top:8px; }
+.co-verdict-actions { display:flex; flex-wrap:wrap; gap:10px; }
+.co-verdict-actions .co-btn { min-height:44px; }
 .co-scope-row { display:grid; grid-template-columns:1fr auto; gap:6px 12px; width:100%; padding:16px 0; border:0; border-bottom:1px solid var(--border); background:none; color:var(--text); text-align:left; cursor:pointer; min-height:64px; }
 .co-scope-row strong { font-size:16px; }
 .co-scope-row span { font-size:14px; color:var(--muted); grid-column:1; }
@@ -277,11 +283,11 @@ export const WORKSPACE_CSS = `
 .co-selection-page .co-board-actions { margin-top:24px; }
 @media(max-width:680px) { .co-selection-page { padding:20px; } }
 
-/* Compact project position leaves the PR inventory as the primary surface. */
-.co-project-position { border-block:1px solid var(--border); margin:0 0 18px; padding:4px 0; }
-.co-position-line { display:flex; align-items:center; gap:12px; min-height:52px; }
-.co-position-line + .co-position-line { margin-top:8px; }
-.co-position-line > .co-icon { flex-shrink:0; color:var(--muted); }
+/* Project status under To look at: one box per fact, side by side when they
+   fit and stacked on a phone. The 1px gap over a border-coloured box draws the
+   divider in either layout. */
+.co-project-position { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:1px; margin:16px 0 18px; border:1px solid var(--border); border-radius:8px; background:var(--border); overflow:hidden; }
+.co-position-line { display:flex; flex-wrap:wrap; align-items:flex-end; gap:8px 12px; padding:12px 14px; background:var(--bg); }
 .co-position-line > .co-btn { flex:0 0 auto; min-height:44px; padding:8px 12px; font-size:14px; }
 .co-workspace .co-pr-assignment { padding:0; background:none; border:0; border-radius:0; }
 .co-workspace .co-run { margin-top:0; }
@@ -300,8 +306,6 @@ export const WORKSPACE_CSS = `
 .co-work-progress-row small { font-size:14px; }
 @media(max-width:680px) {
  .co-projects-view { padding:14px 16px 40px; }
- .co-position-line { gap:8px; }
- .co-position-line > .co-icon { display:none; }
  .co-position-line > .co-btn { padding-inline:10px; }
  .co-workspace .co-run-primary { align-items:flex-start; gap:12px; }
  .co-workspace .co-run-primary .co-btn { max-width:42%; white-space:normal; }
@@ -319,7 +323,7 @@ export const WORKSPACE_CSS = `
  .co-projects-view { padding-top:8px; }
  .co-workspace-head { padding:0 0 6px; }
  .co-workspace-title p { margin-top:0; line-height:20px; }
- .co-project-position { padding:8px 0; margin-bottom:8px; }
+ .co-project-position { margin:12px 0 8px; }
  .co-public-work > .co-task-content { padding:16px; }
  .co-pr-detail-body { height:clamp(280px,42dvh,440px); }
 }
@@ -435,13 +439,33 @@ export const WORKSPACE_CSS = `
 .co-workspace .co-decisions > .co-run-fold > .co-run-list,.co-workspace .co-decisions > .co-run-fold > p { padding:0 14px 8px; }
 .co-workspace .co-decisions .co-run-primary strong { font-size:15px; font-weight:600; }
 .co-workspace .co-decisions .co-run-fold > summary { font-size:15px; font-weight:600; }
+/* To look at: a reason label, the PR, what happened, and when it was noticed. */
+.co-workspace .co-decisions > .co-look-at > .co-attention-scope { margin:-8px 0 0; color:var(--muted); font-size:14px; }
+.co-attention-row { display:grid; grid-template-columns:20px minmax(0,1fr) auto; align-items:center; gap:12px; padding:12px 0; border-bottom:1px solid var(--border); }
+.co-attention-row:last-child { border-bottom:0; }
+.co-attention-row > .co-icon { align-self:start; margin-top:3px; color:var(--muted); }
+.co-attention-row.is-blocker > .co-icon { color:var(--danger); }
+.co-attention-main { display:flex; flex-direction:column; align-items:flex-start; gap:3px; min-width:0; padding:0; border:0; background:none; color:var(--text); font:inherit; text-align:left; cursor:pointer; }
+.co-attention-main:focus-visible { outline:2px solid var(--accent); outline-offset:4px; border-radius:4px; }
+.co-attention-main strong { font-size:15px; font-weight:600; line-height:1.35; overflow-wrap:anywhere; }
+.co-attention-main small { color:var(--muted); font-size:14px; line-height:1.45; }
+.co-attention-main .co-attention-meta { font-size:14px; }
+.co-attention-reason { padding:1px 8px; border-radius:999px; background:color-mix(in srgb,var(--accent) 12%,transparent); color:var(--accent); font-size:14px; font-weight:600; line-height:22px; }
+.co-attention-row.is-blocker .co-attention-reason { background:color-mix(in srgb,var(--danger) 12%,transparent); color:var(--danger); }
+.co-look-at > .co-quiet-action { margin:0 14px 10px; }
+@media(max-width:680px) {
+ .co-attention-row { grid-template-columns:minmax(0,1fr); gap:8px; }
+ .co-attention-row > .co-icon { display:none; }
+ .co-attention-row > .co-run-row-action { justify-self:start; }
+}
 /* Plain status lines: one fact about the project and its next step. */
-.co-position-text { flex:1; min-width:0; padding:8px 0; }
+.co-position-text { flex:1 1 220px; min-width:0; }
+.co-position-title { display:flex; align-items:center; gap:6px; margin-bottom:4px; color:var(--muted); font-size:14px; }
 .co-position-text p { margin:0; font-size:15px; color:var(--text); overflow-wrap:anywhere; }
 .co-position-text p strong { font-weight:650; }
 .co-position-text small { display:block; margin-top:2px; color:var(--muted); font-size:14px; }
-.co-position-line.is-ok > .co-icon { color:var(--green); }
-.co-position-line.is-warn > .co-icon { color:#cf9526; }
+.co-position-line.is-ok .co-position-title .co-icon { color:var(--green); }
+.co-position-line.is-warn .co-position-title .co-icon { color:#cf9526; }
 .co-link-action { padding:0; border:0; background:none; color:var(--accent); font:inherit; text-decoration:underline; text-underline-offset:2px; cursor:pointer; }
 .co-link-action:focus-visible { outline:2px solid var(--accent); outline-offset:2px; border-radius:3px; }
 

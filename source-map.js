@@ -261,7 +261,9 @@ export function localChangeSentence(project) {
   if (!changed) return { strong: 'No edits', text: ' on this Möbius.', edits: false }
   return {
     strong: countOf(changed, 'file', 'files'),
-    text: ` changed on this Möbius ${verbFor(changed, 'is', 'are')} not on GitHub yet.`,
+    // A file that differs from GitHub may already be in an open PR, so this
+    // reports the difference, never that the change is unpublished.
+    text: ' changed on this Möbius.',
     sub: editing ? `${editing} ${verbFor(editing, 'is', 'are')} still being edited in a chat.` : '',
     edits: true,
   }

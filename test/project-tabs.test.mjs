@@ -14,7 +14,9 @@ test('the owner attention count covers Needs you, Mark ready and Send, not priva
     { kind: 'private_review', unit: unit([{ status: 'prepared' }]) },
     { kind: 'request', unit: unit([{ status: 'prepared' }]) },
     // Feedback on a published PR is news for the owner.
-    { kind: 'private_review', unit: unit([open]) },
+    { kind: 'private_review', unit: unit([open]), record: { ...open, needs_attention: true } },
+    // A healthy published parent does not make its private child's review news.
+    { kind: 'private_review', unit: unit([open, { status: 'prepared' }]), record: open },
   ]
   assert.equal(ownerAttentionCount(decisions), 4)
   assert.equal(ownerAttentionCount([]), 0)

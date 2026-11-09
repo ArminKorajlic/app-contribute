@@ -149,6 +149,8 @@ export async function collaborationRequest(token, appId, path, body) {
 // base_ref, base_sha, state and an optional `public_review: {state, url}`.
 // Prompts, findings and approval wording stay in the owning conversation.
 export const runDetailsElsewhere = run => run?.details_in_owning_chat === true
+// States where the owner, not the agent, holds the next step.
+export const OWNER_ITEM_STATES = new Set(['needs_you', 'failed', 'merge_unknown', 'ready_unknown', 'verdict_pending', 'verdict_unknown'])
 // Own runs carry their frozen options; minimized runs the top-level flag.
 export const runPostsReview = run => runDetailsElsewhere(run) ? run.post_review === true : run?.options?.post_review === true
 // Observe of a run this app does not own is refused with this code: the core
@@ -161,7 +163,7 @@ export const notOursToObserve = error => error?.status === 403 && error?.code ==
 export const reviewRunTitle = run => run.mode === 'review_fix_merge' ? 'Review, fix & merge' : run.mode === 'review_merge' ? 'Review & merge'
   : runPostsReview(run) ? 'GitHub review' : run.mode === 'review' ? 'Private review' : 'Review run'
 
-export const REVIEW_STATE_NAMES = { reviewing: 'Reviewing', repairing:'Fixing review findings', pushing:'Sending scoped fix', marking_ready:'Marking ready for review', ready_unknown:'Readiness outcome needs checking', push_unknown:'Fix outcome needs checking', pending: 'Waiting to review', all_clear: 'Review clear', needs_you: 'Needs you', merged: 'Merged', queued: 'In merge queue', failed: 'Failed', starting: 'Starting', merging: 'Merging', merge_unknown: 'Outcome needs checking', complete: 'Complete', stopped: 'Stopped', interrupted:'Interrupted', paused: 'Paused', awaiting_owner: 'Waiting for your answer' }
+export const REVIEW_STATE_NAMES = { reviewing: 'Reviewing', repairing:'Fixing review findings', pushing:'Sending scoped fix', marking_ready:'Marking ready for review', ready_unknown:'Readiness outcome needs checking', push_unknown:'Fix outcome needs checking', pending: 'Waiting to review', all_clear: 'Review clear', needs_you: 'Needs you', merged: 'Merged', queued: 'In merge queue', failed: 'Failed', starting: 'Starting', merging: 'Merging', merge_unknown: 'Outcome needs checking', verdict_pending: 'Verdict waiting for you', verdict_posting: 'Submitting verdict', verdict_unknown: 'Verdict outcome needs checking', complete: 'Complete', stopped: 'Stopped', interrupted:'Interrupted', paused: 'Paused', awaiting_owner: 'Waiting for your answer' }
 
 // One derivation of run and item progress for every run view. Execution
 // belongs to the conversation; saved verdicts and public receipts survive it.
@@ -204,8 +206,10 @@ export async function loadReviewRuns(token, appId, { onList, now = Date.now() } 
 // What the platform accepts for each mode, and nothing else (unknown or
 // unenforced options are refused): editable review and merge prompts for every
 // mode; fix guidance and a round cap only for Review, fix & merge, where
-// takeover enforces them; the post-review grant only for Review, and only when
-// chosen. Automatic continuation is not supported, so it is never sent.
+// takeover enforces them; the post-review grant (and its verdict form) only for
+// Review only, with or without merge, and only when chosen. Automatic
+// continuation is not supported, so it is never sent.
+const PUBLISHING_MODES = new Set(['review', 'review_merge'])
 export function requestOptions(options, mode) {
   const value = options || {}
   const prompt = key => typeof value[key] === 'string' && value[key].trim() ? { [key]: value[key] } : {}
@@ -215,7 +219,9 @@ export function requestOptions(options, mode) {
       ...prompt('fix_prompt'),
       ...(Number.isSafeInteger(value.max_rounds) && value.max_rounds >= 1 ? { max_rounds: value.max_rounds } : {}),
     } : {}),
-    ...(mode === 'review' && value.post_review === true ? { post_review: true } : {}),
+    ...(PUBLISHING_MODES.has(mode) && value.post_review === true ? {
+      post_review: true, ...(value.propose_verdict === true ? { propose_verdict: true } : {}),
+    } : {}),
   }
 }
 

@@ -45,9 +45,12 @@ function needsPrivateAttention(record) {
 }
 
 // Feedback on a published pull request still belongs to the private run (the
-// Prepare agent picks it up), but for the owner it is news, not a draft.
+// Prepare agent picks it up), but for the owner it is news, not a draft. Only
+// the record the attention is about decides: a published sibling in the same
+// group does not turn a private child's review into public feedback.
 export const isPublicFeedback = item => item.kind === 'private_review'
-  && runUnitRecords(item).some(record => ['open', 'draft'].includes(record?.status))
+  && ['open', 'draft'].includes(item.record?.status)
+  && hasAttentionSignal(item.record)
 
 // Decisions that wait on the owner: the project's Needs you, Mark ready and
 // Send rows. Private review work and requests belong to Prepared work.

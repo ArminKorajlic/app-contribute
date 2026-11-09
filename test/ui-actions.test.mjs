@@ -460,8 +460,7 @@ test('feedback on a published pull request is news for the owner, not a private 
   assert.match(runSource, /export const isPublicFeedback = item => item\.kind === 'private_review'/)
   assert.match(feedSource, /privateItems = decisions\.filter\(item => item\.kind === 'private_review' && !isPublicFeedback\(item\)\)/)
   assert.match(feedSource, /ownerDecisions = decisions\.filter\(item => isPublicFeedback\(item\) \|\|/)
-  assert.match(feedSource, /'See feedback'/)
-  assert.match(feedSource, /aria-label="Needs you" open>/)
+  assert.match(feedSource, /<AttentionList items=\{ownerDecisions\}/)
 })
 
 

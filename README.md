@@ -18,7 +18,14 @@ contribution. This app is the dashboard for that loop:
   There is no separate Reviews destination. All, **With your edits** and
   **Behind GitHub** filter the same searchable overview, where each project
   carries a Platform or App tag and apps with nothing to do fold away.
-- **One tab per job** — under the project's status and Needs you, **All PRs**
+- **To look at first** — a project opens on what needs you on its tracked
+  contributions, blockers before news. Each row names the reason (Merge
+  blocked, Checks failing, Changes requested, New feedback), the affected PR
+  and its related group, and when it was detected; its button says what it
+  opens. A blocker leaves the list once GitHub shows it resolved. A blocker
+  pushed aside by a newer reason comes back, without a second push
+  notification, while GitHub still shows it.
+- **One tab per job** — under To look at and the project's status, **All PRs**
   (the default), **Review requests** and **My work** (agent jobs, agent
   reviews, agent activity and finished work) split the project by what the
   owner came to do. Saved public work the live list cannot show stays on All
@@ -26,7 +33,7 @@ contribution. This app is the dashboard for that loop:
 - **Task-first controls** — open a project to see its work list beside one
   contextual task, with a compact project switcher rather than another sidebar.
   The project's status says in plain words what is local ("2 files changed on
-  this Möbius are not on GitHub yet") and how it compares with GitHub; **Make
+  this Möbius") and how it compares with GitHub; **Make
   PRs from my edits** is the main action and appears only when there are edits.
   A permitted maintainer can choose **Follow through to merge** without granting
   unknown future public actions. Contribute does not update projects itself:
@@ -93,7 +100,7 @@ contribution. This app is the dashboard for that loop:
   Projects row reserves its space and reports its own refresh instead of
   making counts pop into the layout.
 - **Work list**, grouped:
-  - **Needs you** — actual blockers and questions, linked to their owning work.
+  - **To look at** — actual blockers and feedback, linked to their owning work.
   - **Prepared proposals · not shared** — private drafts waiting on your go-ahead. Each card
     shows high-level review context first: repo, branch, diff stat, and
     summary. Open the card to review exactly what would go public: the action
@@ -207,6 +214,9 @@ shape:
     "message": "The latest GitHub checks are failing.",
     "url": "https://github.com/…"
   },
+  // Blockers displaced from the one attention slot while GitHub still shows
+  // them; the job puts the first one back when the slot frees.
+  "waiting_attention": [{ "type": "merge_conflict", "key": "…" }],
   // Display-only MIRROR of the autopilot state (see below). The real grant +
   // claim live in a platform DB row; this block is written by the platform for
   // the app/cron to render and must never be treated as authorization.
@@ -287,18 +297,32 @@ agent execution and settled history remain separate. Named paused work stays
 visible as unfinished; this iteration does not resume old cycles automatically.
 
 Review/Fix/Merge guidance shares one flat Settings editor. At launch choose
-**Agent ▾ → Review only** (optionally **Merge when safe** or **Allow posting the
-review on GitHub**) or **Review, fix and merge**, plus model and effort, in the
+**Agent ▾ → Review only** (optionally **Allow posting the review on GitHub**,
+**Allow approve or request changes**, and **Merge when safe**, in any
+combination) or **Review, fix and merge**, plus model and effort, in the
 review window. There is
 no automatic-continuation option: the platform does not support it. Each launch
 sends only the options its mode accepts: review and merge prompts always, the
 fix prompt only for Review, fix & merge (new takeovers have no repair-round
-limit), and the post-review grant only for Review. The mode-aware
+limit), and the post-review grant (with its verdict form) only for Review only,
+with or without merge. The mode-aware
 `review-preview` freezes the exact instructions and agent choice for that mode;
 start passes its `preview_sha256` and rejects drift. Mandatory safety
 instructions are platform-owned. With the post-review grant, the agent may post
 one comment review per PR, and only for a verdict it explicitly marks public;
-questions to the owner stay private.
+questions to the owner stay private. With merge as well, the review is posted
+first and the PR merges only after GitHub confirms that review and the
+required checks pass. **Allow approve or request changes** turns that public
+verdict into a proposal: the run shows the exact approve or request-changes
+text with **Approve on GitHub** / **Request changes on GitHub** and **Discard**,
+and nothing is posted until you choose. Only your own tap can submit it; the
+review agent cannot. A pending, discarded or changes-requested verdict never
+merges; a submitted approval resumes the review conversation to run the usual
+merge checks. GitHub does not allow verdicts on your own PRs, so those get a
+comment instead. Re-reviewing after the author responds is a new review you
+start yourself. These options need a Möbius that advertises
+`post_review_merge` and `propose_verdict`; an older one keeps posting and
+merging apart and hides the verdict switch.
 
 A run publishes necessary takeover repairs only through a dedicated
 server-owned checkout and guarded receipts, then requires new independent

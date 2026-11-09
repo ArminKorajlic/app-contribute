@@ -890,7 +890,7 @@ test('tracked app work needs sorting when no current shared position is availabl
 test('the local count adds committed differences and edits, counting a file once', () => {
   const distinct = { localFiles: 1, localOnlyPaths: ['skill/core.md'], workingFiles: 1, working: { paths: [{ path: 'frontend/a.jsx' }] } }
   assert.deepEqual(localChangeSummary(distinct), { changed: 2, editing: 1 })
-  assert.deepEqual(localChangeSentence(distinct), { strong: '2 files', text: ' changed on this Möbius are not on GitHub yet.', sub: '1 is still being edited in a chat.', edits: true })
+  assert.deepEqual(localChangeSentence(distinct), { strong: '2 files', text: ' changed on this Möbius.', sub: '1 is still being edited in a chat.', edits: true })
   const same = { localFiles: 1, localOnlyPaths: ['api.js'], workingFiles: 1, working: { paths: [{ path: 'api.js' }] } }
   assert.deepEqual(localChangeSummary(same), { changed: 1, editing: 1 })
   // A shortened path list cannot prove overlap, so the counts are added.

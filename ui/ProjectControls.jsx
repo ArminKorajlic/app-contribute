@@ -25,10 +25,12 @@ const CYCLE_CSS = `
 `
 
 // One plain-language fact about the project, with its next step beside it.
-function StatusLine({ icon, tone = 'plain', strong, text, sub, children }) {
+function StatusLine({ icon, title, tone = 'plain', strong, text, sub, children }) {
   return <div className={'co-position-line is-' + tone}>
-    <Icon name={icon} size={18} />
-    <div className="co-position-text"><p><strong>{strong}</strong>{text}</p>{sub ? <small>{sub}</small> : null}</div>
+    <div className="co-position-text">
+      <span className="co-position-title"><Icon name={icon} size={16} />{title}</span>
+      <p><strong>{strong}</strong>{text}</p>{sub ? <small>{sub}</small> : null}
+    </div>
     {children}
   </div>
 }
@@ -38,7 +40,7 @@ const UPSTREAM_ICON = { ok: 'check', warn: 'refresh', muted: 'info' }
 function LocalLine({ project, run, task }) {
   const local = localChangeSentence(project)
   const files = local.edits ? <>{local.sub ? `${local.sub} ` : ''}<button type="button" className="co-link-action" onClick={() => task?.open('task:files')}>See the files</button></> : null
-  return <StatusLine icon="edit" strong={local.strong} text={local.text} sub={files}>
+  return <StatusLine icon="edit" title="Your edits" strong={local.strong} text={local.text} sub={files}>
     {local.edits ? <button type="button" className="co-btn" disabled={!run?.privateAction} onClick={() => task?.open('task:prepare')}>Make PRs from my edits</button> : null}
   </StatusLine>
 }
@@ -48,7 +50,7 @@ function UpstreamLine({ project, check }) {
   if (!line) return null
   const updater = line.update ? projectUpdater(project) : null
   const checked = check?.checkedAt ? <TimeAgo prefix="Checked " value={check.checkedAt} /> : 'Use Check GitHub for the latest.'
-  return <StatusLine icon={UPSTREAM_ICON[line.tone]} tone={line.tone} strong={line.strong} text={line.text} sub={updater ? updater.where : checked}>
+  return <StatusLine icon={UPSTREAM_ICON[line.tone]} title="Updates from GitHub" tone={line.tone} strong={line.strong} text={line.text} sub={updater ? updater.where : checked}>
     {updater ? <button type="button" className="co-btn" onClick={updater.open}>{updater.label}</button> : null}
   </StatusLine>
 }
