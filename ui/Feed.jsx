@@ -480,6 +480,7 @@ function ExactBatchAction({
         publicationPreference={publicationPreference}
         githubState={githubState}
         progress={progress}
+        onSelect={busy ? undefined : onSelect}
       />
       {note ? <p className="co-run-error" role="status">{note}</p> : null}
       {checking ? <p className="co-run-error" role="status">Checking the recorded result. Refresh Contribute to check it; nothing will be sent again from this confirmation.</p> : null}
@@ -526,6 +527,7 @@ const STATE_LABELS = {
   mark_ready: 'Review draft',
   ready_attention: 'Review',
   route_attention: 'Choose route',
+  check_attention: 'Source check',
   public_attention: 'Needs you',
   private_review: 'Review',
   connecting: 'Finishing publication',
@@ -551,6 +553,7 @@ function decisionActionLabel(item) {
 const DECISION_ACTION_LABELS = {
   ready_attention: 'Review',
   route_attention: 'Choose',
+  check_attention: 'Open',
   private_review: 'Review',
   request: 'Review',
 }
@@ -741,6 +744,44 @@ function BatchOwnedFocus({ item, reviewStatus, onReview, onFeedback, onSetAutopi
   )
 }
 
+// Reviewed work that only waits on a source check. While it loads there is
+// nothing to do; when it could not run the owner either reconnects GitHub or
+// asks for the check again. No review agent can help.
+function CheckAttentionFocus({ item, reviewStatus, onRefresh, onFeedback, onSetAutopilot, loadDiff }) {
+  const records = runUnitRecords(item)
+  const [checking, setChecking] = useState(false)
+  async function checkAgain() {
+    setChecking(true)
+    try { await onRefresh?.() } finally { setChecking(false) }
+  }
+  return (
+    <div className="co-focus-unit">
+      <section className="co-run-focus-summary is-check_attention">
+        <small>{item.kind === 'checking_source' ? 'Checking the source' : item.reconnect ? 'GitHub needs reconnecting' : 'Source check unavailable'}</small>
+        <h3>{itemHeading(item)}</h3>
+        <p role="status">{item.message}</p>
+        {item.kind === 'check_attention' && !item.reconnect && onRefresh ? (
+          <button type="button" className="co-btn co-btn-primary" disabled={checking} aria-busy={checking} onClick={checkAgain}>
+            {checking ? 'Checking…' : 'Try again'}
+          </button>
+        ) : null}
+        <SourceChatChoices records={records} onFeedback={onFeedback} />
+      </section>
+      {records.map(record => (
+        <ContributionCard
+          key={record.id}
+          rec={record}
+          reviewState={reviewStateFor(record, reviewStatus)}
+          onSetAutopilot={onSetAutopilot}
+          loadDiff={loadDiff}
+          initialExpanded={records.length === 1}
+          showDecision={false}
+        />
+      ))}
+    </div>
+  )
+}
+
 export function FocusedItem({
   item,
   reviewStatus,
@@ -752,9 +793,13 @@ export function FocusedItem({
   onWithdraw,
   onMarkReady,
   onAssignIncomingReview,
+  onRefresh,
   loadDiff,
 }) {
   const records = runUnitRecords(item)
+  if (['check_attention', 'checking_source'].includes(item.kind)) {
+    return <CheckAttentionFocus item={item} reviewStatus={reviewStatus} onRefresh={onRefresh} onFeedback={onFeedback} onSetAutopilot={onSetAutopilot} loadDiff={loadDiff} />
+  }
   if (item.kind === 'incoming_review') {
     return <IncomingFocus item={item} onAssignIncomingReview={onAssignIncomingReview} />
   }
@@ -863,6 +908,7 @@ export function ContributionRun({
   onSetAutopilot,
   onWithdraw,
   onAssignIncomingReview,
+  onRefresh,
   loadDiff,
   presentation = 'project',
   renderPublicWork,
@@ -900,7 +946,14 @@ export function ContributionRun({
     ...(run?.recent || []),
     ...(run?.archive || []),
   ], [projectedDecisions, run?.working, run?.recent, run?.archive])
-  const selected = allItems.find(item => item.id === selectedId) || null
+  // An item id names its kind and unit. A unit keeps its identity when its
+  // kind changes (a recovered check becomes a publish item), so a selection
+  // follows the unit rather than vanishing as moved.
+  const selection = String(selectedId || '')
+  const selectedUnit = selection.slice(selection.indexOf(':') + 1)
+  const selected = allItems.find(item => item.id === selection)
+    || (!selection || selection.startsWith('task:') ? null : allItems.find(item => item.unit && runUnitKey(item.unit) === selectedUnit))
+    || null
 
   useEffect(() => {
     if (!focusTarget || !focusReady) return
@@ -926,8 +979,8 @@ export function ContributionRun({
   }) : working
   // An open issue/PR is inventory, not evidence that an agent is working.
   const agentActivity = visibleWorking.filter(item => ['review_in_progress', 'autopilot'].includes(item.kind))
-  const actionsInProgress = visibleWorking.filter(item => ['publishing', 'connecting'].includes(item.kind))
-  const sharedItems = visibleWorking.filter(item => !['review_in_progress', 'autopilot', 'publishing', 'connecting'].includes(item.kind))
+  const actionsInProgress = visibleWorking.filter(item => ['publishing', 'connecting', 'checking_source'].includes(item.kind))
+  const sharedItems = visibleWorking.filter(item => !['review_in_progress', 'autopilot', 'publishing', 'connecting', 'checking_source'].includes(item.kind))
   const issues = sharedItems.filter(item => runUnitRecords(item).some(record => record?.type === 'issue'))
   const otherShared = sharedItems.filter(item => !issues.includes(item))
   const history = [...(run?.recent || []), ...(run?.archive || [])]
@@ -974,6 +1027,7 @@ export function ContributionRun({
             onWithdraw={onWithdraw}
             onMarkReady={onMarkReady}
             onAssignIncomingReview={onAssignIncomingReview}
+            onRefresh={onRefresh}
             loadDiff={loadDiff}
           />
         )}

@@ -1,6 +1,6 @@
 ---
 name: contributing
-description: "Contribute app's project-collaboration skill. Read before ANY public GitHub action, and for prepare my changes / prepare all, address existing contributions, finish the contribution cycle / submit and sync / align with upstream, and review or merge selected PRs."
+description: "Contribute app's project-collaboration skill. Read before ANY public GitHub action, and for prepare my changes / prepare all, address existing contributions (a chat card's Fix in chat request included), finish the contribution cycle / submit and sync / align with upstream, and review or merge selected PRs."
 ---
 # Contributing upstream
 
@@ -36,10 +36,12 @@ Three rules never bend. Every mode file assumes them and points back here.
    for a different target, materially changed scope, risk, or public message,
    or when the owner limited approval to a pinned version. Never infer
    approval from silence, standing preferences, or another agent's request.
-2. **Only source code leaves the instance, and only after you re-read the FULL
-   diff.** The allowlist below is exhaustive — never memory, storage, db, logs,
-   creds, chat, or personal data. Re-read every changed line before proposing;
-   the `body_draft` and the `.diff` are exactly what goes public.
+2. **Only source code and screenshots of the change leave the instance, and
+   only after you re-read the FULL diff and look at every image.** The
+   allowlist below is exhaustive — never memory, storage, db, logs, creds,
+   chat, or personal data. Re-read every changed line before proposing; the
+   `body_draft`, the `.diff`, and the attached screenshots are exactly what
+   goes public.
 3. **Never submit stale work.** If the staged plan's `base_sha`/`head_sha` or
    canonical branch diff has drifted, do NOT submit — re-stage and re-review
    the current version. Use the same guarded publication path; review and
@@ -69,6 +71,7 @@ stage with one verdict ([ledger.md](ledger.md)), then publish once approved:
 | Link a public PR in chat so the owner can open it in Contribute (`pr_block.py`, read-only; no rights needed) | [maintainer.md](maintainer.md) “Link a PR in chat” |
 | Check results: required checks, local checks before staging, inspecting failed CI (prefer `/data/platform/scripts/ci-failures.sh <owner/repo> <pr-number\|run-id>` over full `gh run view --log` dumps) | [ci.md](ci.md) |
 | Any record with `submission_mode: "mobius-bot"` (legacy relay records only) | [legacy-bot.md](legacy-bot.md) |
+| Handle a card's **Fix in chat** message (`contribute · <record-id> · <code>`): what to repair per code | [card-asks.md](card-asks.md) |
 | Answer review activity in an "Autopilot: …" chat | the `review-followup` skill, not this one |
 
 ## Tools and GitHub status
@@ -104,9 +107,16 @@ legacy `submission_mode: "mobius-bot"` marker to a record.
 
 Hard stop #2 in full.
 
-**Contributable: source code only** — source files of the target repository,
-under a project root its adapter registers. That is the whole list. The Möbius
-adapter lists its roots; a generic GitHub target's root is its own checkout.
+**Contributable — these two, and that is the whole list:**
+
+1. **Source code** — source files of the target repository,
+   under a project root its adapter registers. The Möbius adapter lists its
+   roots; a generic GitHub target's root is its own checkout.
+2. **UI screenshots of the change** — images you captured of the changed
+   interface from neutral or synthetic state, checked for everything listed
+   below, attached to the prepared record, and published only with the
+   owner's approval of that exact record. A screenshot that shows any of it
+   must not be attached; recapture with neutral data or leave it out.
 
 **Never, no exceptions:** anything under `/data/shared/memory/`, app storage
 (`/data/apps/<int-id>/` — numeric-id dirs are runtime data, not source), the

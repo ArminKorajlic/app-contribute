@@ -120,6 +120,39 @@ For Möbius repositories, `plan.labels` is exactly one of `bug`,
 `area: ui`, `area: backend`, `area: apps`, or `area: infrastructure`. A visual
 defect is `bug` + `area: ui`; a new interface is `enhancement` + `area: ui`.
 
+Choose the area by where the changed behavior lives, not by the PR's subject:
+`area: ui` for the shell and frontend, `area: backend` for server behavior,
+`area: apps` for a mini-app's source, and `area: infrastructure` for CI, the
+image, build and test tooling. A PR that changes only tests or CI is
+`maintenance` + `area: infrastructure`, whatever code those tests cover. A
+dependency update is `maintenance` with the area of its lockfile. A revert is
+`bug` when it backs out a regression and `maintenance` otherwise. Its area is
+that of the code it removes. When a change spans layers, pick the one a
+reviewer must understand to judge it; if none clearly leads, omit the area
+rather than guess.
+
+## Screenshots
+
+An `area: ui` PR or an app PR that changes what people see carries the
+before/after screenshots described in [prepare.md](prepare.md), at a desktop
+width and at 390 px wide so reviewers see both layouts. A change with no
+visible effect, such as a dependency update or a refactor, needs neither
+screenshots nor a reason for their absence.
+
+The Möbius `screenshot` tool captures only at the owner's current viewport,
+so use the authenticated capture helper from the visual-testing skill, which
+takes the viewport from the environment:
+
+```bash
+VIEWPORT_WIDTH=1280 VIEWPORT_HEIGHT=800 \
+  bash "$SCRIPTS_DIR/agent-screenshot.sh" <route> "$TMPDIR/after-desktop.png"
+VIEWPORT_WIDTH=390 VIEWPORT_HEIGHT=844 \
+  bash "$SCRIPTS_DIR/agent-screenshot.sh" <route> "$TMPDIR/after-phone.png"
+```
+
+Crop a copy to the change if needed and attach that screenshot when you stage
+([ledger.md](ledger.md)).
+
 ## A new app: check the catalog first
 
 Before building a new app, check whether the App Store catalog already has it;

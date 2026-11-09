@@ -47,7 +47,41 @@ test('state goes through the host handle, or is posted with the document generat
   assert.equal(readBlockSession({ sessionId: 's', generation: 3, actions: [] }).generation, 3)
   assert.equal(readBlockSession({ actions: [] }), null)
   assert.deepEqual(readBlockSession({ sessionId: 's', generation: '3', actions: [], retain: 'yes', checkpoint: { id: 'c', data: '{}', other: 1 } }),
-    { sessionId: 's', generation: null, actions: [], checkpoint: { id: 'c', data: '{}' }, retain: false, recoveryError: false })
+    { sessionId: 's', generation: null, actions: [], items: null, features: [], context: null, checkpoint: { id: 'c', data: '{}' }, retain: false, recoveryError: false })
+  // What the host draws beyond the original fields; only strings are kept.
+  assert.deepEqual(readBlockSession({ sessionId: 's', actions: [], features: ['row-state', 3, null] }).features, ['row-state'])
+})
+
+test('the card item intents are read in card order, validated and deduplicated, and absent items stay absent', () => {
+  const read = items => readBlockSession({ sessionId: 's', actions: [], items })?.items
+  assert.deepEqual(read([{ intent: 'review:a', title: 'A', facts: [{ label: 'x', value: 'y' }] }, { intent: 'review:b' }, { intent: 'review:a' }]),
+    [{ intent: 'review:a' }, { intent: 'review:b' }], 'intents only: no titles or facts, first wins')
+  assert.deepEqual(read([{ intent: 'Review:a' }, { intent: 'review:a b' }, { intent: 7 }, null, { intent: `review:${'x'.repeat(257)}` }, { intent: 'review:c' }]),
+    [{ intent: 'review:c' }], 'only valid host intents')
+  assert.equal(read(undefined), null)
+  assert.equal(read('review:a'), null)
+  assert.equal(readBlockSession({ sessionId: 's', actions: [] }).items, null, 'an older host sends no items')
+})
+
+test('the chat context comes only from the host envelope, and refresh hints reach the card', () => {
+  const read = context => readBlockSession({ sessionId: 's', actions: [], context })?.context
+  assert.deepEqual(read({ chatId: '00000000-0000-4000-8000-00000000c4a7', latest: false, intent: 'chat:contributions', other: 1 }),
+    { chatId: '00000000-0000-4000-8000-00000000c4a7', latest: false, intent: 'chat:contributions' }, 'the attested intent is kept')
+  assert.deepEqual(read({ chatId: 'chat-1' }), { chatId: 'chat-1', latest: true, intent: '' })
+  assert.equal(read({ chatId: 'chat-1', intent: 'not an intent' }).intent, '')
+  for (const bad of [undefined, null, {}, { chatId: '' }, { chatId: 7 }, { chatId: '../other chat' }, { chatId: 'x'.repeat(65) }]) {
+    assert.equal(read(bad), null, JSON.stringify(bad))
+  }
+  const { win, deliver } = fakeWindow()
+  globalThis.window = win
+  const hints = []
+  const stop = listenBlockSession({ onInit() {}, onAction() {}, onRefresh: hint => hints.push(hint) })
+  deliver({ source: win.parent, origin: 'https://mobius.example', data: { type: 'moebius:app-block-refresh', sessionId: 's', generation: 1, reason: 'visible' } })
+  deliver({ source: win.parent, origin: 'https://mobius.example', data: { type: 'moebius:app-block-refresh', sessionId: 's', reason: 'anything' } })
+  deliver({ source: {}, origin: 'https://mobius.example', data: { type: 'moebius:app-block-refresh', sessionId: 's', reason: 'turn' } })
+  assert.deepEqual(hints, [{ sessionId: 's', reason: 'visible' }, { sessionId: 's', reason: 'turn' }])
+  stop()
+  delete globalThis.window
 })
 
 // The real B2 host modules, only when MOBIUS_BLOCKS_FRONTEND names a Möbius

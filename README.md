@@ -360,21 +360,143 @@ existing action owners, and adds no alternate public authority or merge path.
 
 ### Send from chat
 
-`prepared_block.py <record-id>…` prints a chat card for prepared work. The chat
-runs Contribute headless behind the card (`chat.blocks.passive`): reading the
-card performs only exact record reads; tapping **Contribute** (or **Contribute
-all**) starts a send-only runtime that renders nothing and reads only the
-complete ledger, the GitHub connection and the current review status of the
-card's records plus every prepared layer of their stacks. It then turns the same
-button into **Confirm** with the app-supplied identity and size of every change.
-Confirm calls the same guarded Send handlers as the workspace and passes the
-confirmed snapshot as `expected_record(s)`; without that platform binding the
-card never sends, including when the binding disappears between Confirm and the
-write.
-Independent units are sent in parallel; a stack's layers in order. Only
-attempts whose outcome is unknown survive a reload, as a bounded checkpoint of
-ids, and lock their unit until a read shows the result. A batch card's action
-is `chat-send-batch:<16-hex handle>`, bound to the exact records the card lists.
+`prepared_block.py <record-id>…` prints the chat card for prepared work: block
+intent `chat:contributions` (the same for every card, so the chat host can tell
+the newest one), one action in the earlier card's shape (`chat-send:<id>` for
+one record, `chat-send-batch:<16-hex handle>` over all of them), `"expand":
+false` (no inline app view), and one item per record (`review:<id>`, with
+**Project** and **Change** facts). It adds every other
+contribution of its chat that is ready with its whole stack (`--chat-id`,
+default `$CHAT_ID`, required) and every prepared layer of any stack it names,
+then refuses the card if any record in that final set is not all clear for its
+current head or comes from another chat, or if there are more than 12. A record
+that later loses its all clear shows a held pill on the live card.
+
+The chat runs Contribute headless behind the card (`chat.blocks.passive`). On a
+Möbius that advertises `rows-v2`, the session carries a **host-attested chat**
+id, the block intent, and whether this is the chat's newest block of that
+intent (`context: {chatId, latest, intent}`). The card is live only when that
+intent is `chat:contributions`:
+
+- **Rows from the ledger.** The fallback items only say where to look. Each
+  named record is read exactly, followed through `superseded_by` to its current
+  version, and kept only if its `chat_id` or `chat_ids` include the attested
+  chat, so a card printed in one chat never shows or sends another chat's
+  records, whatever its items name. The card reports these as the host's
+  `rows`: title over `owner/repo · 2 screenshots · Layer 1 of 2 · +a −d`
+  (on a host with `lines-v1` the change size is the row's `lines`, drawn with
+  additions green and deletions red; otherwise it is text in the line), with
+  its state in words (Sending, Checking GitHub, Draft, Merged, Closed, Not
+  sent, Not confirmed, Dismissed, Replaced) and the PR link once published.
+  An open PR needs no word beside its link, and a state every row shares and
+  the header already says is not repeated on each row. The header says the
+  state ("2 contributions", "Checking contributions", "2 ready to send",
+  "Sending 2…", "Checking GitHub…", "2 pull requests opened", "Sending 1 ·
+  checking 1…", "1 of 2 sent · 1 needs a fix", "2 of 3 sent · 1 not confirmed",
+  "1 of 2 sent · couldn’t load 1", "2 need a fix"), with a
+  check, spinner or exclamation mark. It is a neutral count until a tap's
+  check finds the set ready, and loading is never shown as empty. Every held
+  record shows its own reason and is counted; an unreadable record or a
+  blocked GitHub account is named as such, never as a fix. While a
+  check, a send or GitHub's answer is underway the header says so and no
+  button is shown.
+- **Newest card wins.** Only the newest card can start or confirm a send. A
+  card that is not the newest drops an open confirmation; while it owns an
+  unresolved send it keeps showing it, and otherwise folds to one line,
+  "Continued below", and reads nothing.
+- **Unresolved records hold.** A named record (or successor) that is gone
+  shows **Not in Contribute**, and one whose fresh read failed shows
+  **Couldn’t check** with **Try again**, even if an earlier copy is cached;
+  either holds the card. A failed
+  successor read is retried on the next trigger.
+- **Cheap freshness.** It reads its records (exact storage reads; no GitHub or
+  source check) when it mounts, on the host's `app-block-refresh` after a turn
+  in its chat settles,
+  and when the tab is shown again (if the last read is older than 30 s); a
+  trigger during a read runs one more read after it. The source and review are
+  checked only when the owner taps the action, for the records that tap's own
+  read found, and a check younger than two minutes is reused only for the exact
+  record versions (head, base, diff) it was asked for; a record that changes
+  while it is checked ends the tap with **Try again**.
+- **Confirm.** Tapping **Send** (or **Send N**) starts a
+  send-only runtime that renders nothing and reads the complete ledger, the
+  GitHub connection and the review status of exactly the records waiting to
+  be sent plus every prepared layer of their stacks. It then turns the same
+  button into **Not now** / **Confirm** and reports its own row for every
+  change it will send, with the card row's values (project, screenshots,
+  stack layer, change size; the block's `confirm_facts: "values"` keeps the
+  labels for assistive technology only). The
+  action covers every record waiting to be sent or none: if one is not in
+  the exact phase Confirm would send (a stack layer due later included) or
+  cannot be sent, its row gets a short pill (Needs review, Not sent, Needs a
+  fresh check, Source changed, Conflicts, Upstream moved, Wrong author, Stack
+  incomplete, Parent merged, Parent changed, Stack not valid, Sent after its stack, Send in
+  Contribute) and the action becomes
+  **Fix in chat** (below), or **Open Contribute** where it cannot be. Confirm calls the
+  same guarded Send handlers as the workspace and passes the confirmed snapshot
+  as `expected_record(s)`; without that platform binding the card never sends,
+  including when the binding disappears between Confirm and the write. A set
+  that changes after the tap does not change what that Confirm sends.
+  Independent units are sent in parallel; a stack's layers in order. Only
+  attempts whose outcome is unknown survive a reload, as a bounded checkpoint
+  of ids, and lock their unit until a read shows the result. An unknown outcome
+  (a lost response, or a 503 `publication_unconfirmed`) is observed on a
+  backoff for ten minutes after the send: the platform's read-only
+  `/observe` route reads GitHub against the attempt's signed receipt, and the
+  card re-reads its records. A settled answer shows the PR; a branch whose PR
+  is not confirmed stays **Checking GitHub**; a changed target holds the row
+  as **Changed on GitHub** and asks the agent with `publication_changed`; a
+  record with Autopilot on that the platform leaves to Autopilot shows **With
+  Autopilot**. Neither of the last two is ever proof that nothing was sent;
+  both stay locked. Each answer belongs to one record version: a late answer
+  for an older one is dropped, and a new version is observed afresh. After
+  the window the row shows **Not confirmed** and asks the agent to check it;
+  it is never resent. The workspace's refresh and the scheduled job observe
+  uncertain records too (a bounded few per pass; the job only past the card's
+  window, as a load heuristic, so an occasional duplicate read is possible);
+  a Möbius without the route keeps the ledger-only recheck, and the earlier
+  card keeps the attempt unknown and locked. A row whose send failed shows
+  **Not sent**, with the reason as one line beside the action; the action is
+  **Retry** when the guarded send path accepts those records again (sent rows
+  are never resent), otherwise **Fix in chat**.
+- **Fix in chat.** On a host that draws asks (`ask-v1`, which needs the
+  owner's `chat.blocks.ask` grant), a held or failed row the agent can repair
+  turns the action into **Fix in chat** (`card-asks.js`). The card reports
+  only the record id, a code and `rev`, a digest of the code and exactly the
+  fields that define that cause (the reviewed source for source causes, plus
+  the title and body for text and review causes, the review verdict, the
+  attention type and key, or the failed attempt's own stamp), never a
+  record-wide timestamp; one tap
+  sends the host's own visible owner message into this chat, a fixed sentence
+  and a `contribute · <record id> · <code>` line. The host posts one ask per
+  state once, so a repeated tap says "Requested in chat" until the agent
+  restages. Its codes are `commit_identity_mismatch`, `invalid_pr_text`,
+  `publication_destination_unavailable`, `needs_review`, `changes_needed`,
+  `upstream_conflict`, `upstream_base_moved`, `source_changed`, `send_failed`,
+  `needs_attention`, `not_in_contribute`, `couldnt_check`, `restage`,
+  `stack_incomplete`, `stack_parent_merged`, `stack_parent_changed`, `result_unknown` and `publication_changed`; the contributing skill's "Card
+  asks" says what the agent does for each, ending with a fresh card. No
+  title, template or GitHub error text is in the message. The app gets no event from the tap and nothing is
+  sent to GitHub; only Confirm sends. A GitHub connection problem is the
+  owner's, so the action names the account (**Connect GitHub** or
+  **Reconnect GitHub**) and opens it in Contribute instead. A relay record, a
+  stack layer waiting for its turn, a retryable check (**Try again**) and an
+  unrestorable result keep their earlier action. Without `ask-v1` the action
+  opens Contribute, exactly as before.
+
+On a host that attests its chat, a card printed before this design (a block
+intent other than `chat:contributions`) never sends: it shows its records as
+rows, filtered to the attested chat exactly like the live card, and no action
+(**Try again** when a record could not be read, which only reads).
+
+**Older hosts.** On a Möbius without `rows-v2`, or outside a chat, there is no
+attested chat, so every card, this one included, runs exactly as the earlier
+card did (`inline-session-v1.js`, unchanged): its record set is the host's
+`items` and nothing else, its action must match them exactly (the one record,
+or the handle over all of them), and Confirm sends exactly those, all of them
+or none, with the same frozen, server-bound snapshot. Nothing an older host
+can send is widened. Opening `chat:contributions` in the app shows the
+contributions waiting for review.
 
 ### PR links from chat
 

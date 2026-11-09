@@ -12,6 +12,9 @@
 
 // Attention types the background loop can handle on its own. Anything else
 // (or a paused/ungranted record) falls back to the classic notify path.
+// `outside_activity` (a comment or review from someone who is not a repository
+// owner, member or collaborator) is deliberately absent: strangers cannot start
+// a round. job.sh classifies authors through github_events.py.
 export const ACTIONABLE_ATTENTION = new Set([
   'changes_requested',
   'checks_failed',

@@ -12,6 +12,8 @@ test('one blocker order serves the workspace card and the chat card', () => {
   assert.match(sendBlocker(record('a'), null, { requireCheck: true }), /current source check/)
   assert.equal(sendBlocker(record('a'), { state: 'ready' }, { requireCheck: true }), '')
   assert.match(sendBlocker(record('a'), { state: 'needs_refresh' }), /source changed/)
+  assert.match(sendBlocker(record('a'), { state: 'unavailable', code: 'github_reconnect' }), /Reconnect GitHub in Möbius Settings/)
+  assert.match(sendBlocker(record('a'), { state: 'unavailable', code: 'review_unavailable' }, { requireCheck: true }), /could not be checked just now/)
   assert.match(sendBlocker(record('a', { record: { last_submit_error: 'x' } }), null), /last send/)
   assert.match(sendBlocker(record('a', { record: { quality_review: {} } }), null), /needs review first/)
   assert.match(sendBlocker(record('a', { record: { status: 'abandoned' } }), null), /dismissed/)
@@ -25,6 +27,12 @@ test('records resolve to distinct publication units; a stack is one unit with it
   assert.deepEqual(units.map(unit => unit.key), ['stack:s', 'record:solo', 'record:gone'])
   assert.deepEqual(units[0].ready.map(r => r.id), ['base', 'top'])
   assert.equal(units[2].reason, 'This contribution is no longer in Contribute.')
+  // The chat card names the same leading reason as the workspace: a reconnect
+  // in any layer outranks a retryable check in an earlier one.
+  const checks = { state: 'ready', byId: {
+    base: { state: 'unavailable', code: 'review_unavailable' }, top: { state: 'unavailable', code: 'github_reconnect' },
+  } }
+  assert.match(publicationUnits(['base'], [base, top], checks, { requireCheck: true })[0].reason, /^Reconnect GitHub/)
   const invalid = record('bad', { plan: { stack: { id: 's2' } } })
   assert.match(publicationUnits(['bad'], [invalid], {})[0].reason, /invalid layer metadata/)
 })

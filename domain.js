@@ -12,10 +12,15 @@
 //     needs_attention?, attention?, plan? }
 // A prepared record staged for review carries `plan`: { action, repo,
 // target_url?, title?, body_draft, branch?, repo_path?, base_sha?,
-// head_sha?, diff_sha256?, diff_stat, diff_excerpt?(legacy, unused) } — the
-// review card renders its file list from the sibling storage file
-// contributions/<id>.diff, and falls back to parsing diff_stat when that
+// head_sha?, diff_sha256?, diff_stat, diff_excerpt?(legacy, unused),
+// screenshots? } — the review card renders its file list from the sibling
+// storage file contributions/<id>.diff, and falls back to parsing diff_stat when that
 // blob is missing, so diff_stat is the one diff field it always needs.
+// `screenshots` is an optional list of { name, sha256, size, alt } PNGs the
+// platform staged beside the record; body_draft references each one as
+// ![alt](screenshot:<name>). The card reads the bytes through
+// GET /api/github/contributions/<app>/<record>/screenshots/<name>, and Send
+// uploads them and swaps each screenshot: ref for a public image URL.
 // `submitting` means the platform submit endpoint claimed the record (in
 // flight); `landing` is the atomic green-stack claim; `commented` is the
 // terminal status for comment actions.
@@ -142,6 +147,31 @@ export function upsertRecord(records, update) {
   return next
 }
 
+// A personal publication whose outcome GitHub has not confirmed: a send still
+// claimed (`submitting`), or a prepared record whose last attempt the platform
+// recorded as possibly public. That is an unsettled push stage, an unconfirmed
+// code, or a known error raised after the branch push (stage `pushed` with an
+// error, for example a failed PR create, which the platform answers with a
+// truthful 409). Restaging clears the error, so a `pushed` stage with an
+// error always belongs to the current attempt. Its signed receipt keeps it
+// locked; only a read-only observation settles it, and its saved error is
+// never a refusal (mobius #2084).
+const UNSETTLED_SUBMIT_STAGES = new Set(['push_pending', 'push_ambiguous'])
+export const UNCONFIRMED_SUBMIT_CODES = new Set(['publication_unconfirmed', 'update_unconfirmed', 'create_unconfirmed', 'push_ambiguous'])
+export function uncertainPublication(record) {
+  if (record?.type !== 'pr' || record.submission_mode === 'mobius-bot') return false
+  if (record.status === 'submitting') return true
+  return record.status === 'prepared' && (UNSETTLED_SUBMIT_STAGES.has(record.last_submit_stage)
+    || UNCONFIRMED_SUBMIT_CODES.has(record.last_submit_error_code)
+    || record.last_submit_stage === 'pushed' && Boolean(record.last_submit_error))
+}
+
+// The exact record version an observation answers: its last write, reviewed
+// head and attempt identity. An answer or finding for another version is
+// stale and is never applied.
+export const publicationVersion = record => [record?.id, record?.updated_at, record?.plan?.head_sha,
+  record?.submit_started_at, record?.personal_submit_input_sha256].map(value => String(value ?? '')).join('|')
+
 // Resolve the ambiguous result of a public submit whose browser response was
 // lost. The durable ledger is the authority: a successful server action has
 // already advanced the row, while a rejected action has persisted its blocker.
@@ -152,7 +182,7 @@ export function resolveUncertainSubmission(rec, ledger) {
   }
   const stored = ledger.records.find((candidate) => candidate?.id === rec.id)
   if (!stored) return { state: 'unconfirmed', record: null }
-  if (['submitting'].includes(stored.status)) {
+  if (stored.status === 'submitting' || uncertainPublication(stored)) {
     return { state: 'publishing', record: stored }
   }
   if (['draft', 'open', 'merged', 'closed'].includes(stored.status)) {
@@ -357,4 +387,17 @@ export function timeAgo(iso) {
   if (s < 86400) return Math.floor(s / 3600) + 'h ago'
   if (s < 86400 * 30) return Math.floor(s / 86400) + 'd ago'
   return new Date(t).toLocaleDateString()
+}
+
+// The staged screenshots a plan carries, keeping only well-formed entries so
+// a malformed record never produces a request or a count the owner relies on.
+export const SCREENSHOT_NAME = /^[a-z0-9][a-z0-9-]{0,60}\.png$/
+export function planScreenshots(plan) {
+  if (!Array.isArray(plan?.screenshots)) return []
+  return plan.screenshots.filter(shot => SCREENSHOT_NAME.test(shot?.name || '')
+    && /^[0-9a-f]{64}$/.test(shot.sha256 || ''))
+}
+
+export function screenshotCountText(count) {
+  return `${count} ${count === 1 ? 'screenshot' : 'screenshots'}`
 }
