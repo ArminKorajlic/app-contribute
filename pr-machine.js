@@ -39,7 +39,10 @@ function derive(facts) {
   // An approval is of this version when it is of this commit, or of the same work (the reader's proof, never guessed here).
   const approvedHere = review => review.state === 'APPROVED' && (atHead(review) || review.sameWork === true)
   const result = facts.result?.head === facts.head ? facts.result : null
-  const outbox = facts.outbox?.head === facts.head ? facts.outbox : null
+  // A draft belongs to the version it was written for and goes stale with it. Something sent to GitHub
+  // whose outcome is not known does not: a new head neither confirms nor refutes it, so it holds
+  // (and blocks the next job or Merge) until it is reconciled.
+  const outbox = facts.outbox && (facts.outbox.state !== 'drafted' || facts.outbox.head === facts.head) ? facts.outbox : null
   const changesOlder = names(review => review.state === 'CHANGES_REQUESTED' && !atHead(review))
   const commentedAtHead = names(review => review.state === 'COMMENTED' && atHead(review))
   // Whose change request is of an older version, but who has looked at this one since and only commented.
@@ -66,6 +69,7 @@ function derive(facts) {
     mine: facts.myReview || null,
     mineAtHead: !!facts.myReview && facts.myReview.commit === facts.head,
     result,
+    earlier: facts.earlier && facts.earlier.head !== facts.head ? facts.earlier : null,
     openFindings: result?.outcome === 'findings' && !result.setAside,
     outbox,
     coveredBy: outbox?.covers ? outbox.kind : '',
@@ -144,21 +148,23 @@ function authorStanding(facts, d) {
 }
 
 function approvedStanding(facts) {
-  if (!['pass', 'none'].includes(facts.checks) || facts.mergeable !== 'yes') return 'author.approved_checks'
+  if (!['pass', 'none'].includes(facts.checks) || facts.mergeable !== 'yes' || facts.gate === 'review_required') return 'author.approved_checks'
   return mayWrite(facts.permission) ? 'author.approved' : 'author.approved_no_rights'
 }
 
 // Your verdict on this version comes first, then a finished review of this version
-// (a re-review that is done is no longer "new commits"), then an older review of yours.
+// (a re-review that is done is no longer "new commits"), then an older review of yours, posted on
+// GitHub (`mine`) or kept private (`earlier`).
 function reviewerStanding(facts, d) {
   if (d.mineAtHead && d.mine.state === 'CHANGES_REQUESTED') return 'reviewer.waiting_author'
   if (d.mineAtHead) return mergeBlocker(facts, d) ? 'reviewer.reviewed' : 'reviewer.mergeable'
   if (d.result) return d.result.setAside ? 'reviewer.kept_private' : 'reviewer.result_ready'
-  if (d.mine) return 'reviewer.re_review'
+  if (d.mine || d.earlier) return 'reviewer.re_review'
   return facts.lifecycle === 'draft' ? 'reviewer.draft' : 'reviewer.to_review'
 }
 
 const CHECK_WORDS = { pass: '', none: '', fail: 'Checks are failing.', pending: 'Checks are still running.', unknown: 'Checks could not be read. Try again.' }
+const GATE_WORDS = 'GitHub still needs a review.'
 const CONFLICT_WORDS = { yes: '', conflict: 'It has merge conflicts.', unknown: 'GitHub hasn’t worked out conflicts yet. Try again.' }
 const firstReason = (...reasons) => reasons.find(Boolean) || ''
 // A stalled job holds nothing: starting again (or another job) is the way out of it.
@@ -185,6 +191,7 @@ export function mergeBlocker(facts, d = derive(facts)) {
     mayWrite(facts.permission) ? '' : 'Needs merge rights.',
     d.approvedAtHead.length ? '' : d.approvedOlder.length ? 'The approval is for an older version.' : 'Nobody but the author has approved it yet.',
     standing.length ? `${standing.join(', ')} asked for changes and hasn’t approved since.` : '',
+    facts.gate === 'review_required' ? GATE_WORDS : '',
     CHECK_WORDS[facts.checks] ?? CHECK_WORDS.unknown,
     CONFLICT_WORDS[facts.mergeable] ?? CONFLICT_WORDS.unknown,
     nothingInFlight(d),
@@ -205,7 +212,7 @@ export const ACTIONS = [
     when: (facts, d) => firstReason(readable(facts), stillOpen(facts), jobIdle(facts), nothingInFlight(d), draftOwnsFindings(d), somethingToAnswer(facts, d) ? '' : 'Nothing to respond to.') },
   { id: 'finish_it', by: 'agent', roles: ['author'], title: NAMES.finishIt, detail: 'Responds, checks and fixes. Stops for your approval before each push.',
     when: (facts, d) => firstReason(readable(facts), stillOpen(facts), mayWrite(facts.permission) ? '' : 'Needs write access to this repository.', jobIdle(facts), nothingInFlight(d), draftOwnsFindings(d)) },
-  { id: 'review', by: 'agent', roles: ['reviewer'], title: d => (d.mine || d.result ? NAMES.reviewAgain : NAMES.review), detail: 'Private, drafted for you, or posted by the agent if you allow it.',
+  { id: 'review', by: 'agent', roles: ['reviewer'], title: d => (d.mine || d.result || d.earlier ? NAMES.reviewAgain : NAMES.review), detail: 'Private, drafted for you, or posted by the agent if you allow it.',
     when: (facts, d) => firstReason(readable(facts), stillOpen(facts), jobIdle(facts), nothingInFlight(d), draftOwnsFindings(d)) },
   { id: 'take_over', by: 'agent', roles: ['reviewer'], title: NAMES.takeOver, detail: 'Maintainers only. Needs a reason, and says so on the PR. Each push needs your approval.',
     when: (facts, d) => firstReason(readable(facts), stillOpen(facts), MAINTAINER.includes(facts.permission) ? '' : 'Only maintainers can take over someone else’s PR.', jobIdle(facts), nothingInFlight(d), draftOwnsFindings(d)) },
@@ -237,7 +244,9 @@ export const ACTIONS = [
 const headlineWho = (key, d) => ({ 'author.waiting_rereview': d.changesOlder, 'author.looked_again': d.lookedAgain, 'author.commented': d.commentedOnly, 'author.approval_stale': d.approvedOlder, 'author.approved': d.approvedAtHead }[key] || [])
 
 function headlineFor(key, facts, d) {
-  const checks = facts.mergeable === 'yes' ? CHECK_WORDS[facts.checks] || 'Checks are still running.' : CONFLICT_WORDS[facts.mergeable] || CONFLICT_WORDS.unknown
+  const clean = ['pass', 'none'].includes(facts.checks) && facts.mergeable === 'yes'
+  const checks = clean && facts.gate === 'review_required' ? GATE_WORDS
+    : facts.mergeable === 'yes' ? CHECK_WORDS[facts.checks] || 'Checks are still running.' : CONFLICT_WORDS[facts.mergeable] || CONFLICT_WORDS.unknown
   return wordsOf(key, d).headline.replace('{who}', headlineWho(key, d).join(', ') || 'reviewers').replace('{author}', facts.author || 'the author')
     .replace('{checks}', checks).replace('{green}', facts.checks === 'none' ? 'no checks' : 'checks green')
 }
@@ -260,14 +269,6 @@ export function decide(facts) {
   const label = state.label.replace('{author}', facts.author || 'the author')
   return { role: facts.role, state: key, turn: state.turn, label, headline: headlineFor(key, facts, d), next: state.next || '', jobKind: facts.job?.kind || '', coveredBy: d.coveredBy, waitingOn, actions,
     approvedBy: d.approvedAtHead, carriedFrom: d.carried, lookedAgain: d.lookedAgain, approvalFrom: d.approvalFrom, rereviewFrom: d.rereview }
-}
-
-
-// What the platform asks before an effect: '' when allowed, otherwise the reason.
-export function actionBlocker(facts, actionId) {
-  const action = decide(facts).actions.find(item => item.id === actionId)
-  if (!action) return `You can’t do that as the ${facts.role === 'author' ? 'author' : 'reviewer'} of this PR.`
-  return action.reason
 }
 
 export const actionOf = (decision, id) => decision.actions.find(action => action.id === id) || null

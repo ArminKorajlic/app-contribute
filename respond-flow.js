@@ -1,8 +1,9 @@
 // What Post and Discard do. Neither posts anything: Post writes the owner's approval and tells the chat to run the helper, which
-// checks the approval itself; Discard writes the decision that takes the answer off the PR.
+// checks the approval itself; Discard writes the decision that takes the answer off the PR. Post does nothing at all until the host
+// offers an owner grant (respond-result.js, THE GATE): an approval the agent could have written itself is not the owner's press.
 import { respondScope } from './address-feedback.js'
 import { clearDecision, readFreshResult, writeDecision } from './respond-store.js'
-import { postMessage } from './respond-result.js'
+import { ownerGrantOffered, POST_OFF_REASON, postMessage } from './respond-result.js'
 import { deliverCycleMessage } from './cycle-delivery.js'
 import { NAMES } from './names.js'
 
@@ -33,7 +34,8 @@ const refused = delivery => Boolean(delivery.status || delivery.gone)
 
 // `again`: the first message may not have woken the chat, or the post stopped; a new message id, because the same id is a duplicate
 // the platform drops. The helper never posts a step twice, so a second message is harmless.
-export async function approveResponse({ slug, digest, pr, chat = null, token, storage, again = false, deliver = deliverCycleMessage, now = here }) {
+export async function approveResponse({ slug, digest, pr, chat = null, token, storage, capabilities = null, again = false, deliver = deliverCycleMessage, now = here }) {
+  if (!ownerGrantOffered(capabilities)) return { ok: false, error: POST_OFF_REASON }
   const current = await currentAnswer(slug, digest, storage)
   if (!current.ok) return current
   const { result } = current

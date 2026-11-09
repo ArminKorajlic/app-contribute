@@ -15,8 +15,10 @@ export const COMPARE_FILE_LIMIT = 300
 
 const changedLines = patch => String(patch).split('\n').filter(line => line[0] === '+' || line[0] === '-')
 // A patch's lines say what changed; without one only the file's content id (`sha`) can.
-const content = file => (typeof file.patch === 'string' ? changedLines(file.patch).join('\n') : `blob ${file.sha ?? ''}`)
-const signature = file => `${file.previous_filename || ''}>${file.filename}|${file.status}|${content(file)}`
+const content = file => (typeof file.patch === 'string' ? changedLines(file.patch) : [`blob ${file.sha ?? ''}`])
+// Serialized as one JSON array of the separate fields, so no file name or line can run into the next field
+// (a name containing "|added|+" must not read as a status and a line).
+const signature = file => JSON.stringify([file.previous_filename || '', file.filename, file.status, content(file)])
 const hasChanges = file => (file.additions || 0) + (file.deletions || 0) > 0
 
 // True or false when both comparisons are complete; null when either cannot say (missing, cut off, or a changed

@@ -127,7 +127,7 @@ test('only a question carries a pointer: every other state keeps its own button 
   for (const [, extra] of GALLERY) assert.equal(nextStepModel(decide(facts(extra)), { capabilities }).pointer, '')
 })
 
-test('the panel shows the question without a button, and the phone bar has nothing to repeat', async t => {
+test('the panel shows the question with a link to the Review tab, and the phone bar has nothing to repeat', async t => {
   if (!frontendModules) return t.skip('MOBIUS_FRONTEND_NODE_MODULES is required')
   const { render } = await renderModule(`
     import React from 'react'
@@ -140,6 +140,8 @@ test('the panel shows the question without a button, and the phone bar has nothi
   assert.match(panel, /co-desk-chip is-waiting">Agent asks you/)
   assert.match(panel, /The agent has a question for you/)
   assert.match(panel, /Answer it in the Review tab\./)
-  assert.doesNotMatch(panel, /<button|Answer the agent/, 'one place to answer: the Review tab')
+  assert.doesNotMatch(panel, /Answer the agent/, 'one place to answer: the Review tab')
+  assert.equal(panel.match(/<button/g)?.length, 1, 'the only control is the pointer, which opens the Review tab')
+  assert.match(panel, /<button type="button" class="co-next-pointer">Answer it in the Review tab\.<\/button>/)
   assert.equal(render({ decision, capabilities, bar: true }), '', 'no bottom bar on a phone for a state with no button')
 })

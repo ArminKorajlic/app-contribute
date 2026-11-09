@@ -118,6 +118,16 @@ test('the dialog styles give the row, the steps and the hover card their room', 
   assert.match(css, /@media \(hover:hover\) and \(pointer:fine\) \{ \.co-rw-seen-btn:hover \+ \.co-rw-seen-card/, 'hover only where there is a hover')
 })
 
+test('the hover card is anchored to the header and sized from the dialog, never the viewport', () => {
+  const css = readFileSync(new URL('../workspace-theme.js', import.meta.url), 'utf8')
+  const card = css.match(/\.co-rw-seen-card \{([^}]*)\}/)[1]
+  assert.match(css, /\.co-rw-head \{[^}]*--rw-edge:20px; position:relative;/, 'the header is what the card is positioned against')
+  assert.match(css, /\.co-rw-seen \{ display:grid; \}/, 'the icon wrapper is not a positioned ancestor')
+  assert.match(card, /right:var\(--rw-edge\); width:min\(300px,calc\(100% - 2 \* var\(--rw-edge\)\)\)/, 'the card keeps one header edge of room on each side')
+  assert.doesNotMatch(card, /100vw/, 'a viewport width ignores the sheet and header insets and clips the card on a narrow phone')
+  assert.match(css, /@media\(max-width:680px\) \{[^@]*\.co-rw-head \{ --rw-edge:16px;/, 'the narrow sheet has the smaller edge')
+})
+
 test('a new Review or Fix window is started from the saved agent, and only when there is one', () => {
   const list = readFileSync(new URL('../ui/PullRequests.jsx', import.meta.url), 'utf8')
   assert.match(list, /\.\.\.\(defaultAgent\?\.model \? \{ agent: defaultAgent \} : \{\}\)/)

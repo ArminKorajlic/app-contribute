@@ -89,14 +89,16 @@ const requestChip = { label: 'Asks for your review', tone: 'you' }
 // decisions, their own PRs with a step, and agent runs that wait on them.
 function projectRows(view, project, { login, decisionsFor, lastLooked, query, runs, chats, responses, ignored, reviewEntries, onOpenPull, onOpenRecord }) {
   const rows = []
+  // The search finds a project by its name too: a name match keeps all of its rows.
+  const keep = (...parts) => matches(query, project.name, ...parts)
   const pull = (pr, chip, order, chipKey = '') => {
     rows.push({ chip: chipKey, el: <DeskPullRow key={`pr:${pr.number}`} project={project} pr={pr} chip={chip} order={order} lastLooked={lastLooked} runs={runs} chats={chats} responses={responses} onOpenPull={onOpenPull} login={login} ignored={ignored} /> })
   }
   const requests = view === 'needs' || view === 'requests'
-    ? (project.reviewRequests || []).filter(pr => matches(query, pr.title, String(pr.number), pr.author?.login)) : []
+    ? (project.reviewRequests || []).filter(pr => keep(pr.title, String(pr.number), pr.author?.login)) : []
   const all = decisionsFor(project)
   const decisions = (view === 'work' ? all : view === 'needs' ? attentionListItems(all) : [])
-    .filter(item => matches(query, item.label, String(item.record?.number || '')))
+    .filter(item => keep(item.label, String(item.record?.number || '')))
   // Your own agent review of your own PR found problems at its current version:
   // the row offers the fix itself, and opens the PR straight into it.
   const fixAction = item => {
@@ -125,14 +127,14 @@ function projectRows(view, project, { login, decisionsFor, lastLooked, query, ru
   if (view === 'needs') {
     // A PR that already has its feedback card above is listed once, there.
     needsPulls(project, attentionListItems(all), login)
-      .filter(([pr]) => matches(query, pr.title, String(pr.number)))
+      .filter(([pr]) => keep(pr.title, String(pr.number), pr.author?.login))
       .forEach(([pr, state]) => pull(pr, state, '', state.key === 'ready' ? 'merge' : 'fix'))
     projectAgentRuns(project, reviewEntries, attentionListItems(all), login)
-      .filter(entry => matches(query, entry.item.title, String(entry.item.number)))
+      .filter(entry => keep(entry.item.title, String(entry.item.number)))
       .forEach(entry => rows.push({ chip: 'agent', el: <ReviewRow key={`run:${entry.id}`} entry={entry} project={project} onOpenPull={onOpenPull} /> }))
   }
   if (view === 'mine') {
-    const mine = authoredPulls(project.incomingReviews, login).filter(pr => matches(query, pr.title, String(pr.number)))
+    const mine = authoredPulls(project.incomingReviews, login).filter(pr => keep(pr.title, String(pr.number), pr.author?.login))
     chainPulls(mine).forEach(chain => chain.forEach((pr, index) => pull(
       pr, authoredPullState(pr), chain.length > 1 ? `${index + 1} of ${chain.length}` : '',
     )))
@@ -142,7 +144,7 @@ function projectRows(view, project, { login, decisionsFor, lastLooked, query, ru
 
 function MergedRows({ project, records, query, lastLooked }) {
   return records
-    .filter(record => matches(query, record.title, String(record.number || '')))
+    .filter(record => matches(query, project.name, record.title, String(record.number || '')))
     .map(record => (
       <div key={record.id} className="co-desk-row is-static">
         <Icon name="merge" size={16} className="co-desk-merged-icon" />

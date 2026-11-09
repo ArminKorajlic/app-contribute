@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { readFileSync } from 'node:fs'
 import { addressBrief, addressItems, respondAction, savedFindings } from '../address-feedback.js'
 import { NAMES } from '../names.js'
 
@@ -173,4 +174,11 @@ test('the start window says what it does, where the result will be, and starts w
   assert.match(second, /aria-label="Agent"[\s\S]*Same agent as the first answer, so it builds on that work/, 'the agent of the existing conversation is named, not left implied')
   assert.match(second, new RegExp(`>${NAMES.respondAgain}<`))
   assert.doesNotMatch(second, /co-model-list|co-agent-trigger-chevron|<button[^>]*co-agent-trigger/, 'the agent of the existing conversation is not picked again')
+})
+
+test('the window reads the whole conversation and every thread, never just the first page', () => {
+  const source = readFileSync(new URL('../ui/AddressFeedback.jsx', import.meta.url), 'utf8')
+  assert.match(source, /loadAllPullActivity\(/)
+  assert.match(source, /loadAllPullThreads\(/)
+  assert.doesNotMatch(source, /\bloadPullActivity\(|\bloadPullThreads\(/)
 })

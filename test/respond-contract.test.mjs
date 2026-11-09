@@ -14,6 +14,7 @@ import { loadResponses, writeDecision } from '../respond-store.js'
 const here = dirname(fileURLToPath(import.meta.url))
 const HELPER = join(here, '..', 'respond_result.py')
 const FAKE_GH = join(here, 'fixtures', 'fake_gh.py')
+const FAKE_HOST = join(here, 'fixtures', 'fake_host') // a Möbius core (SCRIPTS_DIR) that says what it offers
 const REPO = 'owner/repo'
 const HEAD_REF = 'stack/example/02-feature'
 const AWKWARD_REPLY = '@alex both findings were real — fixed \u{1F680} שלום\r\n\r\n1. **Lost write** (`write.js`) said "done" and \\o/\n\tindented   \n'
@@ -44,7 +45,9 @@ function buildWorld(t) {
   copyFileSync(FAKE_GH, join(root, 'bin', 'gh'))
   chmodSync(join(root, 'bin', 'gh'), 0o755)
   world.env = { ...process.env, PATH: `${join(root, 'bin')}:${process.env.PATH}`, GIT_CONFIG_GLOBAL: join(root, 'gitconfig'), GIT_CONFIG_NOSYSTEM: '1',
-    RESPOND_APP_DIR: world.app, RESPOND_GIT_REMOTE: world.remote, FAKE_GH_CONFIG: join(root, 'gh-config.json'), CHAT_ID: 'chat-under-test' }
+    RESPOND_APP_DIR: world.app, RESPOND_GIT_REMOTE: world.remote, FAKE_GH_CONFIG: join(root, 'gh-config.json'), CHAT_ID: 'chat-under-test',
+    // A Möbius that offers the owner grant, so the post flow runs; the test of the gate below turns it off, out loud.
+    SCRIPTS_DIR: FAKE_HOST, FAKE_HOST_CAPABILITIES: JSON.stringify({ owner_grant: true }) }
   Object.assign(process.env, { GIT_CONFIG_GLOBAL: world.env.GIT_CONFIG_GLOBAL, GIT_CONFIG_NOSYSTEM: '1' })
   git(root, 'init', '-q', '--bare', world.remote)
   git(world.remote, 'config', 'uploadpack.allowAnySHA1InWant', 'true')
@@ -146,6 +149,26 @@ test('what the helper saves is what the app reads, and Post posts exactly what t
   ], 'each reply reaches GitHub byte for byte, then the description, then the re-review')
 })
 
+test('on a Möbius without the owner grant Post publishes nothing even for an approved answer, while the dry run still shows the plan', async t => {
+  const world = buildWorld(t)
+  finishWork(world)
+  assert.equal(save(world).status, 0)
+  const storage = folderStorage(world.app)
+  const [{ slug, result }] = await loadResponses(storage)
+  await writeDecision(slug, { result_id: result.id, digest: result.digest, decision: 'approved', at: '2026-11-06T09:30:00Z' }, storage)
+  world.env.FAKE_HOST_CAPABILITIES = '{}' // today's Möbius
+  const refused = helper(world, ...postArgs(result))
+  assert.equal(refused.status, 3, refused.stderr)
+  assert.match(refused.stderr, /Post is off for now/)
+  assert.deepEqual(writes(world), [], 'nothing reached GitHub')
+  assert.equal(git(world.remote, 'rev-parse', `refs/heads/${HEAD_REF}`), world.head, 'the branch was not touched')
+  const [after] = await loadResponses(storage)
+  assert.equal(after.result.state, 'ready', 'and the saved answer is as it was')
+  const dry = helper(world, ...postArgs(result, '--dry-run'))
+  assert.equal(dry.status, 0, dry.stderr)
+  assert.match(dry.stdout, /Post would, in this order/)
+})
+
 test('a discarded answer, or an approval of other content, posts nothing', async t => {
   const world = buildWorld(t)
   finishWork(world)
@@ -162,4 +185,21 @@ test('a discarded answer, or an approval of other content, posts nothing', async
   }
   assert.match(await refused('discarded'), /not approved/)
   assert.match(await refused('approved', 'f'.repeat(64)), /different content/)
+})
+
+test('what the helper accepts at a limit, the app reads: characters, long subjects and deep paths are never hidden', async t => {
+  const world = buildWorld(t)
+  const rocket = '\u{1F680}'
+  const deep = `${Array.from({ length: 10 }, () => 'd'.repeat(50)).join('/')}/file.txt`
+  commit(world.work, 'S'.repeat(301) + '\n\nBody', { [deep]: 'x\n' })
+  commit(world.work, rocket.repeat(300), { 'y.txt': 'y\n' })
+  writeFileSync(join(world.root, 'input.json'), JSON.stringify({ points: [], replies: [{ body: 'Answered.', reply_to: null }], description: null, rerequest: [], tests: 'a'.repeat(499) + rocket }))
+  const saved = save(world)
+  assert.equal(saved.status, 0, saved.stderr)
+  const entries = await loadResponses(folderStorage(world.app))
+  assert.equal(entries.length, 1, 'the answer is on the Review tab, not silently dropped')
+  const { result } = entries[0]
+  assert.equal([...result.tests].length, 500)
+  assert.deepEqual(result.commits.map(item => [...item.title].length), [300, 300])
+  assert.ok(result.files.some(file => file.path === deep))
 })
