@@ -41,6 +41,8 @@ export const NAMES = Object.freeze({
   closePr: 'Close pull request',
   assign: 'Assign',
   askRereview: 'Ask for re-review',
+  // Posts a note naming the reviewer who looked again but has not approved (the PR machine's ask_approval).
+  askApproval: 'Ask for approval',
 
   // What reaches GitHub
   sendToGitHub: 'Send to GitHub',

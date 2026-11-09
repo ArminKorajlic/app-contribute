@@ -7,7 +7,7 @@
 const STEPS = ['Answer feedback', 'Check', 'Fix', 'Reviewers']
 const STEP_OF_STATE = {
   'author.feedback': 0, 'author.draft': 1, 'author.findings': 2, 'author.blocked': 2, 'author.draft_ready': 3,
-  'author.waiting_review': 3, 'author.waiting_rereview': 3, 'author.approval_stale': 3,
+  'author.waiting_review': 3, 'author.waiting_rereview': 3, 'author.looked_again': 3, 'author.approval_stale': 3,
   'author.approved': 3, 'author.approved_checks': 3, 'author.approved_no_rights': 3,
 }
 // An agent job is on the step its kind does; Finish it for me moves between checking and

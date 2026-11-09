@@ -30,6 +30,13 @@ function checksOf(pr) {
   return CHECKS[checkSummary(pr)?.state] || 'unknown'
 }
 
+// One review as the machine reads it. `sameWork` is the fact reader's proof that an approval of an older commit
+// is of the same work (same-work.js marks it on the GitHub answer); absent means nobody asked.
+const reviewOf = node => ({
+  by: node.author?.login || 'ghost', state: node.state, commit: node.commit?.oid || '', bot: isBot(node.author),
+  ...('sameWork' in node ? { sameWork: node.sameWork } : {}),
+})
+
 // Every opinion GitHub lists, or null when the list is not the whole of it: a first page of
 // a longer list could omit a standing change request (which would enable Merge) or the
 // current approval. A deleted account reads as "ghost" and a review whose commit is gone
@@ -39,10 +46,14 @@ function reviewsOf(pr) {
   const connection = pr?.latestOpinionatedReviews
   const nodes = connection?.nodes
   if (!Array.isArray(nodes) || connection.pageInfo?.hasNextPage === true) return null
-  return nodes.filter(node => node?.state).map(node => ({
-    by: node.author?.login || 'ghost', state: node.state, commit: node.commit?.oid || '', bot: isBot(node.author),
-  }))
+  return nodes.filter(node => node?.state).map(reviewOf)
 }
+
+// The newest review of each person when it was a plain comment: proof they looked at that version,
+// never an opinion. GitHub's opinions skip comments, so a reviewer who comments after asking for changes
+// keeps their request, and this is the only place that says they came back. Not reading them only
+// leaves that unsaid, so they are never a reason to call the PR unread.
+const commentsOf = pr => (pr?.latestReviews?.nodes || []).filter(node => node?.state === 'COMMENTED').map(reviewOf)
 
 // Threads a person other than you spoke last in (a bot's thread is input, never
 // waiting on you). The PR's own conversation counts as one more such thread: a plain
@@ -187,7 +198,7 @@ export function prFacts({ pr, login, runs = [], ignored = null, chats = [], resp
     permission: pr?.repository?.viewerPermission || 'unknown',
     // GitHub's own gate: a branch rule that still needs a review no approval here can satisfy.
     gate: pr?.reviewDecision === 'REVIEW_REQUIRED' ? 'review_required' : null,
-    reviews: own ? reviews || [] : withSentVerdict(reviews || [], fromRuns.sent, pr, login),
+    reviews: [...(own ? reviews || [] : withSentVerdict(reviews || [], fromRuns.sent, pr, login)), ...commentsOf(pr)],
     myReview,
     openThreads: threads || 0,
     job: jobFor(fromRuns.job, chats, pr),

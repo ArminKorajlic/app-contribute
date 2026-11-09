@@ -12,7 +12,7 @@ const pull = (extra = {}) => ({
   latestOpinionatedReviews: { nodes: [] }, viewerLatestReview: null, reviewThreads: { nodes: [] }, ...checks(), ...extra,
 })
 const mine = extra => pull({ author: { login: 'alex' }, ...extra })
-const ALL = { mark_ready_now: true, back_to_draft_now: true, request_rereview_now: true, merge_now: true, close_now: true }
+const ALL = { mark_ready_now: true, back_to_draft_now: true, request_rereview_now: true, ask_approval_now: true, merge_now: true, close_now: true }
 const menu = (pr, capabilities = ALL, record = null) => actionsMenuModel([pr], [standingFor({ pr, login: 'alex' })], { capabilities, record })
 const ids = items => items.map(item => item.intent)
 const item = (model, intent) => [...model.you, ...model.agent].find(entry => entry.intent === intent)
@@ -54,7 +54,8 @@ test('Merge on your PR stays dimmed with the machine’s reason until someone el
 test('your own actions appear only where this Möbius can do them', () => {
   assert.deepEqual(ids(menu(mine(), {}).you), [])
   assert.deepEqual(ids(menu(mine(), { merge_now: true }).you), ['merge'])
-  assert.deepEqual(ids(menu(mine()).you), ['open_for_review', 'back_to_draft', 'ask_rereview', 'merge', 'close'])
+  assert.deepEqual(ids(menu(mine()).you), ['open_for_review', 'back_to_draft', 'ask_rereview', 'ask_approval', 'merge', 'close'])
+  assert.deepEqual(ids(menu(mine(), { ...ALL, ask_approval_now: false }).you), ['open_for_review', 'back_to_draft', 'ask_rereview', 'merge', 'close'], 'the note is offered only where this Möbius can post it')
   assert.deepEqual(ids(menu(pull()).you), ['merge', 'close'], 'on their PR you may merge or close, never change its draft state')
   const appDraft = menu(mine({ isDraft: true }), {}, { status: 'draft', submission_mode: 'github' })
   assert.deepEqual(ids(appDraft.you), ['open_for_review'], 'a draft this app sent opens through its own record')
@@ -86,4 +87,16 @@ test('Close pull request is the one destructive row: red, apart, and last in You
   assert.equal(item(model, 'close').detail, 'Asks you to confirm first.')
   assert.ok(model.you.filter(entry => entry.intent !== 'close').every(entry => !entry.danger))
   assert.equal(model.you.at(-1).rec, false, 'closing is never the recommended step')
+})
+
+test('a reviewer who looked again without approving is asked to approve first, with the re-review ask dimmed and explained', () => {
+  const node = (state, oid) => ({ state, author: { login: 'sam', __typename: 'User' }, commit: { oid } })
+  const looked = mine({ latestOpinionatedReviews: { nodes: [node('CHANGES_REQUESTED', OLD)] }, latestReviews: { nodes: [node('COMMENTED', HEAD)] } })
+  const model = menu(looked)
+  assert.equal(model.headline.startsWith('Your PR · sam looked again and left a comment'), true)
+  assert.equal(model.you[0].intent, 'ask_approval', 'the highlighted choice comes first')
+  assert.equal(model.you[0].title, 'Ask sam to approve')
+  assert.equal(model.you[0].rec, true)
+  assert.equal(item(model, 'ask_rereview').reason, 'They already looked at this version. Ask them to approve.')
+  assert.equal(item(menu(looked, { ...ALL, ask_approval_now: undefined }), 'ask_approval'), undefined, 'a Möbius that cannot post the note does not offer it')
 })

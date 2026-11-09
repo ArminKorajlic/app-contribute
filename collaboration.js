@@ -329,7 +329,8 @@ export const mergePull = (token, appId, pr, { method = '' } = {}) => publicWrite
 })
 
 // The owner's own status change on one PR, at this exact version, once: `ready` (open a draft for
-// review), `draft` (back to draft), `close`, or `request-reviewers` (ask for re-review). Same outcome
+// review), `draft` (back to draft), `close`, `request-reviewers` (ask for re-review) or `ask-approval` (a note asking
+// reviewers who looked again to approve). Same outcome
 // shapes as mergePull. GitHub cannot pin a version on these writes, so the platform reports the head
 // it saw afterwards (observedHead) and the sheet says so if it moved. The receipt of each is the state
 // it names, with that head; any other answer may still have reached GitHub.
@@ -338,6 +339,7 @@ const STATUS_WRITE = {
   draft: { state: 'draft', code: 'draft_unconfirmed', words: 'GitHub may have turned it back into a draft. Check the pull request before trying again.' },
   close: { state: 'closed', code: 'close_unconfirmed', words: 'GitHub may have closed it. Check the pull request before trying again.' },
   'request-reviewers': { state: 'requested', code: 'reviewers_unconfirmed', words: 'GitHub may have asked for another review. Check the pull request before trying again.' },
+  'ask-approval': { state: 'asked', code: 'approval_unconfirmed', words: 'GitHub may have posted the note. Check the pull request before trying again.' },
 }
 export const pullAction = (token, appId, pr, action, extra = {}) => {
   const write = STATUS_WRITE[action]
