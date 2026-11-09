@@ -1290,7 +1290,8 @@ export const CSS = `
 .co-run-focus-summary > .co-review-link { margin-top: 10px; }
 .co-run-focus-summary.is-public_attention,
 .co-run-focus-summary.is-ready_attention,
-.co-run-focus-summary.is-route_attention {
+.co-run-focus-summary.is-route_attention,
+.co-run-focus-summary.is-check_attention {
   border-color: color-mix(in srgb, var(--co-warn) 38%, var(--border));
 }
 .co-run-source-choices,

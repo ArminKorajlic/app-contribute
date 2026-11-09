@@ -159,7 +159,13 @@ the owner, and folds apps with nothing to do.
   Respond to feedback windows work the same way); a finished action swaps it for
   Done. Merge asks how it lands only when the repository
   allows more than one way, merges exactly the version shown, and is never
-  repeated after an unconfirmed answer.
+  repeated after an unconfirmed answer. **Only a decoded receipt for the action
+  is a success and only a decoded refusal (a 4xx whose body can be read) is a plain
+  failure.** A lost connection, a server error, an answer that cannot be read
+  (whatever its status) or the wrong receipt may have reached GitHub, so the sheet reads that as unconfirmed: it has the view read
+  GitHub again first, and its button stays off, so another attempt can only
+  start from that fresh read. This holds for Merge, Open for review and Post to
+  GitHub alike.
 - **Open as draft / Open for review** is one split button on the prepared-PR
   card; the arrow offers the other stage for that send. The stage is part of the
   exact approval, the confirmation text and the chat Send card (which freezes it
@@ -180,9 +186,12 @@ the owner, and folds apps with nothing to do.
 - **PR reviews** (side menu) lists the reviews the owner started, by project, in
   two tabs: **In progress** (waiting on the owner first, then agents at work, then
   anything stuck or unreadable) and **Done**. Every PR is read live, in batches of
-  25, so a closed PR is history, a pushed PR comes back as new commits, and a PR
-  GitHub did not return reads **Couldn’t read** with Try again instead of being
-  classified from older saved data.
+  25, when the list changes and again on every Sync with GitHub, so a closed PR is
+  history, a pushed PR comes back as new commits (after a clear or approved review
+  too, though on the owner's own PR it is only an older version), a stale finding
+  is never counted as waiting on the owner, and a PR GitHub did not return reads
+  **Couldn’t read** with Try again instead of being classified from older saved
+  data.
 
 ## The PR machine: one decision for every screen and the server (owner direction, 2026-11-04)
 
@@ -208,14 +217,22 @@ checked over every case and every combination of the facts that matter):
 1. An author never gets a public review action. An agent's check of your PR is private.
 2. Merge needs an approval of this exact version by someone other than the author (a bot
    never counts), no change request still standing (even on an older version), checks
-   that pass or do not exist, no conflicts, nothing unconfirmed on its way to GitHub,
-   and no agent job running. GitHub asking for no review is not an approval.
+   that pass or do not exist, no conflicts, nothing unconfirmed on its way to GitHub
+   (a new commit does not settle it: it holds until reconciled, while a draft goes
+   stale with its version), no agent job running, and no review GitHub itself still
+   requires (a branch rule: "GitHub still needs a review"). GitHub asking for no review
+   is not an approval.
 3. Only new commits bring their PR back for re-review; a reply or a thank-you never does.
+   That includes a clean private review of their PR: at its own version it reads as done
+   (nothing to send, nothing to set aside); once they push, the PR is back to re-review.
+   Your own PR is never nagged about an older clean check.
 4. One agent job per PR at a time. A job that stalled holds nothing. A Respond to
    feedback conversation counts as the PR's job for as long as it can still move.
 5. Take over is for maintainers only, and needs a reason.
 6. Unknown stays unknown: missing checks are never green, and a PR that could not be
-   read enables nothing that depends on it.
+   read enables nothing that depends on it. That includes a list of reviews GitHub
+   says goes on past the first page (30 writers): an opinion on the next page could
+   be a change request, so the PR reads as not read.
 
 **Who acts.** Pushing code, merging and changing a PR's status (ready, draft, closed)
 always wait for your own tap. A review verdict waits for your tap ("Draft for me"),
