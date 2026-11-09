@@ -62,6 +62,16 @@ test('the segment bar, filter chips, count chips, rail rows and lens tabs take t
   }
 })
 
+// The shared Clear button is small to look at (a 16px icon) but a full control to touch: its box is the control height
+// wide and tall, and the field's 1px edge is taken back so the field stays one control tall.
+test('the shared Clear button is as wide and as tall as a control', () => {
+  const css = sheets.map(([, text]) => text).join('\n')
+  const rule = css.split('\n').find(line => line.startsWith('.co-search-clear {')) || ''
+  assert.match(rule, /(?:^|[;{\s])width:\s*var\(--co-control-height\)/, 'Clear must be a control wide')
+  assert.match(rule, /(?:^|[;{\s])height:\s*var\(--co-control-height\)/, 'Clear must be a control tall')
+  assert.match(rule, /margin:\s*-1px 0/, 'the 1px field edge is taken back so the field stays 44px')
+})
+
 const SHORTER_THAN_A_CONTROL = ['.co-source-group-label', '.co-agent-chat-link', '.co-prior-work-details > summary', '.co-plan-label', '.co-files-head',
   '.co-review-project > header', '.co-review-default', '.co-pr-select', '.co-pr-agent-state',
   '.co-pr-requested', '.co-split .co-split-main', '.co-rail-quiet > summary', '.co-desk-back',

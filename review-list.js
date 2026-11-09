@@ -87,17 +87,35 @@ export function reviewCounts(entries) {
   return { waiting: count('waiting'), confirm: entries.filter(entry => entry.confirm).length, running: count('running'), stalled: count('stalled'), unknown: count('unknown'), done: count('done') }
 }
 
+// One batch of PR reads. A batch GitHub cannot answer fails the whole read, so a long history is
+// never half-read and then treated as complete; a PR missing from an answered batch is unknown.
 async function readBatch(token, refs) {
   const data = await fetchLiveStates(token, `query ContributeReviewPulls { rateLimit { remaining } ${aliasedPulls(refs, PR_FIELDS)} }`)
-  return refs.map((ref, index) => [reviewKey(ref.repo, ref.number), data?.[`p${index}`]?.pullRequest || null])
+  if (!data) throw new Error('Could not read the pull requests. Try again.')
+  return refs.map((ref, index) => [reviewKey(ref.repo, ref.number), data[`p${index}`]?.pullRequest || null])
 }
 
 // Every PR a review belongs to, read live in batches one after another. The
 // result holds only the PRs GitHub returned; the rest stay unknown.
 export async function loadReviewPulls(token, refs) {
   const wanted = refs.filter(validPullRef)
-  const batches = Array.from({ length: Math.ceil(wanted.length / BATCH) }, (_, index) => wanted.slice(index * BATCH, (index + 1) * BATCH))
   const read = []
-  for (const batch of batches) read.push(...await readBatch(token, batch))
+  for (let from = 0; from < wanted.length; from += BATCH) read.push(...await readBatch(token, wanted.slice(from, from + BATCH)))
   return new Map(read.filter(([, pr]) => pr))
+}
+
+// One live read of the PRs the reviews belong to: all of `refs`, or only those whose keys are in `keys`.
+// What was asked for travels with the answer, so a merge can tell a PR GitHub did not return from one nobody asked about.
+export async function readReviewPulls(token, refs, keys = null) {
+  const asked = keys ? refs.filter(ref => keys.has(reviewKey(ref.repo, ref.number))) : refs
+  return { everything: !keys, asked: asked.map(ref => reviewKey(ref.repo, ref.number)), pulls: await loadReviewPulls(token, asked) }
+}
+
+// The PRs known after a read. A read of everything replaces them; a partial one replaces just the PRs it asked
+// for, so one GitHub did not return is unknown again (never kept from an older read) and the rest keep theirs.
+export function mergeReviewPulls(known, { everything, asked, pulls }) {
+  if (everything) return pulls
+  const next = new Map(known)
+  asked.forEach(key => next.delete(key))
+  return new Map([...next, ...pulls])
 }
