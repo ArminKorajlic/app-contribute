@@ -612,7 +612,7 @@ export const WORKSPACE_CSS = `
 .co-dialog::-webkit-scrollbar { display:none; }
 @keyframes co-dialog-in { from { opacity:0; transform:translateY(8px) scale(.985); } to { opacity:1; transform:none; } }
 .co-review-window { outline:none; }
-.co-rw-head { display:grid; grid-template-columns:44px minmax(0,1fr) auto; gap:14px; align-items:start; padding:20px 20px 16px; border-bottom:1px solid var(--border); }
+.co-rw-head { --rw-edge:20px; position:relative; display:grid; grid-template-columns:44px minmax(0,1fr) auto; gap:14px; align-items:start; padding:var(--rw-edge) var(--rw-edge) 16px; border-bottom:1px solid var(--border); }
 .co-rw-icon { display:grid; place-items:center; width:44px; height:44px; border-radius:var(--co-radius-panel); background:var(--accent-dim); color:var(--accent); }
 .co-rw-head h3 { margin:0; font-size:var(--co-text-section); font-weight:680; letter-spacing:-.015em; line-height:1.25; }
 .co-rw-pr { margin:4px 0 0; font-size:var(--co-text-body); line-height:1.45; }
@@ -667,14 +667,15 @@ input[type=checkbox].co-switch:focus-visible { outline:2px solid var(--accent); 
 .co-rw-steps li.is-added b { border-color:var(--accent); color:var(--accent); }
 .co-rw-steps span { padding-top:2px; }
 .co-rw-tools { display:flex; align-items:center; gap:2px; }
-.co-rw-seen { position:relative; display:grid; }
+.co-rw-seen { display:grid; }
 .co-rw-seen.is-public { --seen:var(--co-warn); }
 .co-rw-seen.is-private { --seen:var(--green); }
 /* The lock (green: nothing reaches GitHub) and the globe (amber: something does) keep their own colour over the quiet button's. */
 .co-rw-seen { --co-btn-tone:var(--seen); --co-btn-tone-fill:color-mix(in srgb,var(--seen) 14%,transparent); }
 .co-btn.co-rw-seen-btn { display:grid; place-items:center; cursor:help; }
-.co-rw-seen-card { position:absolute; z-index:3; top:calc(100% + 10px); right:0; width:min(300px,calc(100vw - 56px)); padding:12px 14px; border:1px solid color-mix(in srgb,var(--seen) 40%,var(--border)); border-radius:var(--co-radius-panel); background:var(--surface-2,var(--surface)); box-shadow:0 14px 36px rgba(0,0,0,.4); color:var(--text); font-size:var(--co-text-meta); line-height:1.5; opacity:0; visibility:hidden; transform:translateY(-4px); pointer-events:none; transition:opacity .14s ease,transform .14s ease,visibility 0s .14s; }
-.co-rw-seen-card::before { content:''; position:absolute; top:-6px; right:15px; width:10px; height:10px; border-top:1px solid color-mix(in srgb,var(--seen) 40%,var(--border)); border-left:1px solid color-mix(in srgb,var(--seen) 40%,var(--border)); background:var(--surface-2,var(--surface)); transform:rotate(45deg); }
+/* Anchored to the header, one edge in from its right and one button plus a gap below it; the arrow points at the lock's centre (the seen button, a gap, then the close button sit left of the edge). */
+.co-rw-seen-card { position:absolute; z-index:3; top:calc(var(--rw-edge) + var(--co-control-height) + 10px); right:var(--rw-edge); width:min(300px,calc(100% - 2 * var(--rw-edge))); padding:12px 14px; border:1px solid color-mix(in srgb,var(--seen) 40%,var(--border)); border-radius:var(--co-radius-panel); background:var(--surface-2,var(--surface)); box-shadow:0 14px 36px rgba(0,0,0,.4); color:var(--text); font-size:var(--co-text-meta); line-height:1.5; opacity:0; visibility:hidden; transform:translateY(-4px); pointer-events:none; transition:opacity .14s ease,transform .14s ease,visibility 0s .14s; }
+.co-rw-seen-card::before { content:''; position:absolute; top:-6px; right:calc(var(--co-control-height) * 1.5 - 3px); width:10px; height:10px; border-top:1px solid color-mix(in srgb,var(--seen) 40%,var(--border)); border-left:1px solid color-mix(in srgb,var(--seen) 40%,var(--border)); background:var(--surface-2,var(--surface)); transform:rotate(45deg); }
 .co-rw-seen-btn:focus-visible + .co-rw-seen-card,.co-rw-seen.is-pinned .co-rw-seen-card { opacity:1; visibility:visible; transform:none; transition-delay:0s; }
 @media (hover:hover) and (pointer:fine) { .co-rw-seen-btn:hover + .co-rw-seen-card { opacity:1; visibility:visible; transform:none; transition-delay:0s; } }
 .co-rw-facts { margin:0; padding:0; list-style:none; display:grid; gap:10px; }
@@ -709,7 +710,7 @@ input[type=checkbox].co-switch:focus-visible { outline:2px solid var(--accent); 
 @media(max-width:680px) {
  .co-dialog-backdrop { align-items:flex-end; padding:0; }
  .co-dialog { width:100%; max-height:92%; border-bottom:0; border-radius:var(--co-radius-panel) var(--co-radius-panel) 0 0; }
- .co-rw-head { grid-template-columns:40px minmax(0,1fr) auto; gap:12px; padding:16px; }
+ .co-rw-head { --rw-edge:16px; grid-template-columns:40px minmax(0,1fr) auto; gap:12px; }
  .co-rw-icon { width:40px; height:40px; }
  .co-rw-body { padding:16px 16px 4px; }
  /* The review window's button stays on screen: the sheet scrolls, its footer does not (finding 3). */
@@ -786,6 +787,10 @@ input[type=checkbox].co-switch:focus-visible { outline:2px solid var(--accent); 
 .co-rail-head { margin:0; padding:14px 10px 6px; color:var(--muted); font:700 var(--co-text-meta) var(--font); letter-spacing:.05em; text-transform:uppercase; }
 .co-rail-add { margin-top:6px; }
 .co-rail-add .co-repository-trigger { width:100%; justify-content:flex-start; padding-inline:10px; }
+/* The rail scrolls, so it clips whatever floats out of it: its form and its note open in flow under the row, at the rail's width. */
+.co-rail-add .co-repository-picker form,.co-rail-add .co-repository-note { position:static; width:auto; margin-top:6px; box-sizing:border-box; }
+.co-rail-add .co-repository-picker form { padding:12px; }
+.co-rail-add .co-repository-picker form > div { flex-direction:column; align-items:stretch; }
 .co-desk-quiet-line { display:flex; flex-wrap:wrap; align-items:center; gap:4px 8px; margin:0 0 12px; color:var(--muted); font-size:var(--co-text-meta); }
 .co-rail-quiet > summary { display:flex; align-items:center; gap:8px; min-height:38px; padding:6px 10px; border-radius:var(--co-radius-control); color:var(--muted); font:500 var(--co-text-meta) var(--font); cursor:pointer; list-style:none; }
 .co-rail-quiet > summary::-webkit-details-marker { display:none; }

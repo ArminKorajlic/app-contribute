@@ -54,27 +54,53 @@ source chat instead of asking them to open Contribute:
 python3 /data/apps/contribute/prepared_block.py <record-id> [<record-id> …]
 ```
 
-Paste the printed `mobius-app` fence unchanged. The card lists each
-contribution as one item (its PR title, opening that exact entry in
-Contribute, with its **Project** and **Change** size) and has exactly one
-action: **Contribute** for one id, **Contribute all** for several, covering
-exactly the listed items. Items have no buttons of their own, and the card has
-no inline app view. It shows at most 12 items; with more, it says how many
-more are in Contribute and offers no action, so send those from Contribute.
-A card whose items are not all clear for their current version offers no
-action and says so. Naming any layer of a stack lists every prepared layer of
-that stack, because its phase is sent as one; a card that does not list every
-layer is refused in chat. Tapping re-reads the
-exact records and their current review, then turns the same button into
-**Confirm**, listing exactly what will be sent, each with the same Project and
-Change as its item (Change also names any screenshots the PR will
-publish); nothing is sent before Confirm,
-and the server refuses if a record changed after that snapshot. Independent
-contributions are sent in parallel; a stack's layers are sent in order. A lost
-response keeps that card locked (it reads the result, it never resends) until
-Contribute shows the outcome. The card is not approval: do not describe a
-printed card as sent or approved, and do not send the same work again yourself
-while the card owns it.
+Paste the printed `mobius-app` fence unchanged, in the chat whose work it is.
+The card is that chat's live view of its contributions, read from the ledger:
+
+- **What it shows.** One row per contribution: its PR title over its project
+  and lines changed, with a pill once something happens. The helper names
+  the records you list, every other contribution of this chat that is ready
+  with its whole stack (`--chat-id`, default `$CHAT_ID`, required; unreviewed
+  work is never pulled in), and every prepared layer of any stack among them.
+  It refuses the card if any of those, stack layers included, is not all
+  clear for its current head or is from another chat (review it, or restage
+  it from this chat first). At most 12 contributions fit; with more, ask the
+  owner to send some from Contribute first.
+  A record re-prepared later shows its current version, a dismissed one says
+  so, and one that belongs to another chat is never shown or sent.
+- **One action.** **Send** (**Send N** for several) checks the current
+  source and review of the records waiting to be sent and turns into **Not
+  now** / **Confirm**, listing exactly those with the same values as the
+  card's rows: project, any screenshots the PR will publish, the stack layer,
+  and lines added (green) and removed (red). All of them or
+  none: a row that cannot be sent is marked with a short pill (Needs review,
+  Not sent, Conflicts, …) and the action becomes **Fix in chat**, which sends
+  you a `contribute · <id> · <code>` request in this chat ([SKILL.md](SKILL.md)
+  "Card asks"); on a Möbius without it, the action opens Contribute. A GitHub
+  connection problem offers the owner the account instead. Fix that row's
+  record and print a new card. Nothing is sent before Confirm,
+  and the server refuses if a record changed after that snapshot.
+  Independent contributions are sent in parallel; a stack's layers in order.
+- **The newest card wins.** Only the last card printed in a chat is live; an
+  earlier one folds to "Continued below". Print a new card whenever this
+  chat prepares more work, instead of pointing the owner at an older one.
+- **It stays current by itself.** It re-reads its records when it appears,
+  when a turn in this chat settles and when the tab is shown again, so after
+  you restage, review or the owner sends from Contribute, the card already
+  shows it. A lost response keeps the card locked as **Checking GitHub**: it
+  asks the platform to read GitHub for the exact attempt (read-only `/observe`)
+  and never resends. **Changed on GitHub** means the target no longer matches
+  the reviewed attempt; **With Autopilot** means the record's Autopilot owns
+  the recovery.
+  Neither is proof that nothing was sent. Once sent, each row links
+  its pull request and the header says what happened.
+
+The card is not approval: do not describe a printed card as sent or approved,
+and do not send the same work again yourself while the card owns it. Cards
+printed before this design only show their records' status (this chat's
+records only); print a new card to send what they list. On a Möbius too old to
+say which chat a card is in, the card works as before: it sends exactly the
+records it lists, after the same Confirm.
 
 ## Updating an existing PR after approval
 
