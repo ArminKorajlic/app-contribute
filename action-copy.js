@@ -102,6 +102,10 @@ function approvalFact(standing) {
   return standing.approvedBy?.length ? { tone: 'ok', text: `Approved at this version by ${names(standing.approvedBy)}` } : { tone: 'bad', text: 'Nobody but the author has approved this version' }
 }
 
+// GitHub's own review gate (a branch rule), named only when it still stands: whether someone approved
+// this version is the machine's line above, and a gate that is satisfied adds nothing.
+const gateFact = pr => (pr?.reviewDecision === 'REVIEW_REQUIRED' ? { tone: 'bad', text: 'GitHub still needs a review' } : null)
+
 // What the owner's own agent review of this exact version said, if there is one.
 function reviewFact(status, ignored) {
   if (!status) return null
@@ -121,7 +125,7 @@ export function mergeCopy(pr, { status = null, ignored = null, method = '', stan
     title: `Merge #${pr.number} into ${base}?`,
     confirm: chosen ? MERGE_METHODS[chosen].action : 'Merge',
     working: 'Merging…',
-    facts: [approvalFact(standing), checksFact(pr, { blocking: true }), conflictFact(pr), reviewFact(status, ignored)].filter(Boolean),
+    facts: [approvalFact(standing), gateFact(pr), checksFact(pr, { blocking: true }), conflictFact(pr), reviewFact(status, ignored)].filter(Boolean),
     choices: allowed.length > 1 ? { label: 'How should it land?', value: chosen, options: allowed.map(key => ({ key, label: MERGE_METHODS[key].label, action: MERGE_METHODS[key].action, detail: MERGE_METHODS[key].detail(base) })) } : null,
     footnote: `Merges the version you are looking at (${short(pr.headRefOid)}). If anyone pushes first, nothing is merged and you are told. Contribute cannot undo a merge: to take it back you would open a revert on GitHub.`,
     done: outcome => outcome?.state === 'queued'

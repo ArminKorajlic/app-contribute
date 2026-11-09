@@ -7,6 +7,19 @@ const AGENT = /^m[oö]bius[- ]agent$/i
 export const authorNames = commit => (commit?.authors?.nodes || []).filter(Boolean).map(author => author.user?.login || author.name).filter(Boolean)
 export const madeWithAgent = commit => (commit?.authors?.nodes || []).some(author => AGENT.test(author?.user?.login || '') || AGENT.test(author?.name || ''))
 
+// Put text on the clipboard. True only once the write succeeded: a missing clipboard (an old or
+// insecure page) or a write the browser refuses (denied permission, unfocused page) is false, so
+// the button never says "Copied" for something that was not copied.
+export async function copyText(text, clipboard = globalThis.navigator?.clipboard) {
+  if (typeof clipboard?.writeText !== 'function') return false
+  try {
+    await clipboard.writeText(text)
+    return true
+  } catch {
+    return false
+  }
+}
+
 // "A", "A and B", "A, B and C": the way GitHub words it.
 export const authorLine = names => (names.length < 3 ? names.join(' and ') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`)
 

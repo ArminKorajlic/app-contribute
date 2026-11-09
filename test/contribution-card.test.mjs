@@ -6,9 +6,9 @@ const cardRenderer = () => renderModule(`
   import React from 'react'
   import { renderToStaticMarkup } from 'react-dom/server'
   import { ContributionCard, ReviewPlan } from './ui/ContributionCard.jsx'
-  export function renderCard(rec) {
+  export function renderCard(rec, reviewState = null) {
     return renderToStaticMarkup(React.createElement(ContributionCard, {
-      rec, onSend: () => {}, onDismiss: () => {},
+      rec, reviewState, onSend: () => {}, onDismiss: () => {},
       onFeedback: () => ({ ok: true }),
       onConnectApp: () => {}, onWithdraw: () => ({ ok: true }),
     }))
@@ -100,6 +100,24 @@ test('prepared platform cards keep one explicit public action', async (t) => {
   assert.doesNotMatch(html, /Check on fork|Run GitHub checks/)
   assert.match(html, /aria-label="Send pull request"/)
   assert.match(html, />Send PR</)
+})
+
+test('a failed send names its own failure, not an unrelated unavailable check', async (t) => {
+  if (!frontendModules) {
+    t.skip('MOBIUS_FRONTEND_NODE_MODULES is required for component rendering')
+    return
+  }
+  const { renderCard } = await cardRenderer()
+  const rec = {
+    id: 'failed-send', type: 'pr', status: 'prepared',
+    repo: 'mobius-os/mobius', title: 'Failed send', last_submit_error: 'GitHub refused the push.',
+    plan: { action: 'pr', repo: 'mobius-os/mobius', title: 'Failed send', head_sha: 'reviewed-head' },
+    quality_review: { state: 'all_clear', reviewed_head_sha: 'reviewed-head' },
+  }
+  const html = renderCard(rec, { state: 'unavailable', code: 'review_unavailable' })
+  assert.match(html, /GitHub refused the push\./)
+  assert.doesNotMatch(html, /could not be verified/)
+  assert.equal(html, renderCard(rec))
 })
 
 test('a settled update target blocks another public action and leads to recovery', async (t) => {
