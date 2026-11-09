@@ -33,7 +33,7 @@ function statusLine({ status, result }, pr, starting) {
     case 'stale': return `The PR changed after this answer (${short(result.pr.head_sha)} → ${short(pr.headRefOid)}). Nothing was posted.`
     case 'approved': return starting ? STARTING.line : 'The chat has not started yet. Send it again, or open the chat.'
     case 'posting': return 'The chat is posting this now. Each step is ticked as it is done. If nothing changes for a few minutes, open the chat and ask it to continue.'
-    case 'failed': return `Stopped at ${result.error?.step || 'a step'}: ${sentence(result.error?.message || 'unknown error')} The ticked steps went out and a second try skips them. The step it stopped at may or may not have reached GitHub, so look at the PR there before you try again.`
+    case 'failed': return `Stopped at ${result.error?.step || 'a step'}: ${sentence(result.error?.message || 'unknown error')} The ticked steps went out and a second try skips them. If a reply may have reached GitHub, the second try looks for that comment there first and sends it again only when it is not there.`
     default: return 'Everything below went out.'
   }
 }

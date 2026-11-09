@@ -179,3 +179,16 @@ test('an approved or posting answer is read closely for five minutes after Post,
   assert.equal(postingSoon(entry('failed', decision(), { error: { step: 'replies', message: 'x' } }), SENT + 1000), false, 'stopped: nothing is moving')
   assert.equal(postingSoon(entry('ready', decision({ result_id: 'r-aaaaaaaaaaaa' })), SENT + 1000), false, 'an approval of another result')
 })
+
+test('a length is counted in characters, as the helper counts it: an emoji is one, not two', () => {
+  const rocket = '\u{1F680}'
+  assert.notEqual(result({ tests: 'a'.repeat(499) + rocket }), null, '499 letters and one emoji is 500 characters')
+  assert.equal(result({ tests: 'a'.repeat(500) + rocket }), null, '501 characters is still refused')
+  assert.equal(result({ tests: rocket.repeat(500) }).tests.length, 1000, 'the same 500 characters, all emoji')
+  assert.notEqual(result({ commits: [{ sha: '1'.repeat(40), title: rocket.repeat(300) }] }), null, 'a 300 character title of emoji')
+  assert.equal(result({ commits: [{ sha: '1'.repeat(40), title: 't'.repeat(301) }] }), null)
+  const nested = Array.from({ length: 10 }, () => 'd'.repeat(50)).join('/') + '/file.txt'
+  assert.notEqual(result({ files: [{ ...example().files[0], path: nested }] }), null, 'a valid nested path of 509 characters')
+  assert.notEqual(result({ files: [{ ...example().files[0], path: 'p'.repeat(4096) }] }), null)
+  assert.equal(result({ files: [{ ...example().files[0], path: 'p'.repeat(4097) }] }), null)
+})

@@ -19,7 +19,9 @@ const FILE_STATUSES = new Set(['added', 'modified', 'removed', 'renamed'])
 // The name the helper gives a PR's files: lower case, owner__repo__number.
 export const resultSlug = (repo, number) => `${String(repo).toLowerCase().replace('/', '__')}__${number}`
 
-const isText = (value, max, { empty = false } = {}) => typeof value === 'string' && value.length <= max && (empty || value.trim() !== '')
+// Lengths count characters (code points) as the helper does, not UTF-16 units: an emoji is one character here, as there.
+const within = (text, max) => text.length <= max || [...text].length <= max
+const isText = (value, max, { empty = false } = {}) => typeof value === 'string' && within(value, max) && (empty || value.trim() !== '')
 const isCount = value => Number.isInteger(value) && value >= 0
 const list = (value, max) => (Array.isArray(value) && value.length <= max ? value : null)
 
@@ -42,7 +44,7 @@ function readCommit(commit) {
 }
 
 function readFile(file) {
-  if (!file || typeof file !== 'object' || !isText(file.path, 500) || !FILE_STATUSES.has(file.status) || !isCount(file.added) || !isCount(file.removed)) return null
+  if (!file || typeof file !== 'object' || !isText(file.path, 4096) || !FILE_STATUSES.has(file.status) || !isCount(file.added) || !isCount(file.removed)) return null
   if (file.patch !== null && !isText(file.patch, 60000, { empty: true })) return null
   const read = { path: file.path, status: file.status, added: file.added, removed: file.removed, patch: file.patch }
   if (typeof file.previous_path === 'string') read.previous_path = file.previous_path

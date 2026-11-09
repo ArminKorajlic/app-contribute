@@ -163,3 +163,20 @@ test('a discarded answer, or an approval of other content, posts nothing', async
   assert.match(await refused('discarded'), /not approved/)
   assert.match(await refused('approved', 'f'.repeat(64)), /different content/)
 })
+
+test('what the helper accepts at a limit, the app reads: characters, long subjects and deep paths are never hidden', async t => {
+  const world = buildWorld(t)
+  const rocket = '\u{1F680}'
+  const deep = `${Array.from({ length: 10 }, () => 'd'.repeat(50)).join('/')}/file.txt`
+  commit(world.work, 'S'.repeat(301) + '\n\nBody', { [deep]: 'x\n' })
+  commit(world.work, rocket.repeat(300), { 'y.txt': 'y\n' })
+  writeFileSync(join(world.root, 'input.json'), JSON.stringify({ points: [], replies: [{ body: 'Answered.', reply_to: null }], description: null, rerequest: [], tests: 'a'.repeat(499) + rocket }))
+  const saved = save(world)
+  assert.equal(saved.status, 0, saved.stderr)
+  const entries = await loadResponses(folderStorage(world.app))
+  assert.equal(entries.length, 1, 'the answer is on the Review tab, not silently dropped')
+  const { result } = entries[0]
+  assert.equal([...result.tests].length, 500)
+  assert.deepEqual(result.commits.map(item => [...item.title].length), [300, 300])
+  assert.ok(result.files.some(file => file.path === deep))
+})

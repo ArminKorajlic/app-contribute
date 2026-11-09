@@ -151,7 +151,7 @@ test('a post that stopped part-way says where, keeps what went out, and can be t
   const html = await card(t, response('failed', { receipts, error: { step: 'replies', message: 'GitHub refused the comment.' } }, approval('approved'), { headRefOid: TIP }), { prPatch: { headRefOid: TIP } })
   if (!html) return
   assert.match(texts(html), /Posting stopped/)
-  assert.match(texts(html), /Stopped at replies: GitHub refused the comment\. The ticked steps went out and a second try skips them\. The step it stopped at may or may not have reached GitHub/)
+  assert.match(texts(html), /Stopped at replies: GitHub refused the comment\. The ticked steps went out and a second try skips them\. If a reply may have reached GitHub, the second try looks for that comment there first and sends it again only when it is not there\./)
   assert.doesNotMatch(texts(html), /\.\./, 'a message that already ends in a full stop gets no second one')
   assert.deepEqual(steps(html).map(([state]) => state), ['done', 'todo', 'todo', 'todo'], 'only the push went out')
   assert.deepEqual(buttons(html).filter(label => [NAMES.postAnswer, NAMES.tryAgain, NAMES.openChat, NAMES.discard].includes(label)), [NAMES.tryAgain, NAMES.openChat])
