@@ -7,6 +7,7 @@ import {
   indexReviewStatus,
   isContributionCycleChat,
   partitionReviewUnits,
+  progressReviewAction,
   reviewStateFor,
 } from '../review.js'
 
@@ -25,11 +26,13 @@ test('review status indexes only recognized verdicts', () => {
     records: [
       { id: 'ready', state: 'ready' },
       { id: 'stale', state: 'needs_refresh' },
+      { id: 'unchecked', state: 'unavailable', code: 'github_reconnect' },
       { id: 'future', state: 'maybe' },
       null,
     ],
   })
-  assert.deepEqual(Object.keys(indexed.byId), ['ready', 'stale'])
+  assert.deepEqual(Object.keys(indexed.byId), ['ready', 'stale', 'unchecked'])
+  assert.equal(indexed.byId.unchecked.code, 'github_reconnect')
   assert.equal(indexed.checkedAt, '2026-07-15T02:00:00Z')
 })
 
@@ -66,15 +69,48 @@ test('feed and batch actions share one review partition', () => {
       type: 'stack', id: 'stack',
       records: [{ id: 'stack-1', status: 'open' }, clear('stack-2')],
     },
+    { type: 'record', id: 'unchecked', record: clear('unchecked'), records: [clear('unchecked')] },
+    {
+      type: 'stack', id: 'unchecked-stack',
+      records: [clear('unchecked-1'), { ...clear('unchecked-2'), quality_review: {} }],
+    },
+    { type: 'stack', id: 'mixed-check', records: [clear('retry-layer'), clear('reconnect-layer')] },
   ]
   const partition = partitionReviewUnits(units, { byId: {
     ready: { state: 'ready' },
     blocked: { state: 'needs_refresh' },
     attention: { state: 'ready' },
     'stack-2': { state: 'ready' },
+    unchecked: { state: 'unavailable', code: 'github_reconnect' },
+    'unchecked-1': { state: 'unavailable', code: 'review_unavailable' },
+    'unchecked-2': { state: 'ready' },
+    'retry-layer': { state: 'unavailable', code: 'review_unavailable' },
+    'reconnect-layer': { state: 'unavailable', code: 'github_reconnect' },
   } })
   assert.deepEqual(partition.needsAttention.map((unit) => unit.id), ['blocked', 'attention'])
   assert.deepEqual(partition.readyToSend.map((unit) => unit.id), ['ready', 'stack'])
+  // Only reviewed work waits on the check; a layer still needing review is review work.
+  assert.deepEqual(partition.awaitingCheck.map(({ unit }) => unit.id), ['unchecked', 'mixed-check'])
+  assert.match(partition.awaitingCheck[0].message, /^Reconnect GitHub/)
+  // Only the owner can clear a reconnect, so it wins over a retryable layer.
+  assert.equal(partition.awaitingCheck[1].reconnect, true)
+  assert.match(partition.awaitingCheck[1].message, /^Reconnect GitHub/)
+  assert.deepEqual(partition.needsReview.map((unit) => unit.id), ['unchecked-stack'])
+})
+
+test('a check that could not run never starts a review agent', () => {
+  const pr = (id, review) => ({ ...clear(id), type: 'pr', ...(review ? { quality_review: review } : {}) })
+  const status = { byId: {
+    unchecked: { state: 'unavailable', code: 'github_reconnect' },
+    unreviewed: { state: 'unavailable', code: 'review_unavailable' },
+  } }
+  assert.equal(progressReviewAction([pr('unchecked')], status), null)
+  const action = progressReviewAction([pr('unchecked'), pr('unreviewed', {})], status)
+  assert.equal(action.count, 1)
+  assert.match(action.draft, /complete the quality review \(unreviewed\)/)
+  assert.doesNotMatch(action.draft, /\(unchecked\)/)
+  // A failed status request is the same unavailable check for every record.
+  assert.equal(progressReviewAction([pr('unchecked')], { state: 'unavailable', byId: {} }), null)
 })
 
 test('address all includes active blockers, not history or healthy public work', () => {
