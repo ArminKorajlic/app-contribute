@@ -5,7 +5,7 @@ import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { frontendModules } from './render-harness.mjs'
-import { reviewOptions, workflowAgent } from '../review-prompts.js'
+import { launchOptions, reviewOptions, workflowAgent } from '../review-prompts.js'
 
 const options = { review_prompt:'Exact review', fix_prompt:'Exact fix', merge_prompt:'Exact merge', max_rounds:3 }
 const agent = { provider:'codex', model:'pinned-fixture-model', effort:'high' }
@@ -25,7 +25,7 @@ async function load() {
       resolveId(id) { if(id === 'react') return '\0preview-hooks'; if(id === '../review-prompts.js') return '\0preview-dependencies' },
       load(id) {
         if(id === '\0preview-hooks') return `export const useState = value => {const fixture=globalThis.previewEffectFixture;return [value,next=>fixture.states.push(next)]}; export const useEffect = effect => {globalThis.previewEffectFixture.cleanup=effect()}`
-        if(id === '\0preview-dependencies') return `export const reviewOptions=(...args)=>globalThis.previewEffectFixture.reviewOptions(...args), workflowAgent=(...args)=>globalThis.previewEffectFixture.workflowAgent(...args), loadWorkflowOptions=(...args)=>globalThis.previewEffectFixture.loadWorkflowOptions(...args), previewWorkflow=(...args)=>globalThis.previewEffectFixture.previewWorkflow(...args), saveWorkflowOptions=()=>{throw new Error('Preview cannot save settings')}, oversizedPrompt=()=>'', promptBytes=()=>0, PROMPT_BYTE_LIMIT=16384`
+        if(id === '\0preview-dependencies') return `export const reviewOptions=(...args)=>globalThis.previewEffectFixture.reviewOptions(...args), launchOptions=(...args)=>globalThis.previewEffectFixture.launchOptions(...args), workflowAgent=(...args)=>globalThis.previewEffectFixture.workflowAgent(...args), loadWorkflowOptions=(...args)=>globalThis.previewEffectFixture.loadWorkflowOptions(...args), previewWorkflow=(...args)=>globalThis.previewEffectFixture.previewWorkflow(...args), saveWorkflowOptions=()=>{throw new Error('Preview cannot save settings')}, oversizedPrompt=()=>'', promptBytes=()=>0, PROMPT_BYTE_LIMIT=16384`
       },
     }],
   })
@@ -39,7 +39,7 @@ async function load() {
 async function fixture(t, choice, dependencies = {}) {
   if (!frontendModules) { t.skip('MOBIUS_FRONTEND_NODE_MODULES is required for the native component bundler'); return null }
   const render = await load(), states=[], resolved=[], previews=[]
-  const value = { states, resolved, previews, reviewOptions, workflowAgent,
+  const value = { states, resolved, previews, reviewOptions, launchOptions, workflowAgent,
     loadWorkflowOptions:async()=>({options:{review_prompt:'New default',fix_prompt:'Fix default',merge_prompt:'Merge default'},capabilities:{draft_takeover:true,post_review:true,propose_verdict:true}}),
     previewWorkflow:async(token,appId,sent,model,mode)=>{previews.push({token,appId,options:sent,agent:model,mode});return {preview_sha256:digest(sent)}},
     ...dependencies,

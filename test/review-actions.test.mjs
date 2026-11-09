@@ -57,7 +57,7 @@ test('"answer" is for a conversation that really asked something', () => {
 
 test('a stopped run can start again; an ignored finding can be taken back; the rest only ask', () => {
   assert.deepEqual(keys(reviewActionPlan({ tone: 'halted', chat: true, can: { retry: true } })), ['retry', 'ask'])
-  assert.deepEqual(keys(reviewActionPlan({ tone: 'ignored', chat: true, can: { ignore: true } })), ['undo', 'ask'])
+  assert.deepEqual(keys(reviewActionPlan({ tone: 'ignored', chat: true, can: { undo: true } })), ['undo', 'ask'])
   for (const tone of ['clear', 'waiting', 'settled', 'verdict']) assert.deepEqual(keys(reviewActionPlan({ tone, chat: true, can: everything })), ['ask'], tone)
 })
 

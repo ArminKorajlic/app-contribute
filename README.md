@@ -301,8 +301,8 @@ found problems offers **Fix these findings**, **Ignore…** (one reason, for tha
 exact version, stored in the app settings as `ignored_reviews`, nothing posted),
 **Review again** and **Ask the reviewer something**. **PR reviews** in the side
 menu lists the reviews you started by project (In progress, Done); it reads the
-live state of every PR whose review is not merged (in batches of 40), again on
-each Sync with GitHub. A write whose answer is lost or unreadable, whatever its
+live state of every PR (in batches of 25), again on each Sync with GitHub; a PR
+GitHub does not return reads Couldn’t read, with Try again. A write whose answer is lost or unreadable, whatever its
 status, is unconfirmed: it is read back and never repeated from the sheet.
 
 ## Continuous Project Desk: private PR review runs
@@ -313,10 +313,10 @@ agent execution and settled history remain separate. Named paused work stays
 visible as unfinished; this iteration does not resume old cycles automatically.
 
 Review/Fix/Merge guidance shares one flat Settings editor. At launch choose
-**Actions ▾ → Review** (optionally **Allow posting the review on GitHub**,
-**Allow approve or request changes**, and **Merge when safe**, in any
-combination) or **Review, fix and merge**, plus model and effort, in the
-review window. There is
+**Actions ▾ → Review** (who sees the result: **Only me**, **Draft for me** or,
+where this Möbius supports it, **Agent posts**; with a draft, optionally **Merge
+after I approve**), **Check my PR** on your own PR, or **Finish it for me** /
+**Take over**, plus model and effort, in the review window. There is
 no automatic-continuation option: the platform does not support it. Each launch
 sends only the options its mode accepts: review and merge prompts always, the
 fix prompt only for Review, fix & merge (new takeovers have no repair-round

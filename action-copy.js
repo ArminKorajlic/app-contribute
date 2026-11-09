@@ -3,6 +3,8 @@
 // data says and the tests can hold it to that.
 import { checkSummary, reviewItemProgress } from './collaboration.js'
 
+const names = list => list.join(', ')
+
 const plural = (count, one, many) => `${count} ${count === 1 ? one : many}`
 
 // One line about the PR's checks, as GitHub counts them; null when GitHub has
@@ -37,7 +39,7 @@ export function openForReviewCopy(pr) {
       { tone: 'ok', text: 'Reviewers are asked to look at it' },
       checksFact(pr),
       conflictFact(pr),
-      { tone: 'warn', text: 'Contribute cannot turn it back into a draft yet' },
+      { tone: 'ok', text: 'You can turn it back into a draft later' },
     ].filter(Boolean),
     footnote: `Opens the version you are looking at (${short(pr.headRefOid)}). Nothing merges.`,
     // GitHub cannot pin a version on this write, so the platform reports the head it saw afterwards.
@@ -93,16 +95,15 @@ export const allowedMergeMethods = repository => Object.keys(MERGE_METHODS).filt
 // also what the platform picks. A repository that merges through a queue chooses for itself and refuses a named method.
 export const methodToSend = (repository, choice) => (choice && choice !== allowedMergeMethods(repository)[0] ? choice : '')
 
-// What GitHub says about approval. A review-less branch rule reads as no decision, which is not a
-// missing approval, so it says exactly that.
-function decisionFact(pr) {
-  switch (pr.reviewDecision) {
-    case 'APPROVED': return { tone: 'ok', text: 'Approved on GitHub' }
-    case 'CHANGES_REQUESTED': return { tone: 'bad', text: 'Changes are requested' }
-    case 'REVIEW_REQUIRED': return { tone: 'bad', text: 'GitHub still needs a review' }
-    default: return pr.reviewDecision === null || pr.reviewDecision === '' ? { tone: 'ok', text: 'GitHub is not asking for an approval here' } : null
-  }
+// Who approved this exact version (the PR machine's count: never the author, never a bot).
+function approvalFact(standing) {
+  if (!standing) return null
+  return standing.approvedBy?.length ? { tone: 'ok', text: `Approved at this version by ${names(standing.approvedBy)}` } : { tone: 'bad', text: 'Nobody but the author has approved this version' }
 }
+
+// GitHub's own review gate (a branch rule), named only when it still stands: whether someone approved
+// this version is the machine's line above, and a gate that is satisfied adds nothing.
+const gateFact = pr => (pr?.reviewDecision === 'REVIEW_REQUIRED' ? { tone: 'bad', text: 'GitHub still needs a review' } : null)
 
 // What the owner's own agent review of this exact version said, if there is one.
 function reviewFact(status, ignored) {
@@ -114,7 +115,7 @@ function reviewFact(status, ignored) {
 }
 
 // Merge: lands this exact version. Contribute cannot undo it.
-export function mergeCopy(pr, { status = null, ignored = null, method = '' } = {}) {
+export function mergeCopy(pr, { status = null, ignored = null, method = '', standing = null } = {}) {
   const base = pr.baseRefName || 'the target branch'
   const allowed = allowedMergeMethods(pr.repository)
   const chosen = allowed.includes(method) ? method : allowed[0] || ''
@@ -123,7 +124,7 @@ export function mergeCopy(pr, { status = null, ignored = null, method = '' } = {
     title: `Merge #${pr.number} into ${base}?`,
     confirm: chosen ? MERGE_METHODS[chosen].action : 'Merge',
     working: 'Merging…',
-    facts: [decisionFact(pr), checksFact(pr, { blocking: true }), conflictFact(pr), reviewFact(status, ignored)].filter(Boolean),
+    facts: [approvalFact(standing), gateFact(pr), checksFact(pr, { blocking: true }), conflictFact(pr), reviewFact(status, ignored)].filter(Boolean),
     choices: allowed.length > 1 ? { label: 'How should it land?', value: chosen, options: allowed.map(key => ({ key, label: MERGE_METHODS[key].label, action: MERGE_METHODS[key].action, detail: MERGE_METHODS[key].detail(base) })) } : null,
     footnote: `Merges the version you are looking at (${short(pr.headRefOid)}). If anyone pushes first, nothing is merged and you are told. Contribute cannot undo a merge: to take it back you would open a revert on GitHub.`,
     done: outcome => outcome?.state === 'queued'
@@ -132,5 +133,37 @@ export function mergeCopy(pr, { status = null, ignored = null, method = '' } = {
   }
 }
 
-// The sheet's words for each of the owner's own actions, by menu intent.
-export const ACTION_COPY = { open_review: openForReviewCopy, merge_now: mergeCopy }
+// Back to draft: reviewers stop being asked; it can be opened again later.
+export function backToDraftCopy(pr) {
+  return {
+    icon: 'draft', title: `Turn #${pr.number} back into a draft?`, confirm: 'Back to draft', working: 'Turning it into a draft…',
+    facts: [{ tone: 'ok', text: 'Nothing merges, and no code changes' }, { tone: 'warn', text: 'GitHub shows it as a draft until you open it for review again' }],
+    footnote: `For the version you are looking at (${short(pr.headRefOid)}).`,
+    done: () => ({ title: 'Back to draft', text: `#${pr.number} is a draft again.` }),
+  }
+}
+
+// Ask for re-review: the people whose review is of an older version are asked to look again.
+export function askRereviewCopy(pr, { standing = null } = {}) {
+  const people = standing?.rereviewFrom || []
+  return {
+    icon: 'person', title: `Ask ${people.length ? names(people) : 'reviewers'} to review #${pr.number} again?`, confirm: 'Ask for re-review', working: 'Asking…',
+    facts: [{ tone: 'ok', text: people.length ? `GitHub asks ${names(people)} for a review of the new version` : 'Nobody reviewed an older version' }],
+    footnote: 'They get GitHub’s usual review request. Nothing is posted in the conversation.',
+    disabled: !people.length,
+    done: () => ({ title: 'Re-review asked', text: `${names(people)} ${people.length === 1 ? 'is' : 'are'} asked to look again.` }),
+  }
+}
+
+// Close without merging. It can be reopened on GitHub.
+export function closeCopy(pr) {
+  return {
+    icon: 'close', title: `Close #${pr.number} without merging?`, confirm: 'Close PR', working: 'Closing…',
+    facts: [{ tone: 'warn', text: 'Nothing merges. Reviewers stop being asked' }, { tone: 'ok', text: 'It can be reopened on GitHub' }],
+    footnote: `For the version you are looking at (${short(pr.headRefOid)}).`,
+    done: () => ({ title: 'Closed', text: `#${pr.number} is closed.` }),
+  }
+}
+
+// The sheet's words for each of the owner's own actions, by the PR machine's action id.
+export const ACTION_COPY = { open_for_review: openForReviewCopy, merge: mergeCopy, back_to_draft: backToDraftCopy, ask_rereview: askRereviewCopy, close: closeCopy }

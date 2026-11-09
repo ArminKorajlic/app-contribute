@@ -131,20 +131,20 @@ test('batch assignment pins each head and reports partial failures without repla
 
 test('merge option is enabled only for an entirely eligible exact selection', async t => {
   if (!frontendModules) return t.skip('MOBIUS_FRONTEND_NODE_MODULES required')
-  const { render } = await renderModule(`import React from 'react'; import {renderToStaticMarkup} from 'react-dom/server'; import {ReviewConfirmation} from './ui/ReviewConfirmation.jsx'; export const render = (pulls, capabilities = {review_fix_merge:true}, mode = 'review') => renderToStaticMarkup(React.createElement(ReviewConfirmation, {choice:{mode,pulls},onModeChange:()=>{},capabilities}));`)
+  const { render } = await renderModule(`import React from 'react'; import {renderToStaticMarkup} from 'react-dom/server'; import {ReviewConfirmation} from './ui/ReviewConfirmation.jsx'; export const render = (pulls, capabilities = {review_fix_merge:true, pr_machine:true, post_review:true, propose_verdict:true}, mode = 'review') => renderToStaticMarkup(React.createElement(ReviewConfirmation, {choice:{mode,pulls,intent:'review',options:{post_review:true,propose_verdict:true}},onModeChange:()=>{},onOptionsChange:()=>{},capabilities}));`)
   const eligible = render([pull(1)])
-  assert.match(eligible, /Merge when safe/)
+  assert.match(eligible, /Merge after I approve/)
   assert.doesNotMatch(eligible, /Not available for drafts|Needs merge rights/)
-  // Merge when safe explains why an exact selection is not eligible.
+  // Merge after I approve explains why an exact selection is not eligible.
   assert.match(render([pull(1), pull(2, {repository:{nameWithOwner:'team/repo',viewerPermission:'READ'}})]), /Needs merge rights on this repository\./)
   assert.match(render([pull(1, {isDraft:true})]), /Not available for drafts\./)
   // Review, fix and merge starts only for an entirely eligible selection, and says why not.
-  assert.doesNotMatch(render([pull(1)], undefined, 'review_fix_merge'), /disabled="">Allow fix and merge/)
-  for (const selection of [[pull(1), pull(2, {repository:{nameWithOwner:'team/repo',viewerPermission:'READ'}})], [pull(1, {isDraft:true})]]) {
+  assert.doesNotMatch(render([pull(1)], undefined, 'review_fix_merge'), /disabled="">Start, ask me before each push/)
+  assert.doesNotMatch(render([pull(1, {isDraft:true})], undefined, 'review_fix_merge'), /disabled="">Start, ask me before each push/, 'a draft can be finished: the agent never readies it')
+  for (const selection of [[pull(1), pull(2, {repository:{nameWithOwner:'team/repo',viewerPermission:'READ'}})]]) {
     const html = render(selection, undefined, 'review_fix_merge')
-    assert.match(html, /disabled="">Allow fix and merge/)
-    // Without served draft support a draft is unavailable; rights explain first.
-    assert.match(html, /needs the Möbius update|Requires merge access to every selected PR/)
+    assert.match(html, /disabled="">Start, ask me before each push/)
+    assert.match(html, /Requires merge access to every selected PR/)
   }
   // A workflow this Möbius does not advertise is never offered (or claimed loading forever).
   assert.match(render([pull(1)], {}, 'review_fix_merge'), /Needs a newer Möbius/)
@@ -157,11 +157,28 @@ test('merge option is enabled only for an entirely eligible exact selection', as
 })
 
 
-test('takeover eligibility distinguishes drafts, base merge rights and fork push rights', async () => {
+test('Finish it for me and Take over need a Möbius that asks before every push: fresh or saved, an older one is blocked', async t => {
+  if (!frontendModules) return t.skip('MOBIUS_FRONTEND_NODE_MODULES required')
+  const { render } = await renderModule(`import React from 'react'; import {renderToStaticMarkup} from 'react-dom/server'; import {ReviewConfirmation} from './ui/ReviewConfirmation.jsx'; export const render = (capabilities, extra = {}) => renderToStaticMarkup(React.createElement(ReviewConfirmation, {choice:{mode:'review_fix_merge',intent:'finish_it',pulls:[${JSON.stringify(pull(1))}],...extra},onModeChange:()=>{},capabilities}));`)
+  const start = /<button[^>]*>Start, ask me before each push/
+  // The Möbius before the PR machine advertises review_fix_merge but pushes without asking and can merge.
+  const older = { review_fix_merge: true, draft_takeover: true, merge_now: true }
+  for (const extra of [{}, { preview_sha256: 'f'.repeat(64) }]) {
+    const html = render(older, extra)
+    assert.match(html, /Needs a newer Möbius/, `an older Möbius is refused${extra.preview_sha256 ? ' for a saved link too' : ''}`)
+    assert.match(html, /disabled="">Start, ask me before each push/)
+    const current = render({ ...older, pr_machine: true }, extra)
+    assert.doesNotMatch(current, /Needs a newer Möbius/)
+    assert.doesNotMatch(current, /disabled="">Start, ask me before each push/)
+    assert.match(render(null, extra), /Checking what this Möbius supports/, 'unknown is a pending check, never a start')
+  }
+})
+
+test('takeover eligibility distinguishes base merge rights and fork push rights; a draft is never in the way', async () => {
   const { takeoverBlocker } = await import('../collaboration.js')
   const ready = pull(9, { repository:{nameWithOwner:'team/repo',viewerPermission:'WRITE'}, headRepository:{nameWithOwner:'team/repo',viewerPermission:'WRITE'} })
   assert.equal(takeoverBlocker([ready]), '')
-  assert.match(takeoverBlocker([{...ready,isDraft:true}]), /Draft/)
+  assert.equal(takeoverBlocker([{...ready,isDraft:true}]), '', 'a draft can be taken over: the agent never readies it, you do')
   assert.match(takeoverBlocker([{...ready,repository:{viewerPermission:'READ'}}]), /merge access/)
   assert.equal(takeoverBlocker([{...ready,headRepository:{nameWithOwner:'fork/repo',viewerPermission:'WRITE'}}]), '')
   assert.match(takeoverBlocker([{...ready,headRepository:{nameWithOwner:'fork/repo',viewerPermission:'READ'}}]), /push access/)
@@ -171,28 +188,17 @@ test('takeover eligibility distinguishes drafts, base merge rights and fork push
   assert.equal(takeoverBlocker([legacy]), '', 'an absent field (older snapshot) defers to the server preflight')
 })
 
-test('one draft-scope selector feeds the chooser and the serialized start body', async () => {
-  const { takeoverScope, reviewRunRequest, DRAFT_TAKEOVER_SCOPE, TAKEOVER_SCOPE } = await import('../collaboration.js')
-  const draft = pull(9, { isDraft: true }), ready = pull(10)
-  assert.equal(takeoverScope([ready]), TAKEOVER_SCOPE)
-  assert.equal(takeoverScope([ready, draft]), DRAFT_TAKEOVER_SCOPE)
-  for (const pulls of [[ready], [ready, draft]]) {
-    const body = reviewRunRequest({ request_id: 'scope-fixture', mode: 'review_fix_merge', confirmation_scope: takeoverScope(pulls), pulls })
-    assert.equal(body.confirmation_scope, takeoverScope(pulls))
-  }
-  assert.equal('confirmation_scope' in reviewRunRequest({ request_id: 'r', mode: 'review', pulls: [draft] }), false)
-})
-
-test('draft takeover discovery needs explicit readiness support and never bypasses fork rights', async () => {
-  const { takeoverBlocker, reviewRunRequest, DRAFT_TAKEOVER_SCOPE, TAKEOVER_SCOPE } = await import('../collaboration.js')
-  const draft=pull(9,{isDraft:true,headRepository:{viewerPermission:'WRITE'}})
-  assert.match(takeoverBlocker([draft]), /Draft/)
-  assert.equal(takeoverBlocker([draft],{allowDraft:true}), '')
-  assert.match(takeoverBlocker([{...draft,headRepository:{viewerPermission:'READ'}}],{allowDraft:true}), /push access/)
-  const old={request_id:'fixture-old',mode:'review_fix_merge',pulls:[draft]}
-  // A legacy saved selection without a scope never acquires draft readiness.
+test('a takeover never asks to mark a draft ready: one repair scope, and a reason only when you gave one', async () => {
+  const { takeoverBlocker, reviewRunRequest, TAKEOVER_SCOPE } = await import('../collaboration.js')
+  const draft = pull(9, { isDraft: true, headRepository: { viewerPermission: 'WRITE' } })
+  assert.equal(takeoverBlocker([draft]), '', 'a draft can be taken over: the agent never readies it, you do')
+  assert.match(takeoverBlocker([{ ...draft, headRepository: { viewerPermission: 'READ' } }]), /push access/)
+  const old = { request_id: 'fixture-old', mode: 'review_fix_merge', pulls: [draft] }
   assert.equal(reviewRunRequest(old).confirmation_scope, TAKEOVER_SCOPE)
-  assert.equal(reviewRunRequest({...old,confirmation_scope:DRAFT_TAKEOVER_SCOPE}).confirmation_scope, DRAFT_TAKEOVER_SCOPE)
+  assert.equal(reviewRunRequest({ ...old, confirmation_scope: 'named_pr_repairs_ready_and_reviewed_successors' }).confirmation_scope, TAKEOVER_SCOPE, 'an older saved draft-ready scope is never sent again')
+  assert.equal('takeover_reason' in reviewRunRequest(old), false)
+  assert.equal(reviewRunRequest({ ...old, takeover_reason: '  the author is away  ' }).takeover_reason, 'the author is away')
+  assert.equal('confirmation_scope' in reviewRunRequest({ request_id: 'r', mode: 'review', pulls: [draft] }), false)
 })
 
 test('a review run is named by what it does in public', () => {
@@ -282,13 +288,20 @@ test('a minimized run detail points to the owning conversation and offers no Sto
 })
 
 test('the Agent menu jobs map to exact platform modes and publishing presets', async () => {
-  const { reviewIntent } = await import('../collaboration.js')
-  // Review opens private; Review and merge is the merge mode with a GitHub review.
-  assert.deepEqual(reviewIntent('review'), { intent: 'review', mode: 'review', options: { post_review: false, propose_verdict: false } })
-  assert.deepEqual(reviewIntent('merge'), { intent: 'merge', mode: 'review_merge', options: { post_review: true, propose_verdict: true } })
-  assert.deepEqual(reviewIntent('review_fix_merge'), { intent: 'review_fix_merge', mode: 'review_fix_merge' })
+  const { reviewIntent, requestOptions } = await import('../collaboration.js')
+  const PRIVATE = { post_review: false, propose_verdict: false, agent_submits_verdict: false }
+  // Review and Check my PR both open private; the window can draft or (if you allow it) let the agent post.
+  assert.deepEqual(reviewIntent('review'), { intent: 'review', mode: 'review', options: PRIVATE })
+  assert.deepEqual(reviewIntent('check_my_pr'), { intent: 'check_my_pr', mode: 'review', options: PRIVATE })
+  assert.deepEqual(reviewIntent('finish_it'), { intent: 'finish_it', mode: 'review_fix_merge' })
+  assert.deepEqual(reviewIntent('take_over'), { intent: 'take_over', mode: 'review_fix_merge' })
   // A raw mode (a retry) passes through with its own defaults.
   assert.deepEqual(reviewIntent('review_merge'), { mode: 'review_merge' })
+  // The agent may post only on a plain review, and only with a drafted verdict; never with merging.
+  const agent = { post_review: true, propose_verdict: true, agent_submits_verdict: true }
+  assert.equal(requestOptions(agent, 'review').agent_submits_verdict, true)
+  assert.equal('agent_submits_verdict' in requestOptions(agent, 'review_merge'), false)
+  assert.equal('agent_submits_verdict' in requestOptions({ post_review: true, agent_submits_verdict: true }, 'review'), false)
 })
 
 test('a PR changed after its review still finds that review, as an earlier version', async () => {
@@ -320,4 +333,6 @@ test('drafts, failing checks and bots are filters of their own', () => {
   assert.deepEqual(matchingPulls(rows, 'failing', 'owner').map(pr => pr.number), [2])
   assert.deepEqual(matchingPulls(rows, 'bots', 'owner').map(pr => pr.number), [2, 3])
   assert.equal(isBotAuthor('ArminKorajlic'), false)
+  for (const person of ['abbot', 'talbot', 'robot']) assert.equal(isBotAuthor(person), false, person)
+  for (const bot of ['qa-bot', 'review_bot', 'copilot[bot]']) assert.equal(isBotAuthor(bot), true, bot)
 })

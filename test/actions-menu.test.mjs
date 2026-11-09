@@ -1,136 +1,79 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { AGENT_JOBS, OPENABLE_JOBS, YOUR_ACTIONS, actionsMenuModel, mergeBlocker, pullStanding } from '../actions-menu.js'
+import { AGENT_INTENTS, YOUR_INTENTS, actionsMenuModel, pullHeader } from '../actions-menu.js'
+import { standingFor } from '../pr-standing.js'
 
+const HEAD = 'b'.repeat(40)
+const OLD = 'a'.repeat(40)
+const checks = (state = 'SUCCESS', count = 2) => ({ commits: { nodes: [{ commit: { statusCheckRollup: { state, contexts: { totalCount: count, checkRunCountsByState: [{ state, count }], statusContextCountsByState: [] } } } }] } })
 const pull = (extra = {}) => ({
-  number: 120, baseRefName: 'main', repository: { nameWithOwner: 'o/r', viewerPermission: 'ADMIN' }, isDraft: false,
-  reviewDecision: '', comments: { totalCount: 0 }, reviews: { totalCount: 0 }, mergeable: 'MERGEABLE', ...extra,
+  number: 7, state: 'OPEN', isDraft: false, headRefOid: HEAD, baseRefName: 'main', mergeable: 'MERGEABLE',
+  author: { login: 'sam' }, repository: { nameWithOwner: 'o/r', viewerPermission: 'WRITE' },
+  latestOpinionatedReviews: { nodes: [] }, viewerLatestReview: null, reviewThreads: { nodes: [] }, ...checks(), ...extra,
 })
-const checks = (state, failed = 0) => ({ commits: { nodes: [{ commit: { statusCheckRollup: { contexts: { totalCount: 2, checkRunCountsByState: [{ state: failed ? 'FAILURE' : state, count: failed || 2 }], statusContextCountsByState: [] } } } }] } })
-const summary = model => model.agent.map(item => `${item.intent}:${item.rec ? 'rec' : item.off ? 'off' : 'ok'}`)
+const mine = extra => pull({ author: { login: 'alex' }, ...extra })
+const ALL = { mark_ready_now: true, back_to_draft_now: true, request_rereview_now: true, merge_now: true, close_now: true }
+const menu = (pr, capabilities = ALL, record = null) => actionsMenuModel([pr], [standingFor({ pr, login: 'alex' })], { capabilities, record })
+const ids = items => items.map(item => item.intent)
+const item = (model, intent) => [...model.you, ...model.agent].find(entry => entry.intent === intent)
 
-test('the menu names the jobs and offers only those this build can open', () => {
-  assert.deepEqual(AGENT_JOBS.map(job => job.title), ['Review', 'Address feedback', 'Review and merge', 'Hand it over'])
-  assert.deepEqual(actionsMenuModel([pull()]).agent.map(item => item.intent).sort(), [...OPENABLE_JOBS].sort())
-  assert.equal(actionsMenuModel([pull()], { offered: AGENT_JOBS.map(job => job.intent) }).agent.length, 4)
-})
-
-test('changes requested puts Address feedback first and dims Review and merge with the reason', () => {
-  const all = ['review', 'address', 'merge', 'review_fix_merge']
-  const model = actionsMenuModel([pull({ reviewDecision: 'CHANGES_REQUESTED', comments: { totalCount: 1 }, reviews: { totalCount: 2 } })], { offered: all, own: true })
-  assert.deepEqual(summary(model), ['address:rec', 'review:ok', 'merge:off', 'review_fix_merge:ok'])
-  assert.match(model.agent.find(item => item.intent === 'merge').reason, /cannot approve your own PR/)
-  const theirs = actionsMenuModel([pull({ reviewDecision: 'CHANGES_REQUESTED', comments: { totalCount: 1 }, reviews: { totalCount: 2 } })], { offered: all })
-  assert.equal(theirs.agent.find(item => item.intent === 'merge').reason, 'Changes are requested.')
-  assert.deepEqual(model.header, { label: '#120', text: 'changes requested' })
+test('your own PR offers only author jobs: a private check, respond, finish', () => {
+  const model = menu(mine())
+  assert.deepEqual(ids(model.agent).sort(), ['check_my_pr', 'finish_it', 'respond'])
+  assert.ok(!model.agent.some(entry => ['review', 'take_over'].includes(entry.intent)), 'you never review your own PR')
+  assert.match(item(model, 'check_my_pr').detail, /Nothing is posted/)
 })
 
-test('approved and green puts Review and merge first', () => {
-  const model = actionsMenuModel([pull({ reviewDecision: 'APPROVED', reviews: { totalCount: 1 }, ...checks('SUCCESS') })])
-  assert.equal(model.agent[0].intent, 'merge')
-  assert.equal(model.agent[0].rec, true)
-  assert.equal(model.header.text, 'approved · checks passing')
+test('their PR offers a review and, apart at the bottom, take over; never fixing their branch', () => {
+  const model = menu(pull())
+  assert.deepEqual(ids(model.agent), ['review', 'take_over'])
+  assert.equal(item(model, 'take_over').reason, 'Only maintainers can take over someone else’s PR.')
+  assert.equal(item(menu(pull({ repository: { nameWithOwner: 'o/r', viewerPermission: 'MAINTAIN' } })), 'take_over').off, false)
+  assert.equal(item(model, 'review').title, 'Review')
+  const reviewed = pull({ viewerLatestReview: { state: 'COMMENTED', commit: { oid: OLD } } })
+  assert.equal(item(menu(reviewed), 'review').title, 'Re-review', 'once you reviewed it, the job is a re-review')
 })
 
-test('a draft with no reviews starts with Review and cannot be merged yet', () => {
-  const all = ['review', 'address', 'merge', 'review_fix_merge']
-  const model = actionsMenuModel([pull({ isDraft: true })], { offered: all, own: true })
-  assert.deepEqual(summary(model), ['review:rec', 'address:off', 'merge:off', 'review_fix_merge:ok'])
-  assert.equal(model.agent.find(item => item.intent === 'merge').reason, 'You cannot approve your own PR. Someone else approves it, then you merge it.')
-  assert.equal(model.agent.find(item => item.intent === 'address').reason, 'No feedback yet.')
-  assert.equal(model.header.text, 'draft · no reviews')
+test('the highlighted choice is the machine’s next step, first in its group', () => {
+  const feedback = menu(mine({ latestOpinionatedReviews: { nodes: [{ state: 'CHANGES_REQUESTED', author: { login: 'sam' }, commit: { oid: HEAD } }] } }))
+  assert.equal(feedback.agent[0].intent, 'respond')
+  assert.equal(feedback.agent[0].rec, true)
+  assert.match(feedback.headline, /feedback is waiting/)
+  const approved = menu(mine({ latestOpinionatedReviews: { nodes: [{ state: 'APPROVED', author: { login: 'sam' }, commit: { oid: HEAD } }] } }))
+  assert.equal(approved.you[0].intent, 'merge', 'the highlighted choice of your own comes first')
+  assert.equal(approved.you[0].rec, true)
 })
 
-test('failing checks and conflicts count as feedback, and block a merge', () => {
-  const failing = actionsMenuModel([pull({ ...checks('FAILURE', 1) })], { offered: ['review', 'address', 'merge'], own: true })
-  assert.equal(failing.agent[0].intent, 'address')
-  assert.match(failing.header.text, /1 failing check/)
-  assert.equal(actionsMenuModel([pull({ ...checks('FAILURE', 1) })], { offered: ['merge'] }).agent[0].reason, 'Checks are failing.')
-  const conflict = actionsMenuModel([pull({ mergeable: 'CONFLICTING' })], { offered: ['review', 'address', 'merge'] })
-  assert.equal(conflict.agent.find(item => item.intent === 'merge').reason, 'It conflicts with main.')
-  assert.match(conflict.header.text, /conflicts with main/)
+test('Merge on your PR stays dimmed with the machine’s reason until someone else approves this version', () => {
+  assert.equal(item(menu(mine()), 'merge').reason, 'Nobody but the author has approved it yet.')
+  const old = mine({ latestOpinionatedReviews: { nodes: [{ state: 'APPROVED', author: { login: 'sam' }, commit: { oid: OLD } }] } })
+  assert.equal(item(menu(old), 'merge').reason, 'The approval is for an older version.')
+  assert.equal(item(menu(old), 'ask_rereview').off, false, 'you can ask them to look again')
 })
 
-test('without merge access the merge choices say so; a batch keeps one list for all', () => {
-  const noMerge = pull({ repository: { nameWithOwner: 'o/r', viewerPermission: 'READ' } })
-  const model = actionsMenuModel([noMerge])
-  assert.equal(model.agent.find(item => item.intent === 'merge').reason, 'Needs merge access.')
-  assert.ok(model.agent.find(item => item.intent === 'review_fix_merge').off)
-  const batch = actionsMenuModel([pull(), pull({ number: 121 })], { offered: ['review', 'address', 'merge'] })
-  assert.deepEqual(batch.header, { label: '2 PRs', text: 'selected' })
-  assert.equal(batch.agent.find(item => item.intent === 'address').reason, 'Choose one PR at a time.')
+test('your own actions appear only where this Möbius can do them', () => {
+  assert.deepEqual(ids(menu(mine(), {}).you), [])
+  assert.deepEqual(ids(menu(mine(), { merge_now: true }).you), ['merge'])
+  assert.deepEqual(ids(menu(mine()).you), ['open_for_review', 'back_to_draft', 'ask_rereview', 'merge', 'close'])
+  assert.deepEqual(ids(menu(pull()).you), ['merge', 'close'], 'on their PR you may merge or close, never change its draft state')
+  const appDraft = menu(mine({ isDraft: true }), {}, { status: 'draft', submission_mode: 'github' })
+  assert.deepEqual(ids(appDraft.you), ['open_for_review'], 'a draft this app sent opens through its own record')
 })
 
-test('a hand-over on a draft is left to the window, which knows what this Möbius supports', () => {
-  const model = actionsMenuModel([pull({ isDraft: true })])
-  assert.equal(model.agent.find(item => item.intent === 'review_fix_merge').off, false)
+test('a batch offers one review of each, off when any PR cannot take it', () => {
+  const pulls = [pull(), mine({ number: 8 })]
+  const model = actionsMenuModel(pulls, pulls.map(pr => standingFor({ pr, login: 'alex' })))
+  assert.deepEqual(model.header, { label: '2 PRs', text: 'selected' })
+  assert.deepEqual(ids(model.agent), ['review'])
+  assert.equal(model.agent[0].off, false)
+  const busy = [pull(), pull({ number: 9, repository: { nameWithOwner: 'o/r', viewerPermission: 'WRITE' } })]
+  const runs = [{ id: 'r', created_at: '2026-11-04T10:00:00Z', state: 'running', execution_state: 'running', items: [{ repo: 'o/r', number: 9, head_sha: HEAD, base_ref: 'main', state: 'reviewing' }] }]
+  const batch = actionsMenuModel(busy, busy.map(pr => standingFor({ pr, login: 'alex', runs })))
+  assert.equal(batch.agent[0].reason, 'An agent is already working on this PR.')
 })
 
-const draftRecord = { status: 'draft', submission_mode: 'github' }
-const mergeable = { merge_now: true }
-const youSummary = model => model.you.map(item => `${item.intent}:${item.rec ? 'rec' : item.off ? 'off' : 'ok'}`)
-
-test('your own actions: Open for review only for a draft this app can open, nothing for a batch', () => {
-  assert.deepEqual(YOUR_ACTIONS.map(action => action.title), ['Open for review', 'Merge'])
-  const draft = pull({ isDraft: true })
-  assert.deepEqual(youSummary(actionsMenuModel([draft], { record: draftRecord })), ['open_review:ok'])
-  assert.deepEqual(actionsMenuModel([draft]).you, [], 'a draft nobody sent from here cannot be opened from here')
-  assert.deepEqual(actionsMenuModel([draft], { record: { status: 'draft', submission_mode: 'mobius-bot' } }).you, [], 'a relay draft cannot request review from this connection')
-  assert.deepEqual(actionsMenuModel([pull()], { record: draftRecord }).you, [], 'a PR that is already open has nothing to open')
-  assert.deepEqual(actionsMenuModel([draft, pull({ number: 121, isDraft: true })], { record: draftRecord, capabilities: mergeable }).you, [], 'never a merge or open for a batch')
-})
-
-test('an approved draft recommends Open for review; Merge waits on it', () => {
-  const approvedDraft = pull({ isDraft: true, reviewDecision: 'APPROVED', reviews: { totalCount: 1 } })
-  const model = actionsMenuModel([approvedDraft], { record: draftRecord, capabilities: mergeable })
-  assert.deepEqual(youSummary(model), ['open_review:rec', 'merge_now:off'])
-  assert.equal(model.you[1].reason, 'Open it for review first.')
-})
-
-test('Merge appears only where this Möbius can merge for you, and says why when it cannot', () => {
-  const ready = pull({ reviewDecision: 'APPROVED', reviews: { totalCount: 1 }, ...checks('SUCCESS') })
-  assert.deepEqual(actionsMenuModel([ready]).you, [], 'no platform support, no Merge')
-  assert.deepEqual(actionsMenuModel([ready], { capabilities: { merge_now: false } }).you, [])
-  const model = actionsMenuModel([ready], { capabilities: mergeable })
-  assert.deepEqual(youSummary(model), ['merge_now:rec'])
-  assert.ok(model.agent.every(item => !item.rec), 'merging yourself outranks asking an agent to merge')
-  const reasons = (extra) => actionsMenuModel([pull(extra)], { capabilities: mergeable }).you[0].reason
-  assert.equal(reasons({ reviewDecision: 'CHANGES_REQUESTED' }), 'Changes are requested.')
-  assert.equal(reasons({ reviewDecision: 'REVIEW_REQUIRED' }), 'GitHub still needs a review.')
-  assert.equal(reasons({ ...checks('FAILURE', 2) }), 'Checks are failing.')
-  assert.equal(reasons({ ...checks('PENDING') }), 'Checks are still running.')
-  assert.equal(reasons({ mergeable: 'CONFLICTING' }), 'It conflicts with main.')
-  assert.equal(reasons({ repository: { nameWithOwner: 'o/r', viewerPermission: 'READ' } }), 'Needs merge access.')
-  assert.equal(mergeBlocker(pullStanding(ready)), '', 'an approved green PR has nothing in the way')
-})
-
-test('with nothing of your own to do the menu is the plain agent list', () => {
-  const model = actionsMenuModel([pull()])
-  assert.deepEqual(model.you, [])
-  assert.equal(model.agent.length, 4)
-})
-
-test('a draft you wrote can be opened for review when this Möbius can mark it ready, whoever sent it', () => {
-  const draft = pull({ isDraft: true })
-  const ready = { mark_ready_now: true }
-  assert.deepEqual(youSummary(actionsMenuModel([draft], { capabilities: ready, own: true })), ['open_review:ok'])
-  assert.deepEqual(actionsMenuModel([draft], { capabilities: ready }).you, [], 'someone else\'s draft is not yours to open here')
-  assert.deepEqual(actionsMenuModel([draft], { own: true }).you, [], 'until this Möbius can mark it ready there is nothing to offer')
-  assert.deepEqual(actionsMenuModel([pull()], { capabilities: ready, own: true }).you, [], 'a PR that is already open has nothing to open')
-  assert.deepEqual(actionsMenuModel([draft, pull({ number: 121, isDraft: true })], { capabilities: ready, own: true }).you, [], 'never for a batch')
-  const approved = actionsMenuModel([pull({ isDraft: true, reviewDecision: 'APPROVED' })], { capabilities: ready, own: true })
-  assert.equal(approved.you.find(item => item.intent === 'open_review').rec, true, 'an approved draft of yours has opening as its next step')
-})
-
-test('who you are on the PR decides what an agent may do: fixing is for the author, approving for the reviewer', () => {
-  const all = ['review', 'address', 'merge', 'review_fix_merge']
-  const feedback = pull({ reviewDecision: 'CHANGES_REQUESTED', comments: { totalCount: 1 }, reviews: { totalCount: 1 } })
-  const theirs = actionsMenuModel([feedback], { offered: all })
-  assert.equal(theirs.agent.find(item => item.intent === 'address').off, true)
-  assert.match(theirs.agent.find(item => item.intent === 'address').reason, /someone else’s branch/)
-  assert.equal(theirs.agent.find(item => item.intent === 'review').off, false)
-  const mine = actionsMenuModel([pull({ reviewDecision: 'APPROVED', reviews: { totalCount: 1 }, ...checks('SUCCESS') })], { offered: all, own: true })
-  assert.match(mine.agent.find(item => item.intent === 'merge').reason, /cannot approve your own PR/)
-  assert.equal(mine.agent.find(item => item.intent === 'review').detail, 'Checks your PR privately. Nothing is posted.')
-  assert.equal(theirs.agent.find(item => item.intent === 'review').detail, 'Private notes, or a review on GitHub.')
+test('every menu intent is a machine action, and the header says what GitHub shows', () => {
+  for (const intent of [...AGENT_INTENTS, ...YOUR_INTENTS]) assert.ok(standingFor({ pr: mine(), login: 'alex' }).actions.some(action => action.id === intent) || standingFor({ pr: pull(), login: 'alex' }).actions.some(action => action.id === intent), intent)
+  assert.deepEqual(pullHeader(pull({ isDraft: true, reviewDecision: 'APPROVED', ...checks('FAILURE', 1), mergeable: 'CONFLICTING' })),
+    { label: '#7', text: 'draft · no reviews · 1 failing check · conflicts with main' }, 'GitHub’s approval summary is not repeated: the headline says who approved which version')
 })

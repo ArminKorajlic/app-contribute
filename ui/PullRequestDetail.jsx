@@ -9,7 +9,8 @@ import { ActionsMenu } from './ActionsMenu.jsx'
 import { GithubLabel, PullStateBadge, REVIEW_DECISION } from './GithubParts.jsx'
 import { checkSummary, conversationCount } from '../collaboration.js'
 import { openAgentConversation } from './BatchAction.jsx'
-import { ReviewTab, reviewStateTone } from './ReviewTab.jsx'
+import { ReviewTab, reviewContent } from './ReviewTab.jsx'
+import { frameOf } from '../pr-standing.js'
 
 export function DateLabel({ value, prefix = '', time = false }) {
   if (!value || !Number.isFinite(Date.parse(value))) return null
@@ -97,10 +98,15 @@ export function PullFeedbackFlag({ record, status = null, activity = null }) {
 // role labels keep the row tidy; the chat's own title is the tooltip.
 // The Review tab's label: a spinner while an agent works, then a dot for what
 // the review needs from you or found.
-function ReviewMark({ tone }) {
-  if (tone.key === 'running') return <span className="co-arc" role="status" aria-label="Review running" />
-  const mark = { verdict: 'waiting', needs: 'waiting', findings: 'waiting', clear: 'success', changes: 'failure', halted: 'failure' }[tone.key]
-  return mark ? <span className={'co-tab-dot is-' + mark} title={tone.title} aria-label={tone.title} /> : null
+// The Review tab's mark: an arc while an agent works and an amber dot while it waits on
+// you (the PR machine's decision); otherwise what the saved review itself ended in.
+const CONTENT_MARK = { clear: 'success', changes: 'failure', halted: 'failure' }
+function ReviewMark({ standing, status, ctx }) {
+  const frame = standing ? frameOf(standing) : 'idle'
+  if (frame === 'reviewing') return <span className="co-arc" role="status" aria-label="Review running" />
+  if (frame === 'verdict') return <span className="co-tab-dot is-waiting" title={standing.headline} aria-label={standing.headline} />
+  const content = reviewContent(status, ctx)
+  return CONTENT_MARK[content.key] ? <span className={'co-tab-dot is-' + CONTENT_MARK[content.key]} title={content.title} aria-label={content.title} /> : null
 }
 
 // Phone only (the bar is hidden above 680px): once the full title has
@@ -372,7 +378,6 @@ function PullRequestDetailView({ cacheStore, pr, token, onReview, onAssign, onRe
   </div> : null
   const labels = pr.labels?.nodes || []
   const tabs = [['conversation', 'Comments'], ['files', <>Files<span className="co-tab-more"> changed</span></>], ['checks', 'Checks'], ['review', 'Review']]
-  const reviewState = reviewStateTone(status, { own: review.own, ignored: review.ignored })
   // GitHub-style tab badges: one neutral count pill per tab. Comments counts
   // the loaded conversation (comments and reviews); until it loads, GitHub's
   // issue-comment total stands in. Checks add a pass/fail dot before the pill;
@@ -404,7 +409,7 @@ function PullRequestDetailView({ cacheStore, pr, token, onReview, onAssign, onRe
       {labels.length ? <div className="co-gh-labels">{labels.map(label => <GithubLabel key={label.name} name={label.name} color={label.color} />)}</div> : null}
     </header>
     <div className="co-pr-detail-actions">
-      {!readOnly ? <ActionsMenu variant="button" align="start" pulls={[pr]} record={record} capabilities={capabilities} own={review?.own === true} disabled={stale} onChoose={mode => onReview?.(mode)} ariaLabel={`Choose an action for PR ${pr.number}`} /> : null}
+      {!readOnly ? <ActionsMenu variant="button" align="start" pulls={[pr]} decisions={review?.standing ? [review.standing] : []} record={record} capabilities={capabilities} disabled={stale} onChoose={mode => onReview?.(mode)} ariaLabel={`Choose an action for PR ${pr.number}`} /> : null}
       {!readOnly && canAssign ? <button className="co-btn" disabled={stale} onClick={onAssign} aria-label="Assign" title="Assign"><Icon name="person" /><span className="co-btn-label">Assign</span></button> : null}
       {status && onProgress ? <button className="co-btn" onClick={onProgress}>Agent progress</button> : null}
       {githubUrl ? <a className="co-btn" href={githubUrl} target="_blank" rel="noopener noreferrer" aria-label={`View on GitHub: PR ${pr.number}`} title="View on GitHub"><Icon name="github" /><span className="co-btn-label">View on GitHub</span></a> : null}
@@ -412,6 +417,7 @@ function PullRequestDetailView({ cacheStore, pr, token, onReview, onAssign, onRe
     </div>
     <div className="co-gh-pr-sub"><PullStateBadge pr={pr} /><span className="co-pr-sub-num">#{pr.number}</span>
       <span>by <b>{pr.author?.login || 'Someone'}</b></span></div>
+    {review?.standing ? <p className="co-pr-standing" data-turn={review.standing.turn}>{review.standing.headline}</p> : null}
     {conversationLoading ? null : <>
     <details className="co-gh-description">
       <summary>
@@ -428,7 +434,7 @@ function PullRequestDetailView({ cacheStore, pr, token, onReview, onAssign, onRe
     </>}
     <nav className="co-detail-tabs" aria-label="Pull request details" ref={tabStrip}>{tabs.map(([key, label]) => <button key={key} aria-pressed={tab === key} onClick={() => setTab(key)}>{label}
       {key === 'checks' && checks?.total ? <><span className={'co-tab-dot is-' + checks.state} title={`${checks.passed} of ${checks.total} checks passed or skipped`} aria-label={{ success: 'checks passed', failure: 'checks failing', pending: 'checks running' }[checks.state]} /><span className="co-tab-count">{checks.passed}/{checks.total}</span></> : null}
-      {key === 'review' ? <ReviewMark tone={reviewState} /> : null}
+      {key === 'review' ? <ReviewMark standing={review?.standing} status={status} ctx={{ own: review?.own, ignored: review?.ignored }} /> : null}
       {Number.isInteger(tabCounts[key]) ? <span className="co-tab-count">{tabCounts[key]}</span> : null}</button>)}</nav>
     <div className="co-pr-detail-body" role="region" aria-label="Pull request context">
     {stale ? <p role="alert">This PR changed since the list was loaded. <button className="co-btn" onClick={onRefresh}>Refresh PR list</button></p> : null}

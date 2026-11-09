@@ -1,18 +1,17 @@
 // GitHub owns people, permissions and assignments. Contribute owns the private
 // review journey; a repository role never becomes an automatic merge grant.
 import { PR_FIELDS, fetchLiveStates } from './api.js'
+import { mayWrite } from './pr-machine.js'
 
 export { PR_FIELDS } from './api.js'
 export const mayAssign = permission => ['TRIAGE', 'WRITE', 'MAINTAIN', 'ADMIN'].includes(permission)
-export const mayMerge = permission => ['WRITE', 'MAINTAIN', 'ADMIN'].includes(permission)
+// Merge rights are write rights: the machine owns the one list.
+export const mayMerge = mayWrite
 // This is discovery, not authority: the server rechecks exact repositories at
 // admission and before publication. Older snapshots still need that preflight.
+// A takeover never marks a draft ready (the owner does), so there is one scope.
 export const TAKEOVER_SCOPE = 'named_pr_repairs_and_reviewed_successors'
-export const DRAFT_TAKEOVER_SCOPE = 'named_pr_repairs_ready_and_reviewed_successors'
-// One draft-scope decision for the chooser, its labels and the start body.
-export const takeoverScope = pulls => pulls.some(pr => pr.isDraft) ? DRAFT_TAKEOVER_SCOPE : TAKEOVER_SCOPE
-export function takeoverBlocker(pulls, { allowDraft = false } = {}) {
-  if (!allowDraft && pulls.some(pr => pr.isDraft)) return 'Draft PRs must be marked ready first.'
+export function takeoverBlocker(pulls) {
   if (pulls.some(pr => !mayMerge(pr.repository?.viewerPermission))) return 'Requires merge access to every selected PR.'
   // GitHub returns `headRepository: null` when the source fork was deleted:
   // no fix can be pushed there. Only an absent field (older snapshot) defers
@@ -51,7 +50,9 @@ export const conversationCount = pr => (pr?.comments?.totalCount || 0) + (pr?.re
 export const prKey = pr => `${pr.repository.nameWithOwner.toLowerCase()}#${pr.number}`
 export const mergeSelection = (old, next) => [...new Map([...old, ...next].map(pr => [prKey(pr), pr])).values()]
 const BOT_LOGINS = new Set(['dependabot', 'renovate', 'github-actions'])
-export const isBotAuthor = login => /\[bot\]$|bot$/i.test(login || '') || BOT_LOGINS.has((login || '').toLowerCase())
+// A GitHub App login ends in [bot]; a bot account by convention in -bot or _bot. A person
+// named abbot or talbot is not one.
+export const isBotAuthor = login => /\[bot\]$|[-_]bot$/i.test(login || '') || BOT_LOGINS.has((login || '').toLowerCase())
 
 export function matchingPulls(pulls, filter, login) {
   const same = value => value?.toLowerCase() === login?.toLowerCase()
@@ -111,7 +112,7 @@ export async function discoverPull(token, repo, number) {
   const name = repositoryName(repo)
   if (!name || !Number.isSafeInteger(number) || number < 1) throw new Error('Choose a valid pull request.')
   const [owner, project] = name.split('/')
-  const data = await graph(token, `query ContributeExactPull { repository(owner:${JSON.stringify(owner)},name:${JSON.stringify(project)}) { pullRequest(number:${number}) { ${PR_FIELDS} state mergedAt } } }`)
+  const data = await graph(token, `query ContributeExactPull { repository(owner:${JSON.stringify(owner)},name:${JSON.stringify(project)}) { pullRequest(number:${number}) { ${PR_FIELDS} mergedAt } } }`)
   const pr = data.repository?.pullRequest
   if (!pr || pr.number !== number || pr.repository.nameWithOwner.toLowerCase() !== name) throw new Error('This PR is unavailable to your GitHub account.')
   return pr
@@ -263,6 +264,7 @@ export function requestOptions(options, mode) {
     } : {}),
     ...(PUBLISHING_MODES.has(mode) && value.post_review === true ? {
       post_review: true, ...(value.propose_verdict === true ? { propose_verdict: true } : {}),
+      ...(mode === 'review' && value.propose_verdict === true && value.agent_submits_verdict === true ? { agent_submits_verdict: true } : {}),
     } : {}),
   }
 }
@@ -270,8 +272,8 @@ export function requestOptions(options, mode) {
 export function reviewRunRequest(choice) {
   return {
     request_id: choice.request_id, mode: choice.mode,
-    // A legacy selection without a scope never acquires draft readiness.
-    ...(choice.mode === 'review_fix_merge' ? { confirmation_scope:choice.confirmation_scope || TAKEOVER_SCOPE } : {}),
+    ...(choice.mode === 'review_fix_merge' ? { confirmation_scope: TAKEOVER_SCOPE } : {}),
+    ...(choice.mode === 'review_fix_merge' && String(choice.takeover_reason || '').trim() ? { takeover_reason: choice.takeover_reason.trim() } : {}),
     ...(choice.options ? { options:requestOptions(choice.options, choice.mode) } : {}),
     ...(choice.preview_sha256 ? { preview_sha256:choice.preview_sha256 } : {}),
     ...(choice.agent ? { agent:choice.agent } : {}),
@@ -312,15 +314,26 @@ export const mergePull = (token, appId, pr, { method = '' } = {}) => publicWrite
   receipt: result => ['merged', 'queued'].includes(result?.state) ? { state: result.state, mergeSha: result.merge_sha || '' } : null,
 })
 
-// The owner's own "open this draft for review", for a draft Contribute did not open: this exact
-// version, once. Same outcome shapes as mergePull. GitHub cannot pin a version on this write, so the
-// platform reports the head it saw afterwards (observedHead) and the sheet says so if it moved.
-export const markReadyPull = (token, appId, pr) => publicWrite(token, appId, 'pulls/ready', {
-  repo: pr.repository.nameWithOwner, number: pr.number, head_sha: pr.headRefOid,
-}, {
-  code: 'ready_unconfirmed', words: 'GitHub may have marked it ready. Check the pull request before trying again.',
-  receipt: result => result?.state === 'ready' && typeof result.observed_head_sha === 'string' ? { state: 'ready', observedHead: result.observed_head_sha } : null,
-})
+// The owner's own status change on one PR, at this exact version, once: `ready` (open a draft for
+// review), `draft` (back to draft), `close`, or `request-reviewers` (ask for re-review). Same outcome
+// shapes as mergePull. GitHub cannot pin a version on these writes, so the platform reports the head
+// it saw afterwards (observedHead) and the sheet says so if it moved. The receipt of each is the state
+// it names, with that head; any other answer may still have reached GitHub.
+const STATUS_WRITE = {
+  ready: { state: 'ready', code: 'ready_unconfirmed', words: 'GitHub may have marked it ready. Check the pull request before trying again.' },
+  draft: { state: 'draft', code: 'draft_unconfirmed', words: 'GitHub may have turned it back into a draft. Check the pull request before trying again.' },
+  close: { state: 'closed', code: 'close_unconfirmed', words: 'GitHub may have closed it. Check the pull request before trying again.' },
+  'request-reviewers': { state: 'requested', code: 'reviewers_unconfirmed', words: 'GitHub may have asked for the re-review. Check the pull request before trying again.' },
+}
+export const pullAction = (token, appId, pr, action, extra = {}) => {
+  const write = STATUS_WRITE[action]
+  return publicWrite(token, appId, `pulls/${action}`, {
+    repo: pr.repository.nameWithOwner, number: pr.number, head_sha: pr.headRefOid, ...extra,
+  }, {
+    code: write.code, words: write.words,
+    receipt: result => result?.state === write.state && typeof result.observed_head_sha === 'string' ? { state: write.state, observedHead: result.observed_head_sha } : null,
+  })
+}
 
 // What a finished private review would say on GitHub, word for word, with the hash that binds the
 // post to it. Read-only: the platform writes nothing here.
@@ -378,14 +391,16 @@ export function earlierReviewForPull(runs, pr) {
   return matches.sort((a, b) => Date.parse(b.run.created_at || '') - Date.parse(a.run.created_at || ''))[0] || null
 }
 
-// The Agent menu's jobs as the platform sees them. Review opens private and
-// the window switches it to a GitHub review; Review and merge is the same
-// window with merging on; Hand it over is the takeover mode. A raw mode (a
-// retry, a saved link) passes through with its own defaults.
+// The PR machine's agent jobs (pr-machine.js) as the platform runs them. On your
+// own PR a review is only ever a private check; Finish it for me and Take over
+// are the same platform mode, told apart by whose PR it is (and Take over's reason).
+// A raw mode (a retry, a saved link) passes through with its own defaults.
+const PRIVATE = { post_review: false, propose_verdict: false, agent_submits_verdict: false }
 const REVIEW_INTENTS = {
-  review: { mode: 'review', options: { post_review: false, propose_verdict: false } },
-  merge: { mode: 'review_merge', options: { post_review: true, propose_verdict: true } },
-  review_fix_merge: { mode: 'review_fix_merge' },
+  review: { mode: 'review', options: PRIVATE },
+  check_my_pr: { mode: 'review', options: PRIVATE },
+  finish_it: { mode: 'review_fix_merge' },
+  take_over: { mode: 'review_fix_merge' },
 }
 export function reviewIntent(choice) {
   const known = REVIEW_INTENTS[choice]

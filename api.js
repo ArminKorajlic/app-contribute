@@ -249,7 +249,7 @@ export async function fetchContributionScreenshot(token, appId, recordId, shot) 
 // and GitHub returns null nodes (not errors) for anything inaccessible.
 // The one PR shape every live list shares: lists, incoming reviews and the
 // Desk home all read these fields. collaboration.js re-exports it.
-export const PR_FIELDS = `id number title url headRefOid headRefName baseRefName baseRefOid baseRef { target { oid } } isDraft
+export const PR_FIELDS = `id number title url state headRefOid headRefName baseRefName baseRefOid baseRef { target { oid } } isDraft
   additions deletions changedFiles createdAt updatedAt
   author { login } assignees(first:100) { nodes { login } }
   repository { nameWithOwner viewerPermission squashMergeAllowed mergeCommitAllowed rebaseMergeAllowed }
@@ -260,7 +260,10 @@ export const PR_FIELDS = `id number title url headRefOid headRefName baseRefName
   commits(last:1) { nodes { commit { statusCheckRollup { state contexts {
     totalCount checkRunCountsByState { state count } statusContextCountsByState { state count }
   } } } } }
-  reviewDecision mergeable`
+  reviewDecision mergeable
+  latestOpinionatedReviews(first:30, writersOnly:true) { pageInfo { hasNextPage } nodes { state author { login __typename } commit { oid } } }
+  viewerLatestReview { state commit { oid } }
+  reviewThreads(last:50) { pageInfo { hasPreviousPage } nodes { isResolved comments(last:1) { nodes { author { login __typename } } } } }`
 
 export async function fetchLiveStates(token, query) {
   try {

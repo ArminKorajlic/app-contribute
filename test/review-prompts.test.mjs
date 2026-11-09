@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { loadWorkflowOptions, oversizedPrompt, previewWorkflow, PROMPT_BYTE_LIMIT, promptBytes, promptOverrides, reviewOptions, saveWorkflowOptions, workflowAgent, workflowSettings } from '../review-prompts.js'
+import { launchOptions, loadWorkflowOptions, oversizedPrompt, previewWorkflow, PROMPT_BYTE_LIMIT, promptBytes, promptOverrides, reviewOptions, saveWorkflowOptions, workflowAgent, workflowSettings } from '../review-prompts.js'
 import { reviewRunRequest } from '../collaboration.js'
 
 const defaults = {review_prompt:'Review the full diff',fix_prompt:'Fix findings',merge_prompt:'Merge only when safe',max_rounds:null,autopilot:false,mandatory_instructions:'No unrelated scope'}
@@ -97,4 +97,24 @@ test('prompts are limited in UTF-8 bytes like the platform, so non-ASCII text is
   assert.equal(writes.length,0,'an oversized prompt is never saved')
   await saveWorkflowOptions({review_prompt:fits},'v1',{})
   assert.equal(writes.length,1)
+})
+
+test('"Agent posts" goes out only when you chose it in the window for a plain review the server supports', () => {
+  const caps = { post_review: true, propose_verdict: true, agent_submits_verdict: true }
+  const agent = { post_review: true, propose_verdict: true, agent_submits_verdict: true }
+  assert.equal(launchOptions({ mode: 'review', options: agent }, {}, caps).agent_submits_verdict, true)
+  assert.equal('agent_submits_verdict' in launchOptions({ mode: 'review', options: agent }, {}, { ...caps, agent_submits_verdict: false }), false, 'not before the server supports it')
+  assert.equal('agent_submits_verdict' in launchOptions({ mode: 'review_merge', options: agent }, {}, { ...caps, post_review_merge: true }), false, 'never with merging')
+  assert.equal('agent_submits_verdict' in launchOptions({ mode: 'review', options: { agent_submits_verdict: true } }, {}, caps), false, 'never without a drafted verdict')
+  assert.equal('agent_submits_verdict' in launchOptions({ mode: 'review', options: {} }, { agent_submits_verdict: true }, caps), false, 'never a saved default')
+})
+
+test('a saved review link never carries "Agent posts"', async () => {
+  const { selectedReviewRequest } = await import('../review-selection.js')
+  const id = 'fixture-link-0001'
+  const link = { request_id: id, mode: 'review', options: { post_review: true, propose_verdict: true, agent_submits_verdict: true },
+    items: [{ repo: 'o/r', number: 1, head_sha: 'a'.repeat(40), base_ref: 'main', base_sha: 'b'.repeat(40) }] }
+  const request = selectedReviewRequest(link, id)
+  assert.equal(request.options.propose_verdict, true)
+  assert.equal('agent_submits_verdict' in request.options, false)
 })

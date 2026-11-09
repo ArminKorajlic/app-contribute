@@ -37,7 +37,7 @@ const STEPS = [
   'It drafts a reply for each thread. Replies are never posted on their own.',
 ]
 
-// The window behind Agent > Address feedback. It reads what the PR asks for,
+// The window behind Agent > Respond to feedback. It reads what the PR asks for,
 // asks how far to go, then starts an agent conversation from a written brief.
 export function AddressFeedbackWindow({ pr, findings = null, token, appId, onStart, onClose }) {
   const root = useRef(null)
@@ -86,10 +86,10 @@ export function AddressFeedbackWindow({ pr, findings = null, token, appId, onSta
   }
   const heading = <header className="co-rw-head">
     <span className="co-rw-icon"><Icon name="feedback" size={22} /></span>
-    <div><h3>Address feedback</h3><p className="co-rw-pr"><strong>#{pr.number} {pr.title}</strong><span>{pr.repository.nameWithOwner}</span></p></div>
+    <div><h3>Respond to feedback</h3><p className="co-rw-pr"><strong>#{pr.number} {pr.title}</strong><span>{pr.repository.nameWithOwner}</span></p></div>
     <button type="button" className="co-quiet-action co-rw-close" aria-label="Close" onClick={onClose}><Icon name="close" size={18} /></button>
   </header>
-  if (started) return <section ref={root} tabIndex={-1} className="co-review-window" aria-label="Address feedback started">
+  if (started) return <section ref={root} tabIndex={-1} className="co-review-window" aria-label="Respond to feedback started">
     {heading}
     <div className="co-rw-body">
       <p className="co-rw-note">{started.reused ? 'An agent is already working on this PR.' : 'The agent is on it.'} The conversation has its progress and, when it finishes, the changes it made, the test results and the replies it drafted. Nothing has been sent to GitHub{pushing ? ' and it will ask you before it pushes' : ''}.</p>
@@ -99,7 +99,7 @@ export function AddressFeedbackWindow({ pr, findings = null, token, appId, onSta
       <button type="button" className="co-btn co-btn-primary" onClick={() => { openAgentConversation(started.chatId); onClose() }}>Open the conversation</button>
     </div></footer>
   </section>
-  return <section ref={root} tabIndex={-1} className="co-review-window" aria-label="Address feedback">
+  return <section ref={root} tabIndex={-1} className="co-review-window" aria-label="Respond to feedback">
     {heading}
     <div className="co-rw-body">
       <h4 className="co-rw-label">What should it address?</h4>

@@ -22,21 +22,44 @@ export function savedVersion(item, pulls = [], listState = {}) {
 // `own`: the viewer wrote this PR. GitHub refuses an approval or a change
 // request from a PR's author and the server rejects the submit, so Submit is not
 // offered there; the proposal can only be discarded.
+// A drafted approve or request changes can go out as a plain comment instead: its
+// own exact words, which the platform saved with the proposal (comment_body).
 export function VerdictProposal({ proposal, mode, busy, onDecide, onCheck = null, own = false }) {
-  const copy = verdictCopy(proposal, mode)
+  const [asComment, setAsComment] = useState(false)
+  const copy = verdictCopy(asComment ? { ...proposal, event: 'COMMENT' } : proposal, mode)
   const waiting = proposal.state === 'proposed' && onDecide
+  const canComment = !!proposal.comment_body && proposal.event !== 'COMMENT' && mode !== 'review_merge'
   return <div className={'co-verdict' + (proposal.event === 'APPROVE' ? ' is-approve' : ' is-changes')}>
     <p className="co-verdict-status" role="status">{copy.status}</p>
     {proposal.state === 'posted' && proposal.url ? <a href={proposal.url} target="_blank" rel="noopener noreferrer">View it on GitHub</a> : null}
     {proposal.state === 'unknown' && onCheck ? <UnconfirmedVerdict busy={busy} onCheck={onCheck} onDismiss={onDecide ? () => onDecide(proposal, 'dismiss') : null} /> : null}
     {waiting ? <>
-      <details className="co-task-details" open><summary>What it would post</summary><MarkdownView markdown={proposal.body} /></details>
+      <details className="co-task-details" open><summary>What it would post</summary><MarkdownView markdown={asComment ? proposal.comment_body : proposal.body} /></details>
       <p className="co-task-footnote">{own ? 'This is your own PR, so it cannot be approved or sent back to yourself. Discard it, then fix what it found or set it aside.' : copy.note}</p>
       <div className="co-verdict-actions">
-        {own ? null : <button type="button" className="co-btn co-btn-primary" disabled={busy} onClick={() => onDecide(proposal, 'submit')}>{busy ? 'Working…' : copy.submit}</button>}
+        {own ? null : <button type="button" className="co-btn co-btn-primary" disabled={busy} onClick={() => onDecide(proposal, 'submit', asComment ? { event: 'COMMENT' } : {})}>{busy ? 'Working…' : copy.submit}</button>}
+        {own || !canComment ? null : <button type="button" className="co-btn" aria-pressed={asComment} disabled={busy} onClick={() => setAsComment(value => !value)}>{asComment ? 'Send the verdict instead' : copy.comment}</button>}
         <button type="button" className="co-btn" disabled={busy} onClick={() => onDecide(proposal, 'discard')}>Discard</button>
       </div>
     </> : null}
+  </div>
+}
+
+// Fixes an agent prepared for a PR's branch (Finish it for me, Take over): nothing
+// is pushed until the owner taps Push here; Discard tells the agent no.
+export function RepairProposal({ item, busy, onDecide }) {
+  const attempt = (item.repair_attempts || []).find(entry => entry.state === 'proposed')
+  if (!attempt) return null
+  const files = Array.isArray(attempt.files) ? attempt.files : []
+  return <div className="co-verdict is-changes">
+    <p className="co-verdict-status" role="status">Fixes are ready to push to this PR’s branch. Nothing is pushed until you approve.</p>
+    {attempt.summary ? <MarkdownView markdown={attempt.summary} /> : null}
+    {files.length ? <details className="co-task-details"><summary>{files.length === 1 ? '1 file' : `${files.length} files`}</summary><ul>{files.map(file => <li key={file.path || file}><code>{file.path || file}</code></li>)}</ul></details> : null}
+    <p className="co-task-footnote">Pushes commit <code>{String(attempt.commit_sha || attempt.candidate_sha || '').slice(0, 7) || 'unknown'}</code> on top of <code>{String(attempt.head_sha || item.head_sha || '').slice(0, 7)}</code>. If the branch moved, nothing is pushed.</p>
+    {onDecide ? <div className="co-verdict-actions">
+      <button type="button" className="co-btn co-btn-primary" disabled={busy} onClick={() => onDecide(attempt, 'push')}>{busy ? 'Working…' : 'Push'}</button>
+      <button type="button" className="co-btn" disabled={busy} onClick={() => onDecide(attempt, 'discard')}>Don’t push</button>
+    </div> : null}
   </div>
 }
 
@@ -61,7 +84,7 @@ const NEEDS_CONVERSATION = new Set(['failed', 'merge_unknown', 'ready_unknown', 
 
 // The one presentation of a review run, wherever it is opened from: a PR row,
 // the project's review history, or a chat link to the run.
-export function RunDetail({ run, pulls, listState, busy = false, error = '', onStop, retryPulls = [], onRetry, onVerdict, onCheck = null, updater = null }) {
+export function RunDetail({ run, pulls, listState, busy = false, error = '', onStop, retryPulls = [], onRetry, onVerdict, onRepair = null, onCheck = null, updater = null }) {
   const halted = reviewRunHalted(run)
   // "Answer" only when the conversation really asks something or must reconcile an outcome; findings alone are not a question.
   const needsAnswer = run.items?.some(item => reviewItemProgress(run, item).waiting || NEEDS_CONVERSATION.has(item.state))
@@ -81,8 +104,9 @@ export function RunDetail({ run, pulls, listState, busy = false, error = '', onS
         : item.public_review?.state === 'posting' ? <p className="co-task-footnote">Posting the review on GitHub…</p>
         : item.public_review?.summary ? <p className="co-task-footnote">{item.public_review.summary}</p> : null}
       {item.verdict_proposal ? <VerdictProposal proposal={item.verdict_proposal} mode={run.mode} busy={busy}
-        onDecide={onVerdict && !elsewhere ? (proposal, decision) => onVerdict(item, proposal, decision) : null}
+        onDecide={onVerdict && !elsewhere ? (proposal, decision, extra) => onVerdict(item, proposal, decision, extra) : null}
         onCheck={onCheck && !elsewhere ? onCheck : null} /> : null}
+      <RepairProposal item={item} busy={busy} onDecide={onRepair && !elsewhere ? (attempt, decision) => onRepair(item, attempt, decision) : null} />
     </div>)}</div>
     {run.chat_id ? <button className="co-btn co-btn-primary co-task-primary" onClick={() => openAgentConversation(run.chat_id)}>{needsAnswer ? 'Answer in review conversation' : elsewhere ? 'Open the owning conversation for details' : 'Open review conversation'}</button> : null}
     {stoppable && onStop ? <><button className="co-quiet-action" disabled={busy} onClick={onStop}>Stop workflow</button><p className="co-task-footnote">Stop prevents future actions. An already-started public action may finish; its outcome stays visible.</p></> : null}

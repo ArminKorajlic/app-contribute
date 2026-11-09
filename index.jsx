@@ -589,17 +589,23 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
   // opens with an empty inbox that fills in a beat later.
   // Review runs for the whole desk: its rows show which PRs are under review.
   // Read once at open and on Refresh; polled only while a review is running.
+  // The same list names the live Respond-to-feedback conversations: another agent job on a PR.
   const [reviewRuns, setReviewRuns] = useState([])
+  const [respondChats, setRespondChats] = useState([])
   const [runsReady, setRunsReady] = useState(false)
   const refreshReviewRuns = useCallback(async () => {
-    try { setReviewRuns((await loadReviewRuns(token, appId)).runs || []) } catch { /* the rows simply show no frame */ }
+    try {
+      const list = await loadReviewRuns(token, appId)
+      setReviewRuns(list.runs || [])
+      setRespondChats(list.respond_chats || [])
+    } catch { /* the rows simply show no frame */ }
   }, [token, appId])
   useEffect(() => {
     if (sendOnly || conn.state === 'checking') return
     if (conn.state !== 'connected') { setRunsReady(true); return }
     void refreshReviewRuns().finally(() => setRunsReady(true))
   }, [conn.state, refreshReviewRuns, sendOnly])
-  const reviewActive = hasActiveReview(reviewRuns)
+  const reviewActive = hasActiveReview(reviewRuns) || respondChats.length > 0
   useEffect(() => {
     if (!reviewActive) return undefined
     const timer = window.setInterval(() => { void refreshReviewRuns() }, 15000)
@@ -1600,7 +1606,7 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
     .map(project => [project.key, projectNeedsCount(project, projectRun(project).decisions, conn.login || '')])), [sourceProjects, records, reviewStatus, conn.login])
   // The home's clickable counts: every number names a next step and its view.
   // Reviews you started: one row per PR for the PR reviews page, counted in the rail.
-  const reviewList = useReviewList({ token, runs: reviewRuns, ignored: ignoredReviews, login: conn.login || '', refreshKey })
+  const reviewList = useReviewList({ token, runs: reviewRuns, chats: respondChats, ignored: ignoredReviews, login: conn.login || '', refreshKey })
   const deskCountsValue = useMemo(() => deskCounts({
     projects: sourceProjects,
     decisions: contributionRun.decisions,
@@ -1616,6 +1622,7 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
     login: conn.login || '',
     records,
     runs: reviewRuns,
+    respondChats,
     ignored: ignoredReviews,
     reviews: reviewList,
     lastLooked,
@@ -1637,7 +1644,7 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
       incomingReviews: [],
     }) : contributionRun
   }
-  // `intent` lets a desk row open the PR straight into a window ('fix' = Address feedback).
+  // `intent` lets a desk row open the PR straight into a window ('fix' = Respond to feedback).
   function openPullPage(project, pr, tab = 'conversation', intent = '') {
     const repo = pr?.repository?.nameWithOwner || project?.canonical_repo || ''
     if (!repo || !pr?.number) return

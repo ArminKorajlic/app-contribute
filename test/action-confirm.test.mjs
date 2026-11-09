@@ -14,11 +14,11 @@ test('opening for review says what happens, what GitHub shows now, and what it c
     'ok:Reviewers are asked to look at it',
     'ok:21 checks passed',
     'ok:No conflicts with main',
-    'warn:Contribute cannot turn it back into a draft yet',
+    'ok:You can turn it back into a draft later',
   ])
   assert.match(copy.footnote, /abcdef0/)
   assert.match(copy.footnote, /Nothing merges/)
-  assert.equal(ACTION_COPY.open_review, openForReviewCopy)
+  assert.equal(ACTION_COPY.open_for_review, openForReviewCopy)
 })
 
 test('failing, running or conflicting PRs warn but still may be opened for review', () => {
@@ -53,7 +53,7 @@ test('the confirm sheet has one close affordance and one button that names the r
   assert.match(html, />Open for review<\/button>/)
   assert.match(html, /aria-label="Close"/)
   assert.doesNotMatch(html, />Cancel</, 'the X is the only way out')
-  assert.match(html, /Contribute cannot turn it back into a draft yet/)
+  assert.match(html, /You can turn it back into a draft later/)
   // Each action's words name their own icon, so no caller can show Merge with the arrow of Open for review.
   assert.ok(html.includes(icon('send')), 'open for review wears the send arrow')
   const merge = render({ pr: approved(), copy: mergeCopy(approved()), onConfirm: () => {}, onClose: () => {} })
@@ -61,20 +61,23 @@ test('the confirm sheet has one close affordance and one button that names the r
   assert.ok(!merge.includes(icon('send')), 'and not the arrow of another action')
 })
 
-import { markReadyPull, mergePull, postFindings, previewPostedFindings } from '../collaboration.js'
+import { mergePull, postFindings, previewPostedFindings, pullAction } from '../collaboration.js'
+const markReadyPull = (token, appId, pr) => pullAction(token, appId, pr, 'ready')
 
 const landable = { squashMergeAllowed: true, mergeCommitAllowed: true, rebaseMergeAllowed: true }
 const approved = (extra = {}) => pr({ reviewDecision: 'APPROVED', repository: { nameWithOwner: 'team/repo', ...landable }, ...extra })
 
-test('Merge names what it lands, what GitHub shows now, and that Contribute cannot undo it', () => {
-  const copy = mergeCopy(approved())
+const approvedBy = people => ({ standing: { approvedBy: people } })
+
+test('Merge names what it lands, who approved this version, and that Contribute cannot undo it', () => {
+  const copy = mergeCopy(approved(), approvedBy(['sam']))
   assert.equal(copy.title, 'Merge #9 into main?')
   assert.equal(copy.confirm, 'Squash and merge', 'squash is the platform\'s first choice when the repository allows it')
-  assert.deepEqual(copy.facts.map(fact => `${fact.tone}:${fact.text}`), ['ok:Approved on GitHub', 'ok:21 checks passed', 'ok:No conflicts with main'])
+  assert.deepEqual(copy.facts.map(fact => `${fact.tone}:${fact.text}`), ['ok:Approved at this version by sam', 'ok:21 checks passed', 'ok:No conflicts with main'])
   assert.match(copy.footnote, /abcdef0/)
   assert.match(copy.footnote, /nothing is merged and you are told/)
   assert.match(copy.footnote, /cannot undo a merge/)
-  assert.equal(ACTION_COPY.merge_now, mergeCopy)
+  assert.equal(ACTION_COPY.merge, mergeCopy)
 })
 
 test('the ways to land are the ones the repository allows, in the platform\'s order, asked only when there is a choice', () => {
@@ -94,12 +97,13 @@ test('the ways to land are the ones the repository allows, in the platform\'s or
 })
 
 test('a missing approval, failing checks or a conflict show as blockers, and your own review is named for this version', () => {
-  const tones = extra => mergeCopy(approved(extra)).facts.filter(fact => fact.tone !== 'ok').map(fact => `${fact.tone}:${fact.text}`)
-  assert.deepEqual(tones({ reviewDecision: 'REVIEW_REQUIRED' }), ['bad:GitHub still needs a review'])
-  assert.deepEqual(tones({ reviewDecision: 'CHANGES_REQUESTED' }), ['bad:Changes are requested'])
+  const tones = (extra, people = ['sam']) => mergeCopy(approved(extra), approvedBy(people)).facts.filter(fact => fact.tone !== 'ok').map(fact => `${fact.tone}:${fact.text}`)
+  assert.deepEqual(tones({}, []), ['bad:Nobody but the author has approved this version'], 'an approval of an older version, or none, is not one')
+  assert.deepEqual(tones({ reviewDecision: null }, []), ['bad:Nobody but the author has approved this version'], 'GitHub asking for no review is not an approval')
+  assert.deepEqual(tones({ reviewDecision: 'REVIEW_REQUIRED' }), ['bad:GitHub still needs a review'], 'GitHub’s own gate is named even when someone approved this version')
+  assert.deepEqual(tones({ reviewDecision: 'APPROVED' }), [], 'GitHub satisfied adds nothing')
   assert.deepEqual(tones({ ...rollup('FAILURE', 2) }), ['bad:2 checks are failing'])
   assert.deepEqual(tones({ mergeable: 'CONFLICTING' }), ['bad:It conflicts with main'])
-  assert.equal(mergeCopy(approved({ reviewDecision: '' })).facts[0].text, 'GitHub is not asking for an approval here')
   const status = (state, extra = {}) => ({ run: { state: 'complete', execution_state: 'completed' }, item: { state, ...extra } })
   const reviewLine = value => mergeCopy(approved(), { status: value }).facts.at(-1)
   assert.deepEqual(reviewLine(status('all_clear')), { tone: 'ok', text: 'Your agent’s review is clear for this version' })
@@ -145,21 +149,21 @@ test('the open Actions menu names its two groups only when there is something of
     import React from 'react'
     import { renderToStaticMarkup } from 'react-dom/server'
     import { ActionsMenu } from './ui/ActionsMenu.jsx'
-    export const render = props => renderToStaticMarkup(React.createElement(ActionsMenu, { defaultOpen: true, onChoose() {}, ...props }))
+    import { standingFor } from './pr-standing.js'
+    export const render = (props, login = 'me') => renderToStaticMarkup(React.createElement(ActionsMenu, { defaultOpen: true, onChoose() {}, decisions: props.pulls.map(pr => standingFor({ pr, login })), ...props }))
   `)
-  const draft = pr({ isDraft: true, number: 122 })
+  const reviews = { latestOpinionatedReviews: { nodes: [] }, viewerLatestReview: null, reviewThreads: { nodes: [] } }
+  const draft = pr({ isDraft: true, number: 122, state: 'OPEN', author: { login: 'me' }, ...reviews })
   const withYou = render({ pulls: [draft], record: { status: 'draft', submission_mode: 'github' }, capabilities: { merge_now: true } })
   assert.match(withYou, /role="group" aria-label="You"/)
   assert.match(withYou, /role="group" aria-label="Agent"/)
-  assert.ok(withYou.indexOf('Open for review') < withYou.indexOf('>Review<'), 'your own actions come first')
+  assert.ok(withYou.indexOf('Open for review') < withYou.indexOf('Check my PR'), 'your own actions come first')
   assert.match(withYou, /Open it for review first\./, 'Merge stays in place, dimmed, with its reason')
-  // An unapproved draft's best step is still a review; an approved one's is to open it.
-  assert.ok(withYou.indexOf('is-rec') > withYou.indexOf('aria-label="Agent"'))
-  const approvedDraft = render({ pulls: [pr({ isDraft: true, reviewDecision: 'APPROVED', number: 122 })], record: { status: 'draft', submission_mode: 'github' } })
-  assert.ok(approvedDraft.indexOf('is-rec') > 0 && approvedDraft.indexOf('is-rec') < approvedDraft.indexOf('aria-label="Agent"'), 'the recommended step is in the You group')
-  const plain = render({ pulls: [pr()] })
+  assert.ok(withYou.indexOf('is-rec') > withYou.indexOf('aria-label="Agent"'), 'an unchecked draft of yours is checked first')
+  const plain = render({ pulls: [pr({ state: 'OPEN', author: { login: 'sam' }, ...reviews })] })
   assert.doesNotMatch(plain, /aria-label="You"|co-agent-menu-group/, 'with nothing of your own the menu is the plain agent list')
-  assert.match(plain, /Address feedback/)
+  assert.match(plain, />Review</)
+  assert.doesNotMatch(plain, /Respond to feedback|Address feedback/, 'their branch is not yours to fix')
 })
 
 test('Merge names a method only when the owner moved off the first allowed one', () => {

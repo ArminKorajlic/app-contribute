@@ -7,6 +7,21 @@ const KEYS = ['review_prompt', 'fix_prompt', 'merge_prompt', 'post_review', 'pro
 export function reviewOptions(value, defaults) {
   return Object.fromEntries(KEYS.map(key => [key, value?.[key] ?? defaults?.[key]]).filter(([,value]) => value !== undefined))
 }
+// The options one launch sends. A saved selection keeps its exact frozen options; new
+// work starts from the saved settings plus this window's choices, and only what the
+// served Möbius supports: posting is always a drafted verdict, never a bare comment,
+// and "Agent posts" is the owner's choice for this one review, never a saved default.
+export function launchOptions(choice, saved, capabilities) {
+  if (choice.preview_sha256) return requestOptions(choice.options, choice.mode)
+  const options = requestOptions(reviewOptions(choice.options, saved), choice.mode)
+  const caps = capabilities || {}
+  if (caps.post_review !== true || (choice.mode === 'review_merge' && caps.post_review_merge !== true)) { delete options.post_review; delete options.propose_verdict }
+  if (caps.propose_verdict !== true) delete options.propose_verdict
+  if (options.propose_verdict !== true) delete options.post_review
+  const agentPosts = choice.options?.agent_submits_verdict === true && caps.agent_submits_verdict === true && choice.mode === 'review' && options.propose_verdict === true
+  return agentPosts ? { ...options, agent_submits_verdict: true } : options
+}
+
 // The exact saved prompts must back every launch, so this never falls back to
 // defaults. The runtime bounds each read to a few seconds; a slow but healthy
 // server gets one more attempt before the owner sees a plain retry message.

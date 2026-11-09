@@ -3,9 +3,9 @@ import { Envelope, EmptyView } from './Envelope.jsx'
 import { TimeAgo } from './GithubParts.jsx'
 import { Icon } from './Icons.jsx'
 
-const IN_PROGRESS = ['waiting', 'running', 'stalled']
-// Waiting on you leads, then agents at work, then anything that stopped short.
-const ORDER = { waiting: 0, running: 1, stalled: 2, done: 3 }
+const IN_PROGRESS = ['waiting', 'running', 'stalled', 'unknown']
+// Waiting on you leads, then agents at work, then anything that stopped short or could not be read.
+const ORDER = { waiting: 0, running: 1, stalled: 2, unknown: 3, done: 4 }
 const SHOWN_AT_FIRST = 8
 // A chip's tone on the desk's own chip styles: yours is amber, a clear or merged review green.
 const CHIP_CLASS = { owner: 'is-waiting', running: 'is-you', good: 'is-ready', blocker: 'is-blocker', quiet: '' }
@@ -56,7 +56,7 @@ function groupByProject(entries, projects) {
 
 // Reviews an agent has drafted and only the owner can send. Agents never post, approve
 // or ask for changes by themselves, so this is the one place they all wait.
-const CONFIRM_EMPTY = { title: 'Nothing is waiting for your confirmation', hint: 'When an agent drafts a review for you to post, it waits here. Agents never post on their own: nothing reaches GitHub until you confirm it.' }
+const CONFIRM_EMPTY = { title: 'Nothing is waiting for your confirmation', hint: 'When an agent drafts a review for you to send, it waits here. An agent posts by itself only when you allowed it for that review.' }
 
 export function ConfirmView({ reviews, projects, query, onOpenProject, onOpenPull }) {
   const shown = reviews.entries.filter(entry => entry.confirm && matches(query, entry.item.title, String(entry.item.number), entry.item.repo))
@@ -88,6 +88,7 @@ export function ReviewsView({ reviews, projects, query, onOpenProject, onOpenPul
       {tabs.map(([key, label, count]) => <button key={key} type="button" aria-pressed={tab === key} onClick={() => setPicked(key)}>{label}<span className="co-pr-filter-count">{count}</span></button>)}
     </div>
     {reviews.checking && !shown.length ? <p className="co-pr-note" role="status">Checking which of these pull requests are still open…</p> : null}
+    {reviews.counts?.unknown && tab === 'progress' ? <p className="co-pr-note" role="status">{reviews.counts.unknown === 1 ? 'One pull request' : `${reviews.counts.unknown} pull requests`} could not be read from GitHub, so where {reviews.counts.unknown === 1 ? 'it stands' : 'they stand'} is unknown. {reviews.retry ? <button type="button" className="co-quiet-action" onClick={reviews.retry}>Try again</button> : null}</p> : null}
     {!groups.length && !reviews.checking
       ? <EmptyView icon="review" title={query.trim() ? 'Nothing matches your search' : EMPTY[tab].title} hint={query.trim() ? 'Try a PR number, a title word or a repository.' : EMPTY[tab].hint} />
       : <div className="co-desk-envelopes">{groups.map(({ project, rows }) => (

@@ -156,7 +156,7 @@ the owner, and folds apps with nothing to do.
   happens, what GitHub shows right now (approval, checks, conflicts, what the
   owner's own agent review said about this exact version) and what Contribute
   cannot undo. The X is its only way out, so there is no Cancel (the Review and
-  Address feedback windows work the same way); a finished action swaps it for
+  Respond to feedback windows work the same way); a finished action swaps it for
   Done. Merge asks how it lands only when the repository
   allows more than one way, merges exactly the version shown, and is never
   repeated after an unconfirmed answer. **Only a decoded receipt for the action
@@ -170,13 +170,14 @@ the owner, and folds apps with nothing to do.
   card; the arrow offers the other stage for that send. The stage is part of the
   exact approval, the confirmation text and the chat Send card (which freezes it
   at Confirm), so what is confirmed is what opens.
-- **Whose turn it is** is derived from what the owner already did, not from the
+- **Whose turn it is** is the PR machine's decision (see below), never the
   review's saved word alone (needs_you says what the review *found*). After
   Request changes the PR waits on its author and the row reads **Waiting on
-  <author>**; if the author pushes again it reads **New commits · review again**.
-  A finding on the owner's own PR stays theirs until they fix it or set it aside.
+  <author>**; when they push new commits after any review of yours it reads
+  **New commits · review again**. A finding on the owner's own PR stays theirs
+  until they fix it or set it aside.
 - **The Review tab answers instead of asking for a conversation.** A finished
-  review that found problems offers **Fix these findings** (Address feedback with
+  review that found problems offers **Fix these findings** (Respond to feedback with
   the saved findings ticked), **Ignore…** (one reason, for this exact version,
   kept in Contribute, nothing posted, with Undo), **Review again** and **Ask the
   reviewer something** as a plain button. "Answer in review conversation" is
@@ -184,53 +185,71 @@ the owner, and folds apps with nothing to do.
   while work is in progress.
 - **PR reviews** (side menu) lists the reviews the owner started, by project, in
   two tabs: **In progress** (waiting on the owner first, then agents at work, then
-  anything stuck) and **Done**. Every PR whose review is not merged is read live
-  (all of them, in batches of 40), when the list changes and again on every Sync with GitHub, so a closed PR is
-  history, a pushed PR comes back as new commits (after a clear or approved
-  review too: it belongs to the version it read, though on the owner's own PR it
-  is only an older version), and a stale finding is never counted as waiting on
-  the owner.
+  anything stuck or unreadable) and **Done**. Every PR is read live, in batches of
+  25, when the list changes and again on every Sync with GitHub, so a closed PR is
+  history, a pushed PR comes back as new commits (after a clear or approved review
+  too, though on the owner's own PR it is only an older version), a stale finding
+  is never counted as waiting on the owner, and a PR GitHub did not return reads
+  **Couldn’t read** with Try again instead of being classified from older saved
+  data.
 
-## The PR flow: roles, turns and hard rules (owner direction, 2026-11-04)
+## The PR machine: one decision for every screen and the server (owner direction, 2026-11-04)
 
-`pr-flow.js` is the single source for who you are on a PR, where it stands, whose
-move it is and what you may do. Screens ask it; they do not work it out again.
-`test/pr-flow.test.mjs` walks every role and state and fails if a rule breaks.
+`pr-machine.js` decides, for one PR, where it stands for you and what may happen
+next: `decide(facts)` returns the state, whose turn it is, the row label, the
+headline under the title, the one highlighted action, and every action with
+`enabled` and its plain reason. `pr-facts.js` builds the facts from GitHub's PR
+read (including each person's review *with the version it was of*, and your own
+latest review, so reviews made on GitHub itself count) plus Contribute's own runs.
+`pr-standing.js` turns a decision into a row's frame and chip. Every screen (PR
+rows, desk rows, the PR page, its Actions menu, the Review tab's buttons, PR
+reviews) renders that decision; none works it out again. The platform runs the
+same table (`contribution_pr_machine.py`) before every effect it performs, and both
+are held to the same cases: `test/pr-machine.cases.json` is kept byte-identical in
+both repositories.
 
 **Two roles.** *Author*: you wrote the PR (or an agent of yours opened it). *Reviewer*:
 someone else wrote it.
 
-**Hard rules.**
+**Rules the machine enforces** (each is an invariant in `test/pr-machine.test.mjs`,
+checked over every case and every combination of the facts that matter):
 
-1. You never review your own PR in public. No approve, no request changes, no
-   suggestions addressed to yourself. An agent's check of your PR is private. The
-   server enforces this too: a run on your own PR keeps its result private whatever
-   the grant says (`routes/contribution_reviews.py`, `own_pull`).
-2. On your own PR you check it, fix it, update the PR and its description, explain why
-   you did something, answer every reviewer (fixed, not valid with the reason and an
-   @mention, or out of scope) and merge it once someone else approved at the current
-   version with green checks.
-3. On someone else's PR you review it, request changes or approve, and review again
-   after they respond. You do not change their branch unless you deliberately take it over.
-4. An agent never posts, approves, requests changes or merges by itself. It drafts;
-   only your tap sends it. Everything drafted waits under **To confirm** in the side
-   menu (its page reads **Waiting for your confirmation**), with the exact words it
-   would post.
-5. A verdict belongs to one exact version. A new push makes it old, and the PR is back
-   on your list as "Changed since your review".
-6. Whose move it is comes from what already happened, never from a guess.
+1. An author never gets a public review action. An agent's check of your PR is private.
+2. Merge needs an approval of this exact version by someone other than the author (a bot
+   never counts), no change request still standing (even on an older version), checks
+   that pass or do not exist, no conflicts, nothing unconfirmed on its way to GitHub
+   (a new commit does not settle it: it holds until reconciled, while a draft goes
+   stale with its version), no agent job running, and no review GitHub itself still
+   requires (a branch rule: "GitHub still needs a review"). GitHub asking for no review
+   is not an approval.
+3. Only new commits bring their PR back for re-review; a reply or a thank-you never does.
+   That includes a clean private review of their PR: at its own version it reads as done
+   (nothing to send, nothing to set aside); once they push, the PR is back to re-review.
+   Your own PR is never nagged about an older clean check.
+4. One agent job per PR at a time. A job that stalled holds nothing. A Respond to
+   feedback conversation counts as the PR's job for as long as it can still move.
+5. Take over is for maintainers only, and needs a reason.
+6. Unknown stays unknown: missing checks are never green, and a PR that could not be
+   read enables nothing that depends on it. That includes a list of reviews GitHub
+   says goes on past the first page (30 writers): an opinion on the next page could
+   be a change request, so the PR reads as not read.
 
-**States (turn in brackets).** Your PR: Draft (you) · Checking (agent) · Findings to deal
-with (you) · Check did not finish (you) · Feedback to answer (you) · Waiting on reviewers
-(others) · Approved (you: merge). Their PR: To review (you) · Reviewing (agent) · Review
-ready (you: send or set aside) · Waiting for your confirmation (you: confirm or discard)
-· Waiting on the author (author) · Changed since your review (you) · Reviewed (nobody).
-Merged and Closed end every flow.
+**Who acts.** Pushing code, merging and changing a PR's status (ready, draft, closed)
+always wait for your own tap. A review verdict waits for your tap ("Draft for me"),
+unless you chose "Agent posts" for that review.
 
-**What an agent can be asked.** Review: both roles (private on your own PR). Address
-feedback: your own PR only. Review and merge: someone else's PR only. Hand it over (fix
-and merge): both, and on someone else's PR it is a deliberate takeover.
+**Agent jobs.** Your PR: Check my PR (private) · Respond to feedback (every point ends
+fixed with its commit, not valid with the reason and an @mention, or out of scope; one
+approval sheet sends the fixes, every reply, the description and the re-review
+requests) · Finish it for me (stops before each push for your approval). Their PR:
+Review, which reads Re-review once you reviewed it, with an optional "Merge after I
+approve" switch · Take over, set apart, maintainers only, with a reason. Your own
+actions: Open for review, Back to draft, Ask for re-review, Merge and Close, each
+behind a confirm sheet and each shown only where this Möbius can do it.
 
-Not wired to `pr-flow.js` yet, by design of the staging: the PR row chips, the Review tab
-words and the menu's visibility of the owner's own actions still use their older
-derivations; they move onto it when the menus are sorted.
+**States.** Shared: Merged · Closed · Couldn’t read · Not confirmed · Sending · Draft to
+send · Agent working · Agent asks you · Agent stopped. Your PR: Draft · Ready to open ·
+Findings · Checks or conflicts · Feedback to answer · Waiting on re-review · Approval is
+old · Waiting on reviewers · Approved (checks pending or unknown) · Ready to merge. Their
+PR: Draft · To review · Review ready · Waiting on the author · New commits · review
+again · Reviewed · Kept private · Ready to merge.

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { frontendModules, renderModule } from './render-harness.mjs'
+import { standingFor } from '../pr-standing.js'
 
 let renderer
 async function render(t, name, props) {
@@ -13,7 +14,20 @@ async function render(t, name, props) {
     const components = { ReviewTab, PullRequestDetail }
     export function render(name, props) { return renderToStaticMarkup(React.createElement(components[name], props)) }
   `)
-  return (await renderer).render(name, props)
+  return (await renderer).render(name, withStanding(name, props))
+}
+
+// The PR list hands every Review tab the PR machine's decision for its PR. The harness
+// does the same from the props a test gives (its status, whose PR, ignore notes).
+function withStanding(name, props) {
+  if (!['ReviewTab', 'PullRequestDetail'].includes(name) || props.standing || props.review?.standing) return props
+  const own = name === 'ReviewTab' ? props.own : props.review?.own
+  const ignored = name === 'ReviewTab' ? props.ignored : props.review?.ignored
+  const live = { ...props.pr, state: props.readOnly ? 'CLOSED' : 'OPEN', author: { login: own ? 'me' : 'sam' }, mergeable: 'MERGEABLE',
+    repository: { ...props.pr.repository, viewerPermission: 'WRITE' }, latestOpinionatedReviews: { nodes: [] }, viewerLatestReview: null,
+    reviewThreads: { nodes: [] }, commits: { nodes: [{ commit: { statusCheckRollup: null } }] } }
+  const standing = standingFor({ pr: live, login: 'me', runs: props.status ? [{ ...props.status.run, items: [props.status.item] }] : [], ignored })
+  return name === 'ReviewTab' ? { ...props, standing } : { ...props, review: { ...props.review, standing } }
 }
 const pr = { number: 9, repository: { nameWithOwner: 'team/repo' }, headRefOid: 'a'.repeat(40), baseRefOid: 'b'.repeat(40), baseRefName: 'main', url: 'https://github.com/team/repo/pull/9' }
 const status = (state, item = {}, run = {}) => ({ run: { id: 'r1', state: 'running', execution_state: 'running', mode: 'review', chat_id: 'chat-1', can_stop: true, created_at: new Date().toISOString(), ...run }, item: { repo: 'team/repo', number: 9, head_sha: 'a'.repeat(40), base_ref: 'main', state, ...item } })
@@ -112,8 +126,11 @@ test('the PR page carries a fourth Review tab with its state, and opens on it wh
   const running = await render(t, 'PullRequestDetail', { pr, status: status('reviewing'), initialTab: 'review', cacheStore: { entries: {} }, review: { onStop: () => {} } })
   assert.match(running, /aria-pressed="true">Review<span class="co-arc"/)
   assert.match(running, /Reviewing/)
-  const clear = await render(t, 'PullRequestDetail', { pr, status: status('all_clear', {}, { state: 'complete', execution_state: 'completed' }), cacheStore: { entries: {} } })
-  assert.match(clear, /Review<span class="co-tab-dot is-success"/)
+  const done = { state: 'complete', execution_state: 'completed' }
+  const ownClear = await render(t, 'PullRequestDetail', { pr, status: status('all_clear', {}, done), cacheStore: { entries: {} }, review: { own: true } })
+  assert.match(ownClear, /Review<span class="co-tab-dot is-success"/, 'your clear check is simply green')
+  const theirClear = await render(t, 'PullRequestDetail', { pr, status: status('all_clear', {}, done), cacheStore: { entries: {} } })
+  assert.match(theirClear, /Review<span class="co-tab-dot is-success"/, 'a clean private review of their PR is settled: there is no verdict to send and nothing to set aside')
 })
 
 test('a PR that changed after its review says so, shows the old findings and offers to review this version', async t => {
