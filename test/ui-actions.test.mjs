@@ -426,7 +426,8 @@ test('private proposals have one actionable home without another merge workflow'
 test('every refresh control renews the contribution feed and reports a partial one', () => {
   // The header's Sync with GitHub is the one full pass, and it keeps when it last ran.
   const refresh = appSource.match(/async function refreshEverything\(\) \{[\s\S]*?\n  \}/)?.[0] || ''
-  assert.match(refresh, /refreshCoordinatorRef\.current\(\)/)
+  assert.match(refresh, /hub\.refresh\('ledger'\)/)
+  assert.match(refresh, /reviewList\.syncPulls\(\)/, 'Sync reads the reviewed PRs too, even when a held read waits for points')
   assert.match(refresh, /checkUpstream\(token, sourceProjects\)/)
   assert.match(refresh, /return \{ ok: sourceOk && ledgerCurrentRef\.current, upstream \}/)
   assert.match(appSource, /onRetry=\{refreshAll\} checks=\{upstreamChecks\}/)
@@ -471,11 +472,12 @@ test('the desk shares one review-run list, wraps its rows in the frame, and open
   // One run list serves the whole desk; the hook that reads it lives beside the review list.
   const runsHook = readFileSync(new URL('../ui/useReviewList.js', import.meta.url), 'utf8')
   assert.match(appSource, /useDeskReviewRuns\(\{/)
-  assert.match(runsHook, /const active = hasActiveReview\(runs\)/)
+  assert.match(runsHook, /live: list => !!list && \(hasActiveReview\(list\.runs\)/)
   assert.match(appSource, /runs: reviewRuns,/)
-  // Refresh renews the runs with everything else; nothing polls unless a review is working.
+  // Refresh renews the runs with everything else; the hub reads them faster while a review is working and slower otherwise.
   assert.match(appSource, /checkUpstream\(token, sourceProjects\), refreshReviewRuns\(\)/)
-  assert.match(runsHook, /if \(!active\) return undefined/)
+  assert.match(runsHook, /every: \{ live: SYNC_POLICY\.runsLiveMs, idle: SYNC_POLICY\.runsIdleMs \}/)
+  assert.doesNotMatch(runsHook, /addEventListener|setInterval/, 'the runs hook keeps no timer or focus handler of its own')
   assert.match(sourceMapSource, /runs=\{desk\.runs\}/)
 })
 

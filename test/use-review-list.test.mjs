@@ -1,17 +1,23 @@
 import assert from 'node:assert/strict'
-import test from 'node:test'
+import test, { after } from 'node:test'
 import { readFileSync } from 'node:fs'
 import vm from 'node:vm'
-import { classifyReview, reviewCounts, reviewEntries } from '../review-list.js'
+import { classifyReview, mergeReviewPulls, reviewCounts, reviewEntries, reviewKey } from '../review-list.js'
+import { createSyncHub } from '../refresh.js'
 
 // Runs the real hook with minimal hook stand-ins (as focus-lease.test.mjs does): state and memo slots
 // persist, a state change re-renders, and each effect runs after a render when its dependencies
-// changed, after the previous run's cleanup. `loadReviewPulls` is the only fake: every call waits
-// until the test answers it, so the order of the answers is the test's to choose.
+// changed, after the previous run's cleanup. The sync hub is the real one (refresh.js), shown from the
+// start; `readReviewPulls` is the only fake: every call waits until the test answers it.
 const source = readFileSync(new URL('../ui/useReviewList.js', import.meta.url), 'utf8')
+// The hub watches GitHub on a timer while a screen is mounted; every harness is unmounted when the file is done.
+const unmounts = []
+after(() => unmounts.forEach(unmount => unmount()))
 function harness() {
   const slots = [], effects = [], reads = []
   let cursor = 0, props = {}, view = null, rendering = false, queued = []
+  const hub = createSyncHub({ host: { mobius: { onVisibilityChange: listener => { listener(true); return () => {} } } } })
+  const stopHub = hub.start()
   const memo = (compute, deps) => {
     const slot = slots[cursor] ||= { deps: null, value: undefined }
     cursor += 1
@@ -21,18 +27,28 @@ function harness() {
   const context = vm.createContext({
     useMemo: memo,
     useCallback: (callback, deps) => memo(() => callback, deps),
+    useRef(initial) {
+      const slot = slots[cursor] ||= { value: { current: initial } }
+      cursor += 1
+      return slot.value
+    },
     useState(initial) {
       const slot = slots[cursor] ||= { value: initial }
       cursor += 1
       return [slot.value, next => { slot.value = typeof next === 'function' ? next(slot.value) : next; if (!rendering) render() }]
     },
     useEffect(run, deps) { queued.push({ index: cursor++, run, deps }) },
-    classifyReview, reviewCounts, reviewEntries,
-    loadReviewPulls(token, refs) { return new Promise((resolve, reject) => reads.push({ refs, resolve, reject })) },
+    createContext: () => ({}), useContext: () => null,
+    classifyReview, mergeReviewPulls, reviewCounts, reviewEntries, reviewKey,
+    fetchChangeProbe: async () => null,
+    readReviewPulls(token, refs, keys) {
+      const asked = (keys ? refs.filter(ref => keys.has(reviewKey(ref.repo, ref.number))) : refs).map(ref => reviewKey(ref.repo, ref.number))
+      return new Promise((resolve, reject) => reads.push({ refs, keys, resolve: pulls => resolve({ everything: !keys, asked, pulls }), reject }))
+    },
   })
-  vm.runInContext(source.replace(/^import .*\n/gm, '').replace(/export function /g, 'function '), context)
+  vm.runInContext(source.replace(/^import .*\n/gm, '').replace(/export (const|function) /g, '$1 '), context)
   function render(next) {
-    if (next) props = { ...props, ...next }
+    if (next) props = { ...props, hub, enabled: true, ...next }
     rendering = true; cursor = 0; queued = []
     view = context.useReviewList(props)
     rendering = false
@@ -44,9 +60,10 @@ function harness() {
     }
     return view
   }
+  unmounts.push(() => { effects.forEach(effect => effect?.cleanup?.()); stopHub() })
   const rows = () => view.entries.map(entry => `${entry.bucket}:${entry.chips.map(chip => chip.label).join('+')}`)
   const flush = () => new Promise(resolve => setImmediate(resolve))
-  return { render, reads, rows, flush, counts: () => JSON.parse(JSON.stringify(view.counts)), retry: () => view.retry() }
+  return { render, reads, rows, flush, counts: () => JSON.parse(JSON.stringify(view.counts)), retry: () => view.retry(), sync: () => view.syncPulls() }
 }
 
 const head = letter => letter.repeat(40)
@@ -60,7 +77,7 @@ const pull = (extra = {}) => ({ number: 7, state: 'OPEN', headRefOid: head('a'),
   reviewThreads: { nodes: [] }, commits: { nodes: [{ commit: { statusCheckRollup: null } }] }, ...extra })
 const live = extra => new Map([['o/r#7', pull(extra)]])
 const pushed = (state, commit) => ({ headRefOid: head('b'), viewerLatestReview: { state, commit: { oid: commit } } })
-const base = { token: 't', ignored: null, login: 'owner', refreshKey: 0 }
+const base = { token: 't', ignored: null, login: 'owner' }
 
 test('Sync with GitHub reads the same PRs again: an author push after "request changes" brings the row back', async () => {
   const h = harness()
@@ -72,8 +89,9 @@ test('Sync with GitHub reads the same PRs again: an author push after "request c
   // The poll while a review runs replaces the runs with an identical copy; that is not a Sync.
   h.render({ runs: JSON.parse(JSON.stringify(saved)) })
   assert.equal(h.reads.length, 1, 'the same set of PRs is not read again on every poll')
-  // Sync: fresh runs, then the refresh key moves. The author pushed meanwhile.
-  h.render({ runs: JSON.parse(JSON.stringify(saved)), refreshKey: 1 })
+  // Sync: fresh runs, then the owner's Sync reads the pulls through the hub. The author pushed meanwhile.
+  h.render({ runs: JSON.parse(JSON.stringify(saved)) })
+  void h.sync()
   assert.equal(h.reads.length, 2, 'a Sync reads the live PRs again')
   assert.deepEqual(h.rows(), ['done:Waiting on someone-else'], 'the old answer stands while the new read is out: no flash of "checking"')
   h.reads[1].resolve(live(pushed('CHANGES_REQUESTED', head('a')))); await h.flush()
@@ -87,30 +105,30 @@ test('a PR closed since the last read leaves To confirm once a Sync sees it', as
   h.render({ ...base, runs: saved })
   h.reads[0].resolve(live()); await h.flush()
   assert.equal(h.counts().confirm, 1, 'drafted for you while the PR is open')
-  h.render({ refreshKey: 1 })
+  void h.sync()
   h.reads[1].resolve(live({ state: 'CLOSED' })); await h.flush()
   assert.deepEqual([h.rows(), h.counts().confirm], [['done:Closed'], 0])
 })
 
-test('only the newest read counts, whatever order the answers arrive in', async () => {
+test('Syncs never overlap, so the newest read is the one shown', async () => {
   const h = harness()
   const saved = runsOf(review('needs_you', { verdict_proposal: requested }))
   h.render({ ...base, runs: saved })
   h.reads[0].resolve(live()); await h.flush()
-  h.render({ refreshKey: 1 })
-  h.render({ refreshKey: 2 })
-  assert.equal(h.reads.length, 3)
+  void h.sync()
+  void h.sync()
+  assert.equal(h.reads.length, 2, 'a second Sync waits for the read in flight instead of racing it')
+  h.reads[1].resolve(live({ state: 'CLOSED' })); await h.flush()
+  assert.equal(h.reads.length, 3, 'and then reads once more')
   h.reads[2].resolve(live(pushed('CHANGES_REQUESTED', head('a')))); await h.flush()
   assert.deepEqual(h.rows(), ['waiting:New commits · review again'])
-  h.reads[1].resolve(live({ state: 'CLOSED' })); await h.flush()
-  assert.deepEqual(h.rows(), ['waiting:New commits · review again'], 'a slower, older answer is dropped')
 })
 
 test('a Sync that cannot read GitHub keeps what the last read said, and does not leave the page checking', async () => {
   const h = harness()
   h.render({ ...base, runs: runsOf(review('needs_you', { verdict_proposal: requested })) })
   h.reads[0].resolve(live()); await h.flush()
-  h.render({ refreshKey: 1 })
+  void h.sync()
   h.reads[1].reject(new Error('offline')); await h.flush()
   assert.deepEqual(h.rows(), ['done:Waiting on someone-else'])
   const first = harness()

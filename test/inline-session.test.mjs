@@ -8,6 +8,7 @@ import { CHAT_INTENT, batchHandle, cardKind, hintedIds, inChat } from '../chat-b
 import { frontendModules, renderModule } from './render-harness.mjs'
 import { connectInlineSession, readBlockSession } from '../block-protocol.js'
 import { reviewAddressFor } from '../send-readiness.js'
+import { createSyncHub } from '../refresh.js'
 import { createPublicationObserver, TRANSPORT_BACKOFF_MS } from '../publication-observer.js'
 import { attemptOutcome, AUTOPILOT_PILL, CHANGED_NOTE, CHANGED_PILL, PUBLICATION_CHANGED, confirmationItem, CONTINUED_TITLE, HOLD, LEDGER_NOTE, NEWER_NOTE, UNREAD_NOTE, RECHECK_DELAYS_MS, RECHECK_WINDOW_MS, RECOVERY_NOTE,
   REFRESH_FAILED_NOTE, REVIEW_REUSE_MS, TIMEOUT_NOTE, UNCHECKED_NOTE, VISIBLE_REREAD_MS, createInlineSession, decodeCheckpoint, encodeCheckpoint, lineCounts, localHold, observeAttempt, rowMeta } from '../inline-session.js'
@@ -82,6 +83,20 @@ async function openConfirm(h, key = KEY) {
   assert.equal(h.needs.length > 0, true, 'activation asked for the publication runtime')
   h.provide(); await tick()
 }
+
+// The real hub, with its ledger fact reading `work`: the card's refresh must fail exactly when the ledger pass does.
+function ledgerHub(work) {
+  const hub = createSyncHub()
+  hub.fact('ledger', { read: () => work(), apply() {} })
+  return hub
+}
+
+// The app's real ledger fact has no `failed` handler, or a failed pass would report "done": pin it to the source.
+test('the app registers its ledger fact without a failed handler', async () => {
+  const { readFileSync } = await import('node:fs')
+  const app = readFileSync(new URL('../index.jsx', import.meta.url), 'utf8')
+  assert.match(app, /hub\.fact\('ledger', \{ read: \(\) => refreshWorkRef\.current\(\), apply: \(\) => \{\} \}\)/)
+})
 
 // ---- The card's set comes from the ledger, scoped to the attested chat.
 test('the card shows each named record as a row from the ledger, and reading never sends', async () => {
@@ -1344,7 +1359,7 @@ test('the review-status address is bounded and adds only prepared layers of name
   assert.equal(reviewAddressFor(Array.from({ length: 60 }, (_, n) => `id${n}`), []).length, 50)
 })
 
-test('a card refresh runs one at a time, through the coordinator after the first ledger read, and reports completion', async () => {
+test('a card refresh runs one at a time, through the hub ledger fact after the first ledger read, and reports completion', async () => {
   // The card runtime's refresh, executed from index.jsx's source.
   const { readFileSync } = await import('node:fs')
   const app = readFileSync(new URL('../index.jsx', import.meta.url), 'utf8')
@@ -1354,11 +1369,11 @@ test('a card refresh runs one at a time, through the coordinator after the first
   for (const ready of [false, true]) {
     const calls = [], states = []
     let finish
-    const make = (...args) => new Function('ledgerReadyRef', 'cardRefreshRef', 'forceRefreshRef', 'refreshCoordinatorRef', 'refreshReviewStatus', 'setCardRefreshes', 'CARD_REFRESH_DEADLINE_MS', `return ${body}`)(...args, 20000)
+    const make = (...args) => new Function('ledgerReadyRef', 'cardRefreshRef', 'forceRefreshRef', 'hub', 'refreshReviewStatus', 'setCardRefreshes', 'CARD_REFRESH_DEADLINE_MS', `return ${body}`)(...args, 20000)
     const forceRefreshRef = { current: false }
     let state = { running: false, done: 0 }
     const refresh = make({ current: ready }, { current: null }, forceRefreshRef,
-      { current: () => { calls.push(['full refresh', forceRefreshRef.current]); return new Promise(done => { finish = done }) } },
+      ledgerHub(() => { calls.push(['full refresh', forceRefreshRef.current]); return new Promise(done => { finish = done }) }),
       () => { calls.push(['review status']); return new Promise(done => { finish = done }) },
       update => { state = update(state); states.push(state) })
     const first = refresh(), second = refresh()
@@ -1405,8 +1420,8 @@ test('a card refresh settles as failed after its deadline or a rejection, never 
   const deadline = Number(app.match(/export const CARD_REFRESH_DEADLINE_MS = (\d+)/)?.[1])
   assert.ok(deadline >= 10000 && deadline <= 30000, 'one named deadline of about 20 s')
   const body = app.match(/const cardRefresh = useCallback\((\(\) => \{[\s\S]*?\n  \}), \[/)?.[1]
-  const make = (work, onState) => new Function('ledgerReadyRef', 'cardRefreshRef', 'forceRefreshRef', 'refreshCoordinatorRef', 'refreshReviewStatus', 'setCardRefreshes', 'CARD_REFRESH_DEADLINE_MS', `return ${body}`)(
-    { current: true }, { current: null }, { current: false }, { current: work }, work, update => onState(update), deadline)
+  const make = (work, onState) => new Function('ledgerReadyRef', 'cardRefreshRef', 'forceRefreshRef', 'hub', 'refreshReviewStatus', 'setCardRefreshes', 'CARD_REFRESH_DEADLINE_MS', `return ${body}`)(
+    { current: true }, { current: null }, { current: false }, ledgerHub(work), work, update => onState(update), deadline)
   // A read that never settles.
   t.mock.timers.enable({ apis: ['setTimeout'] })
   let state = { running: false, done: 0 }

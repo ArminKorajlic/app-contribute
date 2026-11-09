@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { DESK_VIEWS, deskCounts, railBadge } from '../desk.js'
-import { classifyReview, loadReviewPulls, reviewCounts, reviewEntries, reviewKey } from '../review-list.js'
+import { changedReviewRuns, classifyReview, loadReviewPulls, mergeReviewPulls, readReviewPulls, reviewCounts, reviewEntries, reviewKey, withReviewRun } from '../review-list.js'
 
 const HEAD = 'a'.repeat(40)
 const run = (extra = {}) => ({ id: 'r', state: 'complete', execution_state: 'completed', chat_id: 'c', created_at: '2026-11-03T22:00:00Z', ...extra })
@@ -124,6 +124,38 @@ test('every PR is read live in batches of 25, one batch after another, and only 
   } finally { globalThis.fetch = previous }
 })
 
+test('a read of some PRs replaces just those: one GitHub did not return is unknown again, the others keep their last read', async () => {
+  const previous = globalThis.fetch
+  let missing = new Set()
+  const answering = async (url, options) => {
+    const query = JSON.parse(options.body).query
+    const numbers = [...query.matchAll(/pullRequest\(number:(\d+)\)/g)].map(match => Number(match[1]))
+    return { ok: true, json: async () => ({ data: Object.fromEntries(numbers.map((number, index) => [`p${index}`, { pullRequest: missing.has(number) ? null : live({ number, state: 'OPEN' }) }])) }) }
+  }
+  globalThis.fetch = answering
+  const refs = [1, 2, 3].map(number => ({ repo: 'o/r', number }))
+  const readInto = async (known, keys) => mergeReviewPulls(known, await readReviewPulls('token', refs, keys))
+  const keysOf = pulls => [...pulls.keys()].sort()
+  try {
+    const everything = await readInto(new Map(), null)
+    assert.deepEqual(keysOf(everything), ['o/r#1', 'o/r#2', 'o/r#3'])
+    // GitHub no longer returns PR 1 (permission lost, deleted): the targeted read of PRs 1 and 2 finds only PR 2.
+    missing = new Set([1])
+    const partial = await readInto(everything, new Set(['o/r#1', 'o/r#2']))
+    assert.deepEqual(keysOf(partial), ['o/r#2', 'o/r#3'], 'PR 1 kept its old read instead of becoming unknown')
+    assert.equal(partial.get('o/r#3'), everything.get('o/r#3'), 'a PR nobody asked about lost its last read')
+    assert.deepEqual(keysOf(everything), ['o/r#1', 'o/r#2', 'o/r#3'], 'the earlier read was changed')
+    // A read GitHub cannot answer fails, whether it asked for some PRs or all (see loadReviewPulls): the hub's failed handler keeps what the last read said.
+    globalThis.fetch = async () => ({ ok: false })
+    await assert.rejects(() => readInto(partial, new Set(['o/r#3'])), /Could not read/)
+    await assert.rejects(() => readInto(partial, null), /Could not read/)
+    // A read of everything that GitHub answers replaces the whole set.
+    globalThis.fetch = answering
+    missing = new Set([1, 2, 3])
+    assert.equal((await readInto(partial, null)).size, 0)
+  } finally { globalThis.fetch = previous }
+})
+
 test('PR reviews is a view of its own: its badge counts what waits on you, a spinner marks agents at work', () => {
   assert.ok(DESK_VIEWS.some(view => view.key === 'reviews' && view.label === 'PR reviews'))
   assert.equal(railBadge('reviews', { reviewsWaiting: 2 }), 2)
@@ -218,4 +250,23 @@ test('a Needs you row offers the fix when your own review of your own PR found p
   assert.doesNotMatch(view({ ...base, runs: [{ ...found, items: [{ ...found.items[0], state: 'all_clear' }] }] }), /Fix these findings/)
   assert.doesNotMatch(view({ ...base, login: 'someone-else' }), /Fix these findings/)
   assert.doesNotMatch(view({ ...base, runs: [] }), /Fix these findings|co-desk-row-split/)
+})
+
+test('only a review that changed state moves its PR: not a new run, not a turn of its conversation', () => {
+  const working = run({ id: 'a', state: 'reviewing', execution_state: 'running', items: [item('reviewing')] })
+  assert.deepEqual(changedReviewRuns(null, [working]), [], 'the first read has nothing to compare with')
+  assert.deepEqual(changedReviewRuns([working], [working, run({ id: 'b', items: [item('reviewing', { number: 7 })] })]), [], 'a new run is not a change')
+  const turnEnded = { ...working, execution_state: 'completed' }
+  assert.deepEqual(changedReviewRuns([working], [turnEnded]), [], 'a review chat ending its turn moves nothing on the PR')
+  const verdictReady = { ...working, state: 'needs_you', items: [item('verdict_pending', { verdict_proposal: { state: 'proposed' } })] }
+  assert.deepEqual(changedReviewRuns([working], [verdictReady]), [{ repo: 'mobius-os/mobius', number: 2019, verdictPosted: false }])
+  const posted = { ...verdictReady, state: 'complete', items: [item('all_clear', { verdict_proposal: { state: 'posted' } })] }
+  assert.deepEqual(changedReviewRuns([verdictReady], [posted]), [{ repo: 'mobius-os/mobius', number: 2019, verdictPosted: true }])
+})
+
+test('an action\'s answer replaces its run in place, or comes first when the run is new', () => {
+  const [a, b] = [run({ id: 'a' }), run({ id: 'b' })]
+  const changed = { ...a, state: 'reviewing' }
+  assert.deepEqual(withReviewRun([a, b], changed), [changed, b])
+  assert.deepEqual(withReviewRun([b], a).map(entry => entry.id), ['a', 'b'])
 })
