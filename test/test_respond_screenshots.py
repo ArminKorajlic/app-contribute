@@ -362,7 +362,7 @@ class PostScreenshotTests(ScreenshotWorld):
 
   def test_a_resumed_post_proves_the_recorded_upload_again_and_does_not_upload_twice(self):
     _, result = self.saved_with_pictures()
-    self.fake(fail_at=2)  # reply 2 fails once, after the screenshots went up and the push was done
+    self.fake(reject_at=2)  # reply 2 is refused once (a 4xx, so known not to be out), after the screenshots went up and the push was done
     self.assertEqual(self.post(result["id"]).code, 4)
     first_commit = self.saved_result()["receipts"]["screenshots"]["commit"]
     uploads = list(self.assets.calls)
@@ -375,6 +375,14 @@ class PostScreenshotTests(ScreenshotWorld):
     self.assertTrue(all(f"/{first_commit}/" in url for url in reads))
     self.assertTrue(all(f"/{first_commit}/" in link for link in self.description_links()))
     self.assertEqual(self.saved_result()["receipts"]["screenshots"]["commit"], first_commit)
+
+  def test_a_post_the_gate_refuses_uploads_no_screenshot(self):
+    _, result = self.saved_with_pictures()
+    before = self.snapshot()
+    with mock.patch.dict(os.environ, {"FAKE_HOST_CAPABILITIES": "{}"}):  # a Möbius without the owner grant
+      self.assertRefused(self.post(result["id"]), 3, "Post is off for now")
+    self.assertEqual(self.assets.calls, [], "nothing was uploaded to the repository")
+    self.assertEqual(self.snapshot(), before)
 
   def test_a_recorded_upload_the_public_cannot_fetch_stops_the_post_instead_of_being_linked(self):
     _, result = self.saved_with_pictures()

@@ -37,12 +37,15 @@ const reviewOf = node => ({
   ...('sameWork' in node ? { sameWork: node.sameWork } : {}),
 })
 
-// Every opinion GitHub lists. A deleted account reads as "ghost" and a review whose
-// commit is gone (a force-push) keeps an empty commit: it still blocks as a change
-// request and never counts as an approval of this version.
+// Every opinion GitHub lists, or null when the list is not the whole of it: a first page of
+// a longer list could omit a standing change request (which would enable Merge) or the
+// current approval. A deleted account reads as "ghost" and a review whose commit is gone
+// (a force-push) keeps an empty commit: it still blocks as a change request and never
+// counts as an approval of this version.
 function reviewsOf(pr) {
-  const nodes = pr?.latestOpinionatedReviews?.nodes
-  if (!Array.isArray(nodes)) return null
+  const connection = pr?.latestOpinionatedReviews
+  const nodes = connection?.nodes
+  if (!Array.isArray(nodes) || connection.pageInfo?.hasNextPage === true) return null
   return nodes.filter(node => node?.state).map(reviewOf)
 }
 
@@ -57,15 +60,17 @@ const commentsOf = pr => (pr?.latestReviews?.nodes || []).filter(node => node?.s
 // comment is feedback too, until you answer it. A review that only comments, with words in it,
 // is spoken in that conversation too (its points are no inline thread, and GitHub gives it no verdict).
 // Whoever of the newest ten comments and those reviews spoke last among people decides, so a bot's
-// update after a reviewer's comment does not hide it. Null when the threads were not read.
+// update after a reviewer's comment does not hide it. Null when the threads were not read, or are
+// only the last page of a longer list: a missed open thread would hide feedback and disable Respond.
 const waitsOnYou = (author, login) => !!author && !isBot(author) && lower(author.login) !== lower(login)
 const spokenAt = comment => Date.parse(comment?.createdAt || '') || 0
 const reviewWords = pr => (pr?.latestReviews?.nodes || [])
   .filter(node => node?.state === 'COMMENTED' && node.body?.trim()).map(node => ({ author: node.author, createdAt: node.submittedAt }))
 const lastPersonIn = comments => [...(comments || [])].sort((a, b) => spokenAt(a) - spokenAt(b)).filter(comment => !isBot(comment?.author)).at(-1)?.author
 function openThreadsOf(pr, login) {
-  const nodes = pr?.reviewThreads?.nodes
-  if (!Array.isArray(nodes)) return null
+  const connection = pr?.reviewThreads
+  const nodes = connection?.nodes
+  if (!Array.isArray(nodes) || connection.pageInfo?.hasPreviousPage === true) return null
   const threads = nodes.filter(thread => thread && thread.isResolved === false && waitsOnYou(thread.comments?.nodes?.at(-1)?.author, login)).length
   return threads + (waitsOnYou(lastPersonIn([...(pr.comments?.nodes || []), ...reviewWords(pr)]), login) ? 1 : 0)
 }
@@ -109,11 +114,18 @@ function outboxOf(item) {
 }
 
 function resultOf(item, progress, ignored) {
-  if (item.state === 'all_clear') return { head: item.head_sha, outcome: 'clear', setAside: false }
+  // A clean review has no verdict to send and no finding to set aside, and the Review tab offers
+  // neither: it stands as a private review of this version ("kept private"), not as work waiting on you.
+  if (item.state === 'all_clear') return { head: item.head_sha, outcome: 'clear', setAside: true }
   if (item.state !== 'needs_you' || progress.waiting || progress.halted) return null
   const setAside = !!ignoredNote(item, ignored) || ['discarded', 'not_dispatched'].includes(item.verdict_proposal?.state)
   return { head: item.head_sha, outcome: 'findings', setAside }
 }
+
+// A clean private review of an older version. The result itself is only ever of the current
+// version, so this remembers that the PR was reviewed and has since moved: it needs another look.
+// Findings on an older version are old news and say nothing here.
+const earlierOf = (item, pr) => (item.state === 'all_clear' && item.head_sha && item.head_sha !== pr?.headRefOid ? { head: item.head_sha } : null)
 
 // A review this app saw GitHub confirm counts before GitHub's own list catches up.
 function sentReview(item) {
@@ -156,7 +168,7 @@ const respondJobOf = (chats, pr) => {
 const jobFor = (runJob, chats, pr) => (runJob && runJob.state !== 'stalled' ? runJob : respondJobOf(chats, pr) || runJob)
 
 function runFacts(review, pr, own, ignored) {
-  if (!review) return { job: null, result: null, outbox: null, sent: null }
+  if (!review) return { job: null, result: null, earlier: null, outbox: null, sent: null }
   const { run, item } = review
   const progress = reviewItemProgress(run, item, { own, ignored })
   const outbox = outboxOf(item)
@@ -164,6 +176,7 @@ function runFacts(review, pr, own, ignored) {
   return {
     job: job && !(job === 'running' && outbox?.state === 'sending') ? { kind: run.mode || 'review', state: job } : null,
     result: resultOf(item, progress, ignored),
+    earlier: earlierOf(item, pr),
     outbox,
     sent: sentReview(item),
   }
@@ -187,13 +200,17 @@ export function prFacts({ pr, login, runs = [], ignored = null, chats = [], resp
     checks: checksOf(pr),
     mergeable: MERGEABLE[pr?.mergeable] || 'unknown',
     permission: pr?.repository?.viewerPermission || 'unknown',
+    // GitHub's own gate: a branch rule that still needs a review no approval here can satisfy.
+    gate: pr?.reviewDecision === 'REVIEW_REQUIRED' ? 'review_required' : null,
     reviews: [...(own ? reviews || [] : withSentVerdict(reviews || [], fromRuns.sent, pr, login)), ...commentsOf(pr)],
     myReview,
     openThreads: threads || 0,
     job: jobFor(fromRuns.job, chats, pr),
     result: fromRuns.result,
+    earlier: fromRuns.earlier,
     // A review run's own draft comes first; otherwise a saved Respond answer is the draft (or the sending) there is.
     outbox: fromRuns.outbox || responseOutbox(responseFor(responses, pr), pr, review),
-    readComplete: reviews !== null && threads !== null,
+    // Without the connected account, whose PR this is cannot be told: nothing is decided.
+    readComplete: !!login && reviews !== null && threads !== null,
   }
 }

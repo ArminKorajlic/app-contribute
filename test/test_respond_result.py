@@ -34,6 +34,7 @@ FIXTURE = Path(__file__).parent / "fixtures" / "respond-result.example.json"
 TOKEN = "TEST-TOKEN-that-must-never-be-printed"
 
 FAKE_GH = (Path(__file__).parent / "fixtures" / "fake_gh.py").read_text(encoding="utf-8")  # shared with respond-contract.test.mjs
+FAKE_HOST = Path(__file__).parent / "fixtures" / "fake_host"  # a Möbius core (SCRIPTS_DIR) that says what it offers; shared too
 
 REPLY_WITH_AWKWARD_TEXT = (
   "@alex both findings were real \u2014 fixed \U0001F680 \u05e9\u05dc\u05d5\u05dd\r\n\r\n"
@@ -125,6 +126,9 @@ class RespondWorld(unittest.TestCase):
       "FAKE_GH_CONFIG": str(self.fake_config),
       "CHAT_ID": "chat-under-test",
       "GH_TOKEN": TOKEN,
+      # Every world but GateTests' posts on a Möbius that offers the owner grant; a test of the gate says otherwise, out loud.
+      "SCRIPTS_DIR": str(FAKE_HOST),
+      "FAKE_HOST_CAPABILITIES": json.dumps({"owner_grant": True}),
     }
     patcher = mock.patch.dict(os.environ, environment)
     patcher.start()
@@ -318,7 +322,7 @@ class SaveTests(RespondWorld):
     ])
     self.assertEqual([point["commit"] for point in result["points"]], [shas[0], shas[1], None])
     self.assertEqual(result["replies"], data["replies"])
-    self.assertEqual(result["receipts"], {"push": None, "replies": [], "description": None, "rerequest": None})
+    self.assertEqual(result["receipts"], {"push": None, "replies": [], "description": None, "rerequest": None, "sending": None})
     self.assertEqual(result["digest"], expected_digest(result))
     self.assertEqual(self.gh_writes(), [])
     self.assertFalse(self.decision_path.exists())
@@ -923,7 +927,7 @@ class PostTests(RespondWorld):
     stored = self.saved_result()
     self.assertEqual((stored["state"], stored["error"]["step"]), ("failed", "push"))
     self.assertRegex(stored["error"]["message"], "rejected|fetch first|non-fast-forward")
-    self.assertEqual(stored["receipts"], {"push": None, "replies": [], "description": None, "rerequest": None})
+    self.assertEqual(stored["receipts"], {"push": None, "replies": [], "description": None, "rerequest": None, "sending": None})
     self.assertEqual(self.remote_branch(), moved, "the other person's work is untouched: nothing was forced")
     self.assertEqual(self.gh_writes(), [], "nothing was said on the PR about a push that did not happen")
 
@@ -952,14 +956,14 @@ class PostTests(RespondWorld):
 
   def test_post_resumes_after_a_failure_and_repeats_no_step(self):
     shas, _, result = self.approved_result()
-    self.fake(fail_at=2)  # the second write, reply 2, fails once
+    self.fake(reject_at=2)  # the second write, reply 2, is refused once
     with mock.patch.object(respond, "push_bundle", wraps=respond.push_bundle) as push:
       first = self.post(result["id"])
       self.assertRefused(first, 4, "Post stopped at the replies step: reply 2 of 2")
       stopped = self.saved_result()
       self.assertEqual((stopped["state"], stopped["error"]["step"]), ("failed", "replies"))
       self.assertIn("reply 2 of 2", stopped["error"]["message"])
-      self.assertIn("HTTP 500", stopped["error"]["message"])
+      self.assertIn("HTTP 422", stopped["error"]["message"])
       self.assertEqual(stopped["receipts"]["push"]["sha"], shas[1])
       self.assertEqual([r["index"] for r in stopped["receipts"]["replies"]], [0])
       second = self.post(result["id"])
@@ -1016,6 +1020,225 @@ class PostTests(RespondWorld):
         self.assertRefused(self.post(result["id"]), 3, "The PR moved")
         self.assertEqual(len(self.gh_writes()), writes)
 
+  # --- a reply whose outcome is unknown is found on GitHub, never sent a second time ---------------
+
+  def comment_bodies(self, kind: str = "issue") -> list[str]:
+    config = json.loads(self.fake_config.read_text())
+    return [item["comment"]["body"] for item in config.get("comments", []) if item["kind"] == kind]
+
+  def test_a_reply_is_marked_as_being_sent_before_the_write_and_unmarked_once_receipted(self):
+    _, _, result = self.approved_result()
+    self.assertEqual(self.post(result["id"]).code, 0)
+    self.assertEqual([call["watch"]["sending"] for call in self.gh_writes()], [0, 1, None, None])
+    self.assertIsNone(self.saved_result()["receipts"]["sending"])
+
+  def test_a_reply_that_reached_github_but_whose_answer_was_lost_is_found_not_sent_again(self):
+    _, _, result = self.approved_result()
+    self.fake(lose_at=1)  # GitHub keeps reply 1; the connection drops before we hear
+    self.assertRefused(self.post(result["id"]), 4, "Post stopped at the replies step: reply 1 of 2")
+    stopped = self.saved_result()
+    self.assertEqual(stopped["receipts"]["sending"]["index"], 0, "the unknown outcome is on record")
+    self.assertEqual(stopped["receipts"]["replies"], [])
+    outcome = self.post(result["id"])
+    self.assertEqual(outcome.code, 0, outcome.err)
+    self.assertIn("Reply 1 of 2 had reached GitHub already: https://example.test/c/1", outcome.out)
+    done = self.saved_result()
+    self.assertEqual([(r["index"], r["url"]) for r in done["receipts"]["replies"]],
+                     [(0, "https://example.test/c/1"), (1, "https://example.test/c/2")])
+    self.assertIsNone(done["receipts"]["sending"])
+    self.assertEqual(self.comment_bodies(), [REPLY_WITH_AWKWARD_TEXT], "reply 1 exists once on GitHub")
+    self.assertEqual(self.comment_bodies("review"), ["@sam the helper keeps its name."])
+    self.assertEqual(len([w for w in self.gh_writes() if w["path"].endswith("/issues/7/comments")]), 1)
+
+  def test_a_thread_reply_whose_answer_was_lost_is_found_in_its_thread(self):
+    _, _, result = self.approved_result()
+    self.fake(lose_at=2)
+    self.assertRefused(self.post(result["id"]), 4, "reply 2 of 2")
+    outcome = self.post(result["id"])
+    self.assertEqual(outcome.code, 0, outcome.err)
+    self.assertIn("Reply 2 of 2 had reached GitHub already", outcome.out)
+    self.assertEqual(self.comment_bodies("review"), ["@sam the helper keeps its name."])
+
+  def test_a_crash_between_the_write_and_its_receipt_is_reconciled_the_same_way(self):
+    _, _, result = self.approved_result()
+    self.assertEqual(self.post(result["id"], "--dry-run").code, 0)
+    first = self.post(result["id"])
+    self.assertEqual(first.code, 0, first.err)
+    # Wind the record back to the moment of the crash: reply 2 was sent, its receipt was not written.
+    crashed = self.saved_result()
+    crashed.update(state="posting")
+    crashed["receipts"].update(replies=crashed["receipts"]["replies"][:1], description=None, rerequest=None,
+                               sending={"index": 1, "at": crashed["receipts"]["replies"][1]["at"]})
+    self.write_result(crashed)
+    writes = len(self.gh_writes())
+    self.assertEqual(self.post(result["id"]).code, 0)
+    self.assertEqual(len(self.comment_bodies("review")), 1, "reply 2 was not sent again")
+    self.assertEqual(len(self.gh_writes()) - writes, 2, "only the description and the re-review remained")
+
+  def test_a_reply_github_refused_outright_leaves_nothing_unknown_and_is_sent_on_the_next_try(self):
+    _, _, result = self.approved_result()
+    self.fake(reject_at=1)  # GitHub answered 422: the write was not applied
+    self.assertRefused(self.post(result["id"]), 4, "reply 1 of 2")
+    self.assertIsNone(self.saved_result()["receipts"]["sending"], "a refusal is a known outcome")
+    self.assertEqual(self.post(result["id"]).code, 0)
+    self.assertEqual(self.comment_bodies(), [REPLY_WITH_AWKWARD_TEXT])
+    self.assertEqual([call["path"] for call in self.gh_calls() if "/comments?" in call["path"]], [], "nothing was looked for: nothing was unknown")
+
+  def test_a_reply_the_lookup_cannot_find_stays_unknown_and_is_never_sent_blind(self):
+    _, _, result = self.approved_result()
+    self.fake(fail_at=1)  # a server error says nothing about whether the comment was created
+    self.assertRefused(self.post(result["id"]), 4, "reply 1 of 2")
+    writes = len(self.gh_writes())
+    for attempt in range(3):
+      with self.subTest(attempt=attempt):
+        self.assertRefused(self.post(result["id"]), 4, "reply 1 of 2 may still reach GitHub")
+        self.assertEqual(len(self.gh_writes()), writes, "an empty lookup is not a reason to write")
+        stopped = self.saved_result()
+        self.assertEqual((stopped["state"], stopped["receipts"]["sending"]["index"]), ("failed", 0))
+        self.assertIn("not sent again", stopped["error"]["message"])
+
+  def test_a_reply_the_owner_posted_by_hand_settles_an_unknown_reply(self):
+    _, _, result = self.approved_result()
+    self.fake(fail_at=1)
+    self.assertRefused(self.post(result["id"]), 4, "reply 1 of 2")
+    self.assertRefused(self.post(result["id"]), 4, "may still reach GitHub")
+    config = json.loads(self.fake_config.read_text())
+    config["comments"] = [{"kind": "issue", "comment": {
+      "id": 1, "html_url": "https://example.test/c/by-hand", "user": {"login": "owner-login"}, "body": REPLY_WITH_AWKWARD_TEXT,
+      "created_at": respond.utc_now()}}]
+    self.fake_config.write_text(json.dumps(config))
+    outcome = self.post(result["id"])
+    self.assertEqual(outcome.code, 0, outcome.err)
+    self.assertIn("had reached GitHub already: https://example.test/c/by-hand", outcome.out)
+    self.assertEqual(self.comment_bodies(), [REPLY_WITH_AWKWARD_TEXT], "the reply exists once: the owner's own")
+
+  def check_a_request_still_pending_on_github_is_never_sent_a_second_time(self, hold_at: int, kind: str, body: str):
+    _, _, result = self.approved_result()
+    self.fake(hold_at=hold_at)  # the request times out on our side while GitHub is still working on it
+    self.assertRefused(self.post(result["id"]), 4, f"reply {hold_at} of 2")
+    writes = len(self.gh_writes())
+    # This lookup is answered with an empty list; the original request completes right after it.
+    self.assertRefused(self.post(result["id"]), 4, f"reply {hold_at} of 2 may still reach GitHub")
+    self.assertEqual(len(self.gh_writes()), writes, "no retry is dispatched behind an empty snapshot")
+    self.assertEqual(self.saved_result()["receipts"]["sending"]["index"], hold_at - 1, "the reply is still on record as unknown")
+    outcome = self.post(result["id"])
+    self.assertEqual(outcome.code, 0, outcome.err)
+    self.assertIn(f"Reply {hold_at} of 2 had reached GitHub already", outcome.out)
+    self.assertEqual(self.comment_bodies(kind), [body], "the reply exists exactly once on GitHub")
+    done = self.saved_result()
+    self.assertEqual([receipt["index"] for receipt in done["receipts"]["replies"]], [0, 1])
+    self.assertEqual((done["state"], done["receipts"]["sending"]), ("posted", None))
+
+  def test_a_pr_comment_still_pending_on_github_is_found_after_an_empty_lookup_not_sent_again(self):
+    self.check_a_request_still_pending_on_github_is_never_sent_a_second_time(1, "issue", REPLY_WITH_AWKWARD_TEXT)
+
+  def test_a_thread_reply_still_pending_on_github_is_found_after_an_empty_lookup_not_sent_again(self):
+    self.check_a_request_still_pending_on_github_is_never_sent_a_second_time(2, "review", "@sam the helper keeps its name.")
+
+  def test_another_persons_or_an_older_identical_comment_is_not_taken_for_the_reply(self):
+    _, _, result = self.approved_result()
+    self.fake(lose_at=1)
+    self.assertRefused(self.post(result["id"]), 4, "reply 1 of 2")
+    original = json.loads(self.fake_config.read_text())["comments"][0]["comment"]
+    writes = len(self.gh_writes())
+    for name, change in (("another author", {"user": {"login": "somebody-else"}}), ("an older comment", {"created_at": "2020-01-01T00:00:00Z"})):
+      with self.subTest(name):  # the same words, but not the owner's, or not from this attempt
+        config = json.loads(self.fake_config.read_text())
+        config["comments"][0]["comment"] = {**original, **change}
+        self.fake_config.write_text(json.dumps(config))
+        self.assertRefused(self.post(result["id"]), 4, "reply 1 of 2 may still reach GitHub")
+        self.assertEqual(self.saved_result()["receipts"]["replies"], [], "it was not taken for the owner's reply")
+        self.assertEqual(len(self.gh_writes()), writes, "and the reply was not sent blind either")
+
+  def test_when_github_cannot_say_whether_a_reply_went_out_nothing_more_is_sent(self):
+    _, _, result = self.approved_result()
+    self.fake(lose_at=1)
+    self.assertRefused(self.post(result["id"]), 4, "reply 1 of 2")
+    writes = len(self.gh_writes())
+    with mock.patch.object(respond, "gh_api", side_effect=respond.CommandError("gh: timeout")):
+      with mock.patch.object(respond, "read_pull", return_value={
+        "state": "open", "head_sha": self.remote_branch(), "head_ref": HEAD_REF,
+        "head_repo": "owner/repo", "base_ref": "stack/example/01-base", "author": "contributor",
+        "repo": "owner/repo", "number": 7,
+      }):
+        self.assertRefused(self.post(result["id"]), 4, "Post stopped at the replies step: gh: timeout")
+    self.assertEqual(len(self.gh_writes()), writes, "no blind second write")
+    self.assertEqual(self.saved_result()["receipts"]["sending"]["index"], 0, "the reply stays marked as unknown")
+
+  def test_an_unreadable_record_of_the_reply_being_sent_stops_the_post(self):
+    _, _, result = self.approved_result()
+    broken = self.saved_result()
+    broken["receipts"]["sending"] = {"index": "first"}
+    self.write_result(broken)
+    self.assertRefused(self.post(result["id"]), 4, "the reply that was being sent is unreadable")
+    self.assertEqual(self.gh_writes(), [])
+
+  # --- the PR is checked again before every public step ----------------------------------------------
+
+  def test_a_pr_that_moves_after_the_first_reply_stops_the_rest_and_keeps_that_receipt(self):
+    shas, _, result = self.approved_result()
+    self.fake(after_write={"at": 1, "pr": {"head_sha": "c" * 40}})
+    outcome = self.post(result["id"])
+    self.assertRefused(outcome, 4, "The PR moved")
+    self.assertIn("the steps still to do were not posted", outcome.err)
+    stopped = self.saved_result()
+    self.assertEqual((stopped["state"], stopped["error"]["step"]), ("failed", "replies"))
+    self.assertEqual([r["index"] for r in stopped["receipts"]["replies"]], [0], "reply 1 stays recorded")
+    self.assertEqual(stopped["receipts"]["push"]["sha"], shas[1])
+    self.assertEqual(len(self.gh_writes()), 1, "no second reply, no description, no re-review")
+    self.assertRefused(self.post(result["id"]), 3, "The PR moved")
+
+  def test_a_pr_that_closes_after_the_replies_keeps_the_description_and_the_review_request_unsent(self):
+    _, _, result = self.approved_result()
+    self.fake(after_write={"at": 2, "pr": {"state": "closed"}})
+    self.assertRefused(self.post(result["id"]), 4, "The PR is closed, not open")
+    stopped = self.saved_result()
+    self.assertEqual(stopped["error"]["step"], "description")
+    self.assertEqual([r["index"] for r in stopped["receipts"]["replies"]], [0, 1])
+    self.assertEqual(len(self.gh_writes()), 2)
+
+  def test_a_pr_that_moves_before_the_review_request_does_not_ask_for_it(self):
+    _, _, result = self.approved_result()
+    self.fake(after_write={"at": 3, "pr": {"head_sha": "c" * 40}})
+    self.assertRefused(self.post(result["id"]), 4, "The PR moved")
+    stopped = self.saved_result()
+    self.assertEqual(stopped["error"]["step"], "rerequest")
+    self.assertTrue(stopped["receipts"]["description"])
+    self.assertEqual([call["path"] for call in self.gh_writes()][-1], "repos/owner/repo/pulls/7")
+
+  def test_a_pr_that_was_retargeted_since_the_approval_is_refused_before_any_step(self):
+    _, _, result = self.approved_result()
+    before = self.snapshot()
+    self.fake_pr(base_ref="stack/example/09-elsewhere")
+    self.assertRefused(self.post(result["id"]), 3, "now targets stack/example/09-elsewhere")
+    self.assertEqual(self.snapshot(), before)
+
+  def test_a_pr_retargeted_mid_post_stops_the_remaining_steps(self):
+    _, _, result = self.approved_result()
+    self.fake(after_write={"at": 1, "pr": {"base_ref": "stack/example/09-elsewhere"}})
+    self.assertRefused(self.post(result["id"]), 4, "now targets stack/example/09-elsewhere")
+    self.assertEqual(len(self.gh_writes()), 1)
+
+  # --- limits the app reads must be limits the helper keeps -------------------------------------------
+
+  def test_a_commit_subject_over_the_limit_is_cut_to_it_and_still_names_its_commit(self):
+    sha = self.commit("S" * 301 + "\n\nBody", {"x.txt": "x\n"})
+    self.assertEqual(self.save(self.replies_only()).code, 0)
+    commit = self.saved_result()["commits"][0]
+    self.assertEqual((commit["sha"], len(commit["title"])), (sha, 300))
+    self.assertTrue(commit["title"].endswith("…"))
+    self.commit("🚀" * 300, {"y.txt": "y\n"})  # 300 characters, though 600 UTF-16 units
+    self.assertEqual(self.save(self.replies_only()).code, 0)
+    self.assertEqual(self.saved_result()["commits"][1]["title"], "🚀" * 300, "a title at the limit is kept whole")
+
+  def test_a_nested_path_beyond_the_old_limit_is_saved_and_one_beyond_the_new_limit_is_refused(self):
+    deep = "/".join(["d" * 50] * 10) + "/file.txt"  # 518 characters
+    self.commit("Deep file", {deep: "x\n"})
+    self.assertEqual(self.save(self.replies_only()).code, 0)
+    self.assertEqual([entry["path"] for entry in self.saved_result()["files"]], [deep])
+    with mock.patch.object(respond, "MAX_PATH", 500):
+      self.assertRefused(self.save(self.replies_only()), 2, f"A changed file's path has {len(deep)} characters; the limit is 500")
+
   def test_post_on_a_posted_result_says_so_and_calls_nothing(self):
     _, _, result = self.approved_result()
     self.assertEqual(self.post(result["id"]).code, 0)
@@ -1052,6 +1275,68 @@ class PostTests(RespondWorld):
     self.assertEqual(self.saved_result()["state"], "failed")
 
 
+# --- the gate: no post until the host can vouch for the owner's press ------------------------------------------
+
+
+class GateTests(RespondWorld):
+  """The agent can write the approval file itself, so `post` publishes only on a Möbius that advertises an owner
+  grant it cannot mint (capability `owner_grant`). Without it everything else keeps working."""
+
+  def host_says(self, capabilities) -> None:
+    os.environ["FAKE_HOST_CAPABILITIES"] = capabilities if isinstance(capabilities, str) else json.dumps(capabilities)
+
+  def test_a_forged_approval_publishes_nothing_while_the_host_cannot_vouch_for_the_owner(self):
+    _, _, result = self.approved_result()  # the approval is on disk, however it got there
+    cases = [
+      ("a Möbius that does not advertise the grant", lambda: self.host_says({})),
+      ("the grant advertised as off", lambda: self.host_says({"owner_grant": False})),
+      ("anything but a plain true", lambda: self.host_says({"owner_grant": "yes"})),
+      ("an answer that cannot be read", lambda: self.host_says("{oops")),
+      ("no Möbius core to ask", lambda: os.environ.pop("SCRIPTS_DIR")),
+    ]
+    for name, arrange in cases:
+      with self.subTest(name):
+        with mock.patch.dict(os.environ):
+          arrange()
+          before = self.snapshot()
+          self.assertRefused(self.post(result["id"]), 3, "Post is off for now")
+        self.assertEqual(self.snapshot(), before, "nothing changed, on disk or on GitHub")
+        stored = self.saved_result()
+        self.assertEqual((stored["state"], stored["error"], stored["receipts"]["push"], stored["receipts"]["replies"]), ("ready", None, None, []))
+        self.assertEqual(self.remote_branch(), self.base, "and nothing was pushed")
+    self.assertEqual(self.gh_writes(), [])
+
+  def test_a_post_the_gate_refuses_leaves_no_trace_even_with_nothing_saved(self):
+    self.host_says({})
+    self.assertRefused(self.post("r-000000000000"), 3, "Post is off for now")
+    self.assertFalse(self.app.exists())
+
+  def test_a_dry_run_still_shows_what_post_would_do_while_post_is_off(self):
+    _, _, result = self.approved_result()
+    self.host_says({})
+    before = self.snapshot()
+    outcome = self.post(result["id"], "--dry-run")
+    self.assertEqual(outcome.code, 0, outcome.err)
+    self.assertIn("Post would, in this order:", outcome.out)
+    self.assertEqual(self.snapshot(), before)
+
+  def test_save_and_show_keep_working_while_post_is_off(self):
+    self.host_says({})
+    outcome = self.save(self.input_for(self.two_commits()))
+    self.assertEqual(outcome.code, 0, outcome.err)
+    shown = self.cli("show", "--pr", PULL)
+    self.assertEqual(shown.code, 0, shown.err)
+    self.assertFalse(json.loads(shown.out)["approved"])
+
+  def test_the_approval_is_still_the_second_check_once_the_host_offers_the_grant(self):
+    shas = self.two_commits()
+    self.assertEqual(self.save(self.input_for(shas)).code, 0)
+    result = self.saved_result()
+    self.assertRefused(self.post(result["id"]), 3, "no decision is saved")  # the gate is open, the approval is missing
+    self.decide(result)
+    self.assertEqual(self.post(result["id"]).code, 0)
+
+
 class ProgramTests(RespondWorld):
   def run_script(self, *argv: str) -> subprocess.CompletedProcess:
     # From another folder, as the chat runs it: the script must find its sibling modules itself.
@@ -1086,6 +1371,13 @@ class PlumbingTests(unittest.TestCase):
     self.assertNotIn("\n", text)
     self.assertLessEqual(len(text), 400)
     self.assertEqual(respond.scrub(b"   "), "no details")
+
+  def test_only_a_4xx_answer_proves_a_write_was_refused_anything_else_leaves_it_unknown(self):
+    refused = [b"gh: Validation Failed (HTTP 422)\nBody is too long (HTTP 500)\n", b"gh: Forbidden (HTTP 403)", b"gh: Not Found (HTTP 404)"]
+    unknown = [b"gh: Server Error (HTTP 500)", b"gh: Bad Gateway (HTTP 502)", b"gh: Request Timeout (HTTP 408)",
+               b"gh: Post https://api.github.com/: connection reset by peer", b"gh: context deadline exceeded", b"", b"\xff(HTTP 4"]
+    self.assertEqual([respond.refused_by_github(text) for text in refused], [True] * len(refused))
+    self.assertEqual([respond.refused_by_github(text) for text in unknown], [False] * len(unknown))
 
   def test_the_git_url_is_the_head_repository_on_github_unless_a_test_replaces_it(self):
     with mock.patch.dict(os.environ):

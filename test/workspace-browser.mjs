@@ -1,14 +1,16 @@
 // Run: MOBIUS_FRONTEND_NODE_MODULES=/data/platform/frontend/node_modules \
 //      node test/workspace-browser.mjs
-// Seven scenarios, each on a fresh page: runWorkspaceChecks (the project fixture),
+// Thirteen scenarios, each on a fresh page: runWorkspaceChecks (the project fixture),
 // runPopupFitChecks (the project fixture: its Actions menus stay on a phone screen),
 // runDeskFrameChecks (the whole app: a review started on a PR page frames its Desk row),
-// runReviewRequestChecks (the whole app: a review you submit takes its row out of Review requests) and
-// runReviewHelperWaitChecks (the whole app: a review waiting on its helper reads as at work, not stopped) and
+// runReviewRequestChecks (the whole app: a review you submit takes its row out of Review requests),
+// runReviewHelperWaitChecks (the whole app: a review waiting on its helper reads as at work, not stopped),
 // runRespondAnswerChecks (the whole app: a Respond-to-feedback chat that asks you is answered from the Review tab, with no Answer-the-agent button),
-// runRespondResultChecks (the whole app: a saved Respond-to-feedback answer is a draft to send in the Review tab, and Post, Discard and its stale and busy states work) and
-// runRespondAgainChecks (the whole app: Respond again is delivered into the PR's existing conversation as a message) and
-// runAskApprovalChecks (the whole app: a reviewer who looked again without approving is asked to approve with a note, and an approval of the same work carries over).
+// runRespondResultChecks (the whole app, on a Möbius that offers the owner grant: a saved Respond-to-feedback answer is a draft to send in the Review tab, and Post, Discard and its stale and busy states work),
+// runRespondPostOffChecks (the whole app, on a Möbius without the owner grant: Post is off with its reason in words, at every width, and the rest of the card still works),
+// runRespondAgainChecks (the whole app: Respond again is delivered into the PR's existing conversation as a message),
+// runAskApprovalChecks (the whole app: a reviewer who looked again without approving is asked to approve with a note, and an approval of the same work carries over) and
+// runRepositoryPickerChecks (the whole app: the Add repository form opens where it can be filled in and sent).
 // Run one with WORKSPACE_BROWSER_ONLY=runDeskFrameChecks (and one viewport with WORKSPACE_BROWSER_VIEWPORT=desktop), for example while
 // runWorkspaceChecks is red, so the Desk check can still show green.
 // Actual app components, native Chromium DOM, and no live app/backend. The
@@ -141,7 +143,7 @@ window.fetch = async (url, options = {}) => {
       if (call.body.query.includes('ContributeRepositories')) return response({data:{viewer:{repositories:{nodes:[],pageInfo:{hasNextPage:false,endCursor:null}}}}})
       // The Desk scenario asks the fixture PRs for review; everything else it reads falls through to the project mocks below.
       if (window.fullAppDesk && call.body.query.includes('ContributeIncomingReviews')) {
-        if (window.failIncoming) return new Response(JSON.stringify({detail:'Fixture GitHub error'}), {status:503})
+        if (window.failIncoming || window.failIncomingFull) return new Response(JSON.stringify({detail:'Fixture GitHub error'}), {status:503})
         return response({data:{rateLimit:charged(call.body.query),requested:{nodes:window.githubRequests || [pulls[0]]},involved:{nodes:[]}}})
       }
       // The change probe: only the review requests and the PRs the owner reviewed, one point.
@@ -435,10 +437,12 @@ const nativeEscape = () => new Promise((resolve, reject) => {
   window.finishNativeKey = error => error ? reject(new Error(error)) : resolve()
   window.workspaceNativeKey(JSON.stringify({ key:'Escape', code:'Escape', keyCode:27 }))
 })
+// The message may be a function, so a timeout reports the state it timed out
+// in rather than the state when the wait began.
 async function until(predicate, message) {
   const deadline = performance.now() + 5000
   while (!predicate()) {
-    if (performance.now() > deadline) throw new Error(message + '\nDOM: ' + text(query('main')).slice(0, 3000))
+    if (performance.now() > deadline) throw new Error((typeof message === 'function' ? message() : message) + '\nDOM: ' + text(query('main')).slice(0, 3000))
     await frame()
   }
   await frame()
@@ -1446,7 +1450,7 @@ window.runWorkspaceChecks = async () => {
       root.render(null)
       await frame(); await frame()
       values.clear()
-      const record = { ...prepared, id: 'card-record', updated_at: '2026-10-20T10:00:00Z',
+      const record = { ...prepared, id: 'card-record', updated_at: '2026-10-20T10:00:00Z', chat_id: 'fixture-chat',
         plan: { ...prepared.plan, diff_sha256: 'd'.repeat(64), diff_stat: ' 1 file changed, 3 insertions(+), 1 deletion(-)' } }
       values.set('contributions/card-record.json', structuredClone(record))
       window.mobius.storage.listWithStatus = async () => ({ complete: true, entries: [{ type: 'file', name: 'card-record.json', content: structuredClone(record) }] })
@@ -1468,12 +1472,12 @@ window.runWorkspaceChecks = async () => {
         data: { type: 'moebius:app-block-action', sessionId: 'card-1', key: 'chat-send:card-record', event: name, nonce } }))
       const before = calls.requests.length
       try {
-        root.render(<ContributeApp appId="fixture-app" token="fixture-only" blockSession={{ sessionId: 'card-1', generation: 4, actions: [{ key: 'chat-send:card-record', label: 'Contribute' }], items: [{ intent: 'review:card-record' }] }} />)
+        root.render(<ContributeApp appId="fixture-app" token="fixture-only" blockSession={{ sessionId: 'card-1', generation: 4, features: ['row-state', 'rows-v2'], context: { chatId: 'fixture-chat', latest: true, intent: 'chat:contributions' }, actions: [{ key: 'chat-send:card-record', label: 'Contribute' }], items: [{ intent: 'review:card-record' }] }} />)
         await until(() => card() && !card().disabled, 'Card state was not published')
         ensure(!calls.requests.slice(before).some(call => call.url === '/api/github/status'), 'An idle card mounted the full app')
         fire('activate', 'card-n1')
         await until(() => card()?.confirming, 'Contribute did not become Confirm: ' + JSON.stringify(card()))
-        ensure(card().confirmation?.[0]?.facts?.some(fact => fact.label === 'Version' && fact.value === HEAD.slice(0, 12)), 'Confirm lacked the app-sourced identity')
+        ensure(card().confirmation?.[0]?.facts?.some(fact => fact.label === 'Project' && fact.value === 'owner/project'), 'Confirm lacked the app-sourced identity')
         ensure(JSON.stringify(card().confirmation[0].facts.slice(0, 2).map(fact => fact.label)) === '["Project","Change"]', 'Confirm did not lead with the card facts')
         ensure(calls.requests.some(call => call.url.includes('/review-status?record_id=card-record')), 'Card did not ask for its addressed review status')
         // The hidden runtime runs only what inline Send needs and renders nothing.
@@ -1483,7 +1487,8 @@ window.runWorkspaceChecks = async () => {
         ensure(!document.querySelector('.co-root'), 'The card rendered the workspace')
         ensure(!submits.length, 'Activation sent')
         fire('confirm', 'card-n2'); fire('confirm', 'card-n3')
-        await until(() => card()?.hidden && card().links?.[0]?.url === 'https://github.com/owner/project/pull/9', 'Sent card did not settle to its PR')
+        // This card is attested (rows-v2), so the pull request link is on its row and the action goes.
+        await until(() => card()?.hidden && states.at(-1).rows?.[0]?.links?.[0]?.url === 'https://github.com/owner/project/pull/9', 'Sent card did not settle to its PR')
         ensure(submits.length === 1, 'Confirm did not send exactly once: ' + submits.length)
         ensure(submits[0].expected_record?.id === 'card-record' && submits[0].expected_record.plan.head_sha === HEAD, 'Send did not carry the confirmed snapshot')
         ensure(states.at(-1).checkpoint === null, 'A proven result kept its recovery checkpoint')
@@ -1525,7 +1530,7 @@ window.runWorkspaceChecks = async () => {
       root.render(null)
       await frame(); await frame()
       values.clear()
-      const record = { ...prepared, id: 'ledger-record', updated_at: '2026-10-20T10:00:00Z',
+      const record = { ...prepared, id: 'ledger-record', updated_at: '2026-10-20T10:00:00Z', chat_id: 'fixture-chat',
         plan: { ...prepared.plan, diff_sha256: 'd'.repeat(64), diff_stat: ' 1 file changed, 3 insertions(+)' } }
       values.set('contributions/ledger-record.json', structuredClone(record))
       // The first listing is incomplete; the second (Try again's re-read) is held, then lands complete.
@@ -1545,7 +1550,7 @@ window.runWorkspaceChecks = async () => {
         data: { type: 'moebius:app-block-action', sessionId: 'card-ledger', key: 'chat-send:ledger-record', event: name, nonce } }))
       const before = calls.requests.length
       try {
-        root.render(<ContributeApp appId="fixture-app" token="fixture-only" blockSession={{ sessionId: 'card-ledger', generation: 6, actions: [{ key: 'chat-send:ledger-record', label: 'Contribute' }], items: [{ intent: 'review:ledger-record' }] }} />)
+        root.render(<ContributeApp appId="fixture-app" token="fixture-only" blockSession={{ sessionId: 'card-ledger', generation: 6, features: ['row-state', 'rows-v2'], context: { chatId: 'fixture-chat', latest: true, intent: 'chat:contributions' }, actions: [{ key: 'chat-send:ledger-record', label: 'Contribute' }], items: [{ intent: 'review:ledger-record' }] }} />)
         await until(() => card() && !card().disabled, 'Card state was not published')
         fire('activate', 'ledger-n1')
         for (let i = 0; i < 150 && !(card()?.label === 'Try again' && !card().disabled); i++) await new Promise(resolve => setTimeout(resolve, 50))
@@ -1574,7 +1579,7 @@ window.runWorkspaceChecks = async () => {
       root.render(null)
       await frame(); await frame()
       values.clear()
-      const layer = (id, position, parent) => ({ ...prepared, id, updated_at: '2026-10-20T10:00:00Z',
+      const layer = (id, position, parent) => ({ ...prepared, id, updated_at: '2026-10-20T10:00:00Z', chat_id: 'fixture-chat',
         plan: { ...prepared.plan, title: 'Layer ' + id, branch: 'stack/s1/0' + position, head_sha: position === 1 ? HEAD : BASE, diff_sha256: 'd'.repeat(64),
           diff_stat: '2 files changed, 5 insertions(+), 1 deletion(-)', ...(parent ? { base_sha: HEAD } : {}),
           stack: { id: 's1', name: 'Stack', position, total: 2, base_branch: parent ? 'stack/s1/01' : 'main', ...(parent ? { parent_record_id: parent } : {}) } },
@@ -1592,7 +1597,7 @@ window.runWorkspaceChecks = async () => {
         data: { type: 'moebius:app-block-action', sessionId: 'card-2', key: stackKey, event: name, nonce } }))
       const before = calls.requests.length
       try {
-        root.render(<ContributeApp appId="fixture-app" token="fixture-only" blockSession={{ sessionId: 'card-2', generation: 5, actions: [{ key: stackKey, label: 'Contribute all' }], items: [{ intent: 'review:stack-base' }, { intent: 'review:stack-top' }] }} />)
+        root.render(<ContributeApp appId="fixture-app" token="fixture-only" blockSession={{ sessionId: 'card-2', generation: 5, features: ['row-state', 'rows-v2'], context: { chatId: 'fixture-chat', latest: true, intent: 'chat:contributions' }, actions: [{ key: stackKey, label: 'Contribute all' }], items: [{ intent: 'review:stack-base' }, { intent: 'review:stack-top' }] }} />)
         await until(() => card() && !card().disabled, 'Stack card state was not published')
         fire('activate', 'stack-n1')
         // Wait on timers rather than animation frames: the hidden runtime mounts behind the card.
@@ -1600,11 +1605,21 @@ window.runWorkspaceChecks = async () => {
         await until(() => card()?.confirming, 'A whole-stack card never reached Confirm: ' + JSON.stringify(card()) + ' requests: ' + JSON.stringify(calls.requests.slice(before).map(call => call.method + ' ' + call.url)))
         const statusQueries = calls.requests.slice(before).filter(call => call.url.includes('/review-status')).map(call => call.url)
         ensure(statusQueries.some(url => url.includes('record_id=stack-base') && url.includes('record_id=stack-top')), 'The review check was not addressed to every prepared layer: ' + JSON.stringify(statusQueries))
-        ensure(card().confirmation.length === 2 && card().confirmation.every(item => item.facts.some(fact => fact.label === 'Change' && fact.value === '2 files · +5 −1')), 'Confirm lacked the stack phase or its size')
+        ensure(card().confirmation.length === 2 && card().confirmation.every(item => item.facts.some(fact => fact.label === 'Change' && fact.value === '+5\u00a0−1')), 'Confirm lacked the stack phase or its size')
         // The platform stops advertising the binding before the write.
         window.fullAppBinding = false
         fire('confirm', 'stack-n2')
-        await until(() => /no longer confirms the exact version/.test(card()?.note || '') || states.some(state => (state.actions || []).some(action => /no longer confirms the exact version/.test(action.note || ''))), 'A lost binding did not refuse: ' + JSON.stringify(card()))
+        // The send settles as refused: nothing in flight or confirming, both
+        // rows Not sent, no recovery checkpoint, a binding-unavailable reason
+        // (the card's own "newer Möbius" line, or the write's refusal), and no
+        // write request at all.
+        const settledRefusal = () => {
+          const last = states.at(-1)
+          return !card()?.busy && !card()?.confirming && /newer Möbius|no longer confirms the exact version/.test(card()?.note || '')
+            && last?.rows?.length === 2 && last.rows.every(row => row.pill === 'Not sent') && last.checkpoint === null
+        }
+        await until(settledRefusal, () => 'A lost binding did not settle as refused: ' + JSON.stringify({ action: card(), rows: states.at(-1)?.rows,
+          checkpoint: states.at(-1)?.checkpoint, writes: calls.requests.slice(before).filter(call => call.method === 'POST').map(call => call.url) }))
         ensure(!calls.requests.slice(before).some(call => call.method === 'POST' && /\/(submit|submit-stack|update-stack|update-existing)$/.test(call.url)), 'An unbound send was made')
       } finally {
         window.postMessage = realPost
@@ -1703,7 +1718,7 @@ async function mountDeskApp({ pullPatch = {} } = {}) {
   window.mobius.storage.listWithStatus = async prefix => (window.holdResponsesRead && prefix.startsWith('respond-') ? await new Promise(resolve => window.responseGates.push(resolve)) : null, { complete: true, entries: !prefix.startsWith('respond-') ? [] : [...values].filter(([key]) => key.startsWith(prefix)).map(([key, value]) => ({ type: 'file', name: key.slice(prefix.length), path: key, content: structuredClone(value) })) })
   // A PR GitHub read completely: without these facts its standing is "couldn't read" and nothing frames it.
   Object.assign(pulls[0], { mergeable: 'MERGEABLE', reviewDecision: null, commits: { nodes: [{ commit: { statusCheckRollup: null } }] },
-    latestOpinionatedReviews: { nodes: [] }, reviewThreads: { nodes: [] }, ...pullPatch })
+    latestOpinionatedReviews: { nodes: [] }, latestReviews: { nodes: [] }, reviewThreads: { nodes: [] }, ...pullPatch })
   root.render(<ContributeApp appId="fixture-app" token="fixture-only" />)
 }
 // A popup menu must stay on the screen whichever button opens it: on a phone a row's Actions button sits well
@@ -1719,7 +1734,7 @@ window.runPopupFitChecks = async () => {
     document.head.append(still)
     await click(trigger)
     await until(() => scope.querySelector('.co-agent-menu-list'), 'The ' + name + ' Actions menu did not open')
-    const box = scope.querySelector('.co-agent-menu-list').getBoundingClientRect()
+    const list = scope.querySelector('.co-agent-menu-list'), box = list.getBoundingClientRect()
     ensure(box.left >= 0 && box.right <= window.innerWidth, 'The ' + name + ' Actions menu ran off the screen: ' + Math.round(box.left) + ' to ' + Math.round(box.right) + ' of ' + window.innerWidth + 'px')
     if (window.innerWidth <= 680) {
       // On a phone the menu is a sheet on the bottom edge. Its scrim covers the trigger, so the scrim (or Cancel) closes it.
@@ -1743,6 +1758,20 @@ window.runPopupFitChecks = async () => {
     await until(() => query('.co-source-row'), 'Project list did not render')
     await click(query('.co-source-row'))
     await until(() => document.querySelectorAll('.co-pr-row').length === 2, 'Project did not settle')
+    // The shared Clear button: a 44px box a thumb can hit (the 16px icon stays small), inside a field that is no taller than it is without one.
+    const search = query('input[aria-label="Find a pull request"]')
+    const emptyHeight = search.closest('.co-search').getBoundingClientRect().height
+    await fill(search, 'Contribution')
+    await until(() => query('.co-pr-list-controls .co-search-clear'), 'Typing in the PR search offered no Clear')
+    const clear = query('.co-pr-list-controls .co-search-clear'), field = clear.closest('.co-search')
+    const clearBox = clear.getBoundingClientRect(), fieldBox = field.getBoundingClientRect()
+    ensure(Math.round(clearBox.width) >= 44 && Math.round(clearBox.height) >= 44, 'The Clear button is only ' + Math.round(clearBox.width) + 'x' + Math.round(clearBox.height) + 'px')
+    ensure(Math.round(fieldBox.height) === Math.round(emptyHeight), 'The search field grew from ' + Math.round(emptyHeight) + 'px to ' + Math.round(fieldBox.height) + 'px with its Clear button')
+    const top = document.elementFromPoint(clearBox.left + clearBox.width / 2, clearBox.top + 2), bottom = document.elementFromPoint(clearBox.left + clearBox.width / 2, clearBox.bottom - 2)
+    ensure(clear.contains(top) && clear.contains(bottom), 'A tap near the top or bottom of the Clear box did not land on Clear')
+    await click(clear)
+    await until(() => search.value === '' && document.activeElement === search, 'Clear did not empty the search and give the field focus back')
+    checks.push({ name: 'the shared Clear button is a 44px target', status: 'pass' })
     await staysOnScreen('row', query('.co-pr-row'))
     await click(query('input[aria-label="Select owner/project #7"]'))
     await until(() => query('.co-pr-box-head .co-agent-menu-button'), 'Selecting a PR did not offer the bulk Actions menu')
@@ -1812,6 +1841,62 @@ window.runDeskFrameChecks = async () => {
   }
 }
 
+// The whole app on a fresh page: the Add repository form opens where the owner can see it and type in it.
+// On a desktop it belongs to the side menu's last row, a box that scrolls and so clips anything that floats
+// out of it; on a phone that menu is hidden and the form belongs to the All repositories list.
+window.runRepositoryPickerChecks = async () => {
+  const checks = []
+  // What a person can use: inside the window, inside every box that clips it, and the thing a click at its centre lands on.
+  const usable = (node, label) => {
+    const rect = node.getBoundingClientRect()
+    ensure(rect.left >= 0 && rect.right <= innerWidth && rect.top >= 0 && rect.bottom <= innerHeight, label + ' is outside the window: left=' + Math.round(rect.left) + ', right=' + Math.round(rect.right))
+    for (let box = node.parentElement; box; box = box.parentElement) {
+      const style = getComputedStyle(box), outer = box.getBoundingClientRect()
+      if (style.overflowX === 'visible' && style.overflowY === 'visible') continue
+      ensure(rect.left >= outer.left - 1 && rect.right <= outer.right + 1 && rect.top >= outer.top - 1 && rect.bottom <= outer.bottom + 1,
+        label + ' is clipped by ' + (box.className || box.tagName) + ': ' + [rect.left, rect.right, rect.top, rect.bottom].map(Math.round) + ' not in ' + [outer.left, outer.right, outer.top, outer.bottom].map(Math.round))
+    }
+    const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2)
+    ensure(hit === node || node.contains(hit), label + ' cannot be clicked: ' + (hit?.className || hit?.tagName))
+  }
+  const addFrom = async (scope, where) => {
+    await click(button('Add repository', query(scope)), 'No Add repository button in ' + where)
+    await until(() => query(scope + ' #co-repository-name'), 'Add repository did not open its form in ' + where)
+    const input = query(scope + ' #co-repository-name')
+    usable(input, 'The repository field in ' + where); usable(button('Close', query(scope + ' form')), 'The Close button in ' + where)
+    await fill(input, 'team/community')
+    usable(button('Add', query(scope + ' form')), 'The Add button in ' + where)
+    await click(button('Add', query(scope + ' form')))
+    await until(() => values.get('followed-repositories.json')?.includes('team/community'), 'The repository typed in ' + where + ' was not saved')
+    await until(() => !query(scope + ' form'), 'The form in ' + where + ' stayed open after adding')
+    // Back to the saved list this scenario began with, so the next form's save is waited for on its own.
+    values.set('followed-repositories.json', ['owner/project'])
+  }
+  try {
+    await mountDeskApp()
+    await until(() => query('.co-rail'), 'The Desk did not render')
+    if (getComputedStyle(query('.co-rail')).display !== 'none') {
+      await addFrom('.co-rail-add', 'the side menu')
+      checks.push({ name: 'the side menu opens the Add repository form inside itself and it can be filled in and sent', status: 'pass' })
+      // A short window leaves the menu scrolling: the form must be brought into view, not opened below the fold.
+      query('.co-rail').style.maxHeight = '320px'
+      await addFrom('.co-rail-add', 'a short side menu')
+      query('.co-rail').style.maxHeight = ''
+      checks.push({ name: 'a side menu that has to scroll scrolls the Add repository form into view', status: 'pass' })
+      await click(query('.co-rail-item.is-all'))
+    } else {
+      await click(query('.co-desk-chips-projects'))
+    }
+    await until(() => query('.co-directory-add'), 'The All repositories list did not open')
+    await addFrom('.co-directory-add', 'the All repositories list')
+    checks.push({ name: 'the All repositories list opens the Add repository form where it can be filled in and sent', status: 'pass' })
+    ensure(calls.forbidden.length === 0, 'Unexpected runtime/transport: ' + JSON.stringify(calls.forbidden))
+    return { status: 'pass', checks, forbidden: calls.forbidden }
+  } catch (error) {
+    return { status: 'fail', checks, error: error.stack, dom: text(query('main')).slice(0, 5000), calls, forbidden: calls.forbidden }
+  }
+}
+
 // The whole app on a fresh page: a review hands its PR to a reviewer helper and ends its own
 // turn ("completed") while the review still says "reviewing". That is a review at work, not one
 // that stopped: the Desk row and the PR page show the moving frame. Only a review the platform
@@ -1872,6 +1957,12 @@ window.runRespondAnswerChecks = async () => {
     checks.push({ name: 'a question has no button on the PR page, only a pointer to the Review tab', status: 'pass' })
     // The Desk opens a PR whose frame is not idle on its Review tab.
     await until(() => button('Answer in chat'), 'The Review tab did not offer Answer in chat: ' + reviewBody())
+    // From another tab the pointer is the way back: it opens the Review tab (on a phone that tab can be past the strip's edge).
+    await click([...document.querySelectorAll('.co-detail-tabs button')].find(node => text(node).startsWith('Comments')))
+    await until(() => !button('Answer in chat') && query('.co-next-pointer'), 'The pointer was not on screen from the Comments tab')
+    await click(query('.co-next-pointer'))
+    await until(() => button('Answer in chat'), 'The pointer did not open the Review tab: ' + reviewBody())
+    checks.push({ name: 'the question pointer opens the Review tab from another tab', status: 'pass' })
     ensure(reviewBody().includes('Waiting for your answer') && !reviewBody().includes('No review yet'), 'The Review tab said: ' + reviewBody())
     ensure(query('.co-gh-chat-link'), 'The PR header has no link to the Respond conversation')
     const sent = []
@@ -1906,6 +1997,7 @@ const savedResponse = (patch = {}) => ({ version: 1, id: 'r-3f9a1c2b04d5', repo:
   commits: [], files: [], bundle: null, digest: 'd'.repeat(64), receipts: { push: null, replies: [], description: null, rerequest: null }, error: null, ...patch })
 const RESPONSE_KEY = 'respond-results/owner__project__7.json', DECISION_KEY = 'respond-decisions/owner__project__7.json'
 window.runRespondResultChecks = async () => {
+  window.fixtureCapabilities = { review_fix_merge: false, post_review: false, owner_grant: true } // a Möbius that offers the owner grant: Post is on
   const checks = []
   const deskFrame = title => [...document.querySelectorAll('.co-frame')].find(node => text(node).includes(title))?.dataset.frame
   const button = label => [...document.querySelectorAll('button')].find(node => text(node) === label)
@@ -2046,9 +2138,52 @@ async function captureShot(name) {
   await new Promise(resolve => { window.finishShot = resolve; window.workspaceShot(name) })
 }
 
+// A Möbius that does not offer the owner grant (today's: the default fixture capabilities): the answer is readable and can be discussed or
+// discarded, but Post is off, says why in words that fit the screen, and cannot write an approval or message the chat.
+window.runRespondPostOffChecks = async () => {
+  const checks = []
+  const button = label => [...document.querySelectorAll('button')].find(node => text(node) === label)
+  const reviewBody = () => text(query('.co-pr-detail-body'))
+  const reason = 'Post is off for now: Möbius cannot yet confirm it was you who pressed it.'
+  try {
+    reviewRuns.length = 0
+    respondChats.length = 0
+    values.set(RESPONSE_KEY, savedResponse())
+    await mountDeskApp({ pullPatch: OWN_PULL_WITH_FEEDBACK })
+    await until(() => [...document.querySelectorAll('.co-desk-row')].some(node => text(node).includes('Contribution 7')), 'The Desk did not list the PR')
+    await click([...document.querySelectorAll('.co-desk-row')].find(node => text(node).includes('Contribution 7')))
+    await until(() => reviewBody().includes('Replies ready') && button(NAMES.postAnswer), 'The Review tab did not show the saved answer: ' + reviewBody())
+    await until(() => button(NAMES.postAnswer).disabled, 'Post stayed on without the owner grant')
+    ensure(reviewBody().includes(reason) && reviewBody().includes('Reply in chat'), 'The card did not say why Post is off: ' + reviewBody())
+    ensure(reviewBody().includes('Both points are answered.') && reviewBody().includes('A lost answer is unresolved'), 'The answer is no longer readable: ' + reviewBody())
+    ensure(!button(NAMES.replyInChat).disabled && !button(NAMES.discard).disabled, 'Reply in chat or Discard was switched off with Post')
+    checks.push({ name: 'without the owner grant Post is off with its reason in words, and the answer, Reply in chat and Discard stay', status: 'pass' })
+    // The reason and the buttons fit the screen: at 390 px nothing is cut off or scrolls sideways.
+    const note = [...document.querySelectorAll('.co-review-note')].find(node => text(node).startsWith(reason))
+    const edge = node => node.getBoundingClientRect().right
+    ensure(note && edge(note) <= window.innerWidth && edge(button(NAMES.postAnswer)) <= window.innerWidth, 'The reason or Post runs past the screen edge: ' + [note && edge(note), edge(button(NAMES.postAnswer)), window.innerWidth])
+    ensure(document.documentElement.scrollWidth <= window.innerWidth, 'The page scrolls sideways: ' + document.documentElement.scrollWidth + ' of ' + window.innerWidth)
+    checks.push({ name: 'the reason and Post fit the screen width', status: 'pass' })
+    // A press on the disabled Post does nothing: no approval, no message. (The click helper refuses a disabled control, so press it raw.)
+    button(NAMES.postAnswer).click()
+    await new Promise(resolve => setTimeout(resolve, 300))
+    ensure(!values.get(DECISION_KEY) && calls.messages.length === 0, 'Post wrote ' + JSON.stringify(values.get(DECISION_KEY)) + ' and sent ' + calls.messages.length + ' messages')
+    checks.push({ name: 'a press on the disabled Post writes no approval and sends the chat nothing', status: 'pass' })
+    // Discard publishes nothing, so it still works.
+    await click(button(NAMES.discard))
+    await until(() => values.get(DECISION_KEY)?.decision === 'discarded', 'Discard wrote no decision')
+    checks.push({ name: 'Discard still works', status: 'pass' })
+    ensure(calls.forbidden.length === 0, 'Unexpected runtime/transport: ' + JSON.stringify(calls.forbidden))
+    return { status: 'pass', checks, forbidden: calls.forbidden }
+  } catch (error) {
+    return { status: 'fail', checks, error: error.stack, dom: text(query('main')).slice(0, 5000), calls, forbidden: calls.forbidden }
+  }
+}
+
 // Respond again is delivered into the PR's conversation as a message: the platform hands back the conversation it already has for the
 // PR's scope without sending the job, so a plain start would only reopen it.
 window.runRespondAgainChecks = async () => {
+  window.fixtureCapabilities = { review_fix_merge: false, post_review: false, owner_grant: true } // a Möbius that offers the owner grant: the old answer's Post is held for the working chat, not by the gate
   const checks = []
   const button = label => [...document.querySelectorAll('button')].find(node => text(node) === label)
   const reviewBody = () => text(query('.co-pr-detail-body'))
@@ -2205,6 +2340,12 @@ window.runAskApprovalChecks = async () => {
     await openPage()
     await until(() => pill() === 'Approval is old', 'An unreadable comparison did not read as an old approval: ' + pill())
     checks.push({ name: 'when the work changed, or the comparison cannot be read, the approval stays old', status: 'pass' })
+    // 4. Somebody else commented on this version without approving: that comment outranks the old approval (it needs their approval too).
+    await mountDeskApp({ pullPatch: { ...approvedAt('e'.repeat(40)), latestReviews: { nodes: [{ state: 'COMMENTED', author: { login: 'second-reviewer', __typename: 'User' }, commit: { oid: HEAD } }] } } })
+    await openPage()
+    await until(() => pill() === 'Commented · not approved', 'A comment on this version did not outrank the old approval: ' + pill())
+    ensure(hint().includes('second-reviewer left a comment'), 'The panel said: ' + hint())
+    checks.push({ name: 'a comment on this version outranks an old approval: the PR reads Commented · not approved and asks the commenter', status: 'pass' })
     ensure(calls.forbidden.length === 0, 'Unexpected runtime/transport: ' + JSON.stringify(calls.forbidden))
     return { status: 'pass', checks, forbidden: calls.forbidden }
   } catch (error) {
@@ -2367,6 +2508,16 @@ window.runSyncChecks = async () => {
     const listed = !!rowOf('Contribution 8')
     await timed('a PR is merged or closed elsewhere: the row leaves', 61, () => listed && !rowOf('Contribution 8'))
     reads.githubUntilHidden = calls.requests.filter(call => call.url === '/api/github/graphql').map(call => Math.round((call.at - startedAt) / 1000) + ' s ' + /query (\w+)/.exec(call.body.query)[1].replace('Contribute', ''))
+    // 6. A new request arrives and the full read of the requests fails once: the probe reports the change
+    // only once, so the app must read again on its own after the cooldown, with no Sync.
+    const fullReads = () => graphqlReads('ContributeIncomingReviews')
+    const readsBeforeFailure = fullReads()
+    window.githubRequests = [pulls[1]]; window.failIncomingFull = true
+    for (let second = 0; second < 400 && fullReads() === readsBeforeFailure; second++) await clock.advance(1000)
+    window.failIncomingFull = false
+    await timed('a new request whose first read failed: the row appears on a later read', 301, () => asks('Contribution 8'), 400)
+    window.githubRequests = []
+    await minutes(6)
     // Hidden: not one read, however long. Visible again: the read comes at once.
     window.setFrameVisible(false)
     const hiddenFrom = calls.requests.length
@@ -2541,7 +2692,7 @@ async function main() {
     const protocol = cdp(browser), reports = []
     // Each scenario gets a fresh page, so the whole-app Desk scenario never inherits the project fixture's state.
     // WORKSPACE_BROWSER_ONLY=runDeskFrameChecks runs one scenario.
-    const scenarios = process.env.WORKSPACE_BROWSER_ONLY ? [process.env.WORKSPACE_BROWSER_ONLY] : ['runWorkspaceChecks', 'runPopupFitChecks', 'runDeskFrameChecks', 'runReviewRequestChecks', 'runReviewHelperWaitChecks', 'runRespondAnswerChecks', 'runRespondResultChecks', 'runRespondAgainChecks', 'runAskApprovalChecks', 'runSyncChecks', 'runStaleAnswerChecks']
+    const scenarios = process.env.WORKSPACE_BROWSER_ONLY ? [process.env.WORKSPACE_BROWSER_ONLY] : ['runWorkspaceChecks', 'runPopupFitChecks', 'runDeskFrameChecks', 'runReviewRequestChecks', 'runReviewHelperWaitChecks', 'runRespondAnswerChecks', 'runRespondResultChecks', 'runRespondPostOffChecks', 'runRespondAgainChecks', 'runAskApprovalChecks', 'runRepositoryPickerChecks', 'runSyncChecks', 'runStaleAnswerChecks']
     const viewports = [{ name: 'desktop', width: 1280, height: 900 }, { name: 'phone', width: 390, height: 844 }].filter(size => !process.env.WORKSPACE_BROWSER_VIEWPORT || size.name === process.env.WORKSPACE_BROWSER_VIEWPORT)
     for (const [viewport, scenario] of viewports.flatMap(size => scenarios.map(name => [size, name]))) {
       const { targetId } = await protocol.send('Target.createTarget', { url: 'about:blank' })

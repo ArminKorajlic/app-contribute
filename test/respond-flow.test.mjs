@@ -3,7 +3,7 @@ import test from 'node:test'
 import { readFileSync } from 'node:fs'
 import { approveResponse, discardResponse } from '../respond-flow.js'
 import { clearDecision, loadResponses, readFreshResult, writeDecision } from '../respond-store.js'
-import { normalizeResult, planSteps } from '../respond-result.js'
+import { normalizeResult, planSteps, POST_OFF_REASON } from '../respond-result.js'
 
 const example = () => JSON.parse(readFileSync(new URL('./fixtures/respond-result.example.json', import.meta.url), 'utf8'))
 const HEAD = 'b'.repeat(40)
@@ -75,7 +75,9 @@ test('a decision is a durable write that only counts when the server accepted it
 })
 
 // Post: re-read, check what is on screen is what is saved, write the approval, then tell the chat.
-const view = patch => ({ digest: example().digest, pr: pull(), chat: null, ...patch })
+// These tests run on a Möbius that offers the owner grant; the tests of the gate itself, below, say otherwise out loud.
+const WITH_GRANT = { owner_grant: true }
+const view = patch => ({ digest: example().digest, pr: pull(), chat: null, capabilities: WITH_GRANT, ...patch })
 const delivered = []
 const deliverOk = async (token, request) => { delivered.push({ token, request }); return { ok: true, chatId: request.chatId, outcome: 'sent' } }
 const reset = () => { delivered.length = 0 }
@@ -112,6 +114,27 @@ test('a post that stopped can be tried again, even though its own push moved the
   const resent = await approveResponse({ ...view(), slug: SLUG, token: 't', storage: fakeStorage(saved()), again: true, deliver: deliverOk })
   assert.equal(resent.ok, true)
   assert.match(delivered[0].request.cid, /^respond-retry-/)
+})
+
+test('Post does nothing until the host offers an owner grant: no approval, no message, whatever else is true', async () => {
+  reset()
+  const cases = { 'a Möbius without the grant': {}, 'the grant advertised as off': { owner_grant: false }, 'anything but a plain true': { owner_grant: 'yes' },
+    'capabilities not read yet, or unreadable': null, 'capabilities not passed': undefined }
+  for (const [name, capabilities] of Object.entries(cases)) {
+    for (const again of [false, true]) {
+      const storage = fakeStorage(saved())
+      const out = await approveResponse({ ...view({ capabilities }), slug: SLUG, token: 't', storage, again, deliver: deliverOk })
+      assert.deepEqual(out, { ok: false, error: POST_OFF_REASON }, name)
+      assert.deepEqual(storage.calls, [], `${name}: the storage was not even read`)
+    }
+  }
+  assert.equal(delivered.length, 0)
+  assert.match(POST_OFF_REASON, /^Post is off for now: Möbius cannot yet confirm it was you who pressed it\..*Reply in chat\.$/)
+})
+
+test('Discard needs no grant: it publishes nothing', async () => {
+  const storage = fakeStorage(saved())
+  assert.deepEqual(await discardResponse({ slug: SLUG, digest: example().digest, storage }), { ok: true })
 })
 
 test('Post refuses, and writes nothing, when what is on screen is no longer what is saved', async () => {

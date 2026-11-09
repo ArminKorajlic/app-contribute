@@ -109,9 +109,11 @@ export function DeskChips({ view, counts, projects = [], onView }) {
 
 // The Needs you chips: one per next step, each filtering the list to its rows.
 // Their sum is the rail badge. Drafts ready to open are not urgent, so they are a
-// quiet line under the chips, not a number in them (finding 5).
+// quiet line under the chips, not a number in them (finding 5). The chip that is selected stays
+// even at zero: a refresh that empties its step must not take away the control that clears the
+// filter, or what still needs you stays hidden behind it.
 export function DeskCounts({ counts, filter = '', onFilter, onView }) {
-  const chips = NEEDS_CHIPS.map(chip => ({ ...chip, value: chip.count(counts) })).filter(chip => chip.value)
+  const chips = NEEDS_CHIPS.map(chip => ({ ...chip, value: chip.count(counts) })).filter(chip => chip.value || chip.key === filter)
   return <>
     {chips.length ? <FilterLine label="What needs you, by next step" items={chips.map(chip => ({ key: chip.key, label: chip.label, count: chip.value }))} active={filter} onPick={key => onFilter(filter === key ? '' : key)} /> : null}
     {counts.drafts ? (

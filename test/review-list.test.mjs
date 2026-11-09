@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { DESK_VIEWS, deskCounts, railBadge } from '../desk.js'
-import { changedReviewRuns, classifyReview, loadReviewPulls, pendingRespondStarts, reviewCounts, reviewEntries, reviewKey, withRespondStart, withReviewRun } from '../review-list.js'
+import { standingFor } from '../pr-standing.js'
+import { changedReviewRuns, classifyReview, loadReviewPulls, mergeReviewPulls, pendingRespondStarts, readReviewPulls, respondEntries, reviewCounts, reviewEntries, reviewKey, withRespondStart, withReviewRun } from '../review-list.js'
 
 const HEAD = 'a'.repeat(40)
 const run = (extra = {}) => ({ id: 'r', state: 'complete', execution_state: 'completed', chat_id: 'c', created_at: '2026-11-03T22:00:00Z', ...extra })
@@ -75,6 +76,15 @@ test('a PR that is no longer open is history, whatever its review said', () => {
   assert.equal(read(item('verdict_pending'), live({ state: 'CLOSED' })).bucket, 'done')
 })
 
+test('a clean private review is done, and a push after it puts the PR back to review', () => {
+  const clean = item('all_clear')
+  const done = read(clean)
+  assert.deepEqual([done.bucket, done.confirm, labels(done)], ['done', false, ['Kept private']], 'nothing to send: it does not wait on you')
+  const moved = read(clean, live({ headRefOid: 'b'.repeat(40) }))
+  assert.deepEqual([moved.bucket, labels(moved)], ['waiting', ['New commits · review again']])
+  assert.equal(read(clean, live({ headRefOid: 'b'.repeat(40), author: { login: 'owner' } })).bucket, 'done', 'your own PR is not nagged about an older clean check')
+})
+
 test('a PR GitHub did not return is unknown, never classified from the saved review', () => {
   const entry = { run: run(), item: item('verdict_pending') }
   const unknown = classifyReview(entry, { login: 'owner', live: null, runs: [entry.run] })
@@ -101,8 +111,49 @@ test('every PR is read live in batches of 25, one batch after another, and only 
     assert.equal(read.size, 29, 'the PR GitHub did not return stays unknown')
     assert.equal(read.has('o/r#2'), false)
     assert.equal((await loadReviewPulls('token', [])).size, 0)
+    // One batch GitHub cannot answer fails the whole read: a half-read history is never taken for a complete one.
+    let calls = 0
+    globalThis.fetch = async (url, options) => {
+      calls += 1
+      if (calls === 2) return { ok: false }
+      const count = (JSON.parse(options.body).query.match(/p\d+:repository/g) || []).length
+      return { ok: true, json: async () => ({ data: Object.fromEntries(Array.from({ length: count }, (_, index) => [`p${index}`, { pullRequest: live({ number: index }) }])) }) }
+    }
+    await assert.rejects(() => loadReviewPulls('token', refs), /Could not read/)
     globalThis.fetch = async () => ({ ok: false })
-    assert.equal((await loadReviewPulls('token', [{ repo: 'o/r', number: 1 }])).size, 0, 'a failed read leaves every PR unknown')
+    await assert.rejects(() => loadReviewPulls('token', [{ repo: 'o/r', number: 1 }]), /Could not read/)
+  } finally { globalThis.fetch = previous }
+})
+
+test('a read of some PRs replaces just those: one GitHub did not return is unknown again, the others keep their last read', async () => {
+  const previous = globalThis.fetch
+  let missing = new Set()
+  const answering = async (url, options) => {
+    const query = JSON.parse(options.body).query
+    const numbers = [...query.matchAll(/pullRequest\(number:(\d+)\)/g)].map(match => Number(match[1]))
+    return { ok: true, json: async () => ({ data: Object.fromEntries(numbers.map((number, index) => [`p${index}`, { pullRequest: missing.has(number) ? null : live({ number, state: 'OPEN' }) }])) }) }
+  }
+  globalThis.fetch = answering
+  const refs = [1, 2, 3].map(number => ({ repo: 'o/r', number }))
+  const readInto = async (known, keys) => mergeReviewPulls(known, await readReviewPulls('token', refs, keys))
+  const keysOf = pulls => [...pulls.keys()].sort()
+  try {
+    const everything = await readInto(new Map(), null)
+    assert.deepEqual(keysOf(everything), ['o/r#1', 'o/r#2', 'o/r#3'])
+    // GitHub no longer returns PR 1 (permission lost, deleted): the targeted read of PRs 1 and 2 finds only PR 2.
+    missing = new Set([1])
+    const partial = await readInto(everything, new Set(['o/r#1', 'o/r#2']))
+    assert.deepEqual(keysOf(partial), ['o/r#2', 'o/r#3'], 'PR 1 kept its old read instead of becoming unknown')
+    assert.equal(partial.get('o/r#3'), everything.get('o/r#3'), 'a PR nobody asked about lost its last read')
+    assert.deepEqual(keysOf(everything), ['o/r#1', 'o/r#2', 'o/r#3'], 'the earlier read was changed')
+    // A read GitHub cannot answer fails, whether it asked for some PRs or all (see loadReviewPulls): the hub's failed handler keeps what the last read said.
+    globalThis.fetch = async () => ({ ok: false })
+    await assert.rejects(() => readInto(partial, new Set(['o/r#3'])), /Could not read/)
+    await assert.rejects(() => readInto(partial, null), /Could not read/)
+    // A read of everything that GitHub answers replaces the whole set.
+    globalThis.fetch = answering
+    missing = new Set([1, 2, 3])
+    assert.equal((await readInto(partial, null)).size, 0)
   } finally { globalThis.fetch = previous }
 })
 
@@ -256,4 +307,32 @@ test('starting Respond again on the same PR replaces the earlier start, never do
   const next = withRespondStart([first, startedChat({ number: 7, chat_id: 'e' })], startedChat({ repo: 'MOBIUS-OS/mobius', at: 2 }))
   assert.deepEqual(next.map(chat => [chat.number, chat.at]), [[7, 1000], [2019, 2]], 'the other PR stays; this PR keeps only its newest start')
   assert.ok(!next.includes(first))
+})
+
+// ---- a Respond conversation on a PR with no review of its own is an agent run, whatever it is doing
+const respondOn = (state, extra = {}) => ({ repo: 'Mobius-OS/Mobius', number: 2019, chat_id: 'c', state, at: 500, ...extra })
+
+test('a standalone Respond conversation stays a visible agent run when its question turns it from working to waiting on you', () => {
+  const pulls = [{ repository: { nameWithOwner: 'mobius-os/mobius' }, number: 2019, title: 'Update bundled agent runtimes' }]
+  const own = live({ author: { login: 'owner' } })
+  const at = state => {
+    const entries = respondEntries([respondOn(state)], [], pulls)
+    return { entries, counts: reviewCounts(entries), standing: standingFor({ pr: own, login: 'owner', chats: [respondOn(state)] }) }
+  }
+  const working = at('running')
+  assert.deepEqual(working.entries.map(entry => [entry.id, entry.bucket, entry.chips[0].label, entry.item.title]), [['mobius-os/mobius#2019', 'running', 'Agent working', 'Update bundled agent runtimes']])
+  assert.deepEqual([working.counts.running, working.counts.waiting, working.standing.state], [1, 0, 'working'])
+  const asking = at('needs_answer')
+  assert.deepEqual(asking.entries.map(entry => [entry.id, entry.bucket, entry.chips[0], entry.at]), [['mobius-os/mobius#2019', 'waiting', { label: 'Agent asks you', tone: 'owner' }, 500]])
+  assert.deepEqual([asking.counts.running, asking.counts.waiting, asking.standing.state], [0, 1, 'needs_answer'])
+  assert.equal(asking.entries[0].chips[0].label, asking.standing.label, 'the row and the PR frame say the same thing')
+  assert.deepEqual(respondEntries([], [], pulls), [], 'a conversation that ended leaves no row')
+})
+
+test('a Respond conversation that asks you is a row of Agent runs, counted in Needs you, and never twice with its PR\'s review', () => {
+  const entries = respondEntries([respondOn('needs_answer')], [], [])
+  assert.equal(entries[0].item.title, '', 'the PR was not read: the row still stands, without a title')
+  assert.equal(deskCounts({ reviewEntries: entries, reviews: reviewCounts(entries) }).agent, 1, 'it waits on the owner')
+  assert.equal(deskCounts({ reviewEntries: respondEntries([respondOn('running')], [], []) }).agent, 0, 'one at work waits on nobody')
+  assert.deepEqual(respondEntries([respondOn('needs_answer')], [{ id: 'mobius-os/mobius#2019' }], []), [], 'a PR with a review of its own is classified with it')
 })

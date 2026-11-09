@@ -3,6 +3,16 @@
 //
 // The app reads strictly: a file that breaks a rule is not a response at all, never half shown. The helper
 // has already enforced the same rules, so a file that fails here was edited or is from another version.
+import { NAMES } from './names.js'
+
+// THE GATE on Post. The responding agent shares the app's storage, so it can write an approval itself: a matching approval file does
+// not show the owner pressed Post. Post is therefore offered only when this Möbius advertises an owner grant the agent cannot mint,
+// in the `capabilities` of review-presets (the same place the other host features are read). No Möbius does yet, so Post is off.
+// respond_result.py holds the same name (OWNER_GRANT_CAPABILITY) and asks the same question before it publishes anything.
+export const OWNER_GRANT_CAPABILITY = 'owner_grant'
+export const ownerGrantOffered = capabilities => capabilities?.[OWNER_GRANT_CAPABILITY] === true
+// Until the capabilities are known (or when they cannot be read) the answer is the same as for a Möbius without the grant: off.
+export const POST_OFF_REASON = `${NAMES.postAnswer} is off for now: Möbius cannot yet confirm it was you who pressed it. The answer stays saved. Copy the replies to post them yourself, or use ${NAMES.replyInChat}.`
 
 import { SCREENSHOT_NAME } from './domain.js'
 
@@ -22,7 +32,9 @@ const FILE_STATUSES = new Set(['added', 'modified', 'removed', 'renamed'])
 // The name the helper gives a PR's files: lower case, owner__repo__number.
 export const resultSlug = (repo, number) => `${String(repo).toLowerCase().replace('/', '__')}__${number}`
 
-const isText = (value, max, { empty = false } = {}) => typeof value === 'string' && value.length <= max && (empty || value.trim() !== '')
+// Lengths count characters (code points) as the helper does, not UTF-16 units: an emoji is one character here, as there.
+const within = (text, max) => text.length <= max || [...text].length <= max
+const isText = (value, max, { empty = false } = {}) => typeof value === 'string' && within(value, max) && (empty || value.trim() !== '')
 const isCount = value => Number.isInteger(value) && value >= 0
 const list = (value, max) => (Array.isArray(value) && value.length <= max ? value : null)
 
@@ -45,7 +57,7 @@ function readCommit(commit) {
 }
 
 function readFile(file) {
-  if (!file || typeof file !== 'object' || !isText(file.path, 500) || !FILE_STATUSES.has(file.status) || !isCount(file.added) || !isCount(file.removed)) return null
+  if (!file || typeof file !== 'object' || !isText(file.path, 4096) || !FILE_STATUSES.has(file.status) || !isCount(file.added) || !isCount(file.removed)) return null
   if (file.patch !== null && !isText(file.patch, 60000, { empty: true })) return null
   const read = { path: file.path, status: file.status, added: file.added, removed: file.removed, patch: file.patch }
   if (typeof file.previous_path === 'string') read.previous_path = file.previous_path
