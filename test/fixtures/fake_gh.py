@@ -101,10 +101,18 @@ def comments_of(kind):
 if method == "GET" and lowered == "user":
   finish({"ok": True}, {"login": config.get("me", "owner-login")})
 
+def land_held_writes():
+  """A request that timed out on our side but is still running on GitHub completes: its comments are listed from now on."""
+  config.setdefault("comments", []).extend(config.pop("held", []))
+  save_config()
+
+
 for kind, listing in (("issue", pull_path.replace("/pulls/", "/issues/") + "/comments"), ("review", pull_path + "/comments")):
   if method == "GET" and lowered.split("?")[0] == listing:
     page = int(re.search(r"[?&]page=([0-9]+)", lowered).group(1)) if "page=" in lowered else 1
-    finish({"ok": True}, [item["comment"] for item in comments_of(kind)] if page == 1 else [])
+    snapshot = [item["comment"] for item in comments_of(kind)] if page == 1 else []
+    land_held_writes()  # the snapshot was taken first: the held write finishes just after it
+    finish({"ok": True}, snapshot)
 
 WRITES = [
   ("POST", re.compile(re.escape(pull_path.replace("/pulls/", "/issues/")) + "/comments")),
@@ -115,20 +123,22 @@ WRITES = [
 if any(m == method and route.fullmatch(lowered) for m, route in WRITES):
   config["writes"] += 1
   entry = {"ok": True, "attempt": config["writes"], "watch": watch()}
-  if config["fail_at"] == config["writes"]:
-    config["fail_at"] = None  # a failure injected once: the next attempt succeeds
-    save_config()
-    entry["ok"] = False
-    finish(entry, error="gh: Server Error (HTTP 500)")
+  for key, failure in (("fail_at", "gh: Server Error (HTTP 500)"), ("reject_at", "gh: Validation Failed (HTTP 422)")):
+    if config.get(key) == config["writes"]:
+      config[key] = None  # a failure injected once: the next attempt succeeds
+      save_config()
+      entry["ok"] = False
+      finish(entry, error=failure)
   comment = {"id": 9000 + config["writes"], "html_url": f"https://example.test/c/{config['writes']}",
              "user": {"login": config.get("me", "owner-login")}, "body": json.loads(body).get("body"),
              "created_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
   is_reply = "/comments/" in lowered
   is_comment = lowered.endswith("/comments") or is_reply
+  held = config.get("hold_at") == config["writes"]  # taken by GitHub, but still being processed when our connection times out
   if is_comment:
     if is_reply:
       comment["in_reply_to_id"] = int(lowered.split("/comments/")[1].split("/")[0])
-    config.setdefault("comments", []).append({"kind": "review" if is_reply else "issue", "comment": comment})
+    config.setdefault("held" if held else "comments", []).append({"kind": "review" if is_reply else "issue", "comment": comment})
   moved = config.get("after_write") or {}
   if moved.get("at") == config["writes"]:
     config["pr"].update(moved["pr"])  # the PR changes right after this write: the next read sees it
@@ -137,6 +147,11 @@ if any(m == method and route.fullmatch(lowered) for m, route in WRITES):
     save_config()
     entry["ok"] = "lost"
     finish(entry, error="gh: Post https://api.github.com/: connection reset by peer")
+  if held:
+    config["hold_at"] = None
+    save_config()
+    entry["ok"] = "pending"
+    finish(entry, error="gh: Post https://api.github.com/: context deadline exceeded (Client.Timeout exceeded while awaiting headers)")
   save_config()
   finish(entry, {"html_url": comment["html_url"]})
 

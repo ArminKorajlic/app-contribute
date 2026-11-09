@@ -125,9 +125,19 @@ test('a post that stopped part-way says where, keeps what went out, and can be t
   const html = await card(t, response('failed', { receipts, error: { step: 'replies', message: 'GitHub refused the comment.' } }, approval('approved'), { headRefOid: TIP }), { prPatch: { headRefOid: TIP } })
   if (!html) return
   assert.match(texts(html), /Posting stopped/)
-  assert.match(texts(html), /Stopped at replies: GitHub refused the comment\. The ticked steps went out and a second try skips them\. If a reply may have reached GitHub, the second try looks for that comment there first and sends it again only when it is not there\./)
+  assert.match(texts(html), /Stopped at replies: GitHub refused the comment\. The ticked steps went out and a second try skips them\. A reply that may have reached GitHub is only looked for on a second try, never sent again\./)
   assert.doesNotMatch(texts(html), /\.\./, 'a message that already ends in a full stop gets no second one')
   assert.deepEqual(steps(html).map(([state]) => state), ['done', 'todo', 'todo', 'todo'], 'only the push went out')
+  assert.deepEqual(buttons(html).filter(label => [NAMES.postAnswer, NAMES.tryAgain, NAMES.openChat, NAMES.discard].includes(label)), [NAMES.tryAgain, NAMES.openChat])
+})
+
+test('a reply that may still reach GitHub is said so in plain words and offers only a look again, never a second send', async t => {
+  const message = 'reply 1 of 2 may still reach GitHub: its first attempt got no answer, none of your recent comments shows it yet, and it was not sent again. Check the PR: once the comment is there, trying again records it; if it never appears, post that reply by hand, then try again'
+  const receipts = { push: null, replies: [], description: null, rerequest: null, sending: { index: 0, at: '2026-11-06T09:31:00Z' } }
+  const html = await card(t, response('failed', { receipts, error: { step: 'replies', message } }, approval('approved')))
+  if (!html) return
+  assert.ok(texts(html).includes(`Stopped at replies: ${message}. The ticked steps went out`), 'the helper’s own words reach the owner')
+  assert.match(texts(html), /only looked for on a second try, never sent again/)
   assert.deepEqual(buttons(html).filter(label => [NAMES.postAnswer, NAMES.tryAgain, NAMES.openChat, NAMES.discard].includes(label)), [NAMES.tryAgain, NAMES.openChat])
 })
 

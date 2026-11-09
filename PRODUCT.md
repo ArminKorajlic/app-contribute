@@ -183,9 +183,10 @@ the owner, and folds apps with nothing to do.
   **Discard**. Post saves the owner's approval for exactly that answer and tells the chat
   to run one checked command; nothing is pushed or posted before it. The PR reads **Draft
   to send** while the answer waits, **Sending** while it posts and **Not confirmed** if it
-  stops part-way (a retry skips what already went out). When the PR moves after the
-  answer, the card says it is out of date and offers **Respond again** or **Discard**, and
-  while the chat waits on a card of its own, its box asks first and Post says why it is off.
+  stops part-way (a retry skips what already went out, and a reply that may have gone out
+  is only looked for, never sent again). When the PR moves after the answer, the card says
+  it is out of date and offers **Respond again** or **Discard**, and while the chat waits
+  on a card of its own, its box asks first and Post says why it is off.
 - **PR reviews** (side menu) lists the reviews the owner started, by project, in
   two tabs: **In progress** (waiting on the owner first, then agents at work, then
   anything stuck or unreadable) and **Done**. Every PR is read live, in batches of

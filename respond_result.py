@@ -98,6 +98,11 @@ class CommandError(Exception):
   """A `gh` or `git` call failed. The message is safe to print: no credentials, one line."""
 
 
+class WriteRefused(CommandError):
+  """GitHub answered a write with a 4xx, so it was not applied. Any other failure (a 5xx, a timeout,
+  a dropped connection) leaves it unknown whether the write landed or still will."""
+
+
 # --- running programs -------------------------------------------------------------------
 
 
@@ -134,6 +139,13 @@ def git(repo: Path, *args: str, timeout: int = GIT_TIMEOUT) -> str:
   return done.stdout.decode("utf-8", "replace")
 
 
+def refused_by_github(stderr: bytes) -> bool:
+  """Whether `gh` reported a 4xx: its first error line ends "(HTTP 422)". A 408 is a timeout, not a refusal."""
+  first_line = stderr.decode("utf-8", "replace").strip().split("\n", 1)[0]
+  status = re.search(r"\(HTTP ([0-9]{3})\)\s*$", first_line)
+  return bool(status) and 400 <= int(status[1]) < 500 and status[1] != "408"
+
+
 def gh_api(path: str, method: str = "GET", body: dict[str, Any] | None = None) -> Any:
   """The one door to GitHub. A body travels on standard input, so any text reaches GitHub
   exactly as stored, whatever quotes, newlines or Unicode it holds."""
@@ -143,7 +155,8 @@ def gh_api(path: str, method: str = "GET", body: dict[str, Any] | None = None) -
   stdin = json.dumps(body, ensure_ascii=False).encode("utf-8") if body is not None else None
   done = run(command, stdin=stdin)
   if done.returncode != 0:
-    raise CommandError(f"GitHub did not accept {method} {path}: {scrub(done.stderr or done.stdout)}")
+    failure = WriteRefused if method != "GET" and refused_by_github(done.stderr) else CommandError
+    raise failure(f"GitHub did not accept {method} {path}: {scrub(done.stderr or done.stdout)}")
   text = done.stdout.decode("utf-8", "replace").strip()
   if not text:
     return None
@@ -860,9 +873,10 @@ class Posting:
     raise CommandError("too many recent comments to tell whether the reply went out")
 
   def settle_unknown_reply(self) -> None:
-    """A reply that was being sent when an earlier run ended (an answer lost, a crash) is looked up on
-    GitHub first: found, it is receipted and never sent again; not found, nothing went out and it is
-    sent normally. When GitHub cannot be asked the step stops, so a reply is never sent blind."""
+    """A reply that was being sent when an earlier run ended (an answer lost, a timeout, a crash) stays
+    unknown until GitHub shows it: found, it is receipted and never sent again. Not found is not "never
+    sent": a request that timed out can still finish on GitHub after any one lookup, so the step stops and
+    the reply is not sent. Only a refusal from GitHub (WriteRefused) clears the record without a receipt."""
     receipts = self.result["receipts"]
     attempt = receipts.get("sending")
     if not attempt:
@@ -870,12 +884,17 @@ class Posting:
     if not (isinstance(attempt, dict) and isinstance(attempt.get("index"), int) and isinstance(attempt.get("at"), str)
             and 0 <= attempt["index"] < len(self.result["replies"])):
       raise CommandError("the record of the reply that was being sent is unreadable, so it was not sent again")
-    index = attempt["index"]
+    index, total = attempt["index"], len(self.result["replies"])
     if all(receipt["index"] != index for receipt in receipts["replies"]):
       url = self.published_reply(index, attempt["at"])
-      if url is not None:
-        receipts["replies"].append({"index": index, "url": url, "at": utc_now()})
-        print(f"Reply {index + 1} of {len(self.result['replies'])} had reached GitHub already: {url or 'no link returned'}")
+      if url is None:
+        raise CommandError(
+          f"reply {index + 1} of {total} may still reach GitHub: its first attempt got no answer, none of your recent comments "
+          "shows it yet, and it was not sent again. Check the PR: once the comment is there, trying again records it; "
+          "if it never appears, post that reply by hand, then try again"
+        )
+      receipts["replies"].append({"index": index, "url": url, "at": utc_now()})
+      print(f"Reply {index + 1} of {total} had reached GitHub already: {url or 'no link returned'}")
     receipts["sending"] = None
     self.persist()
 
@@ -896,6 +915,9 @@ class Posting:
       try:
         response = gh_api(path, "POST", {"body": reply["body"]})
       except CommandError as error:
+        if isinstance(error, WriteRefused):
+          receipts["sending"] = None  # GitHub said no: the reply is known not to be out, so nothing is left to look for
+          self.persist()
         raise CommandError(f"reply {index + 1} of {len(replies)}: {error}") from error
       url = response.get("html_url") if isinstance(response, dict) else None
       receipts["replies"].append({"index": index, "url": url if isinstance(url, str) else "", "at": utc_now()})

@@ -87,7 +87,7 @@ needs compare-and-swap. Every write is atomic (temporary file, then rename).
   It binds what the owner read to what gets posted.
 * `receipts`: `push` is `{"sha", "at"}` once done; `replies` is a list of
   `{"index", "url", "at"}`; `description` is `{"at"}`; `rerequest` is `{"at", "reviewers"}`.
-  `sending` is `{"index", "at"}` while a reply may be on its way (below), else `null`.
+  `sending` is `{"index", "at"}` while a reply may be on its way or is unknown (below), else `null`.
   `error` is `{"step", "message"}` when `state` is `failed`.
 
 ## The decision (`respond-decisions/<slug>.json`, written by the app)
@@ -150,13 +150,16 @@ owner presses Post. In this order, it:
      GitHub shows `tip_sha` as that branch's head. Skipped when there are no commits;
    * **replies**: one `POST` each (`issues/<n>/comments`, or
      `pulls/<n>/comments/<reply_to>/replies` when `reply_to` is set), in order. Before each
-     write `receipts.sending` is saved, and it is cleared once the receipt is. A run that finds
-     `sending` set (the answer was lost, or the process ended mid-write) first looks on GitHub,
-     through the owner's recent comments (`GET user`, then `issues/<n>/comments` or
-     `pulls/<n>/comments` with `since` a minute before `sending.at`), for one with exactly that
-     body (and in that thread): found, it is receipted with its link and not sent again; not
-     found, nothing went out and the reply is sent. If GitHub cannot be asked, the step stops
-     and nothing is sent blind;
+     write `receipts.sending` is saved; it is cleared once the receipt is, or when GitHub answers
+     the write with a 4xx (refused, so not applied). Any other end of the write (a timeout, a dropped
+     connection, a 5xx, a crash) leaves the reply **unknown**, and `post` never sends an unknown
+     reply again. A run that finds `sending` set only looks on GitHub, through the owner's recent
+     comments (`GET user`, then `issues/<n>/comments` or `pulls/<n>/comments` with `since` a minute
+     before `sending.at`), for one with exactly that body (and in that thread): found, it is
+     receipted with its link, `sending` is cleared and the post carries on; not found, the step
+     stops (exit 4) and the reply stays unknown, because a request that timed out can still finish
+     on GitHub after any one lookup. If GitHub cannot be asked, the step stops too. Only the owner
+     settles a reply that never shows up: posting that exact reply by hand, which the next look finds;
    * **description**: `PATCH pulls/<n>` with the new body, when `description` is not `null`;
    * **re-request**: `POST pulls/<n>/requested_reviewers`, when `rerequest` is not empty;
    each success is written to `receipts` at once, so a second run continues where the first

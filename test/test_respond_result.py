@@ -935,14 +935,14 @@ class PostTests(RespondWorld):
 
   def test_post_resumes_after_a_failure_and_repeats_no_step(self):
     shas, _, result = self.approved_result()
-    self.fake(fail_at=2)  # the second write, reply 2, fails once
+    self.fake(reject_at=2)  # the second write, reply 2, is refused once
     with mock.patch.object(respond, "push_bundle", wraps=respond.push_bundle) as push:
       first = self.post(result["id"])
       self.assertRefused(first, 4, "Post stopped at the replies step: reply 2 of 2")
       stopped = self.saved_result()
       self.assertEqual((stopped["state"], stopped["error"]["step"]), ("failed", "replies"))
       self.assertIn("reply 2 of 2", stopped["error"]["message"])
-      self.assertIn("HTTP 500", stopped["error"]["message"])
+      self.assertIn("HTTP 422", stopped["error"]["message"])
       self.assertEqual(stopped["receipts"]["push"]["sha"], shas[1])
       self.assertEqual([r["index"] for r in stopped["receipts"]["replies"]], [0])
       second = self.post(result["id"])
@@ -1054,22 +1054,80 @@ class PostTests(RespondWorld):
     self.assertEqual(len(self.comment_bodies("review")), 1, "reply 2 was not sent again")
     self.assertEqual(len(self.gh_writes()) - writes, 2, "only the description and the re-review remained")
 
-  def test_a_reply_that_did_not_reach_github_is_sent_after_the_lookup_finds_nothing(self):
+  def test_a_reply_github_refused_outright_leaves_nothing_unknown_and_is_sent_on_the_next_try(self):
     _, _, result = self.approved_result()
-    self.fake(fail_at=1)  # GitHub refused it outright
+    self.fake(reject_at=1)  # GitHub answered 422: the write was not applied
     self.assertRefused(self.post(result["id"]), 4, "reply 1 of 2")
+    self.assertIsNone(self.saved_result()["receipts"]["sending"], "a refusal is a known outcome")
     self.assertEqual(self.post(result["id"]).code, 0)
     self.assertEqual(self.comment_bodies(), [REPLY_WITH_AWKWARD_TEXT])
+    self.assertEqual([call["path"] for call in self.gh_calls() if "/comments?" in call["path"]], [], "nothing was looked for: nothing was unknown")
+
+  def test_a_reply_the_lookup_cannot_find_stays_unknown_and_is_never_sent_blind(self):
+    _, _, result = self.approved_result()
+    self.fake(fail_at=1)  # a server error says nothing about whether the comment was created
+    self.assertRefused(self.post(result["id"]), 4, "reply 1 of 2")
+    writes = len(self.gh_writes())
+    for attempt in range(3):
+      with self.subTest(attempt=attempt):
+        self.assertRefused(self.post(result["id"]), 4, "reply 1 of 2 may still reach GitHub")
+        self.assertEqual(len(self.gh_writes()), writes, "an empty lookup is not a reason to write")
+        stopped = self.saved_result()
+        self.assertEqual((stopped["state"], stopped["receipts"]["sending"]["index"]), ("failed", 0))
+        self.assertIn("not sent again", stopped["error"]["message"])
+
+  def test_a_reply_the_owner_posted_by_hand_settles_an_unknown_reply(self):
+    _, _, result = self.approved_result()
+    self.fake(fail_at=1)
+    self.assertRefused(self.post(result["id"]), 4, "reply 1 of 2")
+    self.assertRefused(self.post(result["id"]), 4, "may still reach GitHub")
+    config = json.loads(self.fake_config.read_text())
+    config["comments"] = [{"kind": "issue", "comment": {
+      "id": 1, "html_url": "https://example.test/c/by-hand", "user": {"login": "owner-login"}, "body": REPLY_WITH_AWKWARD_TEXT,
+      "created_at": respond.utc_now()}}]
+    self.fake_config.write_text(json.dumps(config))
+    outcome = self.post(result["id"])
+    self.assertEqual(outcome.code, 0, outcome.err)
+    self.assertIn("had reached GitHub already: https://example.test/c/by-hand", outcome.out)
+    self.assertEqual(self.comment_bodies(), [REPLY_WITH_AWKWARD_TEXT], "the reply exists once: the owner's own")
+
+  def check_a_request_still_pending_on_github_is_never_sent_a_second_time(self, hold_at: int, kind: str, body: str):
+    _, _, result = self.approved_result()
+    self.fake(hold_at=hold_at)  # the request times out on our side while GitHub is still working on it
+    self.assertRefused(self.post(result["id"]), 4, f"reply {hold_at} of 2")
+    writes = len(self.gh_writes())
+    # This lookup is answered with an empty list; the original request completes right after it.
+    self.assertRefused(self.post(result["id"]), 4, f"reply {hold_at} of 2 may still reach GitHub")
+    self.assertEqual(len(self.gh_writes()), writes, "no retry is dispatched behind an empty snapshot")
+    self.assertEqual(self.saved_result()["receipts"]["sending"]["index"], hold_at - 1, "the reply is still on record as unknown")
+    outcome = self.post(result["id"])
+    self.assertEqual(outcome.code, 0, outcome.err)
+    self.assertIn(f"Reply {hold_at} of 2 had reached GitHub already", outcome.out)
+    self.assertEqual(self.comment_bodies(kind), [body], "the reply exists exactly once on GitHub")
+    done = self.saved_result()
+    self.assertEqual([receipt["index"] for receipt in done["receipts"]["replies"]], [0, 1])
+    self.assertEqual((done["state"], done["receipts"]["sending"]), ("posted", None))
+
+  def test_a_pr_comment_still_pending_on_github_is_found_after_an_empty_lookup_not_sent_again(self):
+    self.check_a_request_still_pending_on_github_is_never_sent_a_second_time(1, "issue", REPLY_WITH_AWKWARD_TEXT)
+
+  def test_a_thread_reply_still_pending_on_github_is_found_after_an_empty_lookup_not_sent_again(self):
+    self.check_a_request_still_pending_on_github_is_never_sent_a_second_time(2, "review", "@sam the helper keeps its name.")
 
   def test_another_persons_or_an_older_identical_comment_is_not_taken_for_the_reply(self):
     _, _, result = self.approved_result()
     self.fake(lose_at=1)
     self.assertRefused(self.post(result["id"]), 4, "reply 1 of 2")
-    config = json.loads(self.fake_config.read_text())
-    config["comments"][0]["comment"]["user"]["login"] = "somebody-else"  # same words, another author
-    self.fake_config.write_text(json.dumps(config))
-    self.assertEqual(self.post(result["id"]).code, 0)
-    self.assertEqual(self.comment_bodies(), [REPLY_WITH_AWKWARD_TEXT] * 2, "the owner's own reply was still sent")
+    original = json.loads(self.fake_config.read_text())["comments"][0]["comment"]
+    writes = len(self.gh_writes())
+    for name, change in (("another author", {"user": {"login": "somebody-else"}}), ("an older comment", {"created_at": "2020-01-01T00:00:00Z"})):
+      with self.subTest(name):  # the same words, but not the owner's, or not from this attempt
+        config = json.loads(self.fake_config.read_text())
+        config["comments"][0]["comment"] = {**original, **change}
+        self.fake_config.write_text(json.dumps(config))
+        self.assertRefused(self.post(result["id"]), 4, "reply 1 of 2 may still reach GitHub")
+        self.assertEqual(self.saved_result()["receipts"]["replies"], [], "it was not taken for the owner's reply")
+        self.assertEqual(len(self.gh_writes()), writes, "and the reply was not sent blind either")
 
   def test_when_github_cannot_say_whether_a_reply_went_out_nothing_more_is_sent(self):
     _, _, result = self.approved_result()
@@ -1230,6 +1288,13 @@ class PlumbingTests(unittest.TestCase):
     self.assertNotIn("\n", text)
     self.assertLessEqual(len(text), 400)
     self.assertEqual(respond.scrub(b"   "), "no details")
+
+  def test_only_a_4xx_answer_proves_a_write_was_refused_anything_else_leaves_it_unknown(self):
+    refused = [b"gh: Validation Failed (HTTP 422)\nBody is too long (HTTP 500)\n", b"gh: Forbidden (HTTP 403)", b"gh: Not Found (HTTP 404)"]
+    unknown = [b"gh: Server Error (HTTP 500)", b"gh: Bad Gateway (HTTP 502)", b"gh: Request Timeout (HTTP 408)",
+               b"gh: Post https://api.github.com/: connection reset by peer", b"gh: context deadline exceeded", b"", b"\xff(HTTP 4"]
+    self.assertEqual([respond.refused_by_github(text) for text in refused], [True] * len(refused))
+    self.assertEqual([respond.refused_by_github(text) for text in unknown], [False] * len(unknown))
 
   def test_the_git_url_is_the_head_repository_on_github_unless_a_test_replaces_it(self):
     with mock.patch.dict(os.environ):
