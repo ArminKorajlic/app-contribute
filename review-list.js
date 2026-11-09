@@ -5,6 +5,7 @@
 // every PR is read, in bounded batches. A PR that could not be read is shown as
 // unknown, never classified from older saved data.
 import { PR_FIELDS, aliasedPulls, fetchLiveStates, validPullRef } from './api.js'
+import { STATES } from './pr-machine.js'
 import { standingFor } from './pr-standing.js'
 
 const BATCH = 25
@@ -66,6 +67,8 @@ function bucketOf(decision) {
   if (decision.turn === 'agent') return 'running'
   return decision.turn === 'you' ? 'waiting' : 'done'
 }
+// What a row shows of a decision: its bucket and its one chip.
+const standingRow = decision => ({ bucket: bucketOf(decision), chips: [chip(decision.label, GOOD.has(decision.state) ? 'good' : TONE[decision.turn])] })
 
 // Where one review's PR stands. `live` is that PR as GitHub returns it now
 // (PR_FIELDS); without it the PR is unknown. `runs` are all review runs and
@@ -73,20 +76,22 @@ function bucketOf(decision) {
 export function classifyReview(entry, { login = '', ignored = null, live = null, runs = [], chats = [], responses = [] } = {}) {
   if (!live) return { bucket: 'unknown', confirm: false, chips: [chip('Couldn’t read', 'quiet')] }
   const decision = standingFor({ pr: live, login, runs, ignored, chats, responses })
-  const tone = GOOD.has(decision.state) ? 'good' : TONE[decision.turn]
-  return { bucket: bucketOf(decision), confirm: ['to_confirm', 'unconfirmed'].includes(decision.state), chips: [chip(decision.label, tone)], decision }
+  return { ...standingRow(decision), confirm: ['to_confirm', 'unconfirmed'].includes(decision.state), decision }
 }
 
-// Respond conversations at work on a PR that has no review of its own are agent runs too: the PR's frame shows them, so the
-// Agent runs page and its badge must as well. The title comes from the PRs already read; a conversation names only its PR.
+// Respond conversations on a PR that has no review of its own are agent runs too: the PR's frame shows them, so the Agent runs
+// page and its badge must as well. A conversation is classified by its job state, worded by the PR machine's own states: at work
+// is Running, and one that asks the owner something is a waiting row (it needs them, so it must never drop out). The machine reads a
+// live state it does not know as at work, and so does this. The title comes from the PRs already read; a conversation names only its PR.
+const RESPOND_STANDING = { running: 'working', needs_answer: 'needs_answer' }
 export function respondEntries(chats, reviewed, pulls) {
   const known = new Set((reviewed || []).map(entry => entry.id))
   const titles = new Map((pulls || []).map(pr => [reviewKey(pr.repository?.nameWithOwner, pr.number), pr.title]))
-  const working = new Map((chats || []).filter(chat => chat.state === 'running').map(chat => [respondPull(chat), chat]))
-  return [...working].filter(([id]) => !known.has(id)).map(([id, chat]) => ({
-    id, at: chat.at || 0, bucket: 'running', chips: [chip('Agent working', TONE.agent)],
-    item: { repo: chat.repo, number: chat.number, title: titles.get(id) || '' },
-  }))
+  const live = new Map((chats || []).map(chat => [respondPull(chat), chat]))
+  return [...live].filter(([id]) => !known.has(id)).map(([id, chat]) => {
+    const state = RESPOND_STANDING[chat.state] || 'working'
+    return { id, at: chat.at || 0, ...standingRow({ state, ...STATES[state] }), item: { repo: chat.repo, number: chat.number, title: titles.get(id) || '' } }
+  })
 }
 
 export function reviewCounts(entries) {

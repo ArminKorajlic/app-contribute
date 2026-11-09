@@ -1703,7 +1703,7 @@ async function mountDeskApp({ pullPatch = {} } = {}) {
   window.mobius.storage.listWithStatus = async prefix => (window.holdResponsesRead && prefix.startsWith('respond-') ? await new Promise(resolve => window.responseGates.push(resolve)) : null, { complete: true, entries: !prefix.startsWith('respond-') ? [] : [...values].filter(([key]) => key.startsWith(prefix)).map(([key, value]) => ({ type: 'file', name: key.slice(prefix.length), path: key, content: structuredClone(value) })) })
   // A PR GitHub read completely: without these facts its standing is "couldn't read" and nothing frames it.
   Object.assign(pulls[0], { mergeable: 'MERGEABLE', reviewDecision: null, commits: { nodes: [{ commit: { statusCheckRollup: null } }] },
-    latestOpinionatedReviews: { nodes: [] }, reviewThreads: { nodes: [] }, ...pullPatch })
+    latestOpinionatedReviews: { nodes: [] }, latestReviews: { nodes: [] }, reviewThreads: { nodes: [] }, ...pullPatch })
   root.render(<ContributeApp appId="fixture-app" token="fixture-only" />)
 }
 // A popup menu must stay on the screen whichever button opens it: on a phone a row's Actions button sits well
@@ -2157,6 +2157,12 @@ window.runAskApprovalChecks = async () => {
     await openPage()
     await until(() => pill() === 'Approval is old', 'An unreadable comparison did not read as an old approval: ' + pill())
     checks.push({ name: 'when the work changed, or the comparison cannot be read, the approval stays old', status: 'pass' })
+    // 4. Somebody else commented on this version without approving: that comment outranks the old approval (it needs their approval too).
+    await mountDeskApp({ pullPatch: { ...approvedAt('e'.repeat(40)), latestReviews: { nodes: [{ state: 'COMMENTED', author: { login: 'second-reviewer', __typename: 'User' }, commit: { oid: HEAD } }] } } })
+    await openPage()
+    await until(() => pill() === 'Commented · not approved', 'A comment on this version did not outrank the old approval: ' + pill())
+    ensure(hint().includes('second-reviewer left a comment'), 'The panel said: ' + hint())
+    checks.push({ name: 'a comment on this version outranks an old approval: the PR reads Commented · not approved and asks the commenter', status: 'pass' })
     ensure(calls.forbidden.length === 0, 'Unexpected runtime/transport: ' + JSON.stringify(calls.forbidden))
     return { status: 'pass', checks, forbidden: calls.forbidden }
   } catch (error) {

@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { DESK_VIEWS, deskCounts, railBadge } from '../desk.js'
-import { changedReviewRuns, classifyReview, loadReviewPulls, pendingRespondStarts, reviewCounts, reviewEntries, reviewKey, withRespondStart, withReviewRun } from '../review-list.js'
+import { standingFor } from '../pr-standing.js'
+import { changedReviewRuns, classifyReview, loadReviewPulls, pendingRespondStarts, respondEntries, reviewCounts, reviewEntries, reviewKey, withRespondStart, withReviewRun } from '../review-list.js'
 
 const HEAD = 'a'.repeat(40)
 const run = (extra = {}) => ({ id: 'r', state: 'complete', execution_state: 'completed', chat_id: 'c', created_at: '2026-11-03T22:00:00Z', ...extra })
@@ -256,4 +257,32 @@ test('starting Respond again on the same PR replaces the earlier start, never do
   const next = withRespondStart([first, startedChat({ number: 7, chat_id: 'e' })], startedChat({ repo: 'MOBIUS-OS/mobius', at: 2 }))
   assert.deepEqual(next.map(chat => [chat.number, chat.at]), [[7, 1000], [2019, 2]], 'the other PR stays; this PR keeps only its newest start')
   assert.ok(!next.includes(first))
+})
+
+// ---- a Respond conversation on a PR with no review of its own is an agent run, whatever it is doing
+const respondOn = (state, extra = {}) => ({ repo: 'Mobius-OS/Mobius', number: 2019, chat_id: 'c', state, at: 500, ...extra })
+
+test('a standalone Respond conversation stays a visible agent run when its question turns it from working to waiting on you', () => {
+  const pulls = [{ repository: { nameWithOwner: 'mobius-os/mobius' }, number: 2019, title: 'Update bundled agent runtimes' }]
+  const own = live({ author: { login: 'owner' } })
+  const at = state => {
+    const entries = respondEntries([respondOn(state)], [], pulls)
+    return { entries, counts: reviewCounts(entries), standing: standingFor({ pr: own, login: 'owner', chats: [respondOn(state)] }) }
+  }
+  const working = at('running')
+  assert.deepEqual(working.entries.map(entry => [entry.id, entry.bucket, entry.chips[0].label, entry.item.title]), [['mobius-os/mobius#2019', 'running', 'Agent working', 'Update bundled agent runtimes']])
+  assert.deepEqual([working.counts.running, working.counts.waiting, working.standing.state], [1, 0, 'working'])
+  const asking = at('needs_answer')
+  assert.deepEqual(asking.entries.map(entry => [entry.id, entry.bucket, entry.chips[0], entry.at]), [['mobius-os/mobius#2019', 'waiting', { label: 'Agent asks you', tone: 'owner' }, 500]])
+  assert.deepEqual([asking.counts.running, asking.counts.waiting, asking.standing.state], [0, 1, 'needs_answer'])
+  assert.equal(asking.entries[0].chips[0].label, asking.standing.label, 'the row and the PR frame say the same thing')
+  assert.deepEqual(respondEntries([], [], pulls), [], 'a conversation that ended leaves no row')
+})
+
+test('a Respond conversation that asks you is a row of Agent runs, counted in Needs you, and never twice with its PR\'s review', () => {
+  const entries = respondEntries([respondOn('needs_answer')], [], [])
+  assert.equal(entries[0].item.title, '', 'the PR was not read: the row still stands, without a title')
+  assert.equal(deskCounts({ reviewEntries: entries, reviews: reviewCounts(entries) }).agent, 1, 'it waits on the owner')
+  assert.equal(deskCounts({ reviewEntries: respondEntries([respondOn('running')], [], []) }).agent, 0, 'one at work waits on nobody')
+  assert.deepEqual(respondEntries([respondOn('needs_answer')], [{ id: 'mobius-os/mobius#2019' }], []), [], 'a PR with a review of its own is classified with it')
 })
