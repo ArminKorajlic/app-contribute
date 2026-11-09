@@ -67,8 +67,8 @@ function threadLocation(thread) {
 // New feedback on a tracked PR, kept visible under the folded description.
 // The record's attention is server-maintained: it appears when a review or
 // comment lands and clears once addressed, so no flag means nothing waits.
-// An approving review or a recorded all-clear agent review is good news, not
-// a task: it gets the green box, naming the posted review's copyable id.
+// An approving review, or the all-clear review an agent run posted, is good news
+// not a task: it gets the green box, naming the posted review's copyable id.
 const FEEDBACK_FLAGS = {
   changes_requested: { label: 'Changes requested', tone: 'blocker', note: 'Not addressed yet. Read the review under Comments.' },
   github_activity: { label: 'New feedback', tone: 'news', note: 'The text is under Comments.' },
@@ -78,8 +78,13 @@ export function PullFeedbackFlag({ record, status = null, activity = null }) {
   const flag = FEEDBACK_FLAGS[attention?.type]
   const reference = commentReference(attention?.url)
   const flagged = reference ? (activity?.items || []).find(item => String(item.id) === reference) : null
-  const clear = attention?.type === 'github_activity'
-    && (flagged?.state === 'APPROVED' || status?.item?.state === 'all_clear')
+  // A run's all-clear speaks only for the review it posted: any other event
+  // (a later comment reporting a problem) keeps its New feedback warning.
+  const anchor = url => String(url || '').split('#')[1] || ''
+  const posted = status?.item?.public_review
+  const runPostedIt = status?.item?.state === 'all_clear' && posted?.state === 'posted'
+    && !!anchor(attention?.url) && anchor(attention.url) === anchor(posted.url)
+  const clear = attention?.type === 'github_activity' && (flagged?.state === 'APPROVED' || runPostedIt)
   if (clear) {
     return <p className="co-pr-feedback-flag is-clear" role="status">
       <Icon name="check" size={16} />

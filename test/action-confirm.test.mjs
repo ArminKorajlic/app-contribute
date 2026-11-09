@@ -101,6 +101,8 @@ test('a missing approval, failing checks or a conflict show as blockers, and you
   const tones = (extra, people = ['sam']) => mergeCopy(approved(extra), approvedBy(people)).facts.filter(fact => fact.tone !== 'ok').map(fact => `${fact.tone}:${fact.text}`)
   assert.deepEqual(tones({}, []), ['bad:Nobody but the author has approved this version'], 'an approval of an older version, or none, is not one')
   assert.deepEqual(tones({ reviewDecision: null }, []), ['bad:Nobody but the author has approved this version'], 'GitHub asking for no review is not an approval')
+  assert.deepEqual(tones({ reviewDecision: 'REVIEW_REQUIRED' }), ['bad:GitHub still needs a review'], 'GitHub’s own gate is named even when someone approved this version')
+  assert.deepEqual(tones({ reviewDecision: 'APPROVED' }), [], 'GitHub satisfied adds nothing')
   assert.deepEqual(tones({ ...rollup('FAILURE', 2) }), ['bad:2 checks are failing'])
   assert.deepEqual(tones({ mergeable: 'CONFLICTING' }), ['bad:It conflicts with main'])
   const status = (state, extra = {}) => ({ run: { state: 'complete', execution_state: 'completed' }, item: { state, ...extra } })
@@ -232,6 +234,50 @@ test('Post to GitHub reads the exact words first and posts them once, with the o
     await assert.rejects(previewPostedFindings('t', 10, run, item), /There is nothing to post\./, 'a refused preview says why')
   })
 })
+
+// The three public writes (Merge, Open for review, Post to GitHub) share one rule: only a decoded
+// receipt for the action is a success and only a decoded 4xx is a plain failure. A lost connection, a
+// server or gateway error and a "success" nobody can read may have reached GitHub, so they are pending.
+const writes = [
+  { name: 'Merge', words: 'GitHub may have merged it. Check the pull request before trying again.', code: 'merge_unconfirmed', receipt: { state: 'merged', merge_sha: 'c0ffee' }, wrong: [{ state: 'ready' }, { state: 'failed' }],
+    send: () => mergePull('t', 10, approved()), ok: { ok: true, state: 'merged', mergeSha: 'c0ffee' } },
+  { name: 'Open for review', words: 'GitHub may have marked it ready. Check the pull request before trying again.', code: 'ready_unconfirmed', receipt: { state: 'ready', observed_head_sha: 'abcdef0123456789' }, wrong: [{ state: 'ready' }, { state: 'merged', observed_head_sha: 'abcdef0123456789' }],
+    send: () => markReadyPull('t', 10, pr({ isDraft: true })), ok: { ok: true, state: 'ready', observedHead: 'abcdef0123456789' } },
+  { name: 'Post to GitHub', words: 'GitHub may have posted it. Check the pull request before trying again.', code: 'post_unconfirmed', receipt: { state: 'posted', url: 'https://github.com/team/repo/pull/9#pullrequestreview-1' }, wrong: [{ url: 'https://github.com/team/repo/pull/9#pullrequestreview-1' }, { state: 'pending' }],
+    send: () => postFindings('t', 10, run, item, { preview_sha256: 'f'.repeat(64) }), ok: { ok: true, state: 'posted', url: 'https://github.com/team/repo/pull/9#pullrequestreview-1' } },
+]
+for (const write of writes) {
+  test(`${write.name}: a lost, unreadable or unrecognised answer is unresolved, never a retryable failure or a claimed success`, async () => {
+    const previous = globalThis.fetch
+    const answer = (status, json) => { globalThis.fetch = async () => ({ ok: status < 400, status, json }) }
+    try {
+      answer(200, async () => write.receipt)
+      assert.deepEqual(await write.send(), write.ok, 'a decoded receipt for this action is the only success')
+      globalThis.fetch = async () => { throw new TypeError('Failed to fetch') }
+      assert.deepEqual(await write.send(), { pending: true, error: write.words }, 'a dropped connection may have reached GitHub')
+      answer(200, async () => { throw new SyntaxError('Unexpected end of JSON input') })
+      assert.deepEqual(await write.send(), { pending: true, error: write.words }, 'an unreadable success is not a receipt')
+      for (const body of [{}, null, ...write.wrong]) {
+        answer(200, async () => body)
+        assert.deepEqual(await write.send(), { pending: true, error: write.words }, `${JSON.stringify(body)} is not this action's receipt`)
+      }
+      for (const status of [500, 502, 503, 504]) {
+        answer(status, async () => ({ detail: 'Bad gateway' }))
+        assert.deepEqual(await write.send(), { pending: true, error: write.words }, `a ${status} without the platform's own code says nothing about GitHub`)
+      }
+      answer(502, async () => ({ detail: { code: write.code, message: 'The platform’s own words.' } }))
+      assert.deepEqual(await write.send(), { pending: true, error: 'The platform’s own words.' }, 'the platform’s coded unconfirmed answer keeps its words')
+      answer(502, async () => { throw new SyntaxError('<html>') })
+      assert.deepEqual(await write.send(), { pending: true, error: write.words }, 'an unreadable error body is as unresolved as an unreadable success')
+      for (const status of [400, 403, 404, 409, 422]) {
+        answer(status, async () => ({ detail: 'Refused for a reason.' }))
+        assert.deepEqual(await write.send(), { error: 'Refused for a reason.' }, `a decoded ${status} proves nothing was written`)
+        answer(status, async () => { throw new SyntaxError('Unexpected end of JSON input') })
+        assert.deepEqual(await write.send(), { pending: true, error: write.words }, `an unreadable ${status} is no platform refusal: the write may still have happened`)
+      }
+    } finally { globalThis.fetch = previous }
+  })
+}
 
 test('the post sheet names what it posts, keeps its button off until the words arrive, and says why when refused', async t => {
   const target = pr({ number: 9 })
