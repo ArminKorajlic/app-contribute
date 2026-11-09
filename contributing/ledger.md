@@ -24,7 +24,9 @@ mapi -X POST /api/github/contributions/<id>/<record-id>/stage \
   "repo_path": "/data/contrib/<record-id>/worktree", "repo": "<owner>/<repo>",
   "title": "<title>", "body_draft": "<full PR body, word for word>",
   "summary": "<one plain-language sentence about what improves for people>",
-  "labels": ["<type>", "<area>"], "prior_work": {...}
+  "labels": ["<type>", "<area>"], "prior_work": {...},
+  "screenshots": [{"name": "before-desktop.png", "path": "/abs/path.png",
+                   "alt": "<what it shows>"}]
 }'
 ```
 
@@ -36,9 +38,33 @@ be sent). Optional fields: `base_sha`
 (the accepted base; default is the merge base with the target's freshly
 fetched default branch, and a stack layer uses its parent's head),
 `source_repo_path` (only for a checkout that is not a linked worktree of the
-live source), `coauthor_trailer: false`, and `chat_id` (the source chat, when a
-helper stages for it). An open or draft PR restages as a `pr_update` whose
-title and body are copied from GitHub. Staging never pushes anything.
+live source), `coauthor_trailer: false`, `chat_id` (the source chat, when a
+helper stages for it), and `screenshots` (below). An open or draft PR
+restages as a `pr_update` whose title and body are copied from GitHub.
+Staging never pushes anything.
+
+`screenshots` carries only images that meet the screenshot entry of the
+privacy allowlist in [SKILL.md](SKILL.md). It lists up to 8 PNGs of at most
+2 MB, each named in lowercase with hyphens and shown in `body_draft` as
+`(screenshot:NAME)`. Every attached image must appear in the body, and every
+reference must name an attached image. Each `path` must be a regular file under `/data` or the temp folder,
+not a link. Staging copies the images, `[]` removes them, and leaving the
+field out keeps the current ones. GitHub has no API for description images,
+so Send hosts them on a `mobius-screenshots` branch of the owner's own
+repository (their fork, or the target when they own it), links them, and
+refuses an image that changed after approval. Send the field only when
+`mapi /api/github/status` reports `"screenshot_upload": true`; an older
+Möbius ignores it and would publish the references unresolved.
+
+Screenshots are refused in four cases. Staging refuses them on a
+`pr_update` and drops any attached earlier, because an open PR's description
+is edited on GitHub. Send refuses them on a legacy `mobius-bot` record, when
+the owner's fork of the target cannot be created, and when the hosting
+repository is private, because GitHub does not serve its images publicly;
+it stops before the code is pushed. In those cases leave them out: a new
+PR's body says why screenshots are not included, and a `pr_update`
+describes the visible change in words in the reply that accompanies the
+update.
 
 A 404 from either call means this Möbius predates them: tell the owner a
 platform update is needed rather than writing the record by hand.

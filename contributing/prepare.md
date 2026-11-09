@@ -92,7 +92,10 @@ context-free blockers:
 - logic lands somewhere other than the layer that already owns the concept, or
   duplicates a canonical helper;
 - related updates can leave state half-applied, or independent work is
-  serialized for no reason.
+  serialized for no reason;
+- a fix adds a guard, retry, timer, fallback, or early return where the
+  symptom appears, and you cannot name the cause it answers. Find the cause
+  and fix it in the layer that owns it.
 
 Act on findings that are motivated by this change and make the agreed behavior
 clearer or safer, then re-read the diff. Keep unrelated refactors out of the PR.
@@ -160,15 +163,36 @@ prior_work?: {searched_at, query, decision, summary?, matches?}
   comment, word for word. Review it for accuracy, privacy, and the owner's
   authorized public scope. If the owner approved specific wording, preserve
   those exact words; otherwise apply Hard stop #1 to the publication request.
-- For a screenshot already hosted as a GitHub attachment, link the image to
-  its canonical `https://github.com/user-attachments/assets/...` URL:
+- A bug fix's `body_draft` names the cause in one or two sentences, then says
+  how the change removes it. If the change works around the cause instead
+  (the cause is upstream, or its real fix is too large for this PR), say so,
+  name the cause it leaves in place, and say when the workaround can be
+  removed.
+- A change people can see shows it with before/after screenshots in
+  `body_draft`: the same state before and after, cropped to the change.
+  Capture the before state before you edit; the adapter names the capture
+  tool and sizes. Every image leaves the instance, so it must meet the
+  screenshot entry of the privacy allowlist in [SKILL.md](SKILL.md). When a
+  screenshot cannot show the change (it appears only on a real device, or
+  only as timing), say why in the body instead.
+- Attach screenshots when you stage, never by pushing them yourself: list
+  each image in the stage call's `screenshots` and show it in `body_draft`
+  as `![What it shows](screenshot:before-desktop.png)`. Send publishes the
+  images and replaces each reference with its public link. The owner
+  approves the images together with the text. [ledger.md](ledger.md) says
+  when attaching is available and where it is refused; when it is not, leave
+  the images out and say in the body that screenshots are not included and
+  why.
+- Attaching at staging is the normal path. Only for an image that is already
+  hosted as a GitHub attachment (one uploaded through GitHub's own editor),
+  link the image to its canonical
+  `https://github.com/user-attachments/assets/...` URL:
   `[![Screenshot description](URL)](URL)`. GitHub may render a plain image's
   click target as a short-lived `private-user-images.githubusercontent.com`
   URL, even when its Markdown source uses the canonical URL. The explicit
   outer link keeps opening the full image tied to the durable attachment.
   Never put that signed URL or a private Möbius chat-media URL in a public PR
-  body. If no approved durable public image URL exists, leave the screenshot
-  out of the prepared body rather than publishing a broken or private link.
+  body, and never publish a body whose image links do not load.
 - `prior_work` is private review evidence, not text that is published. Set
   `searched_at` to the UTC scan time, `query` to the concise terms used, and
   `decision` to exactly one of `none`, `comment`, `collaborate`, or
@@ -223,7 +247,9 @@ from **Thoroughly review prepared work** above. Inspect the
 complete stored diff and its owning invariants, fix every sound issue
 privately, restage, and repeat on the new head. Confirm the body draft is
 exactly what should be published and that no private data appears in the
-branch, commit message, branch name, body, or diff. Only then record
+branch, commit message, branch name, body, diff, or screenshots. A bug fix
+that does not name its cause, or a visible change without screenshots or a
+stated reason for their absence, is not ready. Only then record
 `all_clear` for the exact staged head and diff. If that verdict cannot
 honestly be recorded, leave the record visibly at **Review needed** or
 **Changes needed**—never tell the partner it is sendable.

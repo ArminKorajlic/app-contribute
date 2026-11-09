@@ -57,6 +57,16 @@ test('isActionableAttention gates on grant + type, excludes human_required', () 
   )
 })
 
+test('a comment from outside the repository is never autopilot work', () => {
+  assert.equal(ACTIONABLE_ATTENTION.has('outside_activity'), false)
+  const rec = {
+    autopilot: { enabled: true },
+    needs_attention: true,
+    attention: { type: 'outside_activity', key: 'outside_activity:x' },
+  }
+  assert.equal(isActionableAttention(rec), false)
+})
+
 test('needsHuman detects the escalation flag', () => {
   assert.equal(
     needsHuman({ needs_attention: true, attention: { type: HUMAN_REQUIRED } }),
