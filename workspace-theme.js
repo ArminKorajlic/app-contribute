@@ -779,6 +779,10 @@ input[type=checkbox].co-switch:focus-visible { outline:2px solid var(--accent); 
 .co-rail-head { margin:0; padding:14px 10px 6px; color:var(--muted); font:700 var(--co-text-meta) var(--font); letter-spacing:.05em; text-transform:uppercase; }
 .co-rail-add { margin-top:6px; }
 .co-rail-add .co-repository-trigger { width:100%; justify-content:flex-start; padding-inline:10px; }
+/* The rail scrolls, so it clips whatever floats out of it: its form and its note open in flow under the row, at the rail's width. */
+.co-rail-add .co-repository-picker form,.co-rail-add .co-repository-note { position:static; width:auto; margin-top:6px; box-sizing:border-box; }
+.co-rail-add .co-repository-picker form { padding:12px; }
+.co-rail-add .co-repository-picker form > div { flex-direction:column; align-items:stretch; }
 .co-desk-counts button[aria-pressed=true] { border-color:var(--accent); background:var(--accent-dim, var(--surface-2)); }
 .co-desk-quiet-line { display:flex; flex-wrap:wrap; align-items:center; gap:4px 8px; margin:0 0 12px; color:var(--muted); font-size:var(--co-text-meta); }
 .co-rail-quiet > summary { display:flex; align-items:center; gap:8px; min-height:38px; padding:6px 10px; border-radius:var(--co-radius-control); color:var(--muted); font:500 var(--co-text-meta) var(--font); cursor:pointer; list-style:none; }

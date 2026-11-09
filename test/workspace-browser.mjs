@@ -1,9 +1,10 @@
 // Run: MOBIUS_FRONTEND_NODE_MODULES=/data/platform/frontend/node_modules \
 //      node test/workspace-browser.mjs
-// Six scenarios, each on a fresh page: runWorkspaceChecks (the project fixture),
+// Seven scenarios, each on a fresh page: runWorkspaceChecks (the project fixture),
 // runDeskFrameChecks (the whole app: a review started on a PR page frames its Desk row),
-// runReviewRequestChecks (the whole app: a review you submit takes its row out of Review requests) and
-// runReviewHelperWaitChecks (the whole app: a review waiting on its helper reads as at work, not stopped).
+// runReviewRequestChecks (the whole app: a review you submit takes its row out of Review requests),
+// runReviewHelperWaitChecks (the whole app: a review waiting on its helper reads as at work, not stopped) and
+// runRepositoryPickerChecks (the whole app: the Add repository form opens where it can be filled in and sent).
 // Run one with WORKSPACE_BROWSER_ONLY=runDeskFrameChecks (and one viewport with WORKSPACE_BROWSER_VIEWPORT=desktop), for example while
 // runWorkspaceChecks is red, so the Desk check can still show green.
 // Actual app components, native Chromium DOM, and no live app/backend. The
@@ -1688,6 +1689,62 @@ window.runDeskFrameChecks = async () => {
   }
 }
 
+// The whole app on a fresh page: the Add repository form opens where the owner can see it and type in it.
+// On a desktop it belongs to the side menu's last row, a box that scrolls and so clips anything that floats
+// out of it; on a phone that menu is hidden and the form belongs to the All repositories list.
+window.runRepositoryPickerChecks = async () => {
+  const checks = []
+  // What a person can use: inside the window, inside every box that clips it, and the thing a click at its centre lands on.
+  const usable = (node, label) => {
+    const rect = node.getBoundingClientRect()
+    ensure(rect.left >= 0 && rect.right <= innerWidth && rect.top >= 0 && rect.bottom <= innerHeight, label + ' is outside the window: left=' + Math.round(rect.left) + ', right=' + Math.round(rect.right))
+    for (let box = node.parentElement; box; box = box.parentElement) {
+      const style = getComputedStyle(box), outer = box.getBoundingClientRect()
+      if (style.overflowX === 'visible' && style.overflowY === 'visible') continue
+      ensure(rect.left >= outer.left - 1 && rect.right <= outer.right + 1 && rect.top >= outer.top - 1 && rect.bottom <= outer.bottom + 1,
+        label + ' is clipped by ' + (box.className || box.tagName) + ': ' + [rect.left, rect.right, rect.top, rect.bottom].map(Math.round) + ' not in ' + [outer.left, outer.right, outer.top, outer.bottom].map(Math.round))
+    }
+    const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2)
+    ensure(hit === node || node.contains(hit), label + ' cannot be clicked: ' + (hit?.className || hit?.tagName))
+  }
+  const addFrom = async (scope, where) => {
+    await click(button('Add repository', query(scope)), 'No Add repository button in ' + where)
+    await until(() => query(scope + ' #co-repository-name'), 'Add repository did not open its form in ' + where)
+    const input = query(scope + ' #co-repository-name')
+    usable(input, 'The repository field in ' + where); usable(button('Close', query(scope + ' form')), 'The Close button in ' + where)
+    await fill(input, 'team/community')
+    usable(button('Add', query(scope + ' form')), 'The Add button in ' + where)
+    await click(button('Add', query(scope + ' form')))
+    await until(() => values.get('followed-repositories.json')?.includes('team/community'), 'The repository typed in ' + where + ' was not saved')
+    await until(() => !query(scope + ' form'), 'The form in ' + where + ' stayed open after adding')
+    // Back to the saved list this scenario began with, so the next form's save is waited for on its own.
+    values.set('followed-repositories.json', ['owner/project'])
+  }
+  try {
+    await mountDeskApp()
+    await until(() => query('.co-rail'), 'The Desk did not render')
+    if (getComputedStyle(query('.co-rail')).display !== 'none') {
+      await addFrom('.co-rail-add', 'the side menu')
+      checks.push({ name: 'the side menu opens the Add repository form inside itself and it can be filled in and sent', status: 'pass' })
+      // A short window leaves the menu scrolling: the form must be brought into view, not opened below the fold.
+      query('.co-rail').style.maxHeight = '320px'
+      await addFrom('.co-rail-add', 'a short side menu')
+      query('.co-rail').style.maxHeight = ''
+      checks.push({ name: 'a side menu that has to scroll scrolls the Add repository form into view', status: 'pass' })
+      await click(query('.co-rail-item.is-all'))
+    } else {
+      await click(query('.co-desk-chips-projects'))
+    }
+    await until(() => query('.co-directory-add'), 'The All repositories list did not open')
+    await addFrom('.co-directory-add', 'the All repositories list')
+    checks.push({ name: 'the All repositories list opens the Add repository form where it can be filled in and sent', status: 'pass' })
+    ensure(calls.forbidden.length === 0, 'Unexpected runtime/transport: ' + JSON.stringify(calls.forbidden))
+    return { status: 'pass', checks, forbidden: calls.forbidden }
+  } catch (error) {
+    return { status: 'fail', checks, error: error.stack, dom: text(query('main')).slice(0, 5000), calls, forbidden: calls.forbidden }
+  }
+}
+
 // The whole app on a fresh page: a review hands its PR to a reviewer helper and ends its own
 // turn ("completed") while the review still says "reviewing". That is a review at work, not one
 // that stopped: the Desk row and the PR page show the moving frame. Only a review the platform
@@ -2039,7 +2096,7 @@ async function main() {
     const protocol = cdp(browser), reports = []
     // Each scenario gets a fresh page, so the whole-app Desk scenario never inherits the project fixture's state.
     // WORKSPACE_BROWSER_ONLY=runDeskFrameChecks runs one scenario.
-    const scenarios = process.env.WORKSPACE_BROWSER_ONLY ? [process.env.WORKSPACE_BROWSER_ONLY] : ['runWorkspaceChecks', 'runDeskFrameChecks', 'runReviewRequestChecks', 'runReviewHelperWaitChecks', 'runSyncChecks', 'runStaleAnswerChecks']
+    const scenarios = process.env.WORKSPACE_BROWSER_ONLY ? [process.env.WORKSPACE_BROWSER_ONLY] : ['runWorkspaceChecks', 'runDeskFrameChecks', 'runReviewRequestChecks', 'runReviewHelperWaitChecks', 'runRepositoryPickerChecks', 'runSyncChecks', 'runStaleAnswerChecks']
     const viewports = [{ name: 'desktop', width: 1280, height: 900 }, { name: 'phone', width: 390, height: 844 }].filter(size => !process.env.WORKSPACE_BROWSER_VIEWPORT || size.name === process.env.WORKSPACE_BROWSER_VIEWPORT)
     for (const [viewport, scenario] of viewports.flatMap(size => scenarios.map(name => [size, name]))) {
       const { targetId } = await protocol.send('Target.createTarget', { url: 'about:blank' })

@@ -68,6 +68,14 @@ test('the rail shows its four views with their counts, the Repositories block ap
   assert.match(html, /aria-current="page"[^>]*>[\s\S]*?Möbius|Möbius[\s\S]*?aria-current/)
 })
 
+test('the side menu opens the Add repository form in flow, because the menu scrolls and would clip a floating panel', () => {
+  const read = file => readFileSync(new URL(`../${file}`, import.meta.url), 'utf8')
+  const work = read('workspace-theme.js')
+  assert.match(work, /\.co-rail \{[^}]*overflow-y:auto;/, 'the menu scrolls, so anything that floats out of it is cut off')
+  assert.match(work, /\.co-rail-add \.co-repository-picker form,\.co-rail-add \.co-repository-note \{ position:static; width:auto;/, 'in the menu the form and the note take the menu\'s width in flow')
+  assert.match(read('ui/RepositoryPicker.jsx'), /rootRef\.current\?\.scrollIntoView\(/, 'a short menu scrolls the opened form into view')
+})
+
 test('count chips name next steps, filter the list, and skip empty ones; drafts are a quiet line', async t => {
   const api = await ui(t)
   if (!api) return
