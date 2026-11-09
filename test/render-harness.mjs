@@ -16,7 +16,8 @@ async function loadRolldown() {
   return import(pathToFileURL(requireFromFrontend.resolve('rolldown')).href)
 }
 
-export async function renderModule(source) {
+// `plugins` adds Rolldown plugins, such as a stylesheet stub for host modules.
+export async function renderModule(source, plugins = []) {
   const { rolldown } = await loadRolldown()
   const build = await rolldown({
     input: ENTRY,
@@ -24,7 +25,7 @@ export async function renderModule(source) {
     tsconfig: false,
     transform: { jsx: 'react-jsx' },
     resolve: { modules: [frontendModules, 'node_modules'] },
-    plugins: [{
+    plugins: [...plugins, {
       name: 'mobius-render-entry',
       resolveId(id, importer) {
         if (id === ENTRY) return id
@@ -36,7 +37,7 @@ export async function renderModule(source) {
       },
     }],
   })
-  const { output } = await build.generate({ format: 'cjs' })
+  const { output } = await build.generate({ format: 'cjs', codeSplitting: false })
   await build.close()
   const bundledModule = { exports: {} }
   new Function('module', 'exports', 'require', output[0].code)(

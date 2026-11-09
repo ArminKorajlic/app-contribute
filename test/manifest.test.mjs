@@ -150,3 +150,10 @@ test('the chat-card capability says plainly that it can send after Confirm', () 
   assert.doesNotMatch(capability.reason, /without sending/)
   assert.ok(manifest.source_files.includes('prepared_block.py'))
 })
+
+test('the ask capability says plainly that it sends a message as the owner', () => {
+  const capability = manifest.capabilities['chat.blocks.ask']
+  assert.equal(capability.version, 1)
+  assert.match(capability.reason, /Fix in chat sends a short request .* as your message/)
+  assert.ok(manifest.source_files.includes('card-asks.js'))
+})

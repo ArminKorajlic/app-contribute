@@ -3,7 +3,7 @@ import { fetchChangeProbe } from '../api.js'
 import { loadReviewRuns } from '../collaboration.js'
 import { SYNC_POLICY } from '../refresh.js'
 import { hasActiveReview } from '../review-frame.js'
-import { changedReviewRuns, classifyReview, loadReviewPulls, pendingRespondStarts, reviewCounts, reviewEntries, reviewKey, withRespondStart, withReviewRun } from '../review-list.js'
+import { changedReviewRuns, classifyReview, mergeReviewPulls, pendingRespondStarts, readReviewPulls, respondStartsExpireIn, reviewCounts, reviewEntries, reviewKey, withRespondStart, withReviewRun } from '../review-list.js'
 
 // The one sync hub of the open app (refresh.js createSyncHub): index.jsx provides
 // it, and every screen asks it to read again instead of keeping a timer of its
@@ -36,11 +36,11 @@ function useReviewPulls({ hub, enabled, token, refs, refsKey, attempt }) {
         if (!keys.size) return null
         wanted.current = new Set()
         const { refs: all, answered } = latest.current
-        const everything = keys.has(ALL_PULLS)
-        const pulls = await loadReviewPulls(token, everything ? all : all.filter(ref => keys.has(reviewKey(ref.repo, ref.number))))
-        return { everything, pulls, answered }
+        return { ...await readReviewPulls(token, all, keys.has(ALL_PULLS) ? null : keys), answered }
       },
-      apply: result => { if (result) setLive(old => mergePulls(old, result)) },
+      apply: result => {
+        if (result) setLive(old => ({ answered: result.everything ? result.answered : old.answered, pulls: mergeReviewPulls(old.pulls, result) }))
+      },
       failed: () => setLive(old => (old.answered === latest.current.answered ? old : { answered: latest.current.answered, pulls: new Map() })),
     })
   }, [hub, enabled, token])
@@ -64,12 +64,6 @@ function useReviewPulls({ hub, enabled, token, refs, refsKey, attempt }) {
   }, [hub, enabled, token, wantLater])
   return { live, want, readAll }
 }
-
-// A full read replaces what is known; a partial one updates just the PRs it read.
-const mergePulls = (old, { everything, pulls, answered }) => ({
-  answered: everything ? answered : old.answered,
-  pulls: everything ? pulls : new Map([...old.pulls, ...pulls]),
-})
 
 // The owner's reviews for the PR reviews page and the rail's badge. Until the
 // first live read of the set has answered they are "checking", and a PR GitHub did
@@ -114,6 +108,7 @@ function usePullPageExit(pullPageOpen, refresh) {
 // GitHub for a run that still waits on it, at most once a minute per run.
 // A Respond conversation the owner just started (`respondStarted`) is shown at
 // once and read for at once, so its PR does not keep its old state until the next read.
+// It stands in only until a read lists it or its own deadline passes, whether reads succeed or not.
 export function useDeskReviewRuns({ hub, token, appId, connState, sendOnly, pullPageOpen, onReviewsMoved }) {
   const [runs, setRuns] = useState([])
   const [listedChats, setListedChats] = useState([])
@@ -148,6 +143,13 @@ export function useDeskReviewRuns({ hub, token, appId, connState, sendOnly, pull
       live: list => started.current.length > 0 || (!!list && (hasActiveReview(list.runs) || (list.respond_chats || []).length > 0)),
     })
   }, [hub, enabled, token, appId, show, keepStarted])
+  // A start also ends at its own deadline: when reads fail there is no apply to prune it.
+  useEffect(() => {
+    const wait = respondStartsExpireIn(startedChats, Date.now(), SYNC_POLICY.respondStartGraceMs)
+    if (wait === null) return undefined
+    const timer = setTimeout(() => keepStarted(pendingRespondStarts(started.current, [], Date.now(), SYNC_POLICY.respondStartGraceMs)), wait)
+    return () => clearTimeout(timer)
+  }, [startedChats, keepStarted])
   const refresh = useCallback(() => hub.refresh('runs'), [hub])
   const respondStarted = useCallback(chat => {
     keepStarted(withRespondStart(started.current, { ...chat, state: 'running', at: Date.now() }))

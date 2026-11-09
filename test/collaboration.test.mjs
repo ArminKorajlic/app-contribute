@@ -131,7 +131,7 @@ test('batch assignment pins each head and reports partial failures without repla
 
 test('merge option is enabled only for an entirely eligible exact selection', async t => {
   if (!frontendModules) return t.skip('MOBIUS_FRONTEND_NODE_MODULES required')
-  const { render } = await renderModule(`import React from 'react'; import {renderToStaticMarkup} from 'react-dom/server'; import {ReviewConfirmation} from './ui/ReviewConfirmation.jsx'; export const render = (pulls, capabilities = {review_fix_merge:true, post_review:true, propose_verdict:true}, mode = 'review') => renderToStaticMarkup(React.createElement(ReviewConfirmation, {choice:{mode,pulls,intent:'review',options:{post_review:true,propose_verdict:true}},onModeChange:()=>{},onOptionsChange:()=>{},capabilities}));`)
+  const { render } = await renderModule(`import React from 'react'; import {renderToStaticMarkup} from 'react-dom/server'; import {ReviewConfirmation} from './ui/ReviewConfirmation.jsx'; export const render = (pulls, capabilities = {review_fix_merge:true, pr_machine:true, post_review:true, propose_verdict:true}, mode = 'review') => renderToStaticMarkup(React.createElement(ReviewConfirmation, {choice:{mode,pulls,intent:'review',options:{post_review:true,propose_verdict:true}},onModeChange:()=>{},onOptionsChange:()=>{},capabilities}));`)
   const eligible = render([pull(1)])
   assert.match(eligible, /Merge after I approve/)
   assert.doesNotMatch(eligible, /Not available for drafts|Needs merge rights/)
@@ -157,11 +157,28 @@ test('merge option is enabled only for an entirely eligible exact selection', as
 })
 
 
-test('takeover eligibility distinguishes drafts, base merge rights and fork push rights', async () => {
+test('Finish it for me and Take over need a Möbius that asks before every push: fresh or saved, an older one is blocked', async t => {
+  if (!frontendModules) return t.skip('MOBIUS_FRONTEND_NODE_MODULES required')
+  const { render } = await renderModule(`import React from 'react'; import {renderToStaticMarkup} from 'react-dom/server'; import {ReviewConfirmation} from './ui/ReviewConfirmation.jsx'; export const render = (capabilities, extra = {}) => renderToStaticMarkup(React.createElement(ReviewConfirmation, {choice:{mode:'review_fix_merge',intent:'finish_it',pulls:[${JSON.stringify(pull(1))}],...extra},onModeChange:()=>{},capabilities}));`)
+  const start = /<button[^>]*>Start, ask me before each push/
+  // The Möbius before the PR machine advertises review_fix_merge but pushes without asking and can merge.
+  const older = { review_fix_merge: true, draft_takeover: true, merge_now: true }
+  for (const extra of [{}, { preview_sha256: 'f'.repeat(64) }]) {
+    const html = render(older, extra)
+    assert.match(html, /Needs a newer Möbius/, `an older Möbius is refused${extra.preview_sha256 ? ' for a saved link too' : ''}`)
+    assert.match(html, /disabled="">Start, ask me before each push/)
+    const current = render({ ...older, pr_machine: true }, extra)
+    assert.doesNotMatch(current, /Needs a newer Möbius/)
+    assert.doesNotMatch(current, /disabled="">Start, ask me before each push/)
+    assert.match(render(null, extra), /Checking what this Möbius supports/, 'unknown is a pending check, never a start')
+  }
+})
+
+test('takeover eligibility distinguishes base merge rights and fork push rights; a draft is never in the way', async () => {
   const { takeoverBlocker } = await import('../collaboration.js')
   const ready = pull(9, { repository:{nameWithOwner:'team/repo',viewerPermission:'WRITE'}, headRepository:{nameWithOwner:'team/repo',viewerPermission:'WRITE'} })
   assert.equal(takeoverBlocker([ready]), '')
-  assert.match(takeoverBlocker([{...ready,isDraft:true}]), /Draft/)
+  assert.equal(takeoverBlocker([{...ready,isDraft:true}]), '', 'a draft can be taken over: the agent never readies it, you do')
   assert.match(takeoverBlocker([{...ready,repository:{viewerPermission:'READ'}}]), /merge access/)
   assert.equal(takeoverBlocker([{...ready,headRepository:{nameWithOwner:'fork/repo',viewerPermission:'WRITE'}}]), '')
   assert.match(takeoverBlocker([{...ready,headRepository:{nameWithOwner:'fork/repo',viewerPermission:'READ'}}]), /push access/)
@@ -174,9 +191,8 @@ test('takeover eligibility distinguishes drafts, base merge rights and fork push
 test('a takeover never asks to mark a draft ready: one repair scope, and a reason only when you gave one', async () => {
   const { takeoverBlocker, reviewRunRequest, TAKEOVER_SCOPE } = await import('../collaboration.js')
   const draft = pull(9, { isDraft: true, headRepository: { viewerPermission: 'WRITE' } })
-  assert.match(takeoverBlocker([draft]), /Draft/)
-  assert.equal(takeoverBlocker([draft], { allowDraft: true }), '', 'a draft can be taken over: the agent never readies it, you do')
-  assert.match(takeoverBlocker([{ ...draft, headRepository: { viewerPermission: 'READ' } }], { allowDraft: true }), /push access/)
+  assert.equal(takeoverBlocker([draft]), '', 'a draft can be taken over: the agent never readies it, you do')
+  assert.match(takeoverBlocker([{ ...draft, headRepository: { viewerPermission: 'READ' } }]), /push access/)
   const old = { request_id: 'fixture-old', mode: 'review_fix_merge', pulls: [draft] }
   assert.equal(reviewRunRequest(old).confirmation_scope, TAKEOVER_SCOPE)
   assert.equal(reviewRunRequest({ ...old, confirmation_scope: 'named_pr_repairs_ready_and_reviewed_successors' }).confirmation_scope, TAKEOVER_SCOPE, 'an older saved draft-ready scope is never sent again')
