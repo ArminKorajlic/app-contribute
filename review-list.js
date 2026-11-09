@@ -77,6 +77,18 @@ export function classifyReview(entry, { login = '', ignored = null, live = null,
   return { bucket: bucketOf(decision), confirm: ['to_confirm', 'unconfirmed'].includes(decision.state), chips: [chip(decision.label, tone)], decision }
 }
 
+// Respond conversations at work on a PR that has no review of its own are agent runs too: the PR's frame shows them, so the
+// Agent runs page and its badge must as well. The title comes from the PRs already read; a conversation names only its PR.
+export function respondEntries(chats, reviewed, pulls) {
+  const known = new Set((reviewed || []).map(entry => entry.id))
+  const titles = new Map((pulls || []).map(pr => [reviewKey(pr.repository?.nameWithOwner, pr.number), pr.title]))
+  const working = new Map((chats || []).filter(chat => chat.state === 'running').map(chat => [respondPull(chat), chat]))
+  return [...working].filter(([id]) => !known.has(id)).map(([id, chat]) => ({
+    id, at: chat.at || 0, bucket: 'running', chips: [chip('Agent working', TONE.agent)],
+    item: { repo: chat.repo, number: chat.number, title: titles.get(id) || '' },
+  }))
+}
+
 export function reviewCounts(entries) {
   const count = bucket => entries.filter(entry => entry.bucket === bucket).length
   return { waiting: count('waiting'), confirm: entries.filter(entry => entry.confirm).length, running: count('running'), stalled: count('stalled'), unknown: count('unknown'), done: count('done') }
