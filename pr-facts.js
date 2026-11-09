@@ -4,6 +4,7 @@
 // Pure: no DOM, no network.
 import { checkSummary, ignoredNote, isBotAuthor, reviewItemProgress } from './collaboration.js'
 import { isOwnPull } from './pull-view.js'
+import { responseFor, responseOutbox } from './respond-result.js'
 
 const LIFECYCLE = { MERGED: 'merged', CLOSED: 'closed' }
 const MERGEABLE = { MERGEABLE: 'yes', CONFLICTING: 'conflict' }
@@ -164,7 +165,7 @@ function runFacts(review, pr, own, ignored) {
 // Facts for one PR. `runs` are Contribute's review runs and `chats` its live
 // Respond-to-feedback conversations ({ repo, number, state }); `ignored` the
 // owner's set-aside notes; `login` the connected GitHub account.
-export function prFacts({ pr, login, runs = [], ignored = null, chats = [] }) {
+export function prFacts({ pr, login, runs = [], ignored = null, chats = [], responses = [] }) {
   const own = isOwnPull(pr, login)
   const reviews = reviewsOf(pr)
   const fromRuns = runFacts(newestReviewOf(runs, pr), pr, own, ignored)
@@ -186,7 +187,8 @@ export function prFacts({ pr, login, runs = [], ignored = null, chats = [] }) {
     job: jobFor(fromRuns.job, chats, pr),
     result: fromRuns.result,
     earlier: fromRuns.earlier,
-    outbox: fromRuns.outbox,
+    // A review run's own draft comes first; otherwise a saved Respond answer is the draft (or the sending) there is.
+    outbox: fromRuns.outbox || responseOutbox(responseFor(responses, pr), pr),
     // Without the connected account, whose PR this is cannot be told: nothing is decided.
     readComplete: !!login && reviews !== null && threads !== null,
   }
