@@ -40,7 +40,7 @@ async function fixture(t, choice, dependencies = {}) {
   if (!frontendModules) { t.skip('MOBIUS_FRONTEND_NODE_MODULES is required for the native component bundler'); return null }
   const render = await load(), states=[], resolved=[], previews=[]
   const value = { states, resolved, previews, reviewOptions, workflowAgent,
-    loadWorkflowOptions:async()=>({options:{review_prompt:'New default',fix_prompt:'Fix default',merge_prompt:'Merge default'},capabilities:{draft_takeover:true,post_review:true}}),
+    loadWorkflowOptions:async()=>({options:{review_prompt:'New default',fix_prompt:'Fix default',merge_prompt:'Merge default'},capabilities:{draft_takeover:true,post_review:true,propose_verdict:true}}),
     previewWorkflow:async(token,appId,sent,model,mode)=>{previews.push({token,appId,options:sent,agent:model,mode});return {preview_sha256:digest(sent)}},
     ...dependencies,
   }
@@ -98,13 +98,20 @@ test('a Möbius without posted review never receives the post-review grant',asyn
 test('each mode previews with its own mode and only the options that mode accepts',async t=>{
   const sent={}
   for(const mode of ['review','review_merge','review_fix_merge']){
-    const f=await fixture(t,{request_id:'new-'+mode,mode,options:{max_rounds:4,post_review:true,autopilot:true},agent})
+    const f=await fixture(t,{request_id:'new-'+mode,mode,options:{max_rounds:4,post_review:true,propose_verdict:true,autopilot:true},agent})
     if(!f)return;await f.flush()
     assert.equal(f.previews[0].mode,mode)
     sent[mode]=f.previews[0].options
   }
-  assert.deepEqual(sent.review,{review_prompt:'New default',merge_prompt:'Merge default',post_review:true})
+  assert.deepEqual(sent.review,{review_prompt:'New default',merge_prompt:'Merge default',post_review:true,propose_verdict:true})
   assert.deepEqual(sent.review_merge,{review_prompt:'New default',merge_prompt:'Merge default'})
   assert.deepEqual(sent.review_fix_merge,{review_prompt:'New default',merge_prompt:'Merge default',fix_prompt:'Fix default'},'new work has no round cap')
   for(const body of Object.values(sent)) assert.equal('autopilot' in body,false,'automatic continuation is never sent')
+})
+
+test('a new launch never asks to post a plain comment: posting without a verdict is dropped',async t=>{
+  const f=await fixture(t,{request_id:'new-comment',mode:'review',options:{post_review:true},agent},
+    {loadWorkflowOptions:async()=>({options:{review_prompt:'New default'},capabilities:{post_review:true,propose_verdict:true}})})
+  if(!f)return;await f.flush()
+  assert.deepEqual(f.previews[0].options,{review_prompt:'New default'})
 })

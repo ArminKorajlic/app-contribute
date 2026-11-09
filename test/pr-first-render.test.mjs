@@ -90,7 +90,7 @@ test('detail keeps actions and tabs outside reserved independently loaded contex
   const tabs = html.indexOf('co-detail-tabs')
   const body = html.indexOf('co-pr-detail-body')
   assert.ok(actions > 0 && tabs > actions && body > tabs)
-  assert.match(html, /aria-label="Choose what an agent does with PR 42"/)
+  assert.match(html, /aria-label="Choose an action for PR 42"/)
  assert.match(html, /<span class="co-btn-label">Assign<\/span><\/button>/)
   assert.match(html, /Loading the conversation/)
   assert.doesNotMatch(html, /Take over review &amp; merge/)
@@ -126,17 +126,15 @@ test('draft-ready launch explicitly names marking ready without adding routine s
   assert.match(html,/the draft marked ready \(this may notify reviewers\)/)
 })
 
-test('posting a review on GitHub is an opt-in inside Review only, shown only when the server supports it', async t => {
+test('drafting a review for GitHub is an opt-in inside Review only, shown only when the server supports it', async t => {
   const source = await import('node:fs').then(fs => fs.readFileSync(new URL('../ui/ReviewConfirmation.jsx', import.meta.url), 'utf8'))
-  assert.match(source, /const canPost = onOptionsChange && capabilities\?\.post_review === true/)
-  assert.match(source, /const canPropose = canPost && capabilities\?\.propose_verdict === true/)
-  assert.match(source, /label="Allow posting the review on GitHub"/)
-  assert.match(source, /label="Allow approve or request changes"/)
-  // Only an older Möbius keeps posting and merging apart.
-  assert.match(source, /detail=\{merge && !combines \? 'Turn off Merge when safe to post a review\.' : hints\.posting\}/)
+  const canDraft = /const canDraft = !!onOptionsChange && capabilities\?\.post_review === true && capabilities\?\.propose_verdict === true/
+  assert.match(source, canDraft)
+  // Agents never post a comment on their own: the old switches that allowed one are gone.
+  assert.doesNotMatch(source, /Allow posting the review on GitHub|Allow approve or request changes/)
   const unresolved = await render(t, 'ReviewConfirmation', { choice:{ pulls:[pr], mode:'review', request_id:'fixed' }, onModeChange:()=>{}, onOptionsChange:()=>{} })
   if (!unresolved) return
-  assert.doesNotMatch(unresolved, /posting the review on GitHub/, 'hidden until the served capability is known')
+  assert.doesNotMatch(unresolved, /Draft for GitHub/, 'hidden until the served capability is known')
 })
 
 test('posting, verdict and merge combine only as far as the served Möbius supports', async t => {
@@ -145,20 +143,20 @@ test('posting, verdict and merge combine only as far as the served Möbius suppo
   const all = { post_review: true, propose_verdict: true, post_review_merge: true }
   const choice = mode => ({ mode, pulls: [pr], options: { post_review: true, propose_verdict: true } })
   assert.deepEqual(publicChoice(choice('review_merge'), null, all), { merge: true, posting: true, verdict: true })
-  // An older Möbius posts only in plain review and never proposes verdicts.
+  // An older Möbius posts only in plain review and never proposes verdicts. A saved grant keeps saying so.
   assert.deepEqual(publicChoice(choice('review_merge'), null, { post_review: true }), { merge: true, posting: false, verdict: false })
   assert.deepEqual(publicChoice(choice('review'), null, { post_review: true }), { merge: false, posting: true, verdict: false })
-  // A verdict without posting is not a choice.
+  // A verdict without posting is not a choice, and neither is posting without a verdict.
   assert.equal(publicChoice({ mode: 'review', pulls: [pr], options: { propose_verdict: true } }, null, all).verdict, false)
 })
 
-test('the review window offers the verdict switch beside posting and merge', async t => {
-  const html = await render(t, 'ReviewConfirmation', { choice:{ pulls:[pr], mode:'review_merge', request_id:'fixed', options:{ post_review:true, propose_verdict:true } },
+test('the Review and merge window drafts the verdict by itself and asks only whether to merge', async t => {
+  const html = await render(t, 'ReviewConfirmation', { choice:{ pulls:[pr], mode:'review_merge', intent:'merge', request_id:'fixed', options:{ post_review:true, propose_verdict:true } },
     capabilities:{ post_review:true, post_review_merge:true, propose_verdict:true }, onModeChange:()=>{}, onOptionsChange:()=>{} })
   if (!html) return
-  assert.match(html, /Allow approve or request changes/)
+  assert.doesNotMatch(html, /Approve or request changes<|Allow approve or request changes/)
+  assert.match(html, />Merge when safe</)
   assert.match(html, /Start review, merge after your approval/)
-  assert.doesNotMatch(html, /Turn off Merge when safe to post a review/)
 })
 
 const verdictRun = (state, extra = {}) => ({ id:'run-1', mode:'review_merge', state:'needs_you', chat_id:'chat-1', can_stop:true, items:[{
@@ -185,25 +183,34 @@ test('a settled or foreign verdict offers no decision', async t => {
   assert.doesNotMatch(noHandler, />Approve on GitHub</)
 })
 
-test('Review starts private and offers who sees it; Review and merge shows the verdict form and merging', async t => {
+test('Review starts private and offers who sees it; Review and merge asks only whether to merge', async t => {
   const caps = { post_review:true, post_review_merge:true, propose_verdict:true }
   const privateHtml = await render(t, 'ReviewConfirmation', { choice:{ pulls:[pr], mode:'review', intent:'review', options:{ post_review:false, propose_verdict:false } }, capabilities:caps, onModeChange:()=>{}, onOptionsChange:()=>{} })
   if (!privateHtml) return
   assert.match(privateHtml, /<h3[^>]*>Review<\/h3>/)
-  // Who sees it is the one choice; the verdict form waits until it posts.
   assert.match(privateHtml, /role="radiogroup" aria-label="Who sees the result"/)
-  assert.match(privateHtml, /aria-checked="true" class="is-on"[^>]*>Keep private</)
+  assert.match(privateHtml, /aria-checked="true" class="is-on"[^>]*>Only me</)
   assert.doesNotMatch(privateHtml, /co-rw-options|Merge when safe/)
   assert.match(privateHtml, /Seen on GitHub:<\/strong> nothing/)
   assert.match(privateHtml, /Start private review/)
-  const posting = await render(t, 'ReviewConfirmation', { choice:{ pulls:[pr], mode:'review', intent:'review', options:{ post_review:true, propose_verdict:true } }, capabilities:caps, onModeChange:()=>{}, onOptionsChange:()=>{} })
-  assert.match(posting, /aria-checked="true" class="is-on"[^>]*>Post to GitHub</)
-  assert.match(posting, />Approve or request changes</)
-  assert.doesNotMatch(posting, /Merge when safe/)
-  assert.match(posting, /Start review, propose a verdict/)
+  const drafting = await render(t, 'ReviewConfirmation', { choice:{ pulls:[pr], mode:'review', intent:'review', options:{ post_review:true, propose_verdict:true } }, capabilities:caps, onModeChange:()=>{}, onOptionsChange:()=>{} })
+  assert.match(drafting, /aria-checked="true" class="is-on"[^>]*>Draft for GitHub</)
+  assert.match(drafting, /Nothing is posted until you confirm it\. It waits under To confirm/)
+  assert.doesNotMatch(drafting, /Merge when safe|Approve or request changes</)
+  assert.match(drafting, /Start review, propose a verdict/)
   const merge = await render(t, 'ReviewConfirmation', { choice:{ pulls:[pr], mode:'review_merge', intent:'merge', options:{ post_review:true, propose_verdict:true } }, capabilities:caps, onModeChange:()=>{}, onOptionsChange:()=>{} })
   assert.match(merge, /<h3[^>]*>Review and merge<\/h3>/)
-  assert.doesNotMatch(merge, /Allow posting the review on GitHub/)
-  assert.match(merge, />Approve or request changes</)
+  assert.doesNotMatch(merge, /Allow posting the review on GitHub|Approve or request changes</)
   assert.match(merge, />Merge when safe</)
+})
+
+test('on your own PR the window only checks it for you: nothing to choose, nothing posted or merged', async t => {
+  const caps = { post_review:true, post_review_merge:true, propose_verdict:true }
+  const own = { ...pr, author:{ login:'me' } }
+  const html = await render(t, 'ReviewConfirmation', { ownLogin:'me', choice:{ pulls:[own], mode:'review_merge', intent:'merge', options:{ post_review:true, propose_verdict:true } }, capabilities:caps, onModeChange:()=>{}, onOptionsChange:()=>{} })
+  if (!html) return
+  assert.match(html, /This is your own PR, so the agent only checks it for you\. Nothing is posted, proposed or merged\./)
+  assert.doesNotMatch(html, /Merge when safe|Who sees the result|Draft for GitHub/)
+  assert.match(html, /Start private review/)
+  assert.match(html, /Seen on GitHub:<\/strong> nothing/)
 })

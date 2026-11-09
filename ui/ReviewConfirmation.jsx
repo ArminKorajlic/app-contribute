@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
-import { OPENABLE_JOBS } from '../agent-menu.js'
+import { OPENABLE_JOBS } from '../actions-menu.js'
 import { baseTip, DRAFT_TAKEOVER_SCOPE, mayMerge, prKey, takeoverBlocker } from '../collaboration.js'
+import { isOwnPull } from '../pull-view.js'
 import { mergeWhenSafeBlocker, reviewSwitchHints, reviewWindowCopy } from '../review-copy.js'
 import { focusActionRegion } from './TaskPane.jsx'
 import { Icon } from './Icons.jsx'
@@ -29,15 +30,16 @@ function Switch({ checked, disabled, label, detail, onChange }) {
   </label>
 }
 
-// Review: who sees the result is the first choice. Posting is the only way
-// anything reaches GitHub, so the switches below it appear only then.
-function WhoSees({ posting, disabled, onChange }) {
+// Review: who sees the result is the first choice. An agent never posts by itself: choosing
+// GitHub means it drafts an approve or request-changes for you to read and confirm.
+function WhoSees({ drafting, disabled, onChange }) {
   return <div className="co-rw-who">
     <h4 className="co-rw-label">Who sees the result?</h4>
     <div className="co-seg" role="radiogroup" aria-label="Who sees the result">
-      {[['Keep private', false], ['Post to GitHub', true]].map(([label, github]) => <button key={label} type="button" role="radio" aria-checked={posting === github}
-        className={posting === github ? 'is-on' : ''} disabled={disabled} onClick={() => onChange(github)}>{label}</button>)}
+      {[['Only me', false], ['Draft for GitHub', true]].map(([label, github]) => <button key={label} type="button" role="radio" aria-checked={drafting === github}
+        className={drafting === github ? 'is-on' : ''} disabled={disabled} onClick={() => onChange(github)}>{label}</button>)}
     </div>
+    <p className="co-rw-note">{drafting ? 'It drafts approve or request changes with its wording. Nothing is posted until you confirm it. It waits under To confirm.' : 'It writes its findings for you. Nothing reaches GitHub.'}</p>
   </div>
 }
 
@@ -66,8 +68,9 @@ function WhatHappens({ copy }) {
   </>
 }
 
-// What this choice actually grants on this Möbius. An older Möbius posts only
-// in plain review and never proposes verdicts, so those options fall away.
+// What this choice actually grants on this Möbius. A saved selection can still hold a grant that
+// posts a plain comment, so its words must say so; a new launch never creates one (it either drafts a
+// verdict for you to confirm, or stays private).
 export function publicChoice(choice, promptOptions, capabilities) {
   const option = key => (choice.options?.[key] ?? promptOptions?.[key]) === true
   const merge = choice.mode === 'review_merge'
@@ -75,58 +78,37 @@ export function publicChoice(choice, promptOptions, capabilities) {
   return { merge, posting, verdict: posting && option('propose_verdict') && capabilities?.propose_verdict === true }
 }
 
-// Review only: posting, its verdict form, and merging. Posting and merging
-// combine: the review is posted first, and only a posted review can merge.
-function ReviewSwitches({ choice, promptOptions, capabilities, onModeChange, onOptionsChange, busy }) {
+// The PRs in this selection you wrote. An agent only ever checks those for you.
+export const ownedPulls = (pulls, login) => pulls.filter(pr => isOwnPull(pr, login))
+
+function OwnNote({ own, total }) {
+  return <p className="co-rw-note" role="status"><Icon name="lock" size={16} /> {own === total
+    ? `${total === 1 ? 'This is your own PR' : 'These are your own PRs'}, so the agent only checks ${total === 1 ? 'it' : 'them'} for you. Nothing is posted, proposed or merged.`
+    : `${own} of these ${total} are your own PRs. The agent only checks those for you: nothing is posted, proposed or merged on them.`}</p>
+}
+
+// Review only: who sees the result. Review and merge: whether it merges once you approve.
+// Merging only ever follows a verdict you confirmed (or a clean private review).
+function ReviewSwitches({ choice, promptOptions, capabilities, onModeChange, onOptionsChange, busy, own }) {
   const { merge, posting, verdict } = publicChoice(choice, promptOptions, capabilities)
+  const drafting = posting && verdict
   const drafts = choice.pulls.some(pr => pr.isDraft)
   const mayMergeAll = choice.pulls.every(pr => mayMerge(pr.repository.viewerPermission))
-  const combines = capabilities?.post_review_merge === true
-  const mergeBlocker = mergeWhenSafeBlocker({ drafts, mayMergeAll, postingBlocks: posting && !combines })
-  const canPost = onOptionsChange && capabilities?.post_review === true
-  const canPropose = canPost && capabilities?.propose_verdict === true
+  const mergeBlocker = mergeWhenSafeBlocker({ drafts, mayMergeAll })
+  const canDraft = !!onOptionsChange && capabilities?.post_review === true && capabilities?.propose_verdict === true
   const hints = reviewSwitchHints(choice.pulls.length)
-  const setOption = (key, checked) => onOptionsChange({ ...promptOptions, ...choice.options, [key]: checked,
-    ...(key === 'post_review' && !checked ? { propose_verdict: false } : {}) })
-  if (!canPost && !onModeChange) return null
-  // Review starts private; the owner chooses whether it posts. Review and
-  // merge is the same window with merging on, so the verdict form and the
-  // merge switch are its real choices.
-  if (choice.intent === 'review') {
-    if (!canPost) return null
-    return <>
-      <WhoSees posting={posting} disabled={busy || !promptOptions}
-        onChange={github => onOptionsChange({ ...promptOptions, ...choice.options, post_review: github, propose_verdict: github && canPropose })} />
-      {posting && canPropose ? <div className="co-rw-options"><Switch checked={verdict} disabled={busy || !promptOptions}
-        label="Approve or request changes"
-        detail={verdict ? 'It proposes approve or request changes with its wording. You submit or discard each one here before anything is posted.' : 'Off: it posts a plain review comment and never approves or asks for changes.'}
-        onChange={checked => setOption('propose_verdict', checked)} /></div> : null}
-    </>
-  }
-  if (choice.intent === 'merge') return <div className="co-rw-options">
-    {canPropose ? <Switch checked={verdict} disabled={busy || !promptOptions}
-      label="Approve or request changes"
-      detail={verdict ? 'It proposes approve or request changes with its wording. You submit or discard each one here before anything is posted.' : 'Off: it posts a plain review comment and never approves or asks for changes.'}
-      onChange={checked => setOption('propose_verdict', checked)} /> : null}
-    {onModeChange ? <Switch checked={merge} disabled={busy || (!merge && !!mergeBlocker)}
-      label="Merge when safe"
-      detail={!merge && mergeBlocker ? mergeBlocker : hints.merge}
-      onChange={checked => onModeChange(checked ? 'review_merge' : 'review')} /> : null}
-  </div>
-  return <div className="co-rw-options">
-    {canPost ? <Switch checked={posting} disabled={busy || !promptOptions || (merge && !combines)}
-      label="Allow posting the review on GitHub"
-      detail={merge && !combines ? 'Turn off Merge when safe to post a review.' : hints.posting}
-      onChange={checked => setOption('post_review', checked)} /> : null}
-    {canPropose ? <Switch checked={verdict} disabled={busy || !promptOptions || !posting}
-      label="Allow approve or request changes"
-      detail={posting ? hints.verdict : 'Turn on posting first.'}
-      onChange={checked => setOption('propose_verdict', checked)} /> : null}
-    {onModeChange ? <Switch checked={merge} disabled={busy || (!merge && !!mergeBlocker)}
-      label="Merge when safe"
-      detail={!merge && mergeBlocker ? mergeBlocker : hints.merge}
-      onChange={checked => onModeChange(checked ? 'review_merge' : 'review')} /> : null}
-  </div>
+  if (own === choice.pulls.length) return <OwnNote own={own} total={own} />
+  const mergeSwitch = onModeChange && choice.intent !== 'review' ? <Switch checked={merge} disabled={busy || (!merge && !!mergeBlocker)}
+    label="Merge when safe"
+    detail={!merge && mergeBlocker ? mergeBlocker : hints.merge}
+    onChange={checked => onModeChange(checked ? 'review_merge' : 'review')} /> : null
+  const who = choice.intent !== 'merge' && canDraft ? <WhoSees drafting={drafting} disabled={busy || !promptOptions}
+    onChange={github => onOptionsChange({ ...promptOptions, ...choice.options, post_review: github, propose_verdict: github })} /> : null
+  return <>
+    {who}
+    {mergeSwitch ? <div className="co-rw-options">{mergeSwitch}</div> : null}
+    {own ? <OwnNote own={own} total={choice.pulls.length} /> : null}
+  </>
 }
 
 // The exact heads and target tips behind this approval, out of the way.
@@ -152,7 +134,7 @@ function takeoverState(choice, capabilities, saved) {
 // what GitHub will see, which model runs it, and one start button whose label
 // matches what is allowed. Opened in a dialog from a PR list, or inline on a
 // saved review-link page.
-export function ReviewConfirmation({ choice, busy, disabled, error, onConfirm, onCancel, onModeChange, appId, token, onResolved, onOptionsChange, onAgentChange, bindCurrentTarget = false, capabilities: served = null }) {
+export function ReviewConfirmation({ choice, busy, disabled, error, onConfirm, onCancel, onModeChange, appId, token, onResolved, onOptionsChange, onAgentChange, bindCurrentTarget = false, capabilities: served = null, ownLogin = '' }) {
   const confirmation = useRef(null)
   const titleId = useId()
   const [promptOptions, setPromptOptions] = useState(null)
@@ -175,18 +157,21 @@ export function ReviewConfirmation({ choice, busy, disabled, error, onConfirm, o
   const takeover = choice.mode === 'review_fix_merge'
   const saved = !!choice.preview_sha256
   const { draftScope, blocker } = takeoverState(choice, capabilities, saved)
-  const { posting, verdict } = takeover ? {} : publicChoice(choice, promptOptions, capabilities)
-  const copy = reviewWindowCopy({ mode: choice.mode, intent: choice.intent, posting, verdict, draftScope, count: choice.pulls.length, bindCurrentTarget })
-  const postingUnavailable = choice.intent === 'merge' && !!capabilities && capabilities.post_review !== true
+  const own = takeover ? 0 : ownedPulls(choice.pulls, ownLogin).length
+  const ownOnly = own > 0 && own === choice.pulls.length
+  // On your own PR the agent only checks, so the words describe a private review.
+  const { posting, verdict } = takeover || ownOnly ? {} : publicChoice(choice, promptOptions, capabilities)
+  const copy = reviewWindowCopy({ mode: ownOnly ? 'review' : choice.mode, intent: choice.intent, posting, verdict, draftScope, count: choice.pulls.length, bindCurrentTarget })
+  const postingUnavailable = choice.intent === 'merge' && !!capabilities && !(capabilities.post_review === true && capabilities.propose_verdict === true)
   const startBlocked = takeover && !!blocker
   return <section ref={confirmation} tabIndex={-1} className="co-review-window" aria-labelledby={titleId}>
     <PullHeading pulls={choice.pulls} title={copy.title} titleId={titleId} onCancel={onCancel} takeover={takeover} />
     <div className="co-rw-body">
       {takeover
         ? <p className="co-rw-note">No options here. The agent keeps going until {choice.pulls.length === 1 ? 'the PR is' : 'the PRs are'} merged, or until it needs you. It fixes what its own review finds.{OPENABLE_JOBS.includes('address') ? ' To act on your reviewers’ comments, use Address feedback.' : ''}</p>
-        : <ReviewSwitches choice={choice} promptOptions={promptOptions} capabilities={capabilities} onModeChange={onModeChange} onOptionsChange={onOptionsChange} busy={busy} />}
+        : <ReviewSwitches choice={choice} promptOptions={promptOptions} capabilities={capabilities} onModeChange={onModeChange} onOptionsChange={onOptionsChange} busy={busy} own={own} />}
       {startBlocked ? <p className="co-rw-blocker" role="status">{blocker}</p> : null}
-      {postingUnavailable ? <p className="co-rw-blocker" role="status">Posting reviews on GitHub needs a newer Möbius. This would run as a private review.</p> : null}
+      {postingUnavailable ? <p className="co-rw-blocker" role="status">Drafting a review for GitHub needs a newer Möbius. This would run as a private review.</p> : null}
       <WhatHappens copy={copy} />
       {onAgentChange ? <AgentModelSettings token={token} choice={choice.agent} defaultChoice={defaultChoice} defaultHint="Your background agent setting" onChange={next => { onAgentChange(next); return true }} /> : null}
       {appId && token ? <ReviewPromptPreview token={token} appId={appId} choice={choice} onResolved={resolve} onUnsupported={() => setUnsupported(true)} /> : null}
@@ -195,7 +180,6 @@ export function ReviewConfirmation({ choice, busy, disabled, error, onConfirm, o
     <footer className="co-rw-foot">
       <p>{copy.footnote}</p>
       <div className="co-rw-actions">
-        {onCancel ? <button type="button" className="co-btn" disabled={busy} onClick={onCancel}>Cancel</button> : null}
         <button type="button" className="co-btn co-btn-primary" disabled={busy || disabled || startBlocked} onClick={onConfirm}>{busy ? 'Starting…' : copy.startLabel}</button>
       </div>
       {error ? <p className="co-run-error" role="alert">{error}</p> : null}

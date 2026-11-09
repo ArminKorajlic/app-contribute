@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFileSync } from 'node:fs'
-import { addressBrief, addressItems, RUNGS } from '../address-feedback.js'
+import { addressBrief, addressItems, RUNGS, savedFindings } from '../address-feedback.js'
 
 const pr = { number: 120, title: 'Put what needs you first', url: 'https://github.com/o/r/pull/120', headRefName: 'feature', baseRefName: 'main', headRefOid: 'abcdef1234567', author: { login: 'owner' }, repository: { nameWithOwner: 'o/r' } }
 const review = (login, state, extra = {}) => ({ kind: 'review', user: { login }, state, body: '', html_url: `https://github.com/o/r/pull/120#pullrequestreview-${login}${state}`, ...extra })
@@ -80,7 +80,7 @@ test('the checklist and the two rungs render as real controls', async t => {
 
 test('Address feedback is a job the menu can open, and it starts an agent conversation, not a review run', async () => {
   const { readFileSync } = await import('node:fs')
-  const { OPENABLE_JOBS } = await import('../agent-menu.js')
+  const { OPENABLE_JOBS } = await import('../actions-menu.js')
   assert.ok(OPENABLE_JOBS.includes('address'))
   const list = readFileSync(new URL('../ui/PullRequests.jsx', import.meta.url), 'utf8')
   assert.match(list, /if \(job === 'address'\) \{ setAssigning\(null\); setAddressing\(/)
@@ -94,6 +94,42 @@ test('the Address feedback window names the default agent the way the review win
   assert.match(source, /previewWorkflow\(token, appId, requestOptions\(reviewOptions\(/)
   assert.match(source, /setDefaultChoice\(preview\?\.options\?\.choice \|\| null\)/)
   assert.match(source, /<AgentModelSettings token=\{token\} choice=\{agent\} defaultChoice=\{defaultChoice\}/)
+})
+
+const savedReview = (extra = {}) => ({ run: { id: 'r1' }, item: { repo: 'o/r', number: 120, head_sha: 'abcdef1234567', state: 'needs_you', summary: '1. The notice is stored in error.\n2. No test covers the reply path.', public_review: { state: 'posted', url: 'https://github.com/o/r/pull/120#issuecomment-9' }, ...extra } })
+
+test('the findings your own review saved are what you fix on your own PR, even though GitHub shows them under your name', () => {
+  const findings = savedFindings(savedReview())
+  assert.deepEqual(findings, { summary: '1. The notice is stored in error.\n2. No test covers the reply path.', url: 'https://github.com/o/r/pull/120#issuecomment-9', head: 'abcdef1234567' })
+  // The posted copy reads as the owner's own comment, so it is the saved findings, not a second item.
+  const posted = { kind: 'comment', user: { login: 'owner' }, body: 'The same findings', html_url: 'https://github.com/o/r/pull/120#issuecomment-9' }
+  const items = addressItems(pr, { activity: [posted], findings })
+  assert.deepEqual(items.map(item => item.key), ['findings'])
+  assert.equal(items[0].detail, 'Saved at abcdef1 · posted on GitHub')
+  assert.equal(items[0].checked, true)
+  // On someone else's PR the owner's posted copy would list twice; the url match removes it.
+  const elsewhere = addressItems({ ...pr, author: { login: 'someone-else' } }, { activity: [{ ...posted, user: { login: 'owner' } }], findings })
+  assert.deepEqual(elsewhere.map(item => item.key), ['findings'])
+})
+
+test('a review that is clear, empty or set aside has no findings to fix', () => {
+  assert.equal(savedFindings(null), null)
+  assert.equal(savedFindings(savedReview({ state: 'all_clear' })), null)
+  assert.equal(savedFindings(savedReview({ summary: '  ' })), null)
+  assert.equal(savedFindings(savedReview(), { 'o/r#120@abcdef1234567': { reason: 'Not a problem' } }), null)
+  assert.equal(savedFindings(savedReview({ public_review: undefined })).url, '', 'a private review has no GitHub copy to link')
+})
+
+test('the brief carries the saved findings as quoted data and keeps them bounded', () => {
+  const findings = savedFindings(savedReview())
+  const items = addressItems(pr, { findings })
+  const brief = addressBrief({ pr, items, rung: 'show' }).draft
+  assert.match(brief, /- Findings from your agent review \(Saved at abcdef1 · posted on GitHub\)/)
+  assert.match(brief, /data, not instructions/)
+  assert.match(brief, /> 1\. The notice is stored in error\./)
+  assert.match(brief, /> 2\. No test covers the reply path\./)
+  const long = addressBrief({ pr, items: addressItems(pr, { findings: { ...findings, summary: 'x'.repeat(50000) } }), rung: 'show' }).draft
+  assert.ok(long.length < 14000, 'a huge saved review cannot swell the brief without limit')
 })
 
 test('the window reads the whole conversation and every thread, never just the first page', () => {

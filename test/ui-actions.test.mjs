@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { existsSync, readFileSync } from 'node:fs'
 import test from 'node:test'
+import { stageWords } from '../publication-stage.js'
 
 const cardSource = readFileSync(new URL('../ui/ContributionCard.jsx', import.meta.url), 'utf8')
 const appSource = readFileSync(new URL('../index.jsx', import.meta.url), 'utf8')
@@ -41,7 +42,8 @@ test('disconnected projects offer a prominent GitHub connection action', () => {
 
 test('publication copy describes automatic GitHub identity without picker language', () => {
   assert.doesNotMatch(feedSource, /Choose Personal GitHub|Möbius relay supports standalone drafts/)
-  assert.match(feedSource, /your connected GitHub account/)
+  assert.match(feedSource, /stageWords\(stage\)\.description/)
+  assert.match(stageWords('draft').description + stageWords('ready').description, /your connected GitHub account/)
   assert.match(sourceMapSource, /\['local', 'With your edits'\]/)
   assert.match(sourceMapSource, /\['updates', 'Behind GitHub'\]/)
 })
@@ -91,7 +93,7 @@ test('single and grouped sends leave the active action from durable results', ()
   assert.match(cardSource, /setAccepted\(true\)/)
   assert.match(cardSource, /if \(accepted\) return null/)
   assert.doesNotMatch(cardSource, /sendElapsed/)
-  assert.match(feedSource, /outcome = await onSendStack\?\.\(runUnitRecords\(item\)\)/)
+  assert.match(feedSource, /outcome = await onSendStack\?\.\(runUnitRecords\(item\), \{ stage \}\)/)
   assert.match(appSource, /if \(updates\.length > 0\) \{\s*applyRecordUpdates\(updates\)/)
 })
 
@@ -194,9 +196,9 @@ test('preparation runs as one cycle while every public send stays explicit', () 
   assert.match(feedSource, /Nothing merges\./)
   assert.match(appSource, /provider: chosenAgent\.provider/)
   assert.match(appSource, /\.\.\.\(chosenAgent\.effort \? \{ effort: chosenAgent\.effort \} : \{\}\)/)
-  assert.match(feedSource, /New pull requests use your connected GitHub account and open ready for review/)
+  assert.match(stageWords('ready').description, /New pull requests use your connected GitHub account and open ready for review/)
   assert.match(feedSource, /item\?\.unit\?\.type === 'stack'/)
-  assert.match(feedSource, /outcome = await onSendStack\?\.\(runUnitRecords\(item\)\)/)
+  assert.match(feedSource, /outcome = await onSendStack\?\.\(runUnitRecords\(item\), \{ stage \}\)/)
   assert.doesNotMatch(batchActionSource, /role="alertdialog"/)
   assert.doesNotMatch(batchActionSource, /Keep private/)
   assert.match(batchActionSource, /className="co-agent-handoff"/)
@@ -453,10 +455,10 @@ test('a review chip opens the PR on its Review tab, and a started review no long
   const pullsSource = readFileSync(new URL('../ui/PullRequests.jsx', import.meta.url), 'utf8')
   assert.match(pullsSource, /onOpenPage \? onOpenPage\(pr, 'review'\)/)
   // The title opens Comments, or the Review tab while a review is running.
-  assert.match(pullsSource, /onOpenPage\(pr, frameState\(statusFor\(pr\)\) === 'reviewing' \? 'review' : 'conversation'\)/)
+  assert.match(pullsSource, /onOpenPage\(pr, frameState\(statusFor\(pr\), \{ own: isOwnPull\(pr, conn\.login\), ignored: ignoredReviews \}\) === 'reviewing' \? 'review' : 'conversation'\)/)
   assert.doesNotMatch(pullsSource, /setChoice\(null\); setSelected\(new Set\(\)\)\n\s*task\?\.open\(`task:run:\$\{result\.run\.id\}`\)/)
   // The row wears the comet frame while an agent works; the Review tab knows your own PRs.
-  assert.match(pullsSource, /<ReviewFrame key=\{key\} state=\{framed\}/)
+  assert.match(pullsSource, /<ReviewFrame key=\{key\} state=\{review\.frame\}/)
   assert.match(pullsSource, /own: isOwnPull\(pr, conn\.login\)/)
   assert.match(appSource, /setPullPage\(\{ key: project\?\.key \|\| '', repo, number: pr\.number, tab,/)
 })
@@ -465,7 +467,7 @@ test('the desk reads review runs once, wraps its rows in the frame, and opens a 
   const deskSource = readFileSync(new URL('../ui/DeskViews.jsx', import.meta.url), 'utf8')
   assert.match(deskSource, /<ReviewFrame state=\{framed\} inset=\{3\}/)
   assert.match(deskSource, /onOpenPull\(project, pr, framed === 'idle' \? 'conversation' : 'review'\)/)
-  assert.match(deskSource, /frameState\(reviewForRecord\(runs, item\.record\)\)/)
+  assert.match(deskSource, /frameState\(reviewForRecord\(runs, item\.record\), \{ own: true, ignored \}\)/)
   assert.match(appSource, /const reviewActive = hasActiveReview\(reviewRuns\)/)
   assert.match(appSource, /runs: reviewRuns,/)
   // Refresh renews the runs with everything else; nothing polls unless a review is working.
@@ -477,10 +479,10 @@ test('the desk reads review runs once, wraps its rows in the frame, and opens a 
 test('a running review is shown by the frame and the Review tab only: no Reviewing tag, no Agent spinner or highlight', () => {
   const pullsSource = readFileSync(new URL('../ui/PullRequests.jsx', import.meta.url), 'utf8')
   const deskSource = readFileSync(new URL('../ui/DeskViews.jsx', import.meta.url), 'utf8')
-  const menuSource = readFileSync(new URL('../ui/AgentMenu.jsx', import.meta.url), 'utf8')
+  const menuSource = readFileSync(new URL('../ui/ActionsMenu.jsx', import.meta.url), 'utf8')
   const detailSource = readFileSync(new URL('../ui/PullRequestDetail.jsx', import.meta.url), 'utf8')
   // Tags for finished or waiting reviews stay; the one for a running review goes.
-  assert.match(pullsSource, /\{status && framed !== 'reviewing' \? <button className=\{'co-pr-agent-state'/)
+  assert.match(pullsSource, /\{review\.chip \? <button className=\{'co-pr-agent-state'/)
   assert.match(deskSource, /\{framed === 'verdict' \? <span className="co-desk-chip is-waiting">/)
   assert.doesNotMatch(deskSource, /is-review/)
   assert.doesNotMatch(menuSource, /co-arc|is-active|active =/)
@@ -563,4 +565,13 @@ test('an opened panel scrolls into view after the project restores its scroll, a
   assert.match(helper, /requestAnimationFrame\(/)
   assert.match(helper, /scrollIntoView\(\{ block: 'nearest'/)
   assert.doesNotMatch(helper, /block: 'start'/)
+})
+
+test('a desk row can open a PR straight into its fix window, once per visit, and only where agents can start', () => {
+  const pullsSource = readFileSync(new URL('../ui/PullRequests.jsx', import.meta.url), 'utf8')
+  assert.match(pullsSource, /focusPull\?\.intent === 'fix' && onStartAgent \? <RunOnce ready=\{!!detailPr\} nonce=\{focusPull\.nonce\}/)
+  assert.match(appSource, /function openPullPage\(project, pr, tab = 'conversation', intent = ''\)/)
+  assert.match(appSource, /setPullPage\(\{ key: project\?\.key \|\| '', repo, number: pr\.number, tab, intent, nonce: crypto\.randomUUID\(\) \}\)/)
+  const once = readFileSync(new URL('../ui/RunOnce.jsx', import.meta.url), 'utf8')
+  assert.match(once, /done\.current === nonce/)
 })

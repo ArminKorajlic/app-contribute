@@ -32,6 +32,11 @@ export const TYPE_LABELS = {
   discussion_comment: 'Discussion comment',
 }
 
+// A draft this app opened with the owner's own GitHub account, so it can also
+// open it for review. A relay draft (submission_mode 'mobius-bot') cannot be
+// opened for review from this connection.
+export const isPersonalDraft = record => record?.status === 'draft' && record?.submission_mode !== 'mobius-bot'
+
 export const STATUS_LABELS = {
   prepared: 'Ready',
   submitting: 'Publishing',

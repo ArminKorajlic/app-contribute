@@ -289,6 +289,22 @@ refresh, the Dismiss button — avoid silently overwriting each other. On older
 runtimes that don't return a version, Dismiss re-reads and re-checks the record
 before writing, while the cron refresh falls back to a plain best-effort write.
 
+## Actions, answers and PR reviews
+
+**Actions ▾** (on a PR row and its page) has a **You** group and an **Agent**
+group. **Open for review** (a draft this app sent) and **Merge** (where the
+platform advertises `merge_now`) each end in a confirm sheet naming what happens
+and what cannot be undone. New PRs open from one split button, **Open as draft**
+or **Open for review**; Settings → *New pull requests start as* sets the default
+(the shipped default is Ready, as the product states). A finished review that
+found problems offers **Fix these findings**, **Ignore…** (one reason, for that
+exact version, stored in the app settings as `ignored_reviews`, nothing posted),
+**Review again** and **Ask the reviewer something**. **PR reviews** in the side
+menu lists the reviews you started by project (In progress, Done); it reads the
+live state of every PR whose review is not merged (in batches of 40), again on
+each Sync with GitHub. A write whose answer is lost or unreadable, whatever its
+status, is unconfirmed: it is read back and never repeated from the sheet.
+
 ## Continuous Project Desk: private PR review runs
 
 The existing project workspace keeps the local and GitHub position and **Make
@@ -297,7 +313,7 @@ agent execution and settled history remain separate. Named paused work stays
 visible as unfinished; this iteration does not resume old cycles automatically.
 
 Review/Fix/Merge guidance shares one flat Settings editor. At launch choose
-**Agent ▾ → Review only** (optionally **Allow posting the review on GitHub**,
+**Actions ▾ → Review** (optionally **Allow posting the review on GitHub**,
 **Allow approve or request changes**, and **Merge when safe**, in any
 combination) or **Review, fix and merge**, plus model and effort, in the
 review window. There is

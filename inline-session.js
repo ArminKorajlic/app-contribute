@@ -42,6 +42,7 @@
 // host sends in its own words as the owner's message. A GitHub connection problem opens the
 // account instead. Without `ask-v1` the action opens Contribute, as before.
 import { cardKind, CHAT_INTENT, inChat, validRecordId } from './chat-blocks.js'
+import { stageOf, stageWords } from './publication-stage.js'
 import { planScreenshots, publicationVersion, screenshotCountText, uncertainPublication } from './domain.js'
 import { isAutopilotEnabled } from './autopilot.js'
 import { isPublished, publicationUnits, publishedPull, reviewIncomplete, sendBlocker } from './send-readiness.js'
@@ -162,12 +163,16 @@ function stackLayer(plan) {
 // kept for assistive technology), and draws the change size in colour from
 // `lines`; an older host shows its text. What Confirm sends is the frozen
 // snapshot, which the server binds exactly.
-export function confirmationItem(record) {
+export function confirmationItem(record, stage) {
   const { project, shots, layer, lines } = rowValues(record)
+  // Ready for review is the documented default, which the rows already imply;
+  // only a new pull request that will open as a draft says so.
+  const draft = record.plan?.action !== 'pr_update' && stageOf(stage) === 'draft'
   const facts = [{ label: 'Project', value: project },
     ...(shots ? [{ label: 'Screenshots', value: shots }] : []),
     ...(layer ? [{ label: 'Stack', value: layer }] : []),
-    ...(lines ? [{ label: 'Change', value: linesText(lines), lines }] : [])]
+    ...(lines ? [{ label: 'Change', value: linesText(lines), lines }] : []),
+    ...(draft ? [{ label: 'Action', value: stageWords('draft').line }] : [])]
   return { title: text(record.plan?.title || record.title || record.id, 240), facts }
 }
 // A record sent through Möbius's relay (submission_mode 'mobius-bot') uses a
@@ -322,7 +327,7 @@ export function createInlineSession({ sessionId, actions, items = null, features
   // only a new Try again can reach Confirm.
   let refreshNote = ''
   const awaitingCheck = () => deciding || awaitLegacy || (awaitDone >= 0 && !(Number(runtime?.refreshDone) >= awaitDone))
-  let frozen = null // { key, units } — the exact snapshot the owner confirms
+  let frozen = null // { key, units, stage } — the exact snapshot the owner confirms, and how it will open
   let ackNonce = null
   let alive = true
   let recheckTimer = null
@@ -763,7 +768,7 @@ export function createInlineSession({ sessionId, actions, items = null, features
       busy: busy || checkingResult,
       open: openOnly,
       confirming,
-      confirmation: confirming ? frozen.units.flatMap(unit => unit.ready.map(confirmationItem)) : null,
+      confirmation: confirming ? frozen.units.flatMap(unit => unit.ready.map(record => confirmationItem(record, frozen.stage))) : null,
       // While the tap's check, a send or GitHub's answer is underway the
       // header says so; the action slot is empty rather than a disabled
       // button. The action keeps its busy state for the host's locking.
@@ -900,7 +905,7 @@ export function createInlineSession({ sessionId, actions, items = null, features
     }
     activating = ''
     const ready = blocked(key) ? [] : readyUnits(key)
-    frozen = ready.length ? { key, units: copy(ready) } : null
+    frozen = ready.length ? { key, units: copy(ready), stage: stageOf(runtime?.stage) } : null
   }
 
   // One ordering for every exact result of a record, read or observed: each
@@ -1002,7 +1007,7 @@ export function createInlineSession({ sessionId, actions, items = null, features
     await Promise.all(approval.units.map(async (unit, index) => {
       let outcome
       if ([...unit.records, ...unit.ready].some(relayed)) outcome = { notAttempted: true, error: RELAY_NOTE }
-      else try { outcome = (unit.stack ? await sendStack(unit.records) : await send(unit.ready[0])) || {} } catch { outcome = { uncertain: true } }
+      else try { outcome = (unit.stack ? await sendStack(unit.records, { stage: approval.stage }) : await send(unit.ready[0], { stage: approval.stage })) || {} } catch { outcome = { uncertain: true } }
       if (!alive) return
       attempts = attempts.map(attempt => attempt.id === started[index].id ? { ...attempt, ...attemptOutcome(outcome) } : attempt)
       await read(started[index].ids) // each unit settles independently of slower siblings

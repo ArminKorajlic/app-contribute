@@ -1,4 +1,5 @@
-import { baseTip, OWNER_ITEM_STATES, prKey, reviewItemProgress, reviewRunHalted, reviewRunStateLabel, reviewRunTitle, runDetailsElsewhere } from '../collaboration.js'
+import { useState } from 'react'
+import { baseTip, prKey, reviewItemProgress, reviewRunHalted, reviewRunStateLabel, reviewRunTitle, runDetailsElsewhere } from '../collaboration.js'
 import { verdictCopy } from '../review-copy.js'
 import { openAgentConversation } from './BatchAction.jsx'
 import { Icon } from './Icons.jsx'
@@ -21,15 +22,16 @@ export function savedVersion(item, pulls = [], listState = {}) {
 // `own`: the viewer wrote this PR. GitHub refuses an approval or a change
 // request from a PR's author and the server rejects the submit, so Submit is not
 // offered there; the proposal can only be discarded.
-export function VerdictProposal({ proposal, mode, busy, onDecide, own = false }) {
+export function VerdictProposal({ proposal, mode, busy, onDecide, onCheck = null, own = false }) {
   const copy = verdictCopy(proposal, mode)
   const waiting = proposal.state === 'proposed' && onDecide
   return <div className={'co-verdict' + (proposal.event === 'APPROVE' ? ' is-approve' : ' is-changes')}>
     <p className="co-verdict-status" role="status">{copy.status}</p>
     {proposal.state === 'posted' && proposal.url ? <a href={proposal.url} target="_blank" rel="noopener noreferrer">View it on GitHub</a> : null}
+    {proposal.state === 'unknown' && onCheck ? <UnconfirmedVerdict busy={busy} onCheck={onCheck} onDismiss={onDecide ? () => onDecide(proposal, 'dismiss') : null} /> : null}
     {waiting ? <>
       <details className="co-task-details" open><summary>What it would post</summary><MarkdownView markdown={proposal.body} /></details>
-      <p className="co-task-footnote">{own ? 'GitHub does not let you approve or request changes on your own PR, so this cannot be submitted. Discard it, or ask the agent in the review conversation to post a plain comment instead.' : copy.note}</p>
+      <p className="co-task-footnote">{own ? 'This is your own PR, so it cannot be approved or sent back to yourself. Discard it, then fix what it found or set it aside.' : copy.note}</p>
       <div className="co-verdict-actions">
         {own ? null : <button type="button" className="co-btn co-btn-primary" disabled={busy} onClick={() => onDecide(proposal, 'submit')}>{busy ? 'Working…' : copy.submit}</button>}
         <button type="button" className="co-btn" disabled={busy} onClick={() => onDecide(proposal, 'discard')}>Discard</button>
@@ -38,11 +40,31 @@ export function VerdictProposal({ proposal, mode, busy, onDecide, own = false })
   </div>
 }
 
+// A verdict GitHub never confirmed. Checking is read-only: it settles the verdict
+// when GitHub shows exactly this attempt's review, and never sends anything.
+// Dismissing is the owner's word that it is not worth waiting on; it sends nothing either.
+function UnconfirmedVerdict({ busy, onCheck, onDismiss }) {
+  const [checked, setChecked] = useState(false)
+  async function check() { setChecked(!!await onCheck()) }
+  return <>
+    <div className="co-verdict-actions">
+      <button type="button" className="co-btn" disabled={busy} onClick={check}>{busy ? 'Checking…' : 'Check GitHub now'}</button>
+      {onDismiss ? <button type="button" className="co-btn" disabled={busy} onClick={onDismiss}>Dismiss</button> : null}
+    </div>
+    {checked ? <p className="co-task-footnote" role="status">Checked just now: GitHub shows no review from this attempt.</p> : null}
+  </>
+}
+
+// Outcomes only the review conversation can settle (reconcile, retry); a plain
+// finding (needs_you) is not one, and a pending verdict has its own buttons.
+const NEEDS_CONVERSATION = new Set(['failed', 'merge_unknown', 'ready_unknown', 'verdict_unknown'])
+
 // The one presentation of a review run, wherever it is opened from: a PR row,
 // the project's review history, or a chat link to the run.
-export function RunDetail({ run, pulls, listState, busy = false, error = '', onStop, retryPulls = [], onRetry, onVerdict, updater = null }) {
+export function RunDetail({ run, pulls, listState, busy = false, error = '', onStop, retryPulls = [], onRetry, onVerdict, onCheck = null, updater = null }) {
   const halted = reviewRunHalted(run)
-  const needsAnswer = run.execution_state === 'awaiting_owner' || run.items?.some(item => item.state !== 'verdict_pending' && OWNER_ITEM_STATES.has(item.state))
+  // "Answer" only when the conversation really asks something or must reconcile an outcome; findings alone are not a question.
+  const needsAnswer = run.items?.some(item => reviewItemProgress(run, item).waiting || NEEDS_CONVERSATION.has(item.state))
   const stoppable = run.can_stop && run.state !== 'complete' && !halted
   const retryable = halted && retryPulls.length > 0 && onRetry
   const elsewhere = runDetailsElsewhere(run)
@@ -59,7 +81,8 @@ export function RunDetail({ run, pulls, listState, busy = false, error = '', onS
         : item.public_review?.state === 'posting' ? <p className="co-task-footnote">Posting the review on GitHub…</p>
         : item.public_review?.summary ? <p className="co-task-footnote">{item.public_review.summary}</p> : null}
       {item.verdict_proposal ? <VerdictProposal proposal={item.verdict_proposal} mode={run.mode} busy={busy}
-        onDecide={onVerdict && !elsewhere ? (proposal, decision) => onVerdict(item, proposal, decision) : null} /> : null}
+        onDecide={onVerdict && !elsewhere ? (proposal, decision) => onVerdict(item, proposal, decision) : null}
+        onCheck={onCheck && !elsewhere ? onCheck : null} /> : null}
     </div>)}</div>
     {run.chat_id ? <button className="co-btn co-btn-primary co-task-primary" onClick={() => openAgentConversation(run.chat_id)}>{needsAnswer ? 'Answer in review conversation' : elsewhere ? 'Open the owning conversation for details' : 'Open review conversation'}</button> : null}
     {stoppable && onStop ? <><button className="co-quiet-action" disabled={busy} onClick={onStop}>Stop workflow</button><p className="co-task-footnote">Stop prevents future actions. An already-started public action may finish; its outcome stays visible.</p></> : null}

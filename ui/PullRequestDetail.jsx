@@ -5,7 +5,7 @@ import { ClampedMarkdown } from './ClampedMarkdown.jsx'
 import { CopyId, commentReference } from './CopyId.jsx'
 import DiffView from './diff/DiffView.jsx'
 import { Icon } from './Icons.jsx'
-import { AgentMenu } from './AgentMenu.jsx'
+import { ActionsMenu } from './ActionsMenu.jsx'
 import { GithubLabel, PullStateBadge, REVIEW_DECISION } from './GithubParts.jsx'
 import { checkSummary, conversationCount } from '../collaboration.js'
 import { openAgentConversation } from './BatchAction.jsx'
@@ -99,7 +99,7 @@ export function PullFeedbackFlag({ record, status = null, activity = null }) {
 // the review needs from you or found.
 function ReviewMark({ tone }) {
   if (tone.key === 'running') return <span className="co-arc" role="status" aria-label="Review running" />
-  const mark = { verdict: 'waiting', needs: 'waiting', clear: 'success', changes: 'failure', halted: 'failure' }[tone.key]
+  const mark = { verdict: 'waiting', needs: 'waiting', findings: 'waiting', clear: 'success', changes: 'failure', halted: 'failure' }[tone.key]
   return mark ? <span className={'co-tab-dot is-' + mark} title={tone.title} aria-label={tone.title} /> : null
 }
 
@@ -255,7 +255,7 @@ export function PullRequestDetail(props) {
 }
 // `review` carries what the Review tab needs from the run list: whether the
 // viewer wrote the PR, busy and error state, the run actions, and the loaded PRs.
-function PullRequestDetailView({ cacheStore, pr, token, onReview, onAssign, onRefresh, canAssign, status, onProgress, onRecord, record, readOnly = false, provenance = [], holdUntilLoaded = false, initialTab = 'conversation', review = {} }) {
+function PullRequestDetailView({ cacheStore, pr, token, onReview, onAssign, onRefresh, canAssign, status, onProgress, onRecord, record, capabilities = null, readOnly = false, provenance = [], holdUntilLoaded = false, initialTab = 'conversation', review = {} }) {
   const [tab, setTab] = useState(initialTab)
   // On a phone the four tabs can overflow; the open one is always brought into view.
   const tabStrip = useRef(null)
@@ -372,7 +372,7 @@ function PullRequestDetailView({ cacheStore, pr, token, onReview, onAssign, onRe
   </div> : null
   const labels = pr.labels?.nodes || []
   const tabs = [['conversation', 'Comments'], ['files', <>Files<span className="co-tab-more"> changed</span></>], ['checks', 'Checks'], ['review', 'Review']]
-  const reviewState = reviewStateTone(status)
+  const reviewState = reviewStateTone(status, { own: review.own, ignored: review.ignored })
   // GitHub-style tab badges: one neutral count pill per tab. Comments counts
   // the loaded conversation (comments and reviews); until it loads, GitHub's
   // issue-comment total stands in. Checks add a pass/fail dot before the pill;
@@ -404,7 +404,7 @@ function PullRequestDetailView({ cacheStore, pr, token, onReview, onAssign, onRe
       {labels.length ? <div className="co-gh-labels">{labels.map(label => <GithubLabel key={label.name} name={label.name} color={label.color} />)}</div> : null}
     </header>
     <div className="co-pr-detail-actions">
-      {!readOnly ? <AgentMenu variant="button" align="start" pulls={[pr]} disabled={stale} onChoose={mode => onReview?.(mode)} ariaLabel={`Choose what an agent does with PR ${pr.number}`} /> : null}
+      {!readOnly ? <ActionsMenu variant="button" align="start" pulls={[pr]} record={record} capabilities={capabilities} own={review?.own === true} disabled={stale} onChoose={mode => onReview?.(mode)} ariaLabel={`Choose an action for PR ${pr.number}`} /> : null}
       {!readOnly && canAssign ? <button className="co-btn" disabled={stale} onClick={onAssign} aria-label="Assign" title="Assign"><Icon name="person" /><span className="co-btn-label">Assign</span></button> : null}
       {status && onProgress ? <button className="co-btn" onClick={onProgress}>Agent progress</button> : null}
       {githubUrl ? <a className="co-btn" href={githubUrl} target="_blank" rel="noopener noreferrer" aria-label={`View on GitHub: PR ${pr.number}`} title="View on GitHub"><Icon name="github" /><span className="co-btn-label">View on GitHub</span></a> : null}

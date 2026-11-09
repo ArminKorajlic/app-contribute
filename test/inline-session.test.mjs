@@ -61,8 +61,8 @@ function harness({ ids = null, actions = card(ids).actions, items = card(ids || 
   session.update = envelope => update(parse({ items, features, ...envelope }))
   const runtime = () => ({ records: [...store.values()], ledgerReady: true, connection: 'connected', frozenBinding: true,
     reviewStatus: serverReviewStatus(address || reviewAddressFor(needs.at(-1) || session.sendIds(), [...store.values()]), store),
-    send: async rec => { sends.push({ kind: 'single', ids: [rec.id], records: [structuredClone(rec)] }); return send ? send(rec) : { ok: true } },
-    sendStack: async recs => { sends.push({ kind: 'stack', ids: recs.map(rec => rec.id), records: structuredClone(recs) }); return sendStack ? sendStack(recs) : { ok: true } },
+    send: async (rec, options) => { sends.push({ kind: 'single', ids: [rec.id], records: [structuredClone(rec)], options }); return send ? send(rec) : { ok: true } },
+    sendStack: async (recs, options) => { sends.push({ kind: 'stack', ids: recs.map(rec => rec.id), records: structuredClone(recs), options }); return sendStack ? sendStack(recs) : { ok: true } },
     refresh() {}, ...extra })
   let nonce = 0
   // KEY names this card's own action, whatever it is.
@@ -1465,6 +1465,21 @@ test('the B2 host accepts a confirmation that names screenshots', async t => {
   assert.ok(parsed, 'the host rejected the list, which would keep Confirm disabled')
   assert.equal(parsed[0].facts.find(fact => fact.label === 'Change').value, '1 file · +2\u00a0−0 · 2 screenshots')
   assert.match(parsed[1].facts.find(fact => fact.label === 'Change').value, /1 screenshot$/)
+})
+
+test('Confirm names a draft opening, adds nothing for ready, and sends exactly that stage even if the setting changes first', async () => {
+  const action = item => item.facts.find(fact => fact.label === 'Action')?.value
+  const ready = harness({ actions: [{ key: 'chat-send:one', label: 'Contribute' }], records: [prepared('one')] })
+  await openConfirm(ready, 'chat-send:one')
+  assert.equal(action(ready.action('chat-send:one').confirmation[0]), undefined, 'the shipped default opens ready for review and adds no row')
+
+  const draft = harness({ actions: [{ key: 'chat-send:one', label: 'Contribute' }], records: [prepared('one')], runtime: { stage: 'draft' } })
+  await openConfirm(draft, 'chat-send:one')
+  assert.equal(action(draft.action('chat-send:one').confirmation[0]), 'Open as a draft')
+  // The stage shown at Confirm is the one sent, whatever the setting says by then.
+  draft.session.updateRuntime({ ...draft.runtime(), stage: 'ready' })
+  draft.fire('chat-send:one', 'confirm'); await tick(); await tick()
+  assert.deepEqual(draft.sends.map(sent => sent.options), [{ stage: 'draft' }])
 })
 
 // ---- Observation settles an unknown send (publication-observer.js, mobius #2083/#2084).

@@ -367,7 +367,8 @@ export function SourceMap({
   }
   const externalQuestions = external.reduce((count, project) => count + (project.reviewRequests?.length || 0), 0)
   if (loading && !snapshot && !projects.length) return <LoadingState />
-  const viewLabel = DESK_VIEWS.find(item => item.key === desk.view)?.label || 'Your projects'
+  const currentView = DESK_VIEWS.find(item => item.key === desk.view)
+  const viewLabel = currentView?.heading || currentView?.label || 'Your projects'
   return (
     <section className={'co-projects-view' + (selectedProject ? ' is-focus' : '')} aria-label="Project details">
       <div className="co-desk">
@@ -420,7 +421,7 @@ export function SourceMap({
               <Icon name="search" size={16} />
               <input type="search" placeholder="Find a PR, person or project" aria-label="Find a PR, person or project" value={deskQuery} onChange={event => setDeskQuery(event.target.value)} />
             </label>
-            <DeskView view={desk.view} projects={orderedProjects} records={desk.records} login={desk.login} decisionsFor={desk.decisionsFor} lastLooked={desk.lastLooked} query={deskQuery} runs={desk.runs} onOpenProject={openProject} onOpenPull={desk.onOpenPull} onOpenRecord={openRecordFromDesk} />
+            <DeskView view={desk.view} projects={orderedProjects} records={desk.records} login={desk.login} decisionsFor={desk.decisionsFor} lastLooked={desk.lastLooked} query={deskQuery} runs={desk.runs} ignored={desk.ignored} reviews={desk.reviews} onOpenProject={openProject} onOpenPull={desk.onOpenPull} onOpenRecord={openRecordFromDesk} />
           </>
         ) : (
         <>

@@ -91,7 +91,7 @@ test('the Run renders one batch action without a duplicate publish row', async (
 
   assert.equal((html.match(/co-run-primary is-send/g) || []).length, 1)
   assert.doesNotMatch(html, /co-run-row is-publish/)
-  assert.match(html, /Review and send/)
+  assert.match(html, /Open for review/)
   assert.doesNotMatch(html, /Needs you|No decisions waiting/)
 })
 
@@ -176,6 +176,10 @@ test('an exact approval fingerprint changes with head, route, and review stage',
   assert.notEqual(batchFingerprint([changedHead], 'send', 'github', 'connected'), approved)
   assert.notEqual(batchFingerprint([item], 'send', 'mobius', 'connected'), approved)
   assert.notEqual(batchFingerprint([item], 'ready', 'github', 'connected'), approved)
+  // Opening as a draft is a different public action than opening for review.
+  assert.notEqual(batchFingerprint([item], 'send', 'github', 'connected', 'draft'), approved)
+  assert.equal(batchFingerprint([item], 'send', 'github', 'connected', 'ready'), approved)
+  assert.equal(batchFingerprint([item], 'ready', 'github', 'connected', 'draft'), batchFingerprint([item], 'ready', 'github', 'connected'), 'marking ready has no stage')
 })
 
 test('the Run keeps project identity without duplicating Projects navigation', async (t) => {
@@ -383,12 +387,12 @@ test('the global workspace keeps exact ready batches without duplicating project
   const rec = record('Ready change')
   const publish = { id: 'publish:ready', kind: 'publish', record: rec, unit: { type: 'record', record: rec, records: [rec] }, label: rec.title, detail: rec.repo }
   const run = { decisions: [publish], working: [], recent: [], archive: [] }
-  assert.match(renderRun(run, { presentation: 'overview' }), /Review and send/)
+  assert.match(renderRun(run, { presentation: 'overview' }), /Open for review/)
   assert.doesNotMatch(renderRun(run, { presentation: 'overview' }), /Needs you|Private proposals · not shared|In progress/)
   assert.equal(renderRun({ decisions: [], working: [], recent: [], archive: [] }, { presentation: 'overview' }), '')
   const focused = renderRun(run, { selectedId: publish.id, projectName: 'Example' })
   assert.match(focused, /co-run-focus-detail/)
-  assert.match(focused, /Review and send/) // inventory remains beside the selected task
+  assert.match(focused, /Open for review/) // inventory remains beside the selected task
   assert.match(focused, /Ready change/)
 })
 

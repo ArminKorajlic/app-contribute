@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { openGithubSettings } from '../github-connection.js'
 import { Icon } from './Icons.jsx'
+import { DEFAULT_STAGE, stageWords } from '../publication-stage.js'
 import { ReviewPromptSettings } from './ReviewPromptSettings.jsx'
 // Component-local settings layout. The app shell keeps its existing theme tokens.
 export const SETTINGS_CSS = `
@@ -22,10 +23,11 @@ export const SETTINGS_CSS = `
 .co-set-text { flex:1; min-width:0; display:flex; flex-direction:column; gap:1px; cursor:default; }
 .co-set-text strong { font-size:15px; font-weight:650; }
 .co-set-text small { color:var(--muted); font-size:14px; line-height:1.4; }
+.co-set-row > .co-seg { flex:0 0 auto; }
 .co-set-row .co-btn { flex:0 0 auto; gap:8px; height:40px; min-height:40px; padding:0 12px; font-size:14px; }
 .co-settings-workspace > header .co-quiet-action { display:grid; place-items:center; width:44px; min-height:44px; padding:0; border:0; border-radius:8px; background:none; color:var(--muted); cursor:pointer; }
 .co-settings-workspace > header .co-quiet-action:hover { background:var(--surface-2); color:var(--text); }
-@media(max-width:650px) { .co-settings-workspace { position:fixed; inset:68px 16px auto; width:auto; height:auto; max-height:calc(100dvh - 84px); padding:16px; overflow-y:auto; } .co-settings-content .co-prompt-settings textarea { flex:none; min-height:240px; } .co-set-row { flex-wrap:wrap; } }
+@media(max-width:650px) { .co-set-row.has-choice { flex-wrap:wrap; } .co-set-row.has-choice > .co-set-text { min-width:200px; } .co-set-row.has-choice > .co-seg { margin-left:48px; } .co-settings-workspace { position:fixed; inset:68px 16px auto; width:auto; height:auto; max-height:calc(100dvh - 84px); padding:16px; overflow-y:auto; } .co-settings-content .co-prompt-settings textarea { flex:none; min-height:240px; } .co-set-row { flex-wrap:wrap; } }
 `
 
 
@@ -88,6 +90,8 @@ export function ConnectionCard({
   onRetry,
   autopilotDefault = true,
   onToggleAutopilotDefault,
+  newPrStage = DEFAULT_STAGE,
+  onChangeNewPrStage,
 }) {
   const [statusRetrying, setStatusRetrying] = useState(false)
 
@@ -135,6 +139,19 @@ export function ConnectionCard({
             <div className="co-set-text"><strong>{conn.login}</strong><small>This account is shared across Möbius apps.</small></div>
             <button type="button" className="co-btn" onClick={openGithubSettings}><Icon name="settings" size={15} />Manage account</button>
           </div>
+          {typeof onChangeNewPrStage === 'function' && (
+            <div className="co-set-row has-choice">
+              <span className="co-set-tile" aria-hidden="true"><Icon name={stageWords(newPrStage).icon} size={18} /></span>
+              <div className="co-set-text" id="co-new-pr-stage">
+                <strong>New pull requests start as</strong>
+                <small>{newPrStage === 'draft' ? 'Nobody is asked to review a PR until you open it for review.' : 'Reviewers are asked as soon as a PR opens.'} Pick the other one for a single send from its arrow.</small>
+              </div>
+              <div className="co-seg" role="radiogroup" aria-labelledby="co-new-pr-stage">
+                {['draft', 'ready'].map(stage => <button key={stage} type="button" role="radio" aria-checked={newPrStage === stage}
+                  className={newPrStage === stage ? 'is-on' : ''} onClick={() => onChangeNewPrStage(stage)}>{stage === 'draft' ? 'Draft' : 'Ready'}</button>)}
+              </div>
+            </div>
+          )}
           {conn.autopilotAvailable && typeof onToggleAutopilotDefault === 'function' && (
             <div className="co-set-row">
               <span className="co-set-tile" aria-hidden="true"><Icon name="cycle" size={18} /></span>

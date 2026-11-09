@@ -88,12 +88,9 @@ test('merge when safe explains why it is unavailable', () => {
 })
 
 test('the switch hints say per PR for a batch and stay singular for one PR', () => {
-  assert.match(reviewSwitchHints(1).posting, /^One comment from your account, only for a verdict the agent is sure about\./)
   assert.match(reviewSwitchHints(1).merge, /Merges or queues the PR after/)
-  assert.match(reviewSwitchHints(2).posting, /^Up to one comment per PR from your account/)
   assert.match(reviewSwitchHints(2).merge, /Merges or queues each PR after/)
-  assert.match(reviewSwitchHints(1).verdict, /You submit or discard it here\. On your own PR it comments instead\./)
-  assert.match(reviewSwitchHints(2).verdict, /for each PR/)
+  assert.deepEqual(Object.keys(reviewSwitchHints(1)), ['merge'], 'agents never post a comment on their own, so there is no posting hint')
 })
 
 test('each Agent menu job titles its own window', async () => {

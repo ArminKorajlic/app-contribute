@@ -39,7 +39,7 @@ const STEPS = [
 
 // The window behind Agent > Address feedback. It reads what the PR asks for,
 // asks how far to go, then starts an agent conversation from a written brief.
-export function AddressFeedbackWindow({ pr, token, appId, onStart, onClose }) {
+export function AddressFeedbackWindow({ pr, findings = null, token, appId, onStart, onClose }) {
   const root = useRef(null)
   const [state, setState] = useState({ phase: 'loading', items: [], partial: false })
   const [rung, setRung] = useState('show')
@@ -58,7 +58,7 @@ export function AddressFeedbackWindow({ pr, token, appId, onStart, onClose }) {
       if (activity.status === 'rejected' && threads.status === 'rejected') { setState({ phase: 'error', items: [], partial: false }); return }
       setState({
         phase: 'ready', partial: activity.status === 'rejected' || threads.status === 'rejected' || !!activity.value?.partial || !!threads.value?.partial,
-        items: addressItems(pr, { activity: activity.value?.items || [], threads: threads.value?.threads || [] }),
+        items: addressItems(pr, { activity: activity.value?.items || [], threads: threads.value?.threads || [], findings }),
       })
     })
     return () => controller.abort()
@@ -122,7 +122,6 @@ export function AddressFeedbackWindow({ pr, token, appId, onStart, onClose }) {
     <footer className="co-rw-foot">
       <p>It reads the PR as it is now. If the PR changes while the agent works, it stops and tells you.</p>
       <div className="co-rw-actions">
-        <button type="button" className="co-btn" disabled={busy} onClick={onClose}>Cancel</button>
         <button type="button" className="co-btn co-btn-primary" disabled={busy || state.phase !== 'ready' || !ticked} onClick={start}>{busy ? 'Starting…' : RUNGS.find(item => item.key === rung).start}</button>
       </div>
       {error ? <p className="co-run-error" role="alert">{error}</p> : null}

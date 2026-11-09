@@ -1,8 +1,9 @@
-import { useState } from 'react'
 import { authoredPullState, authoredPulls, chainPulls, editProjects, feedbackPull, mergedRecently, needsPulls, newSince } from '../desk.js'
 import { attentionListItems } from '../run.js'
-import { conversationCount, reviewForPull } from '../collaboration.js'
+import { conversationCount, prKey, reviewForPull } from '../collaboration.js'
+import { savedFindings } from '../address-feedback.js'
 import { frameState, reviewForRecord } from '../review-frame.js'
+import { isOwnPull } from '../pull-view.js'
 import { ReviewFrame } from './ReviewFrame.jsx'
 import { reviewStateTone } from './ReviewTab.jsx'
 import { deskEditsSentence, recordsForProject } from '../source-map.js'
@@ -10,9 +11,8 @@ import { STATUS_LABELS } from '../domain.js'
 import { groupNote, lookAtReason } from './AttentionList.jsx'
 import { ChecksBadge, PullStateIcon, QuietLabels, TimeAgo } from './GithubParts.jsx'
 import { Icon } from './Icons.jsx'
-import { ProjectIcon } from './ProjectIcon.jsx'
-
-const PROJECT_TAGS = { platform: 'Platform', app: 'App', external: 'On GitHub' }
+import { Envelope, EmptyView } from './Envelope.jsx'
+import { ConfirmView, ReviewsView } from './ReviewsView.jsx'
 
 const matches = (query, ...parts) => !query.trim()
   || parts.filter(Boolean).join(' ').toLowerCase().includes(query.trim().toLowerCase())
@@ -25,10 +25,10 @@ function NewDot({ value, lastLooked }) {
 // One PR under its project's card. The whole row opens the PR on its own page;
 // a PR with a review running or waiting wears the comet frame, says so in a chip,
 // and opens on its Review tab.
-function DeskPullRow({ project, pr, chip, order, lastLooked, runs, onOpenPull }) {
+function DeskPullRow({ project, pr, chip, order, lastLooked, runs, onOpenPull, own, ignored }) {
   const comments = conversationCount(pr)
   const status = reviewForPull(runs || [], pr)
-  const framed = frameState(status)
+  const framed = frameState(status, { own, ignored })
   return (
     <ReviewFrame state={framed} inset={3} radius={10}>
     <button type="button" className="co-desk-row" onClick={() => onOpenPull(project, pr, framed === 'idle' ? 'conversation' : 'review')}>
@@ -42,7 +42,7 @@ function DeskPullRow({ project, pr, chip, order, lastLooked, runs, onOpenPull })
           <ChecksBadge pr={pr} />
           {Number.isInteger(pr.additions) ? <span className="co-change-total"><b>+{pr.additions}</b><em>−{pr.deletions}</em></span> : null}
           {chip ? <span className={'co-desk-chip is-' + chip.tone}>{chip.label}</span> : null}
-          {framed === 'verdict' ? <span className="co-desk-chip is-waiting">{reviewStateTone(status).title}</span> : null}
+          {framed === 'verdict' ? <span className="co-desk-chip is-waiting">{reviewStateTone(status, { own, ignored }).title}</span> : null}
         </span>
         <span className="co-pr-labels"><QuietLabels pr={pr} /></span>
       </span>
@@ -54,11 +54,11 @@ function DeskPullRow({ project, pr, chip, order, lastLooked, runs, onOpenPull })
 
 // A saved-work card (review feedback, a decision) in the same shape as a PR
 // row: icon, title, one muted line on why it is here, and a state chip.
-function DeskAttentionRow({ item, onSelect }) {
+function DeskAttentionRow({ item, onSelect, action = null }) {
   const reason = lookAtReason(item)
   const detectedAt = item.record?.attention?.detected_at
   const group = groupNote(item)
-  return (
+  const row = (
     <button type="button" className={'co-desk-row is-' + reason.key} onClick={() => onSelect(item)}>
       <Icon name="info" size={16} className="co-desk-attention-icon" />
       <span className="co-desk-row-main">
@@ -72,41 +72,20 @@ function DeskAttentionRow({ item, onSelect }) {
       </span>
     </button>
   )
-}
-
-// The card that keeps one app's work together: its icon and name on top, the
-// rows inside, and Open to the project page itself.
-function Envelope({ project, count, foldable, children, onOpenProject }) {
-  const [open, setOpen] = useState(true)
-  return (
-    <section className={'co-envelope' + (open ? '' : ' is-folded')} aria-label={project.name}>
-      <header className="co-envelope-head">
-        <ProjectIcon project={project} className="co-envelope-glyph" />
-        <strong>{project.name}</strong>
-        {PROJECT_TAGS[project.kind] ? <span className="co-source-tag">{PROJECT_TAGS[project.kind]}</span> : null}
-        {count ? <b className="co-rail-count">{count}</b> : null}
-        <button type="button" className="co-quiet-action" onClick={() => onOpenProject(project.key)}>Open<Icon name="right" size={14} /></button>
-        {foldable ? <button type="button" className="co-envelope-toggle" aria-expanded={open} aria-label={(open ? 'Collapse ' : 'Expand ') + project.name} onClick={() => setOpen(!open)}><Icon name="chevron" size={16} /></button> : null}
-      </header>
-      <div className="co-envelope-body">{children}</div>
-    </section>
-  )
-}
-
-function EmptyView({ icon = 'check', title, hint }) {
-  return <div className="co-stage-empty"><Icon name={icon} size={20} /><strong>{title}</strong>{hint ? <span>{hint}</span> : null}</div>
+  // The row's own answer sits beside it, never inside the button that opens the PR.
+  return action ? <div className="co-desk-row-split">{row}<button type="button" className="co-btn co-btn-primary co-desk-row-action" onClick={action.run}>{action.label}</button></div> : row
 }
 
 const requestChip = { label: 'Asks for your review', tone: 'you' }
 
 // Rows per project and view. Review requests come first in Needs you; the
 // owner's saved-work decisions follow; then their own actionable PRs.
-function projectRows(view, project, { login, decisionsFor, lastLooked, query, runs, onOpenPull, onOpenRecord }) {
+function projectRows(view, project, { login, decisionsFor, lastLooked, query, runs, ignored, onOpenPull, onOpenRecord }) {
   const rows = []
   // The search finds a project by its name too: a name match keeps all of its rows.
   const keep = (...parts) => matches(query, project.name, ...parts)
   const pull = (pr, chip, order) => rows.push(
-    <DeskPullRow key={`pr:${pr.number}`} project={project} pr={pr} chip={chip} order={order} lastLooked={lastLooked} runs={runs} onOpenPull={onOpenPull} />,
+    <DeskPullRow key={`pr:${pr.number}`} project={project} pr={pr} chip={chip} order={order} lastLooked={lastLooked} runs={runs} onOpenPull={onOpenPull} own={isOwnPull(pr, login)} ignored={ignored} />,
   )
   const requests = view === 'work' ? [] : (project.reviewRequests || []).filter(pr => keep(pr.title, String(pr.number), pr.author?.login))
   const all = decisionsFor(project)
@@ -115,9 +94,17 @@ function projectRows(view, project, { login, decisionsFor, lastLooked, query, ru
   const mine = view === 'needs' || view === 'mine'
     ? authoredPulls(project.incomingReviews, login).filter(pr => keep(pr.title, String(pr.number), pr.author?.login))
     : []
+  // Your own agent review of your own PR found problems at its current version:
+  // the row offers the fix itself, and opens the PR straight into it.
+  const fixAction = item => {
+    const target = feedbackPull(item)
+    const pr = target && authoredPulls(project.incomingReviews, login).find(candidate => prKey(candidate) === prKey(target))
+    if (!pr || !savedFindings(reviewForPull(runs, pr), ignored)) return null
+    return { label: 'Fix these findings', run: () => onOpenPull(project, target, 'review', 'fix') }
+  }
   const decisionRow = item => (
-    <ReviewFrame key={`decision:${item.id}`} state={frameState(reviewForRecord(runs, item.record))} inset={3} radius={10}>
-      <DeskAttentionRow item={item} onSelect={openDecision} />
+    <ReviewFrame key={`decision:${item.id}`} state={frameState(reviewForRecord(runs, item.record), { own: true, ignored })} inset={3} radius={10}>
+      <DeskAttentionRow item={item} onSelect={openDecision} action={fixAction(item)} />
     </ReviewFrame>
   )
   const openDecision = item => {
@@ -189,8 +176,10 @@ const EMPTY = {
 }
 
 // The selected side view: one card per app, in the projects list's own order.
-export function DeskView({ view, projects, records, login, decisionsFor, lastLooked, query, runs = [], onOpenProject, onOpenPull, onOpenRecord }) {
-  const context = { login, decisionsFor, lastLooked, query, runs, onOpenPull, onOpenRecord }
+export function DeskView({ view, projects, records, login, decisionsFor, lastLooked, query, runs = [], ignored = null, reviews = null, onOpenProject, onOpenPull, onOpenRecord }) {
+  if (view === 'confirm' && reviews) return <ConfirmView reviews={reviews} projects={projects} query={query} onOpenProject={onOpenProject} onOpenPull={onOpenPull} />
+  if (view === 'reviews' && reviews) return <ReviewsView reviews={reviews} projects={projects} query={query} onOpenProject={onOpenProject} onOpenPull={onOpenPull} />
+  const context = { login, decisionsFor, lastLooked, query, runs, ignored, onOpenPull, onOpenRecord }
   const envelopes = []
   for (const project of projects) {
     let rows = []

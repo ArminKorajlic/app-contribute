@@ -61,6 +61,8 @@ test('a run with a saved merge or push GitHub may have settled is observed read-
   assert.equal(awaitsGithub(queued), true)
   assert.equal(awaitsGithub({ state: 'reviewing', items: [{ state: 'reviewing' }, { state: 'merged' }] }), false)
   assert.equal(awaitsGithub({ ...queued, state: 'complete' }), false)
+  assert.equal(awaitsGithub({ state: 'needs_you', items: [{ state: 'verdict_unknown' }] }), true, 'an unconfirmed verdict is re-checked against GitHub')
+  assert.equal(awaitsGithub({ state: 'needs_you', items: [{ state: 'verdict_pending' }] }), false, 'a verdict waiting for you is not on GitHub to find')
   const calls = []
   let observed = false
   t.mock.method(globalThis, 'fetch', async (url, init) => {

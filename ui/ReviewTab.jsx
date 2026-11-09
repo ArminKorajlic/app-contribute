@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { OWNER_ITEM_STATES, reviewItemProgress, reviewRunHalted } from '../collaboration.js'
+import { OWNER_ITEM_STATES, ignoredNote, reviewItemProgress, reviewRunHalted } from '../collaboration.js'
+import { postableFindings, reviewActionPlan, reviewStoppable } from '../review-actions.js'
 import { frameState } from '../review-frame.js'
 import { openAgentConversation } from './BatchAction.jsx'
 import { ClampedMarkdown } from './ClampedMarkdown.jsx'
@@ -24,14 +25,19 @@ export const formatElapsed = seconds => `${Math.floor(seconds / 60)}:${String(se
 
 // How a review reads on the PR: one title and tone per state, chosen from the
 // platform's own run state. `changes` is a proposal to request changes.
-export function reviewStateTone(status) {
+export function reviewStateTone(status, ctx) {
   if (!status) return { key: 'none', title: 'No review yet' }
   const { run, item } = status
-  const progress = reviewItemProgress(run, item)
+  const progress = reviewItemProgress(run, item, ctx)
   if (progress.halted || item.state === 'failed') return { key: 'halted', title: progress.label, box: 'changes' }
-  if (frameState(status) === 'reviewing') return { key: 'running', title: progress.label }
+  if (frameState(status, ctx) === 'reviewing') return { key: 'running', title: progress.label }
   if (item.state === 'verdict_pending') return { key: 'verdict', title: 'Verdict waiting for you', box: 'verdict' }
+  // Your review is out and the author is next: nothing here waits on you.
+  if (progress.turn === 'author') return { key: 'waiting', title: progress.label }
+  if (ignoredNote(item, ctx?.ignored)) return { key: 'ignored', title: 'Ignored' }
   if (item.state === 'needs_you' && item.verdict_proposal?.event === 'REQUEST_CHANGES') return { key: 'changes', title: 'Changes found', box: 'changes' }
+  // The review found problems and has finished: nothing was asked, so it is not an "answer".
+  if (item.state === 'needs_you' && !progress.waiting) return { key: 'findings', title: ctx?.own ? 'Your check found problems' : 'Problems found', box: 'verdict' }
   if (OWNER_ITEM_STATES.has(item.state)) return { key: 'needs', title: progress.label, box: 'verdict' }
   if (item.state === 'all_clear') return { key: 'clear', title: 'Review clear', box: 'clear' }
   return { key: 'settled', title: progress.label }
@@ -39,8 +45,8 @@ export function reviewStateTone(status) {
 
 // The Review tab of a PR: nothing yet, a running review, or what the last review
 // found. It reuses the run's own verdict and conversation actions.
-export function ReviewTab({ pr, status, earlier = null, own = false, readOnly = false, busy = false, error = '', onStart, onStop, onRetry, onVerdict, pulls = [], listState = {} }) {
-  const tone = reviewStateTone(status)
+export function ReviewTab({ pr, status, earlier = null, own = null, ignored = null, canPost = false, readOnly = false, busy = false, error = '', onStart, onStop, onRetry, onVerdict, onCheck, onFix, onIgnore, onUndoIgnore, onPost, pulls = [], listState = {} }) {
+  const tone = reviewStateTone(status, { own, ignored })
   const running = tone.key === 'running'
   const elapsed = useElapsed(status?.run?.created_at, running)
   if (!status && earlier) return <EarlierReview earlier={earlier} readOnly={readOnly} onStart={onStart} />
@@ -54,7 +60,12 @@ export function ReviewTab({ pr, status, earlier = null, own = false, readOnly = 
   }
   const { run, item } = status
   const halted = reviewRunHalted(run)
-  const stoppable = run.can_stop && run.state !== 'complete' && !halted
+  const progress = reviewItemProgress(run, item, { own, ignored })
+  const stoppable = reviewStoppable({ run, tone: tone.key, progress })
+  const note = ignoredNote(item, ignored)
+  const asked = progress.waiting
+  const plan = reviewActionPlan({ tone: tone.key, own: own === true, chat: !!run.chat_id, asked, stoppable: stoppable && !!onStop, can: { retry: halted && !!onRetry, fix: !readOnly && !!onFix, post: !readOnly && canPost && !!onPost && postableFindings(item), ignore: !readOnly && !!onIgnore, again: !readOnly && !!onStart } })
+  const handlers = { ask: () => openAgentConversation(run.chat_id), stop: onStop, retry: onRetry, fix: () => onFix(item), post: () => onPost({ run, item }), ignore: () => onIgnore(item), undo: () => onUndoIgnore?.(item), again: () => onStart('review') }
   const version = `${item.head_sha?.slice(0, 7) || '…'} → ${item.base_ref || 'main'}`
   const reviewId = item.verdict_proposal?.review_id || commentReference(item.public_review?.url)
   const posted = item.public_review?.state === 'posted' && item.public_review.url
@@ -67,20 +78,20 @@ export function ReviewTab({ pr, status, earlier = null, own = false, readOnly = 
       <span className="co-review-version">{version}</span>
     </div>
     {running ? <p className="co-review-note">The agent is reading the PR. Its findings appear here when it finishes. You can leave this page: the frame on the list shows when it is done.</p> : null}
+    {tone.key === 'halted' && run.summary ? <p className="co-review-note">{run.summary}</p> : null}
     {item.summary ? <ClampedMarkdown markdown={item.summary} /> : null}
     {item.verdict_proposal ? <VerdictProposal proposal={item.verdict_proposal} mode={run.mode} busy={busy} own={own}
-      onDecide={onVerdict ? (proposal, decision) => onVerdict(item, proposal, decision) : null} /> : null}
+      onDecide={onVerdict ? (proposal, decision) => onVerdict(item, proposal, decision) : null} onCheck={onCheck || null} /> : null}
     {posted ? <a className="co-quiet-action" href={item.public_review.url} target="_blank" rel="noopener noreferrer">View the posted review on GitHub</a> : null}
     {item.tests ? <details className="co-task-details"><summary>What it ran</summary><p className="co-review-note">{item.tests}</p></details> : null}
     <p className="co-review-note">{savedVersion(item, pulls, listState)}</p>
     {error ? <p role="alert">{error}</p> : null}
+    {tone.key === 'ignored' && note ? <p className="co-review-note">Ignored: {note.reason}. Only for this version; it comes back if the PR changes.</p> : null}
     <div className="co-review-actions">
-      {run.chat_id ? <button type="button" className={'co-btn' + (running || tone.key === 'needs' ? ' co-btn-primary' : '')} onClick={() => openAgentConversation(run.chat_id)}>{tone.key === 'needs' ? 'Answer in review conversation' : 'Open review conversation'}</button> : null}
-      {stoppable && onStop ? <button type="button" className="co-quiet-action" disabled={busy} onClick={onStop}>Stop review</button> : null}
-      {halted && onRetry ? <button type="button" className="co-btn" disabled={busy} onClick={onRetry}>Start again</button> : null}
+      {plan.map(action => <button key={action.key} type="button" disabled={busy && action.key !== 'ask'} className={action.primary ? 'co-btn co-btn-primary' : action.quiet ? 'co-quiet-action' : 'co-btn'} onClick={handlers[action.key]}>{action.label}</button>)}
     </div>
   </div>
-  return <ReviewFrame state={frameState(status)} radius={12}>{body}</ReviewFrame>
+  return <ReviewFrame state={frameState(status, { own, ignored })} radius={12}>{body}</ReviewFrame>
 }
 
 // The PR changed after its last review, so that review is of an earlier version:

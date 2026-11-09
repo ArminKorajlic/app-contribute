@@ -136,11 +136,16 @@ export async function collaborationRequest(token, appId, path, body) {
     headers: { Authorization: `Bearer ${token}`, ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   })
-  const data = await response.json().catch(() => ({}))
-  if (!response.ok) throw Object.assign(new Error(response.status === 404
+  // A body that cannot be decoded reads as empty, and the error says so (`unreadable`), so a caller
+  // that needs the platform's own word can tell "refused" from "the answer was lost".
+  let unreadable = false
+  const data = await response.json().catch(() => { unreadable = true; return {} })
+  // A route that does not exist answers a bare 404; a 404 that explains itself (a PR GitHub cannot show) is the platform's own word.
+  const routeMissing = response.status === 404 && (!data.detail || data.detail === 'Not Found')
+  if (!response.ok) throw Object.assign(new Error(routeMissing
     ? 'These controls need the companion Möbius update to be activated.'
     : typeof data.detail === 'string' ? data.detail : data.detail?.message || 'Could not complete this action. Refresh before retrying.'),
-  { status: response.status, ...(typeof data.detail?.code === 'string' ? { code: data.detail.code } : {}) })
+  { status: response.status, ...(unreadable ? { unreadable } : {}), ...(typeof data.detail?.code === 'string' ? { code: data.detail.code } : {}) })
   return data
 }
 
@@ -172,18 +177,53 @@ export const REVIEW_STATE_NAMES = { reviewing: 'Reviewing', repairing:'Fixing re
 const SETTLED_ITEMS = new Set(['all_clear', 'merged', 'queued', 'complete'])
 const HALTED_RUNS = new Set(['stopped', 'failed', 'interrupted'])
 export const reviewRunStateLabel = run => REVIEW_STATE_NAMES[run.execution_state] || REVIEW_STATE_NAMES[run.state] || run.state
-export function reviewItemProgress(run, item) {
-  const settled = SETTLED_ITEMS.has(item.state)
+// `turn` says whose move the review leaves on its PR: 'agent' while it works,
+// 'owner' while a decision, an answer or a fix waits on you, 'author' once your
+// review is out and the PR's author is next, 'none' once it is settled. The
+// saved word needs_you is what the review FOUND; the verdict receipts say what
+// you already did about it, and only they can hand the move to the author.
+// GitHub refuses "request changes" on your own PR, so a posted one is always on
+// someone else's. A posted plain review hands a PR over only when `own` is
+// known to be false; null (unknown) never does.
+// `ignored` is the owner's notes of findings set aside (ignoreKey -> { reason }):
+// a finding the owner ignored for this exact version no longer waits on them.
+export function reviewItemProgress(run, item, { own = null, ignored = null } = {}) {
+  const found = item.state === 'needs_you'
+  const verdict = item.verdict_proposal
+  const requested = found && verdict?.state === 'posted' && verdict.event === 'REQUEST_CHANGES'
+  const handedOver = requested || (found && own === false && !verdict && item.public_review?.state === 'posted')
+  const dropped = found && verdict?.state === 'discarded'
+  const waived = !handedOver && !!ignoredNote(item, ignored)
+  const settled = SETTLED_ITEMS.has(item.state) || handedOver || dropped || waived
   const halted = !settled && HALTED_RUNS.has(run.execution_state)
   const waiting = !settled && run.execution_state === 'awaiting_owner'
-  return { label: halted ? 'Not finished' : REVIEW_STATE_NAMES[item.state] || item.state, halted, waiting, settled }
+  const label = requested ? 'Changes requested' : handedOver ? 'Review posted' : dropped ? 'Verdict discarded' : waived ? 'Ignored'
+    : halted ? 'Not finished' : REVIEW_STATE_NAMES[item.state] || item.state
+  const turn = handedOver ? 'author' : settled ? 'none' : halted || waiting || OWNER_ITEM_STATES.has(item.state) ? 'owner' : 'agent'
+  return { label, halted, waiting, settled, turn }
 }
+
+// One review of one PR at one exact version: what the owner's "ignore" note is
+// filed under, so a new version of the PR is reviewed and judged afresh.
+export const ignoreKey = item => `${String(item.repo).toLowerCase()}#${item.number}@${item.head_sha}`
+// The notes are kept by exact version, so they stay few: only the newest few hundred are remembered.
+const MAX_IGNORE_NOTES = 200
+export function withIgnoreNote(notes, item, reason, now = new Date().toISOString()) {
+  const next = { ...notes, [ignoreKey(item)]: { reason, at: now } }
+  return Object.fromEntries(Object.entries(next).sort(([, a], [, b]) => String(b.at).localeCompare(String(a.at))).slice(0, MAX_IGNORE_NOTES))
+}
+export function withoutIgnoreNote(notes, item) {
+  const { [ignoreKey(item)]: removed, ...rest } = notes || {}
+  return rest
+}
+// The owner's note setting aside this review's findings, if there is one for them.
+export const ignoredNote = (item, ignored) => (item.state === 'needs_you' ? ignored?.[ignoreKey(item)] || null : null)
 export const reviewRunHalted = run => run.state !== 'complete' && HALTED_RUNS.has(run.execution_state)
 
 // Public outcomes a run saved before GitHub settled them. The server's observe
 // step is read-only reconciliation, so the view settles them itself: a queued
 // PR reads as merged even while its conversation waits on the owner or stopped.
-const UNSETTLED = new Set(['queued', 'merging', 'merge_unknown', 'pushing', 'push_unknown', 'marking_ready', 'ready_unknown'])
+const UNSETTLED = new Set(['queued', 'merging', 'merge_unknown', 'pushing', 'push_unknown', 'marking_ready', 'ready_unknown', 'verdict_posting', 'verdict_unknown'])
 export const awaitsGithub = run => run.state !== 'complete' && (run.items || []).some(item => UNSETTLED.has(item.state))
 export const OBSERVE_EVERY_MS = 60000
 const observedAt = new Map()
@@ -242,6 +282,60 @@ export function reviewRunRequest(choice) {
     }),
   }
 }
+
+// A public write is only as true as its answer. Of the ways one can end, a decoded receipt for this
+// action proves it happened and a decoded 4xx proves it did not. Everything else may have reached
+// GitHub: the connection dropped before the answer, a gateway or server error, an answer whose body
+// cannot be read (whatever its status) or a "success" that is not this action's receipt. That is
+// { pending }, never a plain failure the sheet would offer to retry and never a success it would claim. `receipt` turns the decoded answer
+// into the fields the sheet reads, or null when it is not this action's completion.
+async function publicWrite(token, appId, path, body, { code, words, receipt }) {
+  let result
+  try {
+    result = await collaborationRequest(token, appId, path, body)
+  } catch (error) {
+    if (error.status >= 400 && error.status < 500 && !error.unreadable) return { error: error.message }
+    return { pending: true, error: error.code === code ? error.message : words }
+  }
+  const settled = receipt(result)
+  return settled ? { ok: true, ...settled } : { pending: true, error: words }
+}
+
+// The owner's own Merge: this exact version, by the repository's allowed method.
+// Returns the outcome shape the confirm sheet already reads: { ok } | { pending }
+// (GitHub may have merged; read it back, never repeat) | { error }. The platform
+// re-checks everything at the moment of merging and refuses what GitHub refuses.
+export const mergePull = (token, appId, pr, { method = '' } = {}) => publicWrite(token, appId, 'pulls/merge', {
+  repo: pr.repository.nameWithOwner, number: pr.number, head_sha: pr.headRefOid, ...(method ? { method } : {}),
+}, {
+  code: 'merge_unconfirmed', words: 'GitHub may have merged it. Check the pull request before trying again.',
+  receipt: result => ['merged', 'queued'].includes(result?.state) ? { state: result.state, mergeSha: result.merge_sha || '' } : null,
+})
+
+// The owner's own "open this draft for review", for a draft Contribute did not open: this exact
+// version, once. Same outcome shapes as mergePull. GitHub cannot pin a version on this write, so the
+// platform reports the head it saw afterwards (observedHead) and the sheet says so if it moved.
+export const markReadyPull = (token, appId, pr) => publicWrite(token, appId, 'pulls/ready', {
+  repo: pr.repository.nameWithOwner, number: pr.number, head_sha: pr.headRefOid,
+}, {
+  code: 'ready_unconfirmed', words: 'GitHub may have marked it ready. Check the pull request before trying again.',
+  receipt: result => result?.state === 'ready' && typeof result.observed_head_sha === 'string' ? { state: 'ready', observedHead: result.observed_head_sha } : null,
+})
+
+// What a finished private review would say on GitHub, word for word, with the hash that binds the
+// post to it. Read-only: the platform writes nothing here.
+export const previewPostedFindings = (token, appId, run, item) =>
+  collaborationRequest(token, appId, `review-runs/${encodeURIComponent(run.id)}/post-preview`,
+    { repo: item.repo, number: item.number, head_sha: item.head_sha })
+
+// Post exactly the previewed words, once, as a plain comment review at the reviewed version. Same
+// outcome shapes as mergePull.
+export const postFindings = (token, appId, run, item, preview) => publicWrite(token, appId,
+  `review-runs/${encodeURIComponent(run.id)}/post`,
+  { repo: item.repo, number: item.number, head_sha: item.head_sha, preview_sha256: preview.preview_sha256 }, {
+    code: 'post_unconfirmed', words: 'GitHub may have posted it. Check the pull request before trying again.',
+    receipt: result => result?.state === 'posted' ? { state: 'posted', url: result.url || '' } : null,
+  })
 
 // Assignment is additive on GitHub. Return each outcome so partial batches
 // never look like an all-or-nothing success or silently retry failed requests.
