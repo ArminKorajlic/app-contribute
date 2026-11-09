@@ -13,7 +13,7 @@ export function DefaultAgentSettings({ token, agent, onChange }) {
         <span className="co-set-tile" aria-hidden="true"><Icon name="prepare" size={18} /></span>
         <div className="co-set-text">
           <strong>Agent for reviews and fixes</strong>
-          <small>Suggested each time you review, re-review or fix. Each window still lets you pick a different agent for that run.</small>
+          <small>Suggested each time you review or fix. Each window still lets you pick a different agent for that run.</small>
         </div>
       </div>
       <div className="co-set-picker">

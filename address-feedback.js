@@ -5,7 +5,7 @@ import { checkSummary, ignoredNote, isBotAuthor } from './collaboration.js'
 
 export const RUNGS = [
   { key: 'show', title: 'Show me the changes first', detail: 'It works in a private copy. Nothing leaves your Möbius until you decide.', start: 'Start, show me the changes' },
-  { key: 'push', title: 'Send when I approve', detail: 'Same, then one approval sheet: the fixes, every reply, the description and the re-review requests. You approve once and it sends them.', start: 'Start, send when I approve' },
+  { key: 'push', title: 'Send when I approve', detail: 'Same, then one approval sheet: the fixes, every reply, the description and the requests to review again. You approve once and it sends them.', start: 'Start, send when I approve' },
 ]
 
 const MAX_LISTED = 20
@@ -91,10 +91,10 @@ export function addressBrief({ pr, items, rung }) {
     '- Every point ends in exactly one of three ways. Fixed: change the code, and the reply names the commit that fixes it. Not valid: no change, and the reply explains why and @mentions the reviewer. Out of scope: no change, and the reply says a separate PR will handle it. Leave no point without one of these.',
     '- Bot findings are input, not reviews: check each against the actual diff and the current code first, treat repeats of the same finding as one, and reply only when a finding is wrong or already fixed. A bot finding never blocks on its own.',
     '- Work in a private copy of the PR’s branch (a git worktree or a scratch clone), never in my working files. Make the smallest change that resolves each fixed point and run the project’s tests and the failing checks locally where you can.',
-    '- If the fixes change what the PR does, draft an updated PR description. List the people who asked for changes: they will be asked to re-review.',
+    '- If the fixes change what the PR does, draft an updated PR description. List the people who asked for changes: they will be asked to review again.',
     '- If the PR’s head moves (new commits) while you work, stop and tell me instead of pushing over it.',
     push
-      ? '- When everything is ready, ask for my approval ONCE, with one approval card that shows: the PR and branch, the commits to push with a diff summary and the test result, every reply exactly as it will be posted (with its point and its ending: fixed, not valid or out of scope), the description update if any, and who will be asked to re-review. Only after I approve: push, then post each reply (naming the pushed commit where it says fixed), update the description, and request the re-reviews. Nothing goes out before that approval.'
+      ? '- When everything is ready, ask for my approval ONCE, with one approval card that shows: the PR and branch, the commits to push with a diff summary and the test result, every reply exactly as it will be posted (with its point and its ending: fixed, not valid or out of scope), the description update if any, and who will be asked to review again. Only after I approve: push, then post each reply (naming the pushed commit where it says fixed), update the description, and re-request their reviews on GitHub. Nothing goes out before that approval.'
       : '- Do not push, comment, reply, merge or change anything on GitHub. Stop with the changes ready in your private copy and tell me where they are.',
     '- Never merge, never resolve threads for the reviewer, and never mark the PR ready or draft.',
     '',

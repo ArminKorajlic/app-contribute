@@ -1,4 +1,5 @@
-import { useId, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
+import { showOpenTab } from './stripScroll.js'
 
 const BASE_TABS = [['all', 'All PRs'], ['requests', 'Review requests'], ['mine', 'Agent runs']]
 
@@ -17,6 +18,7 @@ export function ProjectTabs({ reviewCount = 0, renderPullRequests, inventory, my
   const TABS = edits ? [...BASE_TABS, ['edits', 'Local changes']] : BASE_TABS
   const tab = TABS.some(([key]) => key === chosen) ? chosen : 'all'
   const counts = { all: total, requests: reviewCount, mine: null, edits: editsCount }
+  useEffect(() => { showOpenTab(list.current, list.current?.querySelector('[role="tab"][aria-selected="true"]')) }, [tab])
   function moveWithArrows(event) {
     if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return
     const index = TABS.findIndex(([key]) => key === tab)
@@ -28,7 +30,7 @@ export function ProjectTabs({ reviewCount = 0, renderPullRequests, inventory, my
   return <>
     <div ref={list} className="co-project-tabs" role="tablist" aria-label="Project views" onKeyDown={moveWithArrows}>
       {TABS.map(([key, label]) => <button key={key} type="button" role="tab" data-tab={key} id={`${id}-${key}`} aria-selected={tab === key} aria-controls={`${id}-panel`} tabIndex={tab === key ? 0 : -1} className="co-project-tab" onClick={() => setTab(key)}>
-        {label}{counts[key] != null ? <span className={'co-tab-count' + (key === 'requests' && counts[key] > 0 ? ' is-you' : '')}>{counts[key]}</span> : null}
+        {label}{counts[key] != null ? <span className={'co-tab-count' + (key === 'requests' && counts[key] > 0 ? ' is-you' : '') + (key === 'edits' ? ' is-files' : '')}>{key === 'edits' ? `${counts[key]} ${counts[key] === 1 ? 'file' : 'files'}` : counts[key]}</span> : null}
       </button>)}
     </div>
     <div id={`${id}-panel`} role="tabpanel" aria-labelledby={`${id}-${tab}`} className="co-project-tabpanel">

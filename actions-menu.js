@@ -8,7 +8,7 @@ import { isPersonalDraft } from './domain.js'
 
 // The agent jobs and your own actions the menu shows, by machine action id, in
 // their fixed order. Take over sits apart at the bottom: it is rare and deliberate.
-const AGENT_MENU = { check_my_pr: 'review', respond: 'feedback', finish_it: 'fix', review: 'review', take_over: 'fix' }
+export const AGENT_MENU = { check_my_pr: 'review', respond: 'reply', finish_it: 'fix', review: 'review', take_over: 'takeover' }
 const YOUR_MENU = { open_for_review: 'send', back_to_draft: 'draft', ask_rereview: 'person', merge: 'merge', close: 'close' }
 // Each of your actions exists only where this Möbius can do it for you.
 const CAPABILITY = { open_for_review: 'mark_ready_now', back_to_draft: 'back_to_draft_now', ask_rereview: 'request_rereview_now', merge: 'merge_now', close: 'close_now' }

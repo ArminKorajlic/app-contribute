@@ -102,9 +102,24 @@ export function needsPulls(project, items, login) {
     .filter(([, state]) => state.tone !== 'quiet' && state.key !== 'approved_draft')
 }
 
-export function projectNeedsCount(project, decisions, login) {
+export const sameRepo = (a, b) => String(a || '').toLowerCase() === String(b || '').toLowerCase()
+
+// The agent-run rows a project's Needs you card renders: its repository's runs that wait on
+// the owner, except those on a PR the card already lists as a row of its own.
+export function projectAgentRuns(project, reviewEntries, items, login) {
+  const shown = new Set([
+    ...(project.reviewRequests || []).map(pullKey),
+    ...feedbackPullKeys(items),
+    ...needsPulls(project, items, login).map(([pr]) => pullKey(pr)),
+  ])
+  return agentRunsWaiting((reviewEntries || []).filter(entry => sameRepo(entry.item.repo, project.canonical_repo)), shown)
+}
+
+// A repository's rail badge is exactly the rows its Needs you card shows (finding 4).
+export function projectNeedsCount(project, decisions, login, reviewEntries = []) {
   const items = attentionListItems(decisions)
   return (project.reviewRequests?.length || 0) + items.length + needsPulls(project, items, login).length
+    + projectAgentRuns(project, reviewEntries, items, login).length
 }
 
 // A review run that waits on you (its result, a draft to send, a question, a stop)

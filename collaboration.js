@@ -323,7 +323,7 @@ const STATUS_WRITE = {
   ready: { state: 'ready', code: 'ready_unconfirmed', words: 'GitHub may have marked it ready. Check the pull request before trying again.' },
   draft: { state: 'draft', code: 'draft_unconfirmed', words: 'GitHub may have turned it back into a draft. Check the pull request before trying again.' },
   close: { state: 'closed', code: 'close_unconfirmed', words: 'GitHub may have closed it. Check the pull request before trying again.' },
-  'request-reviewers': { state: 'requested', code: 'reviewers_unconfirmed', words: 'GitHub may have asked for the re-review. Check the pull request before trying again.' },
+  'request-reviewers': { state: 'requested', code: 'reviewers_unconfirmed', words: 'GitHub may have asked for another review. Check the pull request before trying again.' },
 }
 export const pullAction = (token, appId, pr, action, extra = {}) => {
   const write = STATUS_WRITE[action]

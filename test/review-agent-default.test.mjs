@@ -76,7 +76,7 @@ test('Settings offers one default agent for reviews and fixes, with a plain sent
   if (!api) return
   const html = api.render('DefaultAgentSettings', { token: 't', agent: saved, onChange() {} })
   assert.match(html, /<h3>Default agent<\/h3>/)
-  assert.match(html, /Suggested each time you review, re-review or fix\. Each window still lets you pick a different agent for that run\./)
+  assert.match(html, /Suggested each time you review or fix\. Each window still lets you pick a different agent for that run\./)
   assert.match(html, /claude-sonnet-5-5/)
   const unset = api.render('DefaultAgentSettings', { token: 't', agent: null, onChange() {} })
   assert.match(unset, /Default model/)

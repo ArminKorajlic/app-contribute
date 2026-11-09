@@ -89,7 +89,7 @@ export function AddressFeedbackWindow({ pr, findings = null, token, appId, defau
     } catch { setError('Could not start the agent. Try again.') }
     finally { setBusy(false) }
   }
-  const heading = (seen = null) => <WindowHead icon="feedback" title="Respond to feedback" pulls={[pr]} tools={<>{seen}<CloseWindowButton onClick={onClose} /></>} />
+  const heading = (seen = null) => <WindowHead icon="reply" title="Respond to feedback" pulls={[pr]} tools={<>{seen}<CloseWindowButton onClick={onClose} /></>} />
   if (started) return <section ref={root} tabIndex={-1} className="co-review-window" aria-label="Respond to feedback started">
     {heading()}
     <div className="co-rw-body">

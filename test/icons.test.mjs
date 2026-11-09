@@ -22,3 +22,19 @@ test('every icon a component names exists in the icon set', () => {
   }
   assert.deepEqual(missing, [])
 })
+
+// One mark, one meaning (finding L14): the five places that shared a mark with something else.
+test('the files button, the requests empty state, Take over, merged rows and Respond each have their own mark', async () => {
+  const { AGENT_MENU, YOUR_INTENTS } = await import('../actions-menu.js')
+  const { DESK_VIEWS } = await import('../desk.js')
+  const read = file => readFileSync(new URL(`../${file}`, import.meta.url), 'utf8')
+  const viewIcon = key => DESK_VIEWS.find(view => view.key === key).icon
+  assert.match(read('ui/ProjectControls.jsx'), /aria-label="See the files"[^>]*><Icon name="file"/, 'the files button is a file, not the Needs you eye')
+  assert.match(read('ui/DeskViews.jsx'), new RegExp(`requests: \\{ icon: '${viewIcon('requests')}'`), 'the empty Review requests page shows its own view mark')
+  assert.match(read('ui/DeskViews.jsx'), /<Icon name="merge"[^>]*co-desk-merged-icon/, 'a merged row shows the merge mark, not a tick')
+  const agent = Object.fromEntries(Object.entries(AGENT_MENU))
+  assert.ok(YOUR_INTENTS.size > 0)
+  assert.notEqual(agent.take_over, agent.finish_it, 'Take over is not the Finish it wrench')
+  assert.ok(![...DESK_VIEWS.map(view => view.icon)].includes(agent.respond), 'Respond is not any view\'s mark (Review requests is the bubble)')
+  for (const name of ['file', 'reply', 'takeover']) assert.ok(known.has(name), `${name} is in the icon set`)
+})

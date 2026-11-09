@@ -86,7 +86,7 @@ test('Edits is a tab only while the project has edits, with its count, and the P
   if (!render) return
   const scopes = []
   const html = render('ProjectTabs', { reviewCount: 0, renderPullRequests: view => { scopes.push(view.scope); return 'PR-LIST' }, edits: 'EDITS-PANEL', editsCount: 22, defaultTab: 'edits' })
-  assert.match(html, />Local changes<span class="co-tab-count">22<\/span>/)
+  assert.match(html, />Local changes<span class="co-tab-count is-files">22 files<\/span>/)
   assert.match(html, /PR-LIST[\s\S]*EDITS-PANEL/)
   assert.deepEqual(scopes, ['edits'])
   const none = render('ProjectTabs', { reviewCount: 0, renderPullRequests: () => null, defaultTab: 'edits' })
