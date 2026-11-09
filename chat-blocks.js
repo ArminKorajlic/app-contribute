@@ -12,7 +12,11 @@ export function chatBlockTarget(intent) {
   // A review run opens in the full project workspace; opening never starts one.
   const run = /^review-run:([A-Za-z0-9_-]{8,64})$/.exec(String(intent || ''))
   if (run) return { kind: 'run', id: run[1] }
-  const pull = /^pull-request:([^/#\s]+)\/([^/#\s]+)#([1-9][0-9]{0,9})$/.exec(String(intent || ''))
+  // `pr:owner:repo:123` is the same destination in the spelling a notification
+  // link may carry (its intents allow no "/" or "#").
+  const text = String(intent || '')
+  const pull = /^pull-request:([^/#\s]+)\/([^/#\s]+)#([1-9][0-9]{0,9})$/.exec(text)
+    || /^pr:([^:/#\s]+):([^:/#\s]+):([1-9][0-9]{0,9})$/.exec(text)
   if (!pull) return null
   const [, owner, name, number] = pull
   if (![owner, name].every(part => REPOSITORY_PART.test(part) && !/^\.+$/.test(part))) return null

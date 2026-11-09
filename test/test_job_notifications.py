@@ -220,6 +220,17 @@ class ContributionPushTest(unittest.TestCase):
         self.assertEqual(target({"id": value}), "/shell/?app=80")
     self.assertEqual(target({}), "/shell/?app=80")
 
+  def test_published_record_opens_its_pull_request_page(self):
+    target = _load_record_target()
+    rec = {"id": "fixture-record", "type": "pr", "repo": "mobius-os/mobius", "number": 2041}
+    self.assertEqual(target(rec), "/shell/?app=80&intent=pr:mobius-os:mobius:2041")
+    for bad in ({"type": "issue"}, {"number": None}, {"number": 0}, {"number": True}, {"number": "7"},
+                {"repo": "mobius-os"}, {"repo": "../x/y"}, {"repo": "a/b/c"},
+                {"repo": "o" * 39 + "/" + "n" * 100, "number": 1234567890}):
+      with self.subTest(bad=bad):
+        self.assertEqual(
+          target({**rec, **bad}), "/shell/?app=80&intent=review:fixture-record")
+
   def test_failed_send_retries_standing_attention_then_stays_quiet(self):
     job = JobEndpoints()
     job.send_results = [_http_error(503)]

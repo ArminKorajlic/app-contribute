@@ -23,6 +23,14 @@ test('chat PR links resolve only exact, bounded PR identities', () => {
   }
 })
 
+test('a notification-safe PR link opens the same exact PR identity', () => {
+  assert.deepEqual(chatBlockTarget('pr:mobius-os:mobius:2041'), { kind: 'pull', repo: 'mobius-os/mobius', number: 2041 })
+  for (const intent of ['pr:..:repo:7', 'pr:owner:..:7', 'pr:owner:repo:0', 'pr:owner:repo:07', 'pr:owner:repo',
+    'pr:owner:repo:7:x', 'pr:owner/repo:7', `pr:${'o'.repeat(101)}:repo:7`, 'pr:owner:repo:12345678901']) {
+    assert.equal(chatBlockTarget(intent), null, intent)
+  }
+})
+
 test('provenance names one link per conversation for the exact repository and PR', () => {
   const records = [
     { repo: 'owner/repo', number: 7, chat_id: 'source-1', chat_title: 'Fix login', chat_ids: ['source-1', 'source-2'],
