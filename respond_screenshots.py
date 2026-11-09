@@ -9,6 +9,12 @@ uploads those bytes, proves GitHub serves them publicly, and only then rewrites 
 holding nothing but screenshots) are the ones the platform applies to a new PR's screenshots
 (`contribution_screenshots.py`), so an image accepted there is accepted here. They are repeated
 because an app cannot import the platform.
+
+Two things are never taken on trust. A reference in the description does not prove the owner saw the
+image (a comment or a plain link shows none), so the card lists every attached image on its own and the
+reference check below only keeps the description and the attachments consistent. An upload receipt is a
+claim in a file outside the digest, so a commit is reused only when its public addresses serve the
+approved bytes (`serves_approved`).
 """
 
 from __future__ import annotations
@@ -34,8 +40,10 @@ ASSETS_DIR = "screenshots"
 RAW_HOST = "raw.githubusercontent.com"
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 SHA256 = re.compile(r"[0-9a-f]{64}")
+COMMIT = re.compile(r"[0-9a-f]{40}")  # a full commit id: a branch name or a path would not pin the bytes
 # A link or image target `](screenshot:NAME)` outside code, so a description that shows the syntax in
-# backticks is neither checked nor rewritten.
+# backticks is neither checked nor rewritten. It does not say whether the description renders an image
+# there (inside a comment, or as a plain link, it does not): that is why the card shows each attachment itself.
 REFERENCE = re.compile(r"\]\(screenshot:([^)\s]*)\)")
 # CommonMark code: a fenced block (backticks or tildes) or an inline span.
 CODE = re.compile(
@@ -75,8 +83,9 @@ def references(body: str) -> list[str]:
 
 
 def check_references(names: list[str], description: str | None) -> None:
-  """Every image must be shown in the description, and every reference must name an image: the owner
-  never approves an image that is not shown, or a link `post` cannot fill."""
+  """Every attached image must be referenced by the description, and every reference must name an attached
+  image, so `post` can fill each link and no attachment is forgotten. Whether the owner sees an image is
+  not decided here (see the module note): the card shows every attachment itself."""
   referenced = references(description or "")
   unknown = sorted(set(referenced) - set(names))
   if unknown:
@@ -194,6 +203,23 @@ def serves(repo: str, commit: str, paths: list[tuple[str, bytes]], reader: Publi
       if attempt + 1 < attempts:
         time.sleep(PROOF_BACKOFF * (attempt + 1))
     else:
+      return False
+  return True
+
+
+def serves_approved(
+  repo: str, commit: Any, head_ref: str, result_id: str, pictures: list[dict[str, Any]], reader: PublicReader | None = None,
+) -> bool:
+  """Whether `commit` serves every approved image to anyone: each commit-pinned address, fetched with no
+  credentials, must hash to the SHA-256 the owner approved. A receipt names a commit but is no evidence of
+  what it holds (it sits in a file the app can write, outside the digest), so it is reused only when this
+  holds. A commit address pins its bytes, so a link to it can never show anything else later."""
+  if not (isinstance(commit, str) and COMMIT.fullmatch(commit)):
+    return False
+  read = reader or read_public
+  for shot in pictures:
+    data = read(raw_url(repo, commit, asset_path(head_ref, result_id, shot["name"])))
+    if data is None or hashlib.sha256(data).hexdigest() != shot["sha256"]:
       return False
   return True
 

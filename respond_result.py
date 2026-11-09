@@ -785,12 +785,11 @@ def require_postable(store: Store, pull: PullRef, result: dict[str, Any]) -> Non
   except CommandError as error:
     raise Refused(f"Could not confirm the PR on GitHub ({error}), so nothing was posted.") from error
   require_same_pull(result, facts)
-  if not result["receipts"].get("screenshots"):
-    try:
-      for shot in result.get("screenshots") or []:
-        shots.approved_bytes(store.screenshot_dir(result["id"]), shot)
-    except shots.ScreenshotError as error:
-      raise Refused(f"{error} Nothing was posted.") from error
+  try:
+    for shot in result.get("screenshots") or []:
+      shots.approved_bytes(store.screenshot_dir(result["id"]), shot)
+  except shots.ScreenshotError as error:
+    raise Refused(f"{error} Nothing was posted.") from error
   needs_bundle = result["commits"] and not result["receipts"]["push"]
   if needs_bundle and not store.bundle_file(result["id"]).is_file():
     raise Refused("The saved commits (the bundle file) are missing, so nothing was posted.")
@@ -841,6 +840,8 @@ class Posting:
   store: Store
   pull: PullRef
   result: dict[str, Any]
+  # The commit whose public addresses were proven, in this run, to serve the approved images: the only commit the description links.
+  screenshots_commit: str | None = None
 
   def persist(self) -> None:
     write_json_atomic(self.store.result_file(self.pull), self.result)
@@ -860,12 +861,17 @@ class Posting:
   def upload_screenshots(self) -> None:
     result = self.result
     pictures = result.get("screenshots") or []
-    if not pictures or result["receipts"].get("screenshots"):
+    if not pictures:
+      return
+    pr, claimed = result["pr"], result["receipts"].get("screenshots")
+    # A receipt is a claim in a file outside the digest, so an earlier upload is reused only when its commit serves the approved bytes.
+    if isinstance(claimed, dict) and shots.serves_approved(pr["head_repo"], claimed.get("commit"), pr["head_ref"], result["id"], pictures):
+      self.screenshots_commit = claimed["commit"]
       return
     folder = self.store.screenshot_dir(result["id"])
     payloads = [(shot, shots.approved_bytes(folder, shot)) for shot in pictures]
-    pr = result["pr"]
     commit = shots.publish(gh_api, pr["head_repo"], pr["head_ref"], result["id"], payloads)
+    self.screenshots_commit = commit
     result["receipts"]["screenshots"] = {"commit": commit, "at": utc_now()}
     self.persist()
     print(f"Uploaded {counted(len(pictures), 'screenshot')} to {pr['head_repo']} ({shots.ASSETS_BRANCH}, commit {commit[:7]}).")
@@ -893,12 +899,11 @@ class Posting:
     if result["description"] is None or result["receipts"]["description"]:
       return
     body = result["description"]
-    uploaded = result["receipts"].get("screenshots")
-    if result.get("screenshots") and not uploaded:
-      raise CommandError("the screenshots are not uploaded yet, so the description would show broken images")
-    if uploaded:
+    if result.get("screenshots") and not self.screenshots_commit:
+      raise CommandError("the screenshots are not uploaded and proven yet, so the description would show broken images")
+    if self.screenshots_commit:
       pr = result["pr"]
-      body = shots.pin(body, result["screenshots"], pr["head_repo"], uploaded["commit"], pr["head_ref"], result["id"])
+      body = shots.pin(body, result["screenshots"], pr["head_repo"], self.screenshots_commit, pr["head_ref"], result["id"])
     gh_api(f"repos/{result['repo']}/pulls/{result['number']}", "PATCH", {"body": body})
     result["receipts"]["description"] = {"at": utc_now()}
     self.persist()
@@ -948,7 +953,7 @@ def plan_lines(result: dict[str, Any]) -> list[str]:
   if pictures:
     lines.append(
       f"upload {counted(len(pictures), 'screenshot')} to the {shots.ASSETS_BRANCH} branch of {pr['head_repo']}"
-      f"{done_note(receipts.get('screenshots'))}"
+      f"{' (uploaded before; Post checks it again)' if receipts.get('screenshots') else ''}"
     )
   if result["commits"]:
     lines.append(

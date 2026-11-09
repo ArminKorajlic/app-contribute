@@ -1939,16 +1939,32 @@ window.runRespondResultChecks = async () => {
       paint.fillStyle = '#fff'; paint.font = '28px sans-serif'; paint.fillText('A fixture screenshot', 24, 80)
       const bytes = await new Promise(resolve => canvas.toBlob(resolve, 'image/png')).then(blob => blob.arrayBuffer())
       const sha256 = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)), b => b.toString(16).padStart(2, '0')).join('')
-      const route = '/api/storage/apps/fixture-app/respond-screenshots/r-3f9a1c2b04d5/before-desktop.png', original = window.fetch
-      window.fetch = (url, options) => String(url) === route ? Promise.resolve(new Response(bytes.slice(0), { headers: { 'Content-Type': 'image/png' } })) : original(url, options)
+      const folder = '/api/storage/apps/fixture-app/respond-screenshots/r-3f9a1c2b04d5/', original = window.fetch
+      const shot = { name: 'before-desktop.png', sha256, size: bytes.byteLength, alt: 'the list before, desktop' }
+      window.fetch = (url, options) => (String(url) === folder + 'before-desktop.png' ? Promise.resolve(new Response(bytes.slice(0), { headers: { 'Content-Type': 'image/png' } }))
+        : String(url) === folder + 'unreadable.png' ? Promise.resolve(new Response('missing', { status: 404 })) : original(url, options))
       try {
-        await answer({ description: 'Adds a list.\n\n![the list before, desktop](screenshot:before-desktop.png)', screenshots: [{ name: 'before-desktop.png', sha256, size: bytes.byteLength, alt: 'the list before, desktop' }] }, null)
+        await answer({ description: 'Adds a list.\n\n![the list before, desktop](screenshot:before-desktop.png)', screenshots: [shot] }, null)
         await until(() => query('.co-pr-detail-body .co-markdown img.co-markdown-shot')?.getAttribute('src')?.startsWith('data:image/png;base64,'), 'The answer\'s screenshot did not show in its description: ' + reviewBody())
         ensure(query('.co-pr-detail-body img.co-markdown-shot').alt === 'the list before, desktop', 'The screenshot lost its description')
         ensure(reviewBody().includes('1 screenshot will be uploaded to owner/project') && reviewBody().includes('Upload 1 screenshot to the PR’s repository'), 'The card did not say the screenshot is uploaded: ' + reviewBody())
+        await until(() => query('.co-pr-detail-body .co-response-shots img.co-markdown-shot'), 'The answer’s screenshot was not listed on its own: ' + reviewBody())
+        ensure(!button(NAMES.postAnswer).disabled, 'Post stayed off with its screenshot shown')
         query('.co-pr-detail-body .co-response').scrollIntoView({ block: 'start' })
         await captureShot('respond-screenshots-card')
         checks.push({ name: 'an answer with screenshots shows them in its new description and lists their upload as the first step', status: 'pass' })
+        // How the description names an image decides whether it shows there (a comment or a plain link shows nothing); the answer's own
+        // list shows the same checked bytes whatever it does, so the owner approves every image that is uploaded.
+        for (const description of ['Adds a list.\n\n<!-- ![the list before, desktop](screenshot:before-desktop.png) -->', 'Adds a list.\n\n[the list before, desktop](screenshot:before-desktop.png)']) {
+          await answer({ description, screenshots: [shot] }, null)
+          await until(() => query('.co-pr-detail-body .co-response-shots img.co-markdown-shot')?.getAttribute('src')?.startsWith('data:image/png;base64,') && !query('.co-pr-detail-body .co-markdown .co-markdown-shot-pending'),
+            'An image the description does not render was not listed on its own: ' + reviewBody())
+          ensure(!query('.co-pr-detail-body .co-markdown img.co-markdown-shot') && !button(NAMES.postAnswer).disabled, 'The description showed an image its text does not render, or Post stayed off: ' + reviewBody())
+        }
+        // An image that cannot be read keeps Post off and says why: nobody approves bytes they did not see.
+        await answer({ description: 'Adds a list.\n\n![the list after, desktop](screenshot:unreadable.png)', screenshots: [{ name: 'unreadable.png', sha256: 'e'.repeat(64), size: 10, alt: 'the list after, desktop' }] }, null)
+        await until(() => reviewBody().includes('Post is off until the screenshot it uploads shows here') && button(NAMES.postAnswer)?.disabled, 'Post was not held back for a screenshot that could not be read: ' + reviewBody())
+        checks.push({ name: 'every attached screenshot is listed on its own, even when the description does not render it, and Post waits for one that cannot be read', status: 'pass' })
       } finally {
         window.fetch = original
         await answer({}, null)

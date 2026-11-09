@@ -21,8 +21,8 @@ async function render(t, name, props) {
     import React from 'react'
     import { renderToStaticMarkup } from 'react-dom/server'
     import { ReviewTab } from './ui/ReviewTab.jsx'
-    import { ResponseCard } from './ui/ResponseCard.jsx'
-    const components = { ReviewTab, ResponseCard }
+    import { ResponseCard, AttachedScreenshots } from './ui/ResponseCard.jsx'
+    const components = { ReviewTab, ResponseCard, AttachedScreenshots }
     export function render(name, props) { return renderToStaticMarkup(React.createElement(components[name], props)) }
   `)
   return (await renderer).render(name, props)
@@ -248,4 +248,53 @@ test('a posted answer on the same version never owns the findings: their buttons
   if (!html) return
   assert.match(html, /Fix these findings/)
   assert.doesNotMatch(html, /Post or discard it first/)
+})
+
+// ---- screenshots: the owner approves the bytes that are uploaded, however the description names them
+const shot = (name, alt) => ({ name, sha256: (name[0] === 'b' ? 'a' : 'c').repeat(64), size: 1200, alt })
+const shots = [shot('before-desktop.png', 'the list before, desktop'), shot('after-desktop.png', 'the list after, desktop')]
+const SHOWN = '![the list before, desktop](screenshot:before-desktop.png) ![the list after, desktop](screenshot:after-desktop.png)'
+// Namings that put no image in the description: inside a comment, as a plain link, inside code, escaped.
+const UNRENDERED = {
+  'a comment': '<!-- ![the list before, desktop](screenshot:before-desktop.png) --> ![the list after, desktop](screenshot:after-desktop.png)',
+  'a plain link': '[the list before, desktop](screenshot:before-desktop.png) ![the list after, desktop](screenshot:after-desktop.png)',
+  'code': '`![the list before, desktop](screenshot:before-desktop.png)` ![the list after, desktop](screenshot:after-desktop.png)',
+  'escaped syntax': '\\![the list before, desktop](screenshot:before-desktop.png) ![the list after, desktop](screenshot:after-desktop.png)',
+}
+const listed = html => [...html.matchAll(/<li><(?:img|span) class="co-markdown-shot[^"]*"[^>]*>[^<]*(?:<\/span>)?<small><code>([^<]+)<\/code>/g)].map(match => match[1])
+
+test('every screenshot Post uploads is listed on its own, whatever the description does with its name', async t => {
+  for (const [how, description] of Object.entries({ 'an image': SHOWN, ...UNRENDERED })) {
+    const html = await card(t, response('ready', { description, screenshots: shots }))
+    if (!html) return
+    assert.deepEqual(listed(html), ['before-desktop.png', 'after-desktop.png'], how)
+    assert.match(texts(html), /2 screenshots Post will upload/, how)
+    assert.match(texts(html), /2 screenshots will be uploaded to owner\/repo/, how)
+  }
+  const none = await card(t, response('ready'))
+  assert.doesNotMatch(none, /Post will upload/, 'an answer without screenshots lists none')
+})
+
+test('Post is off until the screenshots it uploads have been read and matched, and says why', async t => {
+  const html = await card(t, response('ready', { description: UNRENDERED['a comment'], screenshots: shots }))
+  if (!html) return
+  assert.match(html, new RegExp(`disabled="">${NAMES.postAnswer}<`), 'server rendering reads no bytes, so nothing is seen yet')
+  assert.match(texts(html), /Post is off until every screenshot it uploads shows here/)
+  const one = await card(t, response('ready', { description: SHOWN.split(' ')[0] ? '![x](screenshot:before-desktop.png)' : '', screenshots: [shots[0]] }))
+  assert.match(texts(one), /Post is off until the screenshot it uploads shows here/)
+  const without = await card(t, response('ready'))
+  assert.doesNotMatch(without, new RegExp(`disabled="">${NAMES.postAnswer}<`), 'an answer with no screenshots is postable as before')
+  // The owner already decided in these states: Send again and Try again are not held back by an image.
+  const approved = await card(t, response('ready', { screenshots: shots, description: SHOWN }, approval('approved')), { now: Date.parse('2026-11-06T09:30:00Z') + 5 * 60_000 })
+  assert.doesNotMatch(approved, new RegExp(`disabled="">${NAMES.sendAgain}<`))
+})
+
+test('a screenshot is shown only from bytes that were read as a PNG, otherwise as a labelled placeholder', async t => {
+  if (!frontendModules) return t.skip('MOBIUS_FRONTEND_NODE_MODULES is required for real React SSR')
+  const result = normalizeResult({ ...example(), screenshots: shots })
+  const png = 'data:image/png;base64,iVBORw0KGgo='
+  const html = await render(t, 'AttachedScreenshots', { result, images: { 'before-desktop.png': png, 'after-desktop.png': 'data:text/html;base64,PHNjcmlwdD4=' } })
+  assert.match(html, /<img class="co-markdown-shot" src="data:image\/png;base64,iVBORw0KGgo=" alt="the list before, desktop"\/>/)
+  assert.equal((html.match(/<img /g) || []).length, 1, 'bytes that are not a PNG data URL are never put in an image')
+  assert.match(html, /<span class="co-markdown-shot-pending">Screenshot: the list after, desktop<\/span>/)
 })

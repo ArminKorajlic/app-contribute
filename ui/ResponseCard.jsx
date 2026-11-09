@@ -1,5 +1,5 @@
 import { ReviewFrame } from './ReviewFrame.jsx'
-import { MarkdownView } from './MarkdownView.jsx'
+import { MarkdownView, isPngDataUrl } from './MarkdownView.jsx'
 import { PullFiles } from './PullFiles.jsx'
 import { openAgentConversation } from './BatchAction.jsx'
 import { Icon } from './Icons.jsx'
@@ -46,6 +46,8 @@ function holdReason(chat) {
   if (chat?.state === 'needs_answer') return 'The conversation is waiting for your answer to its own card. Answer it in the chat first.'
   return chat?.state === 'running' ? 'The agent is working on this PR right now.' : ''
 }
+// Post approves the images it uploads, so it stays off until each one is on screen with the bytes the answer was saved with.
+const imagesReason = unseen => (unseen ? `Post is off until ${unseen === 1 ? 'the screenshot it uploads shows' : 'every screenshot it uploads shows'} here, read from what was saved.` : '')
 
 function Points({ points }) {
   return <ul className="co-response-points" aria-label="Points answered">
@@ -62,6 +64,24 @@ function Points({ points }) {
 
 // The answer's screenshots as the description shows them, each tagged with where the app reads its bytes.
 const responseShots = result => ({ id: result.id, plan: { screenshots: result.screenshots.map(shot => ({ ...shot, storagePath: `${SCREENSHOT_FOLDER}${result.id}/${shot.name}` })) } })
+// An image counts as seen only once its bytes were read and matched the digest the owner approves (useScreenshots resolves nothing else).
+const unseenScreenshots = (result, images) => result.screenshots.filter(shot => !isPngDataUrl(images?.[shot.name]))
+
+// Every screenshot Post uploads, each shown here on its own. Whether the description shows an image depends on how it names it (inside a
+// comment or as a plain link it shows nothing), so approving the images must never depend on the description.
+export function AttachedScreenshots({ result, images, open = true }) {
+  const { screenshots } = result
+  return <details className="co-task-details" open={open}>
+    <summary>{plural(screenshots.length, 'screenshot', 'screenshots')} Post will upload</summary>
+    <ul className="co-response-shots">
+      {screenshots.map(shot => <li key={shot.name}>
+        {isPngDataUrl(images?.[shot.name]) ? <img className="co-markdown-shot" src={images[shot.name]} alt={shot.alt} /> : <span className="co-markdown-shot-pending">{`Screenshot: ${shot.alt}`}</span>}
+        <small><code>{shot.name}</code> · {shot.alt}</small>
+      </li>)}
+    </ul>
+    <p className="co-shot-note">{screenshotCountText(screenshots.length)} will be uploaded to {result.pr.head_repo}, on a branch only screenshots go to, so the description can show {screenshots.length === 1 ? 'it' : 'them'}.</p>
+  </details>
+}
 
 function Details({ result, open, images }) {
   const { commits, files, replies, description, screenshots } = result
@@ -72,8 +92,8 @@ function Details({ result, open, images }) {
     </details>
     {description !== null ? <details className="co-task-details" open={open && screenshots.length > 0}><summary>New description</summary>
       <MarkdownView markdown={description} images={images} />
-      {screenshots.length ? <p className="co-shot-note">{screenshotCountText(screenshots.length)} will be uploaded to {result.pr.head_repo}, on a branch only screenshots go to, so the description can show {screenshots.length === 1 ? 'it' : 'them'}.</p> : null}
     </details> : null}
+    {screenshots.length ? <AttachedScreenshots result={result} images={images} open={open} /> : null}
     {commits.length || files.length ? <details className="co-task-details"><summary>Changes: {plural(commits.length, 'commit', 'commits')} · {plural(files.length, 'file', 'files')} · +{sum(files, 'added')} −{sum(files, 'removed')}</summary>
       <ul className="co-response-commits">{commits.map(commit => <li key={commit.sha}><code>{short(commit.sha)}</code> {commit.title}</li>)}</ul>
       <PullFiles data={filesData(result)} />
@@ -103,9 +123,9 @@ function Steps({ result, status }) {
   </div>
 }
 
-function Actions({ view, chat, busy, readOnly, starting, onPost, onDiscard, onRespondAgain }) {
+function Actions({ view, chat, unseen, busy, readOnly, starting, onPost, onDiscard, onRespondAgain }) {
   const { status, result } = view
-  const blocked = holdReason(chat)
+  const blocked = holdReason(chat) || imagesReason(unseen)
   const chatButton = label => <button key={label} type="button" className="co-btn" onClick={() => openAgentConversation(result.chat_id)}>{label}</button>
   if (readOnly || status === 'posted') return null
   const buttons = {
@@ -147,7 +167,7 @@ export function ResponseCard({ pr, response: view, chat = null, busy = false, er
       {status === 'posted' ? null : <Details result={result} open={['ready', 'approved', 'stale'].includes(status)} images={screenshots.images} />}
       {status === 'stale' ? null : <Steps result={result} status={status} />}
       {error ? <p role="alert" className="co-run-error">{error}</p> : null}
-      <Actions view={view} chat={chat} busy={busy} readOnly={readOnly} starting={starting} onPost={onPost} onDiscard={onDiscard} onRespondAgain={onRespondAgain} />
+      <Actions view={view} chat={chat} unseen={unseenScreenshots(result, screenshots.images).length} busy={busy} readOnly={readOnly} starting={starting} onPost={onPost} onDiscard={onDiscard} onRespondAgain={onRespondAgain} />
     </div>
   </ReviewFrame>
 }

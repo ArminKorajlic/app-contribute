@@ -83,8 +83,11 @@ keeps its digest). `receipts.screenshots` appears only for a result that has scr
   case letters, digits and hyphens ending in `.png`; each file is at most 2 MB and is stored under its name in
   `respond-screenshots/<result id>/`; `alt` is one line of at most 200 characters. Every screenshot must be
   referenced by the description and every reference must name a screenshot (a reference inside code does not
-  count), so the owner never approves an image that is not shown or a link `post` cannot fill. These are the rules
-  of the platform's screenshots for a new PR (`contribution_screenshots.py`).
+  count), so `post` can fill every link and no attachment is forgotten. A reference does not prove the description
+  shows the image (inside a comment, or as a plain link, it shows nothing), so the card also lists every attached
+  screenshot on its own, and Post stays off until each one is on screen: the owner approves exactly the bytes
+  that are uploaded, however the description names them. These are the rules of the platform's screenshots for a
+  new PR (`contribution_screenshots.py`).
 * Caps: 30 points; point title 160, answer 400, reviewer 60 characters; 12 replies of at
   most 20 000 characters; description at most 60 000; 10 logins; tests 500; 60 commits;
   300 files; a file's patch 60 000 and all patches together 400 000 characters.
@@ -94,7 +97,8 @@ keeps its digest). `receipts.screenshots` appears only for a result that has scr
   `{"v": 1, "pr_head": pr.head_sha, "tip": tip_sha, "points": [{reviewer, title, ending, commit, answer}…],
   "replies": [{body, reply_to}…], "description": …, "rerequest": […], "commits": [sha…]}`, plus
   `"screenshots": [{name, sha256}…]` when there are any. It binds what the owner read to what gets posted.
-* `receipts`: `screenshots` is `{"commit", "at"}` once uploaded; `push` is `{"sha", "at"}` once done; `replies` is a list of
+* `receipts`: `screenshots` is `{"commit", "at"}` once uploaded (a claim outside the digest: `post` reuses it only after
+  the commit's public addresses serve the approved bytes, see below); `push` is `{"sha", "at"}` once done; `replies` is a list of
   `{"index", "url", "at"}`; `description` is `{"at"}`; `rerequest` is `{"at", "reviewers"}`.
   `error` is `{"step", "message"}` when `state` is `failed`.
 
@@ -154,12 +158,16 @@ owner presses Post. In this order, it:
    push already happened, see below);
 5. with `--dry-run`, prints the plan and stops here;
 6. sets `state` to `posting`, then does each step that has no receipt yet:
-   * **screenshots** (only when the result has some): checks each stored file still has its approved
-     SHA-256, adds them in one commit on top of the `mobius-screenshots` branch of `pr.head_repo`
+   * **screenshots** (only when the result has some): before any step, each stored file must still have its
+     approved SHA-256 (otherwise Post refuses). A receipt from an earlier run is only a claim, so its commit is
+     reused only when it is a full commit id whose anonymous `raw.githubusercontent.com` addresses serve images
+     that each hash to the approved SHA-256; otherwise the receipt is ignored and the images are uploaded again.
+     Uploading adds them in one commit on top of the `mobius-screenshots` branch of `pr.head_repo`
      (`screenshots/<head_ref>/<result id>/<name>`, fast-forward only, created when it does not exist;
      a branch that holds anything but `screenshots/` is refused), then proves anonymous
      `raw.githubusercontent.com` addresses of that commit serve exactly those bytes. A repository GitHub does
-     not serve publicly stops Post here, before anything else is public. The commit is the receipt;
+     not serve publicly stops Post here, before anything else is public. The commit is the receipt, and the only
+     commit the description links is the one proven in this run;
    * **push**: `tip_sha` to `refs/heads/<pr.head_ref>` of `pr.head_repo`, fast-forward only
      (never forced), from the bundle (fetch the PR head, fetch the bundle, push); then check
      GitHub shows `tip_sha` as that branch's head. Skipped when there are no commits;
@@ -196,7 +204,8 @@ Exit codes: 0 done, 2 bad input, 3 refused, 4 failed part-way.
   reads "Feedback to answer" again.
 * **Review tab card**: points with their ending, the replies word for word, the description (with its
   screenshots shown, each read from `respond-screenshots/` and only shown when its SHA-256 is the one in the
-  result, and a line saying they are uploaded to the PR's repository), commits and changed files, the tests, what Post will do in order, and Post, Reply in chat and
+  result), a list of every attached screenshot on its own with a line saying they are uploaded to the PR's
+  repository (Post is off until each one has been read and matched), commits and changed files, the tests, what Post will do in order, and Post, Reply in chat and
   Discard. Post is off while the PR moved, while the chat is working, and while the chat waits on
   one of its own cards (a chat with an open card refuses new messages).
 * **Screenshots are required for any front-end change.** The brief says so (a screen, component, style or theme
