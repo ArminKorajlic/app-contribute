@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { authorLine, authorNames, checkWords, commitGroups, madeWithAgent, reviewMarker } from '../pull-commits.js'
+import { authorLine, authorNames, checkWords, commitGroups, copyText, madeWithAgent, reviewMarker } from '../pull-commits.js'
 import { loadPullCommits } from '../pull-details.js'
 import { frontendModules, renderModule } from './render-harness.mjs'
 
@@ -29,6 +29,18 @@ test('the check result is in words, and a commit with no result says nothing ins
   assert.deepEqual(checkWords(commit('a', { statusCheckRollup: { state: 'PENDING' } })), { text: 'checks running', tone: 'warn' })
   assert.equal(checkWords(commit('a', { statusCheckRollup: null })), null)
   assert.equal(checkWords(null), null)
+})
+
+test('Copy says it copied only after the clipboard write succeeded', async () => {
+  const written = []
+  assert.equal(await copyText('abc', { writeText: async text => { written.push(text) } }), true)
+  assert.deepEqual(written, ['abc'])
+  // A write the browser refuses (permission denied, page not focused) rejects: that is not "Copied", and it is handled.
+  assert.equal(await copyText('abc', { writeText: () => Promise.reject(new DOMException('denied', 'NotAllowedError')) }), false)
+  assert.equal(await copyText('abc', { writeText: () => { throw new Error('sync') } }), false)
+  // No clipboard at all (an insecure page): not "Copied" either.
+  assert.equal(await copyText('abc', undefined), false)
+  assert.equal(await copyText('abc', {}), false)
 })
 
 test('commits group by the day they were committed, in GitHub order', () => {
