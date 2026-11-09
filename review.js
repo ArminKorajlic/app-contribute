@@ -74,7 +74,7 @@ export function indexReviewStatus(payload) {
   const rows = Array.isArray(payload?.records) ? payload.records : []
   for (const row of rows) {
     if (!row || typeof row.id !== 'string' || !row.id) continue
-    if (row.state !== 'ready' && row.state !== 'needs_refresh') continue
+    if (!['ready', 'needs_refresh', 'unavailable'].includes(row.state)) continue
     byId[row.id] = {
       state: row.state,
       code: typeof row.code === 'string' ? row.code : '',
@@ -102,6 +102,41 @@ export function indexReviewStatus(payload) {
 // matched a message left by a past attempt even after the branch was fixed.
 export function reviewStateFor(rec, reviewStatus) {
   return reviewStatus?.byId?.[rec?.id] || null
+}
+
+// A source check that could not finish blocks Send without claiming the source
+// changed or that the work needs another review. Reconnecting GitHub is the
+// owner's to do, so it is named; any other unavailable check can be retried.
+export const RECONNECT_CHECK_REASON = 'Reconnect GitHub in Möbius Settings → Accounts, then send again.'
+export const RETRY_CHECK_REASON = 'The source could not be checked just now. Try again in a moment.'
+export function reviewCheckBlocker(reviewState) {
+  if (reviewState?.state !== 'unavailable') return ''
+  return reviewState.code === 'github_reconnect' ? RECONNECT_CHECK_REASON : RETRY_CHECK_REASON
+}
+
+// The one reason a group shows: only the owner can clear a reconnect, so it
+// outranks any other reason.
+export function leadingReason(reasons) {
+  const present = reasons.filter(Boolean)
+  return present.find((reason) => reason === RECONNECT_CHECK_REASON) || present[0] || ''
+}
+
+// The check that applies to one record: its own row; while the status request
+// is still loading with no row, a check in progress; when the whole request
+// failed, that failure.
+function sourceCheckFor(rec, reviewStatus) {
+  const row = reviewStateFor(rec, reviewStatus)
+  if (row) return row
+  if (reviewStatus?.state === 'loading') return { state: 'checking', code: '' }
+  if (reviewStatus?.state === 'unavailable') return { state: 'unavailable', code: '' }
+  return null
+}
+
+// Reviewed work whose only gap is a check that has not answered or could not
+// run. An agent review cannot help, so it is never queued for one.
+function awaitingSourceCheck(rec, reviewStatus) {
+  return qualityReviewFor(rec).state === 'all_clear' &&
+    ['checking', 'unavailable'].includes(sourceCheckFor(rec, reviewStatus)?.state)
 }
 
 const QUALITY_REVIEW_STATES = new Set([
@@ -286,7 +321,7 @@ export function recoveryReviewAction(rec) {
 export function contributionsNeedingReviewAction(records, reviewStatus) {
   return (Array.isArray(records) ? records : []).filter((rec) => {
     if (rec?.type !== 'pr' || rec.status !== 'prepared') return false
-    return !isAllClear(rec, reviewStatus)
+    return !isAllClear(rec, reviewStatus) && !awaitingSourceCheck(rec, reviewStatus)
   })
 }
 
@@ -543,6 +578,8 @@ export function partitionReviewUnits(units, reviewStatus) {
   const readyToSend = []
   const needsReview = []
   const reviewing = []
+  const awaitingCheck = []
+  const checkingSource = []
   for (const unit of units || []) {
     const records = unit.records || (unit.record ? [unit.record] : [])
     // A prepared child can remain grouped with already-public or merged stack
@@ -557,13 +594,19 @@ export function partitionReviewUnits(units, reviewStatus) {
       needsAttention.push(unit)
     } else if (reviewRecords.some((rec) => ['queued', 'reviewing'].includes(qualityReviewFor(rec).state))) {
       reviewing.push(unit)
-    } else if (!reviewRecords.every((rec) => isAllClear(rec, reviewStatus))) {
-      needsReview.push(unit)
-    } else {
+    } else if (reviewRecords.every((rec) => isAllClear(rec, reviewStatus))) {
       readyToSend.push(unit)
+    } else if (reviewRecords.every((rec) => isAllClear(rec, reviewStatus) || awaitingSourceCheck(rec, reviewStatus))) {
+      // Reviewed work waiting on its source check: name what clears a check
+      // that could not run, and keep one still loading out of review work.
+      const message = leadingReason(reviewRecords.map((rec) => reviewCheckBlocker(sourceCheckFor(rec, reviewStatus))))
+      if (message) awaitingCheck.push({ unit, reconnect: message === RECONNECT_CHECK_REASON, message })
+      else checkingSource.push(unit)
+    } else {
+      needsReview.push(unit)
     }
   }
-  return { needsAttention, needsReview, reviewing, readyToSend }
+  return { needsAttention, needsReview, reviewing, readyToSend, awaitingCheck, checkingSource }
 }
 
 const REVIEW_INTENT = /^review:([A-Za-z0-9][A-Za-z0-9_.-]{0,127})$/
@@ -576,7 +619,8 @@ const REVIEW_QUEUE_INTENT = 'reviews:queue'
 export function contributionReviewTargetFromIntent(intent) {
   if (typeof intent !== 'string') return null
   const normalized = intent.trim()
-  if (normalized === REVIEW_QUEUE_INTENT) return { queue: true }
+  // A chat card opens the contributions waiting for review (chat-blocks.js CHAT_INTENT).
+  if ([REVIEW_QUEUE_INTENT, 'chat:contributions'].includes(normalized)) return { queue: true }
   const match = REVIEW_INTENT.exec(normalized)
   return match ? { recordId: match[1] } : null
 }

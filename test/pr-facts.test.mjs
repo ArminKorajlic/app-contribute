@@ -37,6 +37,20 @@ test('Merge on your PR needs someone else’s approval of this version (bug 3)',
   assert.equal(merge(decideFor(mine({ reviewDecision: 'APPROVED', latestOpinionatedReviews: { nodes: [opinion('Sam', 'APPROVED', OLD)] } }))).reason, 'The approval is for an older version.')
 })
 
+test('GitHub’s own review gate keeps Merge off even when someone approved this version', () => {
+  const merge = decision => decision.actions.find(action => action.id === 'merge')
+  // Someone other than the PR's author (Sam) approved it, at this version.
+  const approved = reviewer => ({ latestOpinionatedReviews: { nodes: [opinion(reviewer, 'APPROVED')] } })
+  for (const [pr, reviewer] of [[mine, 'Sam'], [pull, 'Bob']]) {
+    const gated = decideFor(pr({ ...approved(reviewer), reviewDecision: 'REVIEW_REQUIRED' }))
+    assert.deepEqual([merge(gated).enabled, merge(gated).reason], [false, 'GitHub still needs a review.'])
+    assert.notEqual(gated.state, 'author.approved', 'it is not "Merge it"')
+    assert.notEqual(gated.state, 'reviewer.mergeable')
+    for (const reviewDecision of ['APPROVED', null, undefined]) assert.equal(merge(decideFor(pr({ ...approved(reviewer), reviewDecision }))).enabled, true, String(reviewDecision))
+  }
+  assert.match(decideFor(mine({ ...approved('Sam'), reviewDecision: 'REVIEW_REQUIRED' })).headline, /approved\. GitHub still needs a review\./)
+})
+
 test('a verdict GitHub did not confirm asks you to check, never to send again (bug 4)', () => {
   const decision = decideFor(pull(), [run({ state: 'verdict_unknown', verdict_proposal: { state: 'unknown', event: 'APPROVE', head_sha: HEAD } })])
   assert.equal(decision.state, 'unconfirmed')
@@ -123,6 +137,22 @@ test('a review list with another page is unknown: an opinion on the next page mu
   }
   assert.equal(prFacts({ pr: mine(firstPage), login: 'alex' }).readComplete, false)
   assert.match(PR_FIELDS, /latestOpinionatedReviews\([^)]*\) \{ pageInfo \{ hasNextPage \}/, 'the read asks GitHub whether the list goes on')
+})
+
+test('a clean private review of their PR is settled, and comes back for re-review when they push', () => {
+  const clean = head => [run({ state: 'all_clear', head_sha: head })]
+  // At this version it reads as done: there is no verdict to send and no finding to set aside.
+  const settled = decideFor(pull(), clean(HEAD))
+  assert.deepEqual([settled.state, settled.turn], ['reviewer.kept_private', 'none'])
+  // After new commits it is an older version: the PR is back in front of the reviewer.
+  const pushed = decideFor(pull(), clean(OLD))
+  assert.deepEqual([pushed.state, pushed.turn, pushed.next], ['reviewer.re_review', 'you', 'review'])
+  assert.equal(pushed.actions.find(action => action.id === 'review').title, 'Re-review')
+  // Findings on a version the PR left behind are old news, and your own PR is never nagged about it.
+  assert.equal(decideFor(pull(), [run({ state: 'needs_you', head_sha: OLD })]).state, 'reviewer.to_review')
+  assert.equal(decideFor(mine(), clean(OLD)).state, 'author.waiting_review')
+  // A re-review that already ran at the new version is not "new commits" again.
+  assert.equal(decideFor(pull(), clean(HEAD)).state, 'reviewer.kept_private')
 })
 
 test('open threads on your PR are feedback; a thread you answered last is not', () => {

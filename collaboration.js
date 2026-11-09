@@ -1,16 +1,17 @@
 // GitHub owns people, permissions and assignments. Contribute owns the private
 // review journey; a repository role never becomes an automatic merge grant.
 import { PR_FIELDS, fetchLiveStates } from './api.js'
+import { mayWrite } from './pr-machine.js'
 
 export { PR_FIELDS } from './api.js'
 export const mayAssign = permission => ['TRIAGE', 'WRITE', 'MAINTAIN', 'ADMIN'].includes(permission)
-export const mayMerge = permission => ['WRITE', 'MAINTAIN', 'ADMIN'].includes(permission)
+// Merge rights are write rights: the machine owns the one list.
+export const mayMerge = mayWrite
 // This is discovery, not authority: the server rechecks exact repositories at
 // admission and before publication. Older snapshots still need that preflight.
 // A takeover never marks a draft ready (the owner does), so there is one scope.
 export const TAKEOVER_SCOPE = 'named_pr_repairs_and_reviewed_successors'
-export function takeoverBlocker(pulls, { allowDraft = false } = {}) {
-  if (!allowDraft && pulls.some(pr => pr.isDraft)) return 'Draft PRs must be marked ready first.'
+export function takeoverBlocker(pulls) {
   if (pulls.some(pr => !mayMerge(pr.repository?.viewerPermission))) return 'Requires merge access to every selected PR.'
   // GitHub returns `headRepository: null` when the source fork was deleted:
   // no fix can be pushed there. Only an absent field (older snapshot) defers

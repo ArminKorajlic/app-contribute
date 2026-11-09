@@ -73,6 +73,15 @@ test('a PR that is no longer open is history, whatever its review said', () => {
   assert.equal(read(item('verdict_pending'), live({ state: 'CLOSED' })).bucket, 'done')
 })
 
+test('a clean private review is done, and a push after it puts the PR back to review', () => {
+  const clean = item('all_clear')
+  const done = read(clean)
+  assert.deepEqual([done.bucket, done.confirm, labels(done)], ['done', false, ['Kept private']], 'nothing to send: it does not wait on you')
+  const moved = read(clean, live({ headRefOid: 'b'.repeat(40) }))
+  assert.deepEqual([moved.bucket, labels(moved)], ['waiting', ['New commits · review again']])
+  assert.equal(read(clean, live({ headRefOid: 'b'.repeat(40), author: { login: 'owner' } })).bucket, 'done', 'your own PR is not nagged about an older clean check')
+})
+
 test('a PR GitHub did not return is unknown, never classified from the saved review', () => {
   const entry = { run: run(), item: item('verdict_pending') }
   const unknown = classifyReview(entry, { login: 'owner', live: null, runs: [entry.run] })
