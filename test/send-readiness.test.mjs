@@ -59,8 +59,10 @@ test('a chat send is refused at write time when the binding is gone or the relay
   for (const write of [/outcome = await updateContribution\(/, /outcome = viaMobius/, /const writeStack = updating/]) {
     const at = app.search(write)
     assert.ok(at > 0, String(write))
-    assert.match(app.slice(Math.max(0, at - 220), at), /const unbound = writeBindingRefusal\(\{ requireBinding, frozenBinding: connRef\.current\.frozenBinding[^)]*\}\)\s+if \(unbound\) return unbound\s+$/, 'checked right before ' + write)
+    assert.match(app.slice(Math.max(0, at - 260), at), /const frozenBinding = await bindingAtWrite\(requireBinding\)\s+const unbound = writeBindingRefusal\(\{ requireBinding, frozenBinding[^)]*\}\)\s+if \(unbound\) return unbound\s+$/, 'checked right before ' + write)
   }
+  // The binding a write checks and the one it sends come from that one read, never from the older connection read.
+  assert.equal(app.match(/connRef\.current\.frozenBinding/g)?.length, 1, 'only bindingAtWrite reads the last known binding')
   assert.match(app, /onSend\(rec, \{ \.\.\.options, requireBinding: true \}\)/)
   assert.match(app, /onSendStack\(stack, \{ \.\.\.options, requireBinding: true \}\)/)
 })

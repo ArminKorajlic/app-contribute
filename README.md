@@ -501,8 +501,10 @@ intent is `chat:contributions`:
   **Fix in chat** (below), or **Open Contribute** where it cannot be. Confirm calls the
   same guarded Send handlers as the workspace and passes the confirmed snapshot
   as `expected_record(s)`; without that platform binding the card never sends,
-  including when the binding disappears between Confirm and the write. A set
-  that changes after the tap does not change what that Confirm sends.
+  including when the binding disappears between Confirm and the write: each
+  write reads the platform's status again first, and a read that fails counts
+  as no binding. A set that changes after the tap does not change what that
+  Confirm sends.
   Independent units are sent in parallel; a stack's layers in order. Only
   attempts whose outcome is unknown survive a reload, as a bounded checkpoint
   of ids, and lock their unit until a read shows the result. An unknown outcome

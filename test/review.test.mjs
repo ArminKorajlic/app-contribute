@@ -405,7 +405,7 @@ test('all private handoffs use changed-work scopes instead of permanent one-shot
 
 test('a reviewed existing-PR update stays distinct from opening a new PR', () => {
   assert.match(appSource, /refreshed\.plan\?\.action === 'pr_update'/)
-  assert.match(appSource, /updateContribution\(\{ appId, token, rec: refreshed, expectedRecord: connRef\.current\.frozenBinding \? rec : null \}\)/)
+  assert.match(appSource, /updateContribution\(\{ appId, token, rec: refreshed, expectedRecord: frozenBinding \? rec : null \}\)/)
   assert.match(appSource, /Connect GitHub in Möbius Settings → Accounts before updating this pull request/)
   assert.match(cardSource, /pr_update: 'Update PR'/)
   assert.match(cardSource, /isUpdate \? 'Send update' : 'Send PR'/)
@@ -634,19 +634,25 @@ function publicCallback(name, dependencies) {
   const helper=appSource.match(/^function stalePublicApproval\(\) \{[\s\S]*?^\}/m)?.[0] || ''
   return new Function(...Object.keys(dependencies),`${helper}; return (${appSource.slice(start,end)}\n  })`)(...Object.values(dependencies))
 }
-function preflightFixture(name, read, conn = {state:'connected'}) {
+// `reread` is what the platform answers when a write reads its status again.
+function preflightFixture(name, read, conn = {state:'connected'}, reread = () => conn) {
   const head='a'.repeat(40)
   const approved={id:'preflight',type:'pr',status:name==='onMarkReady'?'draft':'prepared',repo:'team/repo',
     ...(name==='onMarkReady'?{number:1,url:'https://github.com/team/repo/pull/1'}:{}),
     plan:{action:'pr',repo:'team/repo',branch:'fix/preflight',head_sha:head},quality_review:{state:'all_clear',reviewed_head_sha:head}}
   const writes=[]
-  const write=async()=>{writes.push(name);return {error:'Unconfirmed server response',failure:{owner:'automatic'}}}
-  const dependencies={appId:'fixture',token:'fixture',autopilotDefault:false,newPrStage:'ready',submissionMethod:'github',connRef:{current:conn},writeBindingRefusal,
+  const sent=[]
+  const write=async(call)=>{writes.push(name);sent.push(call);return {error:'Unconfirmed server response',failure:{owner:'automatic'}}}
+  const reads=[]
+  const fetchGithubStatus=async()=>{reads.push(name);return reread()}
+  const connRef={current:conn}
+  const bindingAtWrite=publicCallback('bindingAtWrite',{connRef,fetchGithubStatus,token:'fixture'})
+  const dependencies={appId:'fixture',token:'fixture',autopilotDefault:false,newPrStage:'ready',submissionMethod:'github',connRef,writeBindingRefusal,bindingAtWrite,
     applyRecordUpdates:()=>{},refreshReviewStatus:()=>{},contributionApprovalIsCurrent,contributionPhaseApprovalIsCurrent,qualityReviewFor,stackPublicationRecords,
     contributionPathDecision,contributionStackDecision,
     loadFreshContributionRecord:async()=>read(approved),loadFreshContributionRecords:async()=>{const value=await read(approved);return value?[value]:[]},
     updateContribution:write,submitContribution:write,submitContributionViaMobius:write,markContributionReady:write,updateContributionStack:write,submitContributionStack:write}
-  return {writes,run:(options)=>publicCallback(name,dependencies)(name==='onSendStack'?[approved]:approved,options)}
+  return {writes,sent,reads,run:(options)=>publicCallback(name,dependencies)(name==='onSendStack'?[approved]:approved,options)}
 }
 test('app publication callbacks report failed fresh-ledger preflight as not attempted without invoking a write',async()=>{
   for(const name of ['onSend','onMarkReady','onSendStack']) for(const read of [()=>null,()=>{throw Error('offline')}]) {
@@ -692,5 +698,33 @@ test('a chat send whose binding disappeared before the write is refused as not a
     const fullApp = preflightFixture(name, record => record, { state: 'connected' })
     await fullApp.run()
     assert.deepEqual(fullApp.writes, [name], name + ': the full-app Send does not require the binding')
+  }
+})
+
+test('a chat send reads the platform again at its write, so a binding lost after the last read sends nothing', async () => {
+  const known = { state: 'connected', frozenBinding: true }
+  for (const name of ['onSend', 'onSendStack']) {
+    for (const [what, answer] of [['stopped advertising the binding', () => ({ state: 'connected' })], ['could not be read', () => ({ state: 'unknown' })]]) {
+      const chat = preflightFixture(name, record => record, known, answer)
+      const outcome = await chat.run({ requireBinding: true })
+      assert.equal(outcome.failure?.code, 'binding_unavailable', `${name}: the platform ${what}`)
+      assert.deepEqual(chat.writes, [], `${name} made no request`)
+      assert.equal(chat.reads.length, 1, `${name} read the platform at the write`)
+    }
+    const fullApp = preflightFixture(name, record => record, known, () => ({ state: 'connected' }))
+    await fullApp.run()
+    assert.deepEqual(fullApp.writes, [name], `${name}: the full-app Send keeps what it last read`)
+    assert.deepEqual(fullApp.reads, [], `${name}: the full-app Send does not read again`)
+  }
+})
+
+test('a chat send carries the confirmed record when the platform binds it at the write', async () => {
+  const unknownBefore = { state: 'connected' }
+  for (const name of ['onSend', 'onSendStack']) {
+    const chat = preflightFixture(name, record => record, unknownBefore, () => ({ state: 'connected', frozenBinding: true }))
+    await chat.run({ requireBinding: true })
+    assert.equal(chat.sent.length, 1, `${name} wrote once`)
+    const confirmed = name === 'onSend' ? chat.sent[0].expectedRecord : chat.sent[0].expectedRecords?.[0]
+    assert.equal(confirmed?.id, 'preflight', `${name} sent the confirmed record, bound by the read at the write`)
   }
 })

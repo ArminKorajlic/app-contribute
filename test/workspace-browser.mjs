@@ -1500,6 +1500,50 @@ window.runWorkspaceChecks = async () => {
         root.render(null)
       }
     })
+    await check('a card reads the platform again at every write, so a binding lost after Confirm sends none of its units', async () => {
+      root.render(null)
+      await frame(); await frame()
+      values.clear()
+      // Two independent contributions: their sends run in parallel, each unit at its own write.
+      const records = ['lost-a', 'lost-b'].map(id => ({ ...prepared, id, updated_at: '2026-10-20T10:00:00Z', chat_id: 'fixture-chat',
+        plan: { ...prepared.plan, branch: 'fix/' + id, diff_sha256: 'd'.repeat(64), diff_stat: ' 1 file changed, 3 insertions(+), 1 deletion(-)' } }))
+      for (const record of records) values.set('contributions/' + record.id + '.json', structuredClone(record))
+      window.mobius.storage.listWithStatus = async () => ({ complete: true, entries: records.map(record => ({ type: 'file', name: record.id + '.json', content: structuredClone(record) })) })
+      window.fullAppConnected = true; window.fullAppBinding = true
+      const states = []
+      const realPost = window.postMessage
+      window.postMessage = (message, target) => message?.type === 'moebius:app-block-state' ? states.push(structuredClone(message)) : realPost.call(window, message, target)
+      const batchKey = 'chat-send-batch:' + batchHandle(['lost-a', 'lost-b'])
+      const card = () => states.at(-1)?.actions?.find(action => action.key === batchKey)
+      const fire = (name, nonce) => window.dispatchEvent(new MessageEvent('message', { source: window, origin: location.origin,
+        data: { type: 'moebius:app-block-action', sessionId: 'card-lost', key: batchKey, event: name, nonce } }))
+      const statusReads = () => calls.requests.filter(call => call.url === '/api/github/status').length
+      const before = calls.requests.length
+      try {
+        root.render(<ContributeApp appId="fixture-app" token="fixture-only" blockSession={{ sessionId: 'card-lost', generation: 7, features: ['row-state', 'rows-v2'], context: { chatId: 'fixture-chat', latest: true, intent: 'chat:contributions' }, actions: [{ key: batchKey, label: 'Contribute all' }], items: [{ intent: 'review:lost-a' }, { intent: 'review:lost-b' }] }} />)
+        await until(() => card() && !card().disabled, 'Card state was not published')
+        fire('activate', 'lost-n1')
+        // Wait on timers rather than animation frames: the hidden runtime mounts behind the card.
+        for (let i = 0; i < 150 && !card()?.confirming; i++) await new Promise(resolve => setTimeout(resolve, 100))
+        await until(() => card()?.confirming, 'Contribute did not become Confirm: ' + JSON.stringify(card()))
+        // The platform stops advertising the binding after Confirm opened, and nothing tells the app.
+        window.fullAppBinding = false
+        const readsBefore = statusReads()
+        fire('confirm', 'lost-n2')
+        const settledRefusal = () => {
+          const last = states.at(-1)
+          return !card()?.busy && !card()?.confirming && last?.rows?.length === 2 && last.rows.every(row => row.pill === 'Not sent') && last.checkpoint === null
+        }
+        await until(settledRefusal, () => 'A lost binding did not settle as refused: ' + JSON.stringify({ action: card(), rows: states.at(-1)?.rows,
+          checkpoint: states.at(-1)?.checkpoint, writes: calls.requests.slice(before).filter(call => call.method === 'POST').map(call => call.url) }))
+        ensure(statusReads() - readsBefore === 2, 'Each unit did not read the platform at its write: ' + (statusReads() - readsBefore))
+        ensure(!calls.requests.slice(before).some(call => call.method === 'POST'), 'An unbound send was made: ' + JSON.stringify(calls.requests.slice(before).filter(call => call.method === 'POST').map(call => call.url)))
+      } finally {
+        window.postMessage = realPost
+        window.fullAppBinding = false
+        root.render(null)
+      }
+    })
     await check('A card session without its items (an older Möbius) never offers Confirm', async () => {
       root.render(null)
       await frame(); await frame()

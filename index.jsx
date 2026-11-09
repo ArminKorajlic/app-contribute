@@ -931,6 +931,16 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
     [token],
   )
 
+  // A chat send needs the platform's binding at the moment of its write, and
+  // nothing tells the card the platform stopped binding after its last read, so
+  // each write reads the status itself. It cannot go through refreshConnection:
+  // that drops a read a newer one overtook, as the reads of parallel units are,
+  // and answers with the older status. A read that fails counts as no binding.
+  const bindingAtWrite = useCallback(async requireBinding => {
+    if (!requireBinding) return connRef.current.frozenBinding === true
+    return (await fetchGithubStatus(token)).frozenBinding === true
+  }, [token])
+
   // New PRs use the connected owner's GitHub identity. Existing-PR updates
   // stay on the personal GitHub identity that owns their public branch. Both
   // actions consume one exact reviewed record and remain explicit clicks.
@@ -976,9 +986,10 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
           failure: { owner: 'owner', code: 'github_not_connected' },
         }
       }
-      const unbound = writeBindingRefusal({ requireBinding, frozenBinding: connRef.current.frozenBinding })
+      const frozenBinding = await bindingAtWrite(requireBinding)
+      const unbound = writeBindingRefusal({ requireBinding, frozenBinding })
       if (unbound) return unbound
-      outcome = await updateContribution({ appId, token, rec: refreshed, expectedRecord: connRef.current.frozenBinding ? rec : null })
+      outcome = await updateContribution({ appId, token, rec: refreshed, expectedRecord: frozenBinding ? rec : null })
     } else {
       const decision = contributionPathDecision(
         refreshed,
@@ -991,7 +1002,8 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
         failure: { owner: 'owner' },
       }
       viaMobius = decision.method === 'mobius'
-      const unbound = writeBindingRefusal({ requireBinding, frozenBinding: connRef.current.frozenBinding, relay: viaMobius })
+      const frozenBinding = await bindingAtWrite(requireBinding)
+      const unbound = writeBindingRefusal({ requireBinding, frozenBinding, relay: viaMobius })
       if (unbound) return unbound
       outcome = viaMobius
         ? await submitContributionViaMobius({ appId, token, rec: refreshed })
@@ -1001,7 +1013,7 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
             rec: refreshed,
             autopilot: autopilotDefault && connRef.current.autopilotAvailable === true,
             publicationStage: stage,
-            expectedRecord: connRef.current.frozenBinding ? rec : null,
+            expectedRecord: frozenBinding ? rec : null,
           })
     }
     if (outcome.ok) {
@@ -1110,6 +1122,7 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
     submissionMethod,
     applyRecordUpdates,
     refreshReviewStatus,
+    bindingAtWrite,
   ])
 
   const onMarkReady = useCallback(async (rec) => {
@@ -1404,7 +1417,8 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
         }
       }
     }
-    const unbound = writeBindingRefusal({ requireBinding, frozenBinding: connRef.current.frozenBinding })
+    const frozenBinding = await bindingAtWrite(requireBinding)
+    const unbound = writeBindingRefusal({ requireBinding, frozenBinding })
     if (unbound) return unbound
     const writeStack = updating
       ? updateContributionStack
@@ -1415,7 +1429,7 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
       recordIds: currentRecords.map((rec) => rec.id),
       publicationStage: stage,
       // The owner confirmed the whole chain, including public context.
-      expectedRecords: connRef.current.frozenBinding
+      expectedRecords: frozenBinding
         ? currentRecords.map((current) => stackRecords.find((approved) => approved.id === current.id))
         : null,
     })
@@ -1520,6 +1534,7 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
     submissionMethod,
     applyRecordUpdates,
     refreshReviewStatus,
+    bindingAtWrite,
   ])
 
   // Feedback = return to the chat that created the contribution, with a small
