@@ -40,6 +40,7 @@ import { stackPublicationRecords } from './stack.js'
 import { deliverCycleMessage } from './cycle-delivery.js'
 import { abandonPrepared, cacheFeed, cacheSourceSnapshot, loadAppSettings, loadCachedFeed, loadCachedSourceSnapshot, loadContributionRecord, loadFreshContributionRecord, loadFreshContributionRecords, loadCycleState, loadFullDiff, loadLedger, restoreAbandoned, saveAppSettings } from './storage.js'
 import { createRefreshCoordinator, isVisibleFrameMessage } from './refresh.js'
+import { sharedPublicationObserver } from './publication-observer.js'
 import {
   contributionPathDecision,
   contributionStackDecision,
@@ -50,6 +51,7 @@ import {
   fetchGithubStatus,
   fetchLiveStates,
   fetchMobiusContributionStatus,
+  fetchContributionScreenshot,
   fetchReviewStatus,
   fetchSourceDiff,
   fetchSourceStatus,
@@ -65,6 +67,7 @@ import {
 import { ConnectionSettings } from './ui/ConnectionCard.jsx'
 import { openAgentConversation } from './ui/BatchAction.jsx'
 import { ContributionRun } from './ui/Feed.jsx'
+import { ScreenshotLoaderContext } from './ui/useScreenshots.js'
 import { Icon } from './ui/Icons.jsx'
 import { SourceMap } from './ui/SourceMap.jsx'
 import { RepositoryPicker } from './ui/RepositoryPicker.jsx'
@@ -74,10 +77,9 @@ import { FOLLOWED_REPOSITORIES, followedRepositories } from './repositories.js'
 import { ProjectControls } from './ui/ProjectControls.jsx'
 import { PullRequests } from './ui/PullRequests.jsx'
 import { collaborationRequest, discoverRepositories, discoverRepository } from './collaboration.js'
-import { cardRecordIds, chatBlockTarget } from './chat-blocks.js'
+import { chatBlockTarget, validRecordId } from './chat-blocks.js'
 import { InlineBlockSession } from './ui/InlineBlockSession.jsx'
 import { reviewAddressFor, writeBindingRefusal } from './send-readiness.js'
-import { readBlockSession } from './block-protocol.js'
 
 // The app's own icon, with a lettered fallback for installs whose icon route
 // 404s. Mirrors the App Store header pattern.
@@ -175,13 +177,18 @@ export const appBlockSessions = true
 // account, ledger and review reads and its guarded Send handlers, mounts only
 // once the owner taps the card's action, and stays invisible.
 export default function ContributeEntry({ appId, token, blockSession = null }) {
-  const [runtimeWanted, setRuntimeWanted] = useState(false)
   const [runtime, setRuntime] = useState(null)
-  const addressed = useMemo(() => cardRecordIds((readBlockSession(blockSession)?.actions || []).map(action => action.key)), [blockSession])
+  // The records the card's action covers at the owner's tap: the only ones
+  // whose source and review are checked. null until the first tap.
+  const [addressed, setAddressed] = useState(null)
+  const onNeedRuntime = useCallback(ids => {
+    const next = (Array.isArray(ids) ? ids : []).filter(validRecordId)
+    setAddressed(current => current && current.join('\n') === next.join('\n') ? current : next)
+  }, [])
   if (!blockSession) return <ContributeApp appId={appId} token={token} />
   return <>
-    <InlineBlockSession blockSession={blockSession} runtime={runtime} onNeedRuntime={() => setRuntimeWanted(true)} />
-    {runtimeWanted ? <ContributeApp appId={appId} token={token} addressedRecordIds={addressed} onPublicationRuntime={setRuntime} /> : null}
+    <InlineBlockSession blockSession={blockSession} runtime={runtime} onNeedRuntime={onNeedRuntime} appId={appId} token={token} />
+    {addressed ? <ContributeApp appId={appId} token={token} addressedRecordIds={addressed} onPublicationRuntime={setRuntime} /> : null}
   </>
 }
 
@@ -408,6 +415,20 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
     replaceFeed(mergeRecordUpdates(recordsRef.current, updates))
   ), [replaceFeed])
 
+  // A send GitHub has not confirmed is settled by observation, not by
+  // waiting: after each ledger read, ask the platform to read GitHub for it
+  // (read-only, deduped with any chat card in this frame, backed off when
+  // unanswered). Not awaited, so a refresh, and a card's Try again, never
+  // wait on GitHub. A settled record replaces its row only while the row is
+  // still the version that was observed.
+  const observeUncertainRef = useRef(() => {})
+  observeUncertainRef.current = () => {
+    void sharedPublicationObserver(appId, tokenRef.current)
+      .sweep(recordsRef.current, record => applyRecordUpdates(record),
+        id => recordsRef.current.find(record => record.id === id))
+      .catch(() => {})
+  }
+
   // Best-effort live refresh of the open PR/issue records in ONE batched
   // GraphQL round-trip. Returns the refreshed array — a NEW array only when
   // GitHub actually moved a record, the same reference otherwise (nothing to
@@ -437,7 +458,7 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
     if (outcome.ok) {
       // Tagged with the address it answers, so a status for an older, narrower
       // address is never mistaken for a check of the card's whole stack.
-      const indexed = { ...indexReviewStatus(outcome.data), address: reviewAddressKey }
+      const indexed = { ...indexReviewStatus(outcome.data), address: reviewAddressKey, fetchedAt: Date.now() }
       setReviewStatus(indexed)
       return indexed
     }
@@ -594,6 +615,7 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
       signalReady({ item_count: recs.length })
 
       if (ledger.fromCache) return
+      observeUncertainRef.current()
       let toCache = recs
       let feedReplaced = false
       if (status.state === 'connected') {
@@ -627,7 +649,9 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
   // Focus + visibility can fire together, and an online transition can land
   // during either refresh, so one coordinator deduplicates concurrent work and
   // preserves exactly one trailing refresh when an event arrives mid-flight.
-  // There is deliberately no timer: a hidden/idle app consumes no resources.
+  // The app itself has no timer: a hidden/idle app consumes no resources. The
+  // one exception is a chat card with an unconfirmed send, which calls the
+  // card refresh below on a bounded backoff for ten minutes (inline-session.js).
   const refreshWorkRef = useRef(null)
   const forceRefreshRef = useRef(false)
   const runRefreshWork = useCallback(async () => {
@@ -655,6 +679,7 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
         ? await fetchRefreshed(baseline) : baseline
       replaceFeed(reconcileLedgerSnapshot(recordsRef.current, next, baseline))
       setFromCache(false)
+      observeUncertainRef.current()
     }
   }, [fetchRefreshed, refreshReviewStatus, replaceFeed])
   refreshWorkRef.current = runRefreshWork
@@ -1007,7 +1032,8 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
         if (resolution.state === 'blocked') {
           refreshReviewStatus()
           return {
-            error: 'Nothing was sent. This contribution needs an update before you try again.',
+            // Only a certified non-attempt may say nothing was sent.
+            error: 'This contribution needs an update before you try again.',
             failure: { owner: 'agent', code: 'review_refresh_needed' },
           }
         }
@@ -1395,7 +1421,7 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
         return {
           error: summary.published > 0
             ? 'Saved progress was restored. The remaining changes show what needs updating.'
-            : 'Nothing was sent. These changes need an update before you try again.',
+            : 'These changes need an update before you try again.',
           failure: { owner: 'agent', code: 'review_refresh_needed' },
         }
       }
@@ -1534,7 +1560,8 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
   // content state instead of leaving "Checking…" visible forever.
   const checking = loading && records.length === 0 && !sourceSnapshot
 
-  // A card's Try again: once the first ledger read is done, the full pass
+  // A card's Try again, and a card's automatic recheck of an unconfirmed send:
+  // once the first ledger read is done, the full pass
   // (ledger, review status, connection) through the refresh coordinator, even
   // while the frame is hidden; before that, the review status on its own. One
   // card refresh runs at a time. The card sees `refreshing` while it runs and
@@ -1581,6 +1608,9 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
       records, ledgerReady: ledgerReady && ledgerCurrentRef.current,
       ledger: !ledgerReady ? 'loading' : ledgerCurrentRef.current ? 'current' : 'incomplete',
       reviewStatus: reviewStatus.address === reviewAddressKey ? reviewStatus : { ...reviewStatus, state: 'loading' },
+      // When the card's current check was answered; a tap re-checks one older
+      // than its reuse window (inline-session.js REVIEW_REUSE_MS).
+      reviewCheckedAt: reviewStatus.address === reviewAddressKey && reviewStatus.state === 'ready' ? reviewStatus.fetchedAt ?? null : null,
       connection: conn.state === 'checking' ? 'checking' : conn.state, frozenBinding: conn.frozenBinding === true,
       // The relay route cannot bind a confirmed snapshot, so chat never uses it.
       // Chat sends require the binding at the moment of the write, too.
@@ -1590,9 +1620,13 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
     })
   }, [onPublicationRuntime, records, ledgerReady, reviewStatus, reviewAddressKey, conn, onSend, onSendStack, cardRefresh, cardRefreshes])
 
+  // Staged screenshots a prepared card shows in its description.
+  const loadScreenshot = useCallback((recordId, shot) => fetchContributionScreenshot(token, appId, recordId, shot), [token, appId])
+
   if (sendOnly) return null
   // One workspace owns project context and the exact contribution beneath it.
   return (
+    <ScreenshotLoaderContext.Provider value={loadScreenshot}>
     <div className="co-root" data-design-seed="ae1883df">
       <style>{CSS}</style>
       <div className="co-header-shell">
@@ -1645,7 +1679,7 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
               onSend={onSend} onSendStack={onSendStack} onMarkReady={onMarkReady}
               onFeedback={onFeedback} onReview={startAgentTask} onDismiss={onDismiss} onRestore={onRestore}
               onSetAutopilot={onSetAutopilot} onWithdraw={onWithdraw}
-              onAssignIncomingReview={onAssignIncomingReview} loadDiff={loadFullDiff}
+              onAssignIncomingReview={onAssignIncomingReview} onRefresh={refreshReviewStatus} loadDiff={loadFullDiff}
               focusTarget={(project?.key || '') === focusedProjectKey ? reviewFocus : null}
               focusReady={focusedReviewReady && !sourceLoading}
               onFocusConsumed={consumeReviewFocus}
@@ -1656,5 +1690,6 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
         />}
       </main>
     </div>
+    </ScreenshotLoaderContext.Provider>
   )
 }

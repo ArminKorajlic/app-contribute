@@ -419,6 +419,15 @@ export function buildContributionRun({
       detail: `Private review needed · ${unitRepo(unit)}`,
     }))
   }
+  // Reviewed work waiting only on a source check is the owner's to unblock
+  // (reconnect) or retry, never another private review.
+  for (const { unit, reconnect, message } of partition.awaitingCheck) {
+    decisions.push(decision('check_attention', unit, byRepo, {
+      reconnect,
+      message,
+      detail: `${reconnect ? 'Reconnect GitHub to send' : 'Source check unavailable'} · ${unitRepo(unit)}`,
+    }))
+  }
   for (const { unit, readiness } of structurallyBlocked) {
     decisions.push(decision('private_review', unit, byRepo, {
       detail: `${readiness.message || 'This pull-request chain needs repair.'} · ${unitRepo(unit)}`,
@@ -427,6 +436,12 @@ export function buildContributionRun({
   for (const { unit, message } of failedSubmitUnits) {
     decisions.push(decision('private_review', unit, byRepo, {
       detail: `${message || 'The earlier public result needs reconciliation.'} · ${unitRepo(unit)}`,
+    }))
+  }
+  for (const unit of partition.checkingSource) {
+    working.push(decision('checking_source', unit, byRepo, {
+      message: 'Checking the reviewed source…',
+      detail: `Checking the source · ${unitRepo(unit)}`,
     }))
   }
   for (const unit of partition.reviewing) {

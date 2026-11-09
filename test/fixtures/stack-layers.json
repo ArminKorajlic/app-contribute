@@ -1,0 +1,238 @@
+{
+ "//": "Shared by test/inline-session.test.mjs (inline-session.js stackLayer) and test/test_prepared_block.py (prepared_block.stack_layer): one strict rule, so the same stack prints the same layer.",
+ "cases": [
+  {
+   "stack": {
+    "id": "s1",
+    "position": 1,
+    "total": 2,
+    "base_branch": "main"
+   },
+   "layer": "Layer 1 of 2"
+  },
+  {
+   "stack": {
+    "id": "s1",
+    "position": 2,
+    "total": 3,
+    "base_branch": "main"
+   },
+   "layer": "Layer 2 of 3"
+  },
+  {
+   "stack": {
+    "id": "s1",
+    "position": 999,
+    "total": 999,
+    "base_branch": "main"
+   },
+   "layer": "Layer 999 of 999"
+  },
+  {
+   "stack": {
+    "id": "s1",
+    "position": 1,
+    "total": 2
+   },
+   "layer": "Layer 1 of 2"
+  },
+  {
+   "stack": {
+    "id": " s1 ",
+    "position": 1,
+    "total": 2,
+    "base_branch": "main"
+   },
+   "layer": "Layer 1 of 2"
+  },
+  {
+   "stack": {
+    "id": "s1",
+    "position": "2",
+    "total": "3",
+    "base_branch": "main"
+   },
+   "layer": ""
+  },
+  {
+   "stack": {
+    "id": "s1",
+    "position": 1,
+    "total": "٢",
+    "base_branch": "main"
+   },
+   "layer": ""
+  },
+  {
+   "stack": {
+    "id": "s1",
+    "position": 1,
+    "total": " 2 ",
+    "base_branch": "main"
+   },
+   "layer": ""
+  },
+  {
+   "stack": {
+    "id": "s1",
+    "position": 1,
+    "total": " 2 ",
+    "base_branch": "main"
+   },
+   "layer": ""
+  },
+  {
+   "stack": {
+    "id": "s1",
+    "position": 1,
+    "total": 9007199254740993,
+    "base_branch": "main"
+   },
+   "layer": ""
+  },
+  {
+   "stack": {
+    "id": "s1",
+    "position": 1,
+    "total": 1000,
+    "base_branch": "main"
+   },
+   "layer": ""
+  },
+  {
+   "stack": {
+    "id": "s1",
+    "position": true,
+    "total": 2,
+    "base_branch": "main"
+   },
+   "layer": ""
+  },
+  {
+   "stack": {
+    "id": "s1",
+    "position": 1,
+    "total": true,
+    "base_branch": "main"
+   },
+   "layer": ""
+  },
+  {
+   "stack": {
+    "id": "s1",
+    "position": false,
+    "total": 2,
+    "base_branch": "main"
+   },
+   "layer": ""
+  },
+  {
+   "stack": {
+    "id": "s1",
+    "position": null,
+    "total": 2,
+    "base_branch": "main"
+   },
+   "layer": ""
+  },
+  {
+   "stack": {
+    "id": "s1",
+    "position": "0x2",
+    "total": 3,
+    "base_branch": "main"
+   },
+   "layer": ""
+  },
+  {
+   "stack": {
+    "id": "s1",
+    "position": [
+     2
+    ],
+    "total": 3,
+    "base_branch": "main"
+   },
+   "layer": ""
+  },
+  {
+   "stack": {
+    "id": "s1",
+    "position": 1.5,
+    "total": 2,
+    "base_branch": "main"
+   },
+   "layer": ""
+  },
+  {
+   "stack": {
+    "id": "s1",
+    "position": 0,
+    "total": 2,
+    "base_branch": "main"
+   },
+   "layer": ""
+  },
+  {
+   "stack": {
+    "id": "s1",
+    "position": 3,
+    "total": 2,
+    "base_branch": "main"
+   },
+   "layer": ""
+  },
+  {
+   "stack": {
+    "id": "s1",
+    "position": 1,
+    "total": 1,
+    "base_branch": "main"
+   },
+   "layer": ""
+  },
+  {
+   "stack": {
+    "id": "s1",
+    "position": {},
+    "total": 2,
+    "base_branch": "main"
+   },
+   "layer": ""
+  },
+  {
+   "stack": {
+    "id": 7,
+    "position": 1,
+    "total": 2,
+    "base_branch": "main"
+   },
+   "layer": ""
+  },
+  {
+   "stack": {
+    "id": "",
+    "position": 1,
+    "total": 2,
+    "base_branch": "main"
+   },
+   "layer": ""
+  },
+  {
+   "stack": {
+    "position": 1,
+    "total": 2,
+    "base_branch": "main"
+   },
+   "layer": ""
+  },
+  {
+   "stack": null,
+   "layer": ""
+  },
+  {
+   "stack": "s1",
+   "layer": ""
+  }
+ ]
+}

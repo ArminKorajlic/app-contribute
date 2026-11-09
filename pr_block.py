@@ -51,6 +51,8 @@ def pull_block(reference, read=gh_read):
     'app': 'contribute',
     'intent': f'pull-request:{canonical}#{number}',
     'title': bounded(pr['title']),
+    # Static: no session, no actions and no inline app view (so `expand` is
+    # not needed); opening it navigates to the PR in Contribute.
     'inline': False,
     'facts': [
       {'label': 'Pull request', 'value': f'{canonical}#{number}', 'href': url},

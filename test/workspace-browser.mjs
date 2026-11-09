@@ -29,7 +29,11 @@ import { RepositoryPicker } from './ui/RepositoryPicker.jsx'
 import { ProjectControls } from './ui/ProjectControls.jsx'
 import { PullRequests } from './ui/PullRequests.jsx'
 import { ContributionRun } from './ui/Feed.jsx'
+import { ReviewPlan } from './ui/ContributionCard.jsx'
+import { ScreenshotLoaderContext } from './ui/useScreenshots.js'
+import { fetchContributionScreenshot } from './api.js'
 import { organizePrivateWorkAction } from './review.js'
+import { batchHandle } from './chat-blocks.js'
 import { CSS } from './theme.js'
 import ContributeApp, { GithubPullsUnavailable } from './index.jsx'
 
@@ -323,10 +327,12 @@ const nativeEscape = () => new Promise((resolve, reject) => {
   window.finishNativeKey = error => error ? reject(new Error(error)) : resolve()
   window.workspaceNativeKey(JSON.stringify({ key:'Escape', code:'Escape', keyCode:27 }))
 })
+// The message may be a function, so a timeout reports the state it timed out
+// in rather than the state when the wait began.
 async function until(predicate, message) {
   const deadline = performance.now() + 5000
   while (!predicate()) {
-    if (performance.now() > deadline) throw new Error(message + '\nDOM: ' + text(query('main')).slice(0, 3000))
+    if (performance.now() > deadline) throw new Error((typeof message === 'function' ? message() : message) + '\nDOM: ' + text(query('main')).slice(0, 3000))
     await frame()
   }
   await frame()
@@ -1228,7 +1234,7 @@ window.runWorkspaceChecks = async () => {
       root.render(null)
       await frame(); await frame()
       values.clear()
-      const record = { ...prepared, id: 'card-record', updated_at: '2026-10-20T10:00:00Z',
+      const record = { ...prepared, id: 'card-record', updated_at: '2026-10-20T10:00:00Z', chat_id: 'fixture-chat',
         plan: { ...prepared.plan, diff_sha256: 'd'.repeat(64), diff_stat: ' 1 file changed, 3 insertions(+), 1 deletion(-)' } }
       values.set('contributions/card-record.json', structuredClone(record))
       window.mobius.storage.listWithStatus = async () => ({ complete: true, entries: [{ type: 'file', name: 'card-record.json', content: structuredClone(record) }] })
@@ -1250,12 +1256,13 @@ window.runWorkspaceChecks = async () => {
         data: { type: 'moebius:app-block-action', sessionId: 'card-1', key: 'chat-send:card-record', event: name, nonce } }))
       const before = calls.requests.length
       try {
-        root.render(<ContributeApp appId="fixture-app" token="fixture-only" blockSession={{ sessionId: 'card-1', generation: 4, actions: [{ key: 'chat-send:card-record', label: 'Contribute' }] }} />)
+        root.render(<ContributeApp appId="fixture-app" token="fixture-only" blockSession={{ sessionId: 'card-1', generation: 4, features: ['row-state', 'rows-v2'], context: { chatId: 'fixture-chat', latest: true, intent: 'chat:contributions' }, actions: [{ key: 'chat-send:card-record', label: 'Contribute' }], items: [{ intent: 'review:card-record' }] }} />)
         await until(() => card() && !card().disabled, 'Card state was not published')
         ensure(!calls.requests.slice(before).some(call => call.url === '/api/github/status'), 'An idle card mounted the full app')
         fire('activate', 'card-n1')
         await until(() => card()?.confirming, 'Contribute did not become Confirm: ' + JSON.stringify(card()))
-        ensure(card().confirmation?.[0]?.facts?.some(fact => fact.label === 'Version' && fact.value === HEAD.slice(0, 12)), 'Confirm lacked the app-sourced identity')
+        ensure(card().confirmation?.[0]?.facts?.some(fact => fact.label === 'Project' && fact.value === 'owner/project'), 'Confirm lacked the app-sourced identity')
+        ensure(JSON.stringify(card().confirmation[0].facts.slice(0, 2).map(fact => fact.label)) === '["Project","Change"]', 'Confirm did not lead with the card facts')
         ensure(calls.requests.some(call => call.url.includes('/review-status?record_id=card-record')), 'Card did not ask for its addressed review status')
         // The hidden runtime runs only what inline Send needs and renders nothing.
         const sinceCard = calls.requests.slice(before)
@@ -1264,7 +1271,8 @@ window.runWorkspaceChecks = async () => {
         ensure(!document.querySelector('.co-root'), 'The card rendered the workspace')
         ensure(!submits.length, 'Activation sent')
         fire('confirm', 'card-n2'); fire('confirm', 'card-n3')
-        await until(() => card()?.hidden && card().links?.[0]?.url === 'https://github.com/owner/project/pull/9', 'Sent card did not settle to its PR')
+        // This card is attested (rows-v2), so the pull request link is on its row and the action goes.
+        await until(() => card()?.hidden && states.at(-1).rows?.[0]?.links?.[0]?.url === 'https://github.com/owner/project/pull/9', 'Sent card did not settle to its PR')
         ensure(submits.length === 1, 'Confirm did not send exactly once: ' + submits.length)
         ensure(submits[0].expected_record?.id === 'card-record' && submits[0].expected_record.plan.head_sha === HEAD, 'Send did not carry the confirmed snapshot')
         ensure(states.at(-1).checkpoint === null, 'A proven result kept its recovery checkpoint')
@@ -1276,11 +1284,37 @@ window.runWorkspaceChecks = async () => {
         root.render(null)
       }
     })
+    await check('A card session without its items (an older Möbius) never offers Confirm', async () => {
+      root.render(null)
+      await frame(); await frame()
+      values.clear()
+      values.set('contributions/card-record.json', structuredClone({ ...prepared, id: 'card-record', updated_at: '2026-10-20T10:00:00Z',
+        plan: { ...prepared.plan, diff_sha256: 'd'.repeat(64), diff_stat: ' 1 file changed, 2 insertions(+)' } }))
+      window.fullAppConnected = true; window.fullAppBinding = true
+      const states = []
+      const realPost = window.postMessage
+      window.postMessage = (message, target) => message?.type === 'moebius:app-block-state' ? states.push(structuredClone(message)) : realPost.call(window, message, target)
+      const card = () => states.at(-1)?.actions?.find(action => action.key === 'chat-send:card-record')
+      const before = calls.requests.length
+      try {
+        root.render(<ContributeApp appId="fixture-app" token="fixture-only" blockSession={{ sessionId: 'card-old', generation: 2, actions: [{ key: 'chat-send:card-record', label: 'Contribute' }] }} />)
+        await until(() => card(), 'Card state was not published')
+        window.dispatchEvent(new MessageEvent('message', { source: window, origin: location.origin,
+          data: { type: 'moebius:app-block-action', sessionId: 'card-old', key: 'chat-send:card-record', event: 'activate', nonce: 'old-n1' } }))
+        await new Promise(resolve => setTimeout(resolve, 300))
+        ensure(card().disabled && /newer Möbius/.test(card().note) && !card().confirming, 'A card without items offered Confirm: ' + JSON.stringify(card()))
+        ensure(!calls.requests.slice(before).some(call => call.url.includes('/review-status?record_id=')), 'A card without items addressed a review status')
+      } finally {
+        window.postMessage = realPost
+        window.fullAppBinding = false
+        root.render(null)
+      }
+    })
     await check('Try again on an incomplete ledger waits for its whole re-read, then reaches Confirm', async () => {
       root.render(null)
       await frame(); await frame()
       values.clear()
-      const record = { ...prepared, id: 'ledger-record', updated_at: '2026-10-20T10:00:00Z',
+      const record = { ...prepared, id: 'ledger-record', updated_at: '2026-10-20T10:00:00Z', chat_id: 'fixture-chat',
         plan: { ...prepared.plan, diff_sha256: 'd'.repeat(64), diff_stat: ' 1 file changed, 3 insertions(+)' } }
       values.set('contributions/ledger-record.json', structuredClone(record))
       // The first listing is incomplete; the second (Try again's re-read) is held, then lands complete.
@@ -1300,7 +1334,7 @@ window.runWorkspaceChecks = async () => {
         data: { type: 'moebius:app-block-action', sessionId: 'card-ledger', key: 'chat-send:ledger-record', event: name, nonce } }))
       const before = calls.requests.length
       try {
-        root.render(<ContributeApp appId="fixture-app" token="fixture-only" blockSession={{ sessionId: 'card-ledger', generation: 6, actions: [{ key: 'chat-send:ledger-record', label: 'Contribute' }] }} />)
+        root.render(<ContributeApp appId="fixture-app" token="fixture-only" blockSession={{ sessionId: 'card-ledger', generation: 6, features: ['row-state', 'rows-v2'], context: { chatId: 'fixture-chat', latest: true, intent: 'chat:contributions' }, actions: [{ key: 'chat-send:ledger-record', label: 'Contribute' }], items: [{ intent: 'review:ledger-record' }] }} />)
         await until(() => card() && !card().disabled, 'Card state was not published')
         fire('activate', 'ledger-n1')
         for (let i = 0; i < 150 && !(card()?.label === 'Try again' && !card().disabled); i++) await new Promise(resolve => setTimeout(resolve, 50))
@@ -1325,11 +1359,11 @@ window.runWorkspaceChecks = async () => {
         root.render(null)
       }
     })
-    await check('a card naming one layer of a stack reaches Confirm, and sends nothing if binding is lost before the write', async () => {
+    await check('a card listing every layer of a stack reaches Confirm, and sends nothing if binding is lost before the write', async () => {
       root.render(null)
       await frame(); await frame()
       values.clear()
-      const layer = (id, position, parent) => ({ ...prepared, id, updated_at: '2026-10-20T10:00:00Z',
+      const layer = (id, position, parent) => ({ ...prepared, id, updated_at: '2026-10-20T10:00:00Z', chat_id: 'fixture-chat',
         plan: { ...prepared.plan, title: 'Layer ' + id, branch: 'stack/s1/0' + position, head_sha: position === 1 ? HEAD : BASE, diff_sha256: 'd'.repeat(64),
           diff_stat: '2 files changed, 5 insertions(+), 1 deletion(-)', ...(parent ? { base_sha: HEAD } : {}),
           stack: { id: 's1', name: 'Stack', position, total: 2, base_branch: parent ? 'stack/s1/01' : 'main', ...(parent ? { parent_record_id: parent } : {}) } },
@@ -1341,17 +1375,18 @@ window.runWorkspaceChecks = async () => {
       const states = []
       const realPost = window.postMessage
       window.postMessage = (message, target) => message?.type === 'moebius:app-block-state' ? states.push(structuredClone(message)) : realPost.call(window, message, target)
-      const card = () => states.at(-1)?.actions?.find(action => action.key === 'chat-send:stack-base')
+      const stackKey = 'chat-send-batch:' + batchHandle(['stack-base', 'stack-top'])
+      const card = () => states.at(-1)?.actions?.find(action => action.key === stackKey)
       const fire = (name, nonce) => window.dispatchEvent(new MessageEvent('message', { source: window, origin: location.origin,
-        data: { type: 'moebius:app-block-action', sessionId: 'card-2', key: 'chat-send:stack-base', event: name, nonce } }))
+        data: { type: 'moebius:app-block-action', sessionId: 'card-2', key: stackKey, event: name, nonce } }))
       const before = calls.requests.length
       try {
-        root.render(<ContributeApp appId="fixture-app" token="fixture-only" blockSession={{ sessionId: 'card-2', generation: 5, actions: [{ key: 'chat-send:stack-base', label: 'Contribute' }] }} />)
-        await until(() => card() && !card().disabled && card().badges?.length, 'Stack card state was not published')
+        root.render(<ContributeApp appId="fixture-app" token="fixture-only" blockSession={{ sessionId: 'card-2', generation: 5, features: ['row-state', 'rows-v2'], context: { chatId: 'fixture-chat', latest: true, intent: 'chat:contributions' }, actions: [{ key: stackKey, label: 'Contribute all' }], items: [{ intent: 'review:stack-base' }, { intent: 'review:stack-top' }] }} />)
+        await until(() => card() && !card().disabled, 'Stack card state was not published')
         fire('activate', 'stack-n1')
         // Wait on timers rather than animation frames: the hidden runtime mounts behind the card.
         for (let i = 0; i < 150 && !card()?.confirming; i++) await new Promise(resolve => setTimeout(resolve, 100))
-        await until(() => card()?.confirming, 'A one-layer stack card never reached Confirm: ' + JSON.stringify(card()) + ' requests: ' + JSON.stringify(calls.requests.slice(before).map(call => call.method + ' ' + call.url)))
+        await until(() => card()?.confirming, 'A whole-stack card never reached Confirm: ' + JSON.stringify(card()) + ' requests: ' + JSON.stringify(calls.requests.slice(before).map(call => call.method + ' ' + call.url)))
         const statusQueries = calls.requests.slice(before).filter(call => call.url.includes('/review-status')).map(call => call.url)
         ensure(statusQueries.some(url => url.includes('record_id=stack-base') && url.includes('record_id=stack-top')), 'The review check was not addressed to every prepared layer: ' + JSON.stringify(statusQueries))
         ensure(card().confirmation.length === 2 && card().confirmation.every(item => item.facts.some(fact => fact.label === 'Change' && fact.value === '2 files · +5 −1')), 'Confirm lacked the stack phase or its size')
@@ -1362,11 +1397,89 @@ window.runWorkspaceChecks = async () => {
         await until(() => calls.requests.filter(call => call.url === '/api/github/status').length > statusReads, 'The connection was not re-read')
         await frame(); await frame()
         fire('confirm', 'stack-n2')
-        await until(() => /no longer confirms the exact version/.test(card()?.note || '') || states.some(state => (state.actions || []).some(action => /no longer confirms the exact version/.test(action.note || ''))), 'A lost binding did not refuse: ' + JSON.stringify(card()))
+        // The send settles as refused: nothing in flight or confirming, both
+        // rows Not sent, no recovery checkpoint, a binding-unavailable reason
+        // (the card's own "newer Möbius" line, or the write's refusal), and no
+        // write request at all.
+        const settledRefusal = () => {
+          const last = states.at(-1)
+          return !card()?.busy && !card()?.confirming && /newer Möbius|no longer confirms the exact version/.test(card()?.note || '')
+            && last?.rows?.length === 2 && last.rows.every(row => row.pill === 'Not sent') && last.checkpoint === null
+        }
+        await until(settledRefusal, () => 'A lost binding did not settle as refused: ' + JSON.stringify({ action: card(), rows: states.at(-1)?.rows,
+          checkpoint: states.at(-1)?.checkpoint, writes: calls.requests.slice(before).filter(call => call.method === 'POST').map(call => call.url) }))
         ensure(!calls.requests.slice(before).some(call => call.method === 'POST' && /\/(submit|submit-stack|update-stack|update-existing)$/.test(call.url)), 'An unbound send was made')
       } finally {
         window.postMessage = realPost
         window.fullAppBinding = false
+        root.render(null)
+      }
+    })
+    await check('a prepared description shows its staged screenshots within the card width', async () => {
+      const canvas = document.createElement('canvas'); canvas.width = 1600; canvas.height = 900
+      const wide = canvas.toDataURL('image/png'), loads = []
+      const loader = (recordId, shot) => { loads.push(shot.name); return Promise.resolve(shot.name === 'before.png' ? wide : null) }
+      const shot = name => ({ name, sha256: 'e'.repeat(64), size: 1200, alt: name })
+      const rec = { ...prepared, id: 'fixture-shots', plan: { ...prepared.plan, screenshots: [shot('before.png'), shot('after.png')],
+        body_draft: 'Wraps the title.\n\n| Before | After |\n| --- | --- |\n| ![Before, desktop](screenshot:before.png) | ![After, desktop](screenshot:after.png) |\n\n![Before, full width](screenshot:before.png)' } }
+      const mount = key => root.render(<div className="co-root"><style>{CSS}</style><main className="co-page"><ScreenshotLoaderContext.Provider value={loader}>
+        <div className="co-review"><ReviewPlan key={key} rec={rec} /></div></ScreenshotLoaderContext.Provider></main></div>)
+      try {
+        mount('first')
+        await until(() => document.querySelectorAll('.co-markdown img.co-markdown-shot').length === 2 && loads.length === 2, 'The resolved screenshot did not render')
+        const markdown = query('.co-markdown'), images = [...document.querySelectorAll('.co-markdown img.co-markdown-shot')]
+        await until(() => images.every(image => image.complete && image.naturalWidth === 1600), 'The screenshot did not decode')
+        ensure(images.every(image => image.getAttribute('src').startsWith('data:image/png;base64,') && image.alt.startsWith('Before')), 'A screenshot was not a data image')
+        ensure(![...markdown.querySelectorAll('[src],[href]')].some(node => /^screenshot:/i.test(node.getAttribute('src') || node.getAttribute('href') || '')), 'A screenshot: URL reached the DOM')
+        ensure(text(query('.co-markdown-shot-pending')) === 'Screenshot: After, desktop', 'An unreadable screenshot was not a neutral placeholder')
+        ensure(text(query('.co-shot-note')).startsWith('2 screenshots will be uploaded to your GitHub account'), 'The upload note is missing')
+        const box = markdown.getBoundingClientRect()
+        ensure(markdown.scrollWidth <= markdown.clientWidth + 1 && images.every(image => image.getBoundingClientRect().right <= box.right + 1 && image.getBoundingClientRect().width > 40),
+          'Screenshots overflow or collapse in the card: ' + images.map(image => image.getBoundingClientRect().width).join(',') + ' in ' + box.width)
+        root.render(null); await frame()
+        mount('reopened')
+        await until(() => loads.length === 3 && document.querySelectorAll('.co-markdown img.co-markdown-shot').length === 2, 'Reopening did not show the cached screenshot')
+        ensure(loads.filter(name => name === 'before.png').length === 1, 'A cached screenshot was fetched again: ' + loads.join(','))
+      } finally {
+        root.render(null)
+      }
+    })
+    await check('a restaged screenshot never shows or caches under the digest its plan approved', async () => {
+      // The real reader and cache against a name-keyed route whose bytes a
+      // restage replaces: server A→B→A while plan A, then plan B, is on screen.
+      const png = color => { const canvas = document.createElement('canvas'); canvas.width = 4; canvas.height = 4
+        const context = canvas.getContext('2d'); context.fillStyle = color; context.fillRect(0, 0, 4, 4)
+        return new Promise(resolve => canvas.toBlob(resolve, 'image/png')).then(blob => blob.arrayBuffer()) }
+      const hex = async bytes => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)), b => b.toString(16).padStart(2, '0')).join('')
+      const dataUrl = bytes => 'data:image/png;base64,' + btoa(String.fromCharCode(...new Uint8Array(bytes)))
+      const A = await png('#c00'), B = await png('#00c'), shotA = { name: 'before.png', sha256: await hex(A) }, shotB = { name: 'before.png', sha256: await hex(B) }
+      ensure(shotA.sha256 !== shotB.sha256, 'The fixture images are identical')
+      const route = '/api/github/contributions/fixture-app/fixture-restaged/screenshots/before.png', original = window.fetch, loads = [], settled = []
+      let served = B
+      window.fetch = (url, options) => String(url) === route ? Promise.resolve(new Response(served.slice(0), { headers: { 'Content-Type': 'image/png' } })) : original(url, options)
+      const loader = (recordId, shot) => { loads.push(shot.sha256); return fetchContributionScreenshot('tok', 'fixture-app', recordId, shot).then(url => { settled.push(url); return url }) }
+      const rec = shot => ({ ...prepared, id: 'fixture-restaged', plan: { ...prepared.plan, screenshots: [shot], body_draft: 'Restaged.\n\n![Before](screenshot:before.png)' } })
+      const mount = (key, shot) => root.render(<div className="co-root"><style>{CSS}</style><main className="co-page"><ScreenshotLoaderContext.Provider value={loader}>
+        <div className="co-review"><ReviewPlan key={key} rec={rec(shot)} /></div></ScreenshotLoaderContext.Provider></main></div>)
+      const shown = () => query('.co-markdown img.co-markdown-shot')?.getAttribute('src') || null
+      try {
+        mount('a-while-b-served', shotA)
+        await until(() => settled.length === 1, 'Plan A did not read its screenshot')
+        await frame(); await frame()
+        ensure(shown() === null && text(query('.co-markdown-shot-pending')) === 'Screenshot: Before', 'Restaged bytes rendered under plan A')
+        mount('b', shotB)
+        await until(() => shown() === dataUrl(B), 'The restaged plan did not show its own bytes')
+        served = A
+        root.render(null); await frame()
+        mount('a-reopened', shotA)
+        await until(() => shown() === dataUrl(A), 'Reopened plan A did not show A: ' + String(shown()).slice(0, 60))
+        ensure(loads.filter(sha => sha === shotA.sha256).length === 2, 'The mismatched read was cached under A: ' + loads.length)
+        root.render(null); await frame()
+        mount('a-cached', shotA)
+        await until(() => shown() === dataUrl(A), 'Plan A lost its verified image')
+        ensure(loads.length === 3, 'A verified screenshot was fetched again: ' + loads.length)
+      } finally {
+        window.fetch = original
         root.render(null)
       }
     })
@@ -1484,7 +1597,7 @@ async function main() {
       unsubscribeInput()
       if (inputErrors.length) { report.status = 'fail'; report.nativeInputErrors = inputErrors }
       const network = protocol.events.filter(event => event.sessionId === sessionId && event.method === 'Network.requestWillBeSent'
-        && !event.params.request.url.startsWith('file:')).map(event => event.params.request.url)
+        && !/^(file|data):/.test(event.params.request.url)).map(event => event.params.request.url)
       if (network.length) { report.status = 'fail'; report.unexpectedNetwork = network }
       reports.push({ viewport, ...report })
       await protocol.send('Target.closeTarget', { targetId })
