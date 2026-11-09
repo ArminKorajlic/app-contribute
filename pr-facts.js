@@ -2,7 +2,7 @@
 // what Contribute's own review runs hold for that PR. A fact that could not be
 // read is 'unknown' (or readComplete is false), never a guess from older data.
 // Pure: no DOM, no network.
-import { checkSummary, ignoredNote, isBotAuthor, reviewItemProgress } from './collaboration.js'
+import { checkSummary, ignoredNote, isBotAuthor, reviewItemProgress, waitingRepair } from './collaboration.js'
 import { isOwnPull } from './pull-view.js'
 import { responseFor, responseOutbox } from './respond-result.js'
 
@@ -45,16 +45,19 @@ function reviewsOf(pr) {
 }
 
 // Threads a person other than you spoke last in (a bot's thread is input, never
-// waiting on you). Null when the threads were not read, or are only the last page of a
-// longer list: a missed open thread would hide feedback and disable Respond.
+// waiting on you). The PR's own conversation counts as one more such thread: a plain
+// comment is feedback too, until you answer it. Whoever of the newest ten comments spoke
+// last among people decides, so a bot's update after a reviewer's comment does not hide it.
+// Null when the threads were not read, or are only the last page of a longer list: a missed
+// open thread would hide feedback and disable Respond.
+const waitsOnYou = (author, login) => !!author && !isBot(author) && lower(author.login) !== lower(login)
+const lastPersonIn = comments => (comments || []).filter(comment => !isBot(comment?.author)).at(-1)?.author
 function openThreadsOf(pr, login) {
   const connection = pr?.reviewThreads
   const nodes = connection?.nodes
   if (!Array.isArray(nodes) || connection.pageInfo?.hasPreviousPage === true) return null
-  return nodes.filter(thread => {
-    const last = thread?.comments?.nodes?.at(-1)?.author
-    return thread && thread.isResolved === false && !isBot(last) && lower(last?.login) !== lower(login)
-  }).length
+  const threads = nodes.filter(thread => thread && thread.isResolved === false && waitsOnYou(thread.comments?.nodes?.at(-1)?.author, login)).length
+  return threads + (waitsOnYou(lastPersonIn(pr.comments?.nodes), login) ? 1 : 0)
 }
 
 // The newest Contribute review of this PR (any version), with its run.
@@ -80,17 +83,19 @@ const ITEM_OUTBOX = {
   marking_ready: ['ready', 'sending'], ready_unknown: ['ready', 'unconfirmed'],
   verdict_posting: ['verdict', 'sending'], verdict_unknown: ['verdict', 'unconfirmed'],
 }
+// A verdict and a fix deal with the findings of their review: while one waits or is on its way it owns them (pr-machine.js).
+const COVERING_KINDS = new Set(['verdict', 'push'])
 const VERDICT_OUTBOX = { proposed: 'drafted', posting: 'sending', unknown: 'unconfirmed' }
 const COMMENT_OUTBOX = { posting: 'sending', unknown: 'unconfirmed' }
 
 function outboxOf(item) {
   const proposal = item.verdict_proposal
-  if (VERDICT_OUTBOX[proposal?.state]) return { kind: 'verdict', event: proposal.event, head: proposal.head_sha || item.head_sha, state: VERDICT_OUTBOX[proposal.state] }
-  const repair = (item.repair_attempts || []).find(attempt => attempt.state === 'proposed')
-  if (repair) return { kind: 'push', head: repair.head_sha || item.head_sha, state: 'drafted', attempt: repair.id }
+  if (VERDICT_OUTBOX[proposal?.state]) return { kind: 'verdict', event: proposal.event, head: proposal.head_sha || item.head_sha, state: VERDICT_OUTBOX[proposal.state], covers: true }
+  const repair = waitingRepair(item)
+  if (repair) return { kind: 'repair', head: repair.base, state: 'drafted', attempt: repair.id, covers: true }
   if (COMMENT_OUTBOX[item.public_review?.state]) return { kind: 'comment', head: item.head_sha, state: COMMENT_OUTBOX[item.public_review.state] }
   const [kind, state] = ITEM_OUTBOX[item.state] || []
-  return kind ? { kind, head: item.head_sha, state } : null
+  return kind ? { kind, head: item.head_sha, state, ...(COVERING_KINDS.has(kind) ? { covers: true } : {}) } : null
 }
 
 function resultOf(item, progress, ignored) {
@@ -168,7 +173,8 @@ function runFacts(review, pr, own, ignored) {
 export function prFacts({ pr, login, runs = [], ignored = null, chats = [], responses = [] }) {
   const own = isOwnPull(pr, login)
   const reviews = reviewsOf(pr)
-  const fromRuns = runFacts(newestReviewOf(runs, pr), pr, own, ignored)
+  const review = newestReviewOf(runs, pr)
+  const fromRuns = runFacts(review, pr, own, ignored)
   const myReview = own ? null : myReviewOf(pr, fromRuns.sent, reviews, login)
   const threads = own ? openThreadsOf(pr, login) : 0
   return {
@@ -188,7 +194,7 @@ export function prFacts({ pr, login, runs = [], ignored = null, chats = [], resp
     result: fromRuns.result,
     earlier: fromRuns.earlier,
     // A review run's own draft comes first; otherwise a saved Respond answer is the draft (or the sending) there is.
-    outbox: fromRuns.outbox || responseOutbox(responseFor(responses, pr), pr),
+    outbox: fromRuns.outbox || responseOutbox(responseFor(responses, pr), pr, review),
     // Without the connected account, whose PR this is cannot be told: nothing is decided.
     readComplete: !!login && reviews !== null && threads !== null,
   }

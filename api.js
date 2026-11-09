@@ -255,7 +255,7 @@ export const PR_FIELDS = `id number title url state headRefOid headRefName baseR
   repository { nameWithOwner viewerPermission squashMergeAllowed mergeCommitAllowed rebaseMergeAllowed }
   headRepository { nameWithOwner viewerPermission isArchived }
   labels(first:20) { nodes { name color } totalCount }
-  comments { totalCount }
+  comments(last:10) { totalCount nodes { author { login __typename } } }
   reviews { totalCount }
   commits(last:1) { totalCount nodes { commit { statusCheckRollup { state contexts {
     totalCount checkRunCountsByState { state count } statusContextCountsByState { state count }

@@ -273,3 +273,28 @@ test('the Respond conversation of a PR is found by its exact repository (any cas
   assert.equal(respondChatOf([], pull()), null)
   assert.equal(respondChatOf(undefined, pull()), null)
 })
+
+// The platform saves a prepared fix's new commit as head_sha and the PR version it builds on as from_sha.
+test('a prepared fix waiting on this version is a fix to push, not open findings', () => {
+  const FIX = 'f'.repeat(40)
+  const repair = { id: 'a1', state: 'proposed', head_sha: FIX, from_sha: HEAD, files: ['api.js'] }
+  const decision = decideFor(mine(), [run({ state: 'needs_you', repair_attempts: [repair] }, { mode: 'review_fix_merge' })])
+  assert.equal(decision.state, 'to_confirm')
+  assert.equal(decision.label, 'Fix to push')
+  assert.match(decision.headline, /A fix is ready/)
+})
+
+test('a plain comment from someone else on your PR is feedback until you reply; a bot’s is not, and a bot’s update after a person’s does not hide it', () => {
+  const said = (...voices) => ({ comments: { totalCount: voices.length, nodes: voices.map(([login, typename = 'User']) => ({ author: { login, __typename: typename } })) } })
+  assert.equal(decideFor(mine(said(['Sam']))).state, 'author.feedback')
+  assert.notEqual(decideFor(mine(said(['Sam'], ['alex']))).state, 'author.feedback', 'your own reply answers it')
+  assert.notEqual(decideFor(mine(said(['ci-bot', 'Bot']))).state, 'author.feedback')
+  assert.equal(decideFor(mine(said(['Sam'], ['ci-bot', 'Bot']))).state, 'author.feedback', 'a bot posting after Sam leaves Sam unanswered')
+  assert.notEqual(decideFor(mine(said(['Sam'], ['alex'], ['ci-bot', 'Bot']))).state, 'author.feedback', 'and after your reply, it stays answered')
+})
+
+test('a plain comment arriving while an agent works leaves it working, then asks for an answer once the run is done', () => {
+  const comment = { comments: { totalCount: 1, nodes: [{ author: { login: 'Sam', __typename: 'User' } }] } }
+  assert.equal(decideFor(mine(comment), [run({ state: 'reviewing' }, { state: 'running', execution_state: 'running' })]).state, 'working')
+  assert.equal(decideFor(mine(comment), [run({ state: 'all_clear' })]).state, 'author.feedback')
+})

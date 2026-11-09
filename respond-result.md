@@ -105,6 +105,7 @@ show that the owner pressed Post. Until the host can show it, nothing is publish
   `previous_path`). `patch` holds the hunks only (from the first `@@`, the format of
   GitHub's REST `patch`), or `null` for a binary file or one over the caps, in which case
   `patch_omitted` is `true` (binary files also have `binary: true`).
+* A point answering the owner's saved agent-review findings has the reviewer `Agent review`, exactly.
 * Caps: 30 points; point title 160, answer 400, reviewer 60 characters; 12 replies of at
   most 20 000 characters; description at most 60 000; 10 logins; tests 500; 60 commits;
   300 files; a file's path 4 096 (Linux's `PATH_MAX`, so every path Git reports fits); a file's

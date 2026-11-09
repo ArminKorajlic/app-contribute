@@ -37,6 +37,7 @@ export function reviewActionPlan({ tone, own = false, chat = false, asked = fals
       return [...ask(asked ? NAMES.answerInChat : NAMES.openChat).map(primary), ...stop]
     case 'findings':
     case 'changes':
+    case 'fix_ready':
       return [
         ...(own && can.fix ? [primary({ key: 'fix', label: NAMES.fixFindings })] : []),
         // On someone else's PR the next step is saying what you found. On your own PR nothing is ever

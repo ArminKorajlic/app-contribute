@@ -107,10 +107,10 @@ test('while and after posting the PR’s own head no longer matters, only what t
 })
 
 test('the PR logic gets a draft, sending or unconfirmed fact from a response, and nothing from a stale or finished one', () => {
-  assert.deepEqual(responseOutbox(entry(), pull()), { kind: 'push', head: HEAD, state: 'drafted' })
-  assert.deepEqual(responseOutbox(entry('ready', decision()), pull()), { kind: 'push', head: HEAD, state: 'sending' })
-  assert.deepEqual(responseOutbox(entry('posting', decision()), pull()), { kind: 'push', head: HEAD, state: 'sending' })
-  assert.deepEqual(responseOutbox(entry('failed', decision()), pull({ headRefOid: TIP })), { kind: 'push', head: TIP, state: 'unconfirmed' }, 'about the PR as it stands, after the push moved it')
+  assert.deepEqual(responseOutbox(entry(), pull()), { kind: 'answer', head: HEAD, state: 'drafted', covers: false })
+  assert.deepEqual(responseOutbox(entry('ready', decision()), pull()), { kind: 'answer', head: HEAD, state: 'sending', covers: false })
+  assert.deepEqual(responseOutbox(entry('posting', decision()), pull()), { kind: 'answer', head: HEAD, state: 'sending', covers: false })
+  assert.deepEqual(responseOutbox(entry('failed', decision()), pull({ headRefOid: TIP })), { kind: 'answer', head: TIP, state: 'unconfirmed', covers: false }, 'about the PR as it stands, after the push moved it')
   for (const none of [entry('ready', null, {}), entry('posted', decision())]) {
     const moved = pull({ headRefOid: 'c'.repeat(40) })
     assert.equal(responseOutbox(none, moved), null)
@@ -187,6 +187,24 @@ test('an approved or posting answer is read closely for five minutes after Post,
   assert.equal(postingSoon(entry('posted', decision()), SENT + 1000), false)
   assert.equal(postingSoon(entry('failed', decision(), { error: { step: 'replies', message: 'x' } }), SENT + 1000), false, 'stopped: nothing is moving')
   assert.equal(postingSoon(entry('ready', decision({ result_id: 'r-aaaaaaaaaaaa' })), SENT + 1000), false, 'an approval of another result')
+})
+
+test('a ready answer covers a saved review only with Agent review points, on the version that review checked', async () => {
+  const { pointsAnswering } = await import('../respond-result.js')
+  const view = { status: 'ready', result: { pr: { head_sha: 'h1' }, created_at: '2026-11-06T10:00:00Z', points: [{ reviewer: 'Agent review' }, { reviewer: 'alex' }] } }
+  const run = { created_at: '2026-11-06T09:00:00Z' }
+  assert.equal(pointsAnswering(view, run, { head_sha: 'h1' }), 1)
+  assert.equal(pointsAnswering(view, run, { head_sha: 'h2' }), 0, 'another version')
+  assert.equal(pointsAnswering({ ...view, status: 'posted' }, run, { head_sha: 'h1' }), 1, 'a posted answer still took them on')
+  assert.equal(pointsAnswering({ ...view, status: 'stale' }, run, { head_sha: 'h1' }), 0, 'a stale answer never did')
+})
+
+test('an answer covers the saved review’s findings only when it took them on: Agent review points, same version, made after it', () => {
+  const item = { head_sha: HEAD }, run = { created_at: '2026-11-06T08:00:00Z' }
+  const covering = entry('ready', null, { points: [{ ...example().points[0], reviewer: 'Agent review' }] })
+  assert.equal(responseOutbox(covering, pull(), { run, item }).covers, true)
+  assert.equal(responseOutbox(entry(), pull(), { run, item }).covers, false, 'a reviewer’s point is not the check’s')
+  assert.equal(responseOutbox(covering, pull(), { run: { created_at: '2026-11-06T09:00:00Z' }, item }).covers, false, 'the check came after it')
 })
 
 test('a length is counted in characters, as the helper counts it: an emoji is one, not two', () => {

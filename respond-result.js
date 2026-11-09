@@ -155,14 +155,25 @@ export function responseView(responses, pr) {
   return status ? { ...entry, status } : null
 }
 
+// How many points of an answer answer this saved review's findings, or 0. Only an answer built on the
+// version the review checked, made after it, counts: an older or other-version answer never covered it.
+export const AGENT_REVIEW = 'Agent review'
+function answeredPoints(result, run, item) {
+  if (!item || result.pr.head_sha !== item.head_sha) return 0
+  if ((Date.parse(result.created_at) || 0) < (Date.parse(run?.created_at) || 0)) return 0
+  return result.points.filter(point => point.reviewer === AGENT_REVIEW).length
+}
+export const pointsAnswering = (view, run, item) => (['ready', 'posted'].includes(view?.status) ? answeredPoints(view.result, run, item) : 0)
+
 // What the PR logic already understands: a draft waiting for the owner, something being sent, something GitHub did not confirm.
 // It is about the PR as it stands now (the logic ignores a fact about another head), so once the push has moved the head, a post
 // that stopped part-way still reads as not confirmed.
 const OUTBOX_STATES = { ready: 'drafted', approved: 'sending', posting: 'sending', failed: 'unconfirmed' }
 
-export function responseOutbox(entry, pr) {
+// `review` is the PR's newest saved review ({ run, item }): the answer covers its findings when it took them on.
+export function responseOutbox(entry, pr, review = null) {
   const state = OUTBOX_STATES[responseStatus(entry, pr)]
-  return state ? { kind: 'push', head: pr.headRefOid, state } : null
+  return state ? { kind: 'answer', head: pr.headRefOid, state, covers: answeredPoints(entry.result, review?.run, review?.item) > 0 } : null
 }
 
 const plural = (count, one, many) => `${count} ${count === 1 ? one : many}`

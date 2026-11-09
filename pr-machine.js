@@ -14,6 +14,9 @@
 //     pass (or none exist), no conflicts, and nothing unconfirmed on its way out.
 //   - Only new commits bring their PR back for re-review; replies never do.
 //   - One agent job per PR at a time.
+//   - A draft that deals with the open findings (a prepared fix, a ready answer built on them, a verdict
+//     drafted from them) owns them while it waits or is on its way: no agent job starts and the findings are
+//     not set aside until you send it or throw it away. The app marks such a draft `covers`.
 // Pure: no DOM, no network.
 import { NAMES, rerunName } from './names.js'
 
@@ -44,6 +47,7 @@ function derive(facts) {
     earlier: facts.earlier && facts.earlier.head !== facts.head ? facts.earlier : null,
     openFindings: result?.outcome === 'findings' && !result.setAside,
     outbox,
+    coveredBy: outbox?.covers ? outbox.kind : '',
     botFindings: (facts.reviews || []).some(review => review.bot && review.state !== 'APPROVED'),
   }
 }
@@ -82,6 +86,11 @@ export const STATES = {
   'reviewer.kept_private': { turn: 'none', label: 'Kept private', headline: 'Their PR · you kept your review of this version private' },
   'reviewer.mergeable': { turn: 'you', label: 'Ready to merge', headline: 'Their PR · approved at this version, {green}. Merge it', next: 'merge' },
 }
+
+// A drafted repair is a fix an agent prepared: the same state as any draft, in the words of a push.
+// Only the app sees prepared fixes (the platform's facts never carry an outbox), so this stays here.
+const FIX_WAITING = { label: 'Fix to push', headline: 'A fix is ready. Read it, then push it or don’t' }
+const wordsOf = (key, d) => (key === 'to_confirm' && d.outbox?.kind === 'repair' ? { ...STATES[key], ...FIX_WAITING } : STATES[key])
 
 // The state, by a fixed priority: the first match wins.
 function stateOf(facts, d) {
@@ -128,6 +137,14 @@ const firstReason = (...reasons) => reasons.find(Boolean) || ''
 const jobIdle = facts => (facts.job && facts.job.state !== 'stalled' ? 'An agent is already working on this PR.' : '')
 // Something sent to GitHub but not yet confirmed: no new agent job may race it.
 const nothingInFlight = d => (d.outbox && d.outbox.state !== 'drafted' ? 'Something sent to GitHub is not confirmed yet.' : '')
+// A draft that deals with the open findings owns them, in every step of its way out. The fact is the app's alone:
+// the platform never sees drafts, so its table has no such rule and every case it shares with this one is unchanged.
+const OWNED_BY_DRAFT = {
+  drafted: 'A waiting draft already deals with these findings. Send it or throw it away first.',
+  sending: 'A draft that deals with these findings is being sent.',
+  unconfirmed: 'A draft that deals with these findings is not confirmed yet. Check GitHub first.',
+}
+const draftOwnsFindings = d => (d.outbox?.covers ? OWNED_BY_DRAFT[d.outbox.state] || '' : '')
 const stillOpen = facts => (['open', 'draft'].includes(facts.lifecycle) ? '' : 'This PR is no longer open.')
 const readable = facts => (facts.lifecycle === 'unknown' || facts.readComplete === false ? 'This PR could not be read. Try again.' : '')
 
@@ -156,15 +173,15 @@ const outboxIs = (d, state) => (d.outbox?.state === state ? '' : 'Nothing like t
 // confirm sheet). `when` returns '' when allowed, otherwise the reason it is not.
 export const ACTIONS = [
   { id: 'check_my_pr', by: 'agent', roles: ['author'], title: NAMES.review, detail: 'Private. Nothing is posted.',
-    when: (facts, d) => firstReason(readable(facts), stillOpen(facts), jobIdle(facts), nothingInFlight(d)) },
+    when: (facts, d) => firstReason(readable(facts), stillOpen(facts), jobIdle(facts), nothingInFlight(d), draftOwnsFindings(d)) },
   { id: 'respond', by: 'agent', roles: ['author'], title: NAMES.respond, detail: 'Answers every point, then one approval sheet for the pushes and replies.',
-    when: (facts, d) => firstReason(readable(facts), stillOpen(facts), jobIdle(facts), nothingInFlight(d), somethingToAnswer(facts, d) ? '' : 'Nothing to respond to.') },
+    when: (facts, d) => firstReason(readable(facts), stillOpen(facts), jobIdle(facts), nothingInFlight(d), draftOwnsFindings(d), somethingToAnswer(facts, d) ? '' : 'Nothing to respond to.') },
   { id: 'finish_it', by: 'agent', roles: ['author'], title: NAMES.finishIt, detail: 'Responds, checks and fixes. Stops for your approval before each push.',
-    when: (facts, d) => firstReason(readable(facts), stillOpen(facts), mayWrite(facts.permission) ? '' : 'Needs write access to this repository.', jobIdle(facts), nothingInFlight(d)) },
+    when: (facts, d) => firstReason(readable(facts), stillOpen(facts), mayWrite(facts.permission) ? '' : 'Needs write access to this repository.', jobIdle(facts), nothingInFlight(d), draftOwnsFindings(d)) },
   { id: 'review', by: 'agent', roles: ['reviewer'], title: d => (d.mine || d.result || d.earlier ? NAMES.reviewAgain : NAMES.review), detail: 'Private, drafted for you, or posted by the agent if you allow it.',
-    when: (facts, d) => firstReason(readable(facts), stillOpen(facts), jobIdle(facts), nothingInFlight(d)) },
+    when: (facts, d) => firstReason(readable(facts), stillOpen(facts), jobIdle(facts), nothingInFlight(d), draftOwnsFindings(d)) },
   { id: 'take_over', by: 'agent', roles: ['reviewer'], title: NAMES.takeOver, detail: 'Maintainers only. Needs a reason, and says so on the PR. Each push needs your approval.',
-    when: (facts, d) => firstReason(readable(facts), stillOpen(facts), MAINTAINER.includes(facts.permission) ? '' : 'Only maintainers can take over someone else’s PR.', jobIdle(facts), nothingInFlight(d)) },
+    when: (facts, d) => firstReason(readable(facts), stillOpen(facts), MAINTAINER.includes(facts.permission) ? '' : 'Only maintainers can take over someone else’s PR.', jobIdle(facts), nothingInFlight(d), draftOwnsFindings(d)) },
 
   { id: 'send_draft', by: 'you', roles: ['author', 'reviewer'], title: 'Send…', when: (facts, d) => outboxIs(d, 'drafted') },
   { id: 'check_github', by: 'you', roles: ['author', 'reviewer'], title: 'Check GitHub', when: (facts, d) => outboxIs(d, 'unconfirmed') },
@@ -173,7 +190,7 @@ export const ACTIONS = [
   { id: 'draft_verdict', by: 'you', roles: ['reviewer'], title: 'Approve, request changes or comment…',
     when: (facts, d) => firstReason(readable(facts), d.result && !d.mineAtHead && !d.outbox ? '' : 'Review this version first.') },
   { id: 'set_aside', by: 'you', roles: ['author', 'reviewer'], title: 'Set aside…',
-    when: (facts, d) => firstReason(readable(facts), d.result && !d.result.setAside && (facts.role === 'reviewer' || d.openFindings) ? '' : 'Nothing to set aside.') },
+    when: (facts, d) => firstReason(readable(facts), d.result && !d.result.setAside && (facts.role === 'reviewer' || d.openFindings) ? '' : 'Nothing to set aside.', draftOwnsFindings(d)) },
   { id: 'open_for_review', by: 'you', roles: ['author'], title: NAMES.openForReview, when: facts => firstReason(readable(facts), facts.lifecycle === 'draft' ? jobIdle(facts) : 'It is already open for review.') },
   { id: 'back_to_draft', by: 'you', roles: ['author'], title: NAMES.backToDraft, when: facts => firstReason(readable(facts), facts.lifecycle === 'open' ? jobIdle(facts) : 'It is not open for review.') },
   { id: 'ask_rereview', by: 'you', roles: ['author'], title: NAMES.askRereview,
@@ -193,17 +210,18 @@ function headlineFor(key, facts, d) {
   const clean = ['pass', 'none'].includes(facts.checks) && facts.mergeable === 'yes'
   const checks = clean && facts.gate === 'review_required' ? GATE_WORDS
     : facts.mergeable === 'yes' ? CHECK_WORDS[facts.checks] || 'Checks are still running.' : CONFLICT_WORDS[facts.mergeable] || CONFLICT_WORDS.unknown
-  return STATES[key].headline.replace('{who}', headlineWho(key, d).join(', ') || 'reviewers').replace('{author}', facts.author || 'the author')
+  return wordsOf(key, d).headline.replace('{who}', headlineWho(key, d).join(', ') || 'reviewers').replace('{author}', facts.author || 'the author')
     .replace('{checks}', checks).replace('{green}', facts.checks === 'none' ? 'no checks' : 'checks green')
 }
 
-// The one entry point: facts in, { role, state, turn, label, headline, next, jobKind, waitingOn, actions,
-// approvedBy, rereviewFrom } out. `jobKind` is the kind of the PR's agent job ('' when none). The last two name people: who approved this version, and
+// The one entry point: facts in, { role, state, turn, label, headline, next, jobKind, coveredBy, waitingOn, actions,
+// approvedBy, rereviewFrom } out. `jobKind` is the kind of the PR's agent job ('' when none); `coveredBy` the kind of
+// draft that owns the open findings (repair, answer, verdict; '' when none). The last two name people: who approved this version, and
 // whose review is of an older one.
 export function decide(facts) {
   const d = derive(facts)
   const key = stateOf(facts, d)
-  const state = STATES[key]
+  const state = wordsOf(key, d)
   const actions = ACTIONS.filter(action => action.roles.includes(facts.role)).map(action => {
     const reason = action.when(facts, d)
     const title = typeof action.title === 'function' ? action.title(d, facts) : action.title
@@ -211,6 +229,8 @@ export function decide(facts) {
   })
   const waitingOn = state.turn !== 'other' ? '' : facts.role === 'reviewer' ? facts.author || 'the author' : headlineWho(key, d).join(', ') || 'reviewers'
   const label = state.label.replace('{author}', facts.author || 'the author')
-  return { role: facts.role, state: key, turn: state.turn, label, headline: headlineFor(key, facts, d), next: state.next || '', jobKind: facts.job?.kind || '', waitingOn, actions,
+  return { role: facts.role, state: key, turn: state.turn, label, headline: headlineFor(key, facts, d), next: state.next || '', jobKind: facts.job?.kind || '', coveredBy: d.coveredBy, waitingOn, actions,
     approvedBy: d.approvedAtHead, rereviewFrom: [...new Set([...d.changesOlder, ...d.approvedOlder])] }
 }
+
+export const actionOf = (decision, id) => decision.actions.find(action => action.id === id) || null

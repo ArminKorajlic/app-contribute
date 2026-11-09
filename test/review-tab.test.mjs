@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { readFileSync } from 'node:fs'
+import { normalizeResult } from '../respond-result.js'
 import { frontendModules, renderModule } from './render-harness.mjs'
 import { standingFor } from '../pr-standing.js'
 
@@ -137,11 +139,11 @@ test('a PR that changed after its review says so, shows the old findings and off
   const earlier = status('all_clear', { head_sha: 'b'.repeat(40), summary: 'No blockers at the old commit.' }, { state: 'complete', execution_state: 'completed' })
   const html = await render(t, 'ReviewTab', { pr, status: null, earlier, onStart: () => {} })
   if (!html) return
-  assert.match(html, /Reviewed an earlier version/)
-  assert.match(html, /bbbbbbb/)
-  assert.match(html, /may no longer apply/)
+  assert.match(html, /Checked bbbbbbb/)
+  assert.match(html, /before aaaaaaa/)
+  assert.match(html, /Nobody answered them/)
   assert.match(html, /No blockers at the old commit/)
-  assert.match(html, /<button type="button" class="co-btn">Review again<\/button>/, 'a secondary button, so the page keeps one filled button')
+  assert.match(html, /<button type="button" class="co-btn">Review aaaaaaa<\/button>/, 'a secondary button naming the version it would review, so the page keeps one filled button')
   assert.doesNotMatch(html, /co-btn-primary/)
   assert.doesNotMatch(html, /You haven’t made a review/, 'an earlier review exists, so it was reviewed')
   const closed = await render(t, 'ReviewTab', { pr, status: null, earlier, readOnly: true })
@@ -293,7 +295,7 @@ test('an older saved review stays below the Respond box, and an earlier-version 
   assert.equal((html.match(/data-frame="verdict"/g) || []).length, 1, 'one box asks for you; the finished review below it stays plain')
   const earlier = { run: { id: 'r0', created_at: '2026-11-01T10:00:00Z', chat_id: 'old-chat' }, item: { repo: 'team/repo', number: 9, head_sha: 'c'.repeat(40), base_ref: 'main', summary: 'No blockers at the old commit.' } }
   const withEarlier = await render(t, 'ReviewTab', respondProps('needs_answer', { earlier }))
-  assert.ok(withEarlier.indexOf('Waiting for your answer') < withEarlier.indexOf('Reviewed an earlier version'))
+  assert.ok(withEarlier.indexOf('Waiting for your answer') < withEarlier.indexOf('Checked ccccccc'))
 })
 
 test('the Respond box appears only while that conversation holds the PR', async t => {
@@ -311,4 +313,35 @@ test('the Respond box appears only while that conversation holds the PR', async 
   const html = await render(t, 'ReviewTab', { pr, status: running, own: true, respondChat: chat, standing })
   assert.match(html, /<h4>Reviewing<\/h4>/)
   assert.doesNotMatch(html, /Working on feedback|Waiting for your answer/)
+})
+
+test('a fix waiting for Push is the one decision on the card, naming its commit on top of the PR version', async t => {
+  const repair = { id: 'a1', state: 'proposed', head_sha: 'e'.repeat(40), from_sha: 'a'.repeat(40), files: ['api.js'], summary: 'Fixed two findings.' }
+  const html = await render(t, 'ReviewTab', { pr, own: true, status: status('needs_you', { repair_attempts: [repair], summary: 'A repair is ready for you.' }, { state: 'needs_you', execution_state: 'completed', mode: 'review_fix_merge' }),
+    onRepair: () => {}, onFix: () => {}, onIgnore: () => {}, onStart: () => {} })
+  if (!html) return
+  assert.match(html, /<h4>A fix is ready to push<\/h4>/)
+  assert.match(html, /Pushes commit <code>eeeeeee<\/code> on top of <code>aaaaaaa<\/code>/)
+  assert.match(html, /Push fix/)
+  assert.match(html, /Don’t push/)
+  for (const gone of ['Fix these findings', 'Ignore…', 'Review again', 'A repair is ready for you']) assert.doesNotMatch(html, new RegExp(gone), gone)
+})
+
+test('your PR’s Review tab starts with where it is in its cycle', async t => {
+  const repair = { id: 'a1', state: 'proposed', head_sha: 'e'.repeat(40), from_sha: 'a'.repeat(40), files: [] }
+  const html = await render(t, 'ReviewTab', { pr, own: true, status: status('needs_you', { repair_attempts: [repair] }, { state: 'needs_you', execution_state: 'completed', mode: 'review_fix_merge' }), onRepair: () => {} })
+  if (!html) return
+  assert.match(html, /<li class="is-current" aria-current="step">Fix ready: push\?<\/li>/)
+  assert.ok(html.indexOf('co-review-steps') < html.indexOf('A fix is ready to push'), 'the strip comes first')
+})
+
+test('an earlier check shows Answered only when the answer above took its findings on', async t => {
+  const HEAD = 'e'.repeat(40)
+  const earlier = { run: { id: 'r0', created_at: '2026-11-06T08:00:00Z', mode: 'review_fix_merge', chat_id: 'old' }, item: { repo: 'team/repo', number: 9, head_sha: HEAD, base_ref: 'main', summary: 'Found things.' } }
+  const example = JSON.parse(readFileSync(new URL('./fixtures/respond-result.example.json', import.meta.url), 'utf8'))
+  const view = reviewer => ({ status: 'posted', slug: 's', decision: null, result: normalizeResult({ ...example, state: 'posted', pr: { ...example.pr, head_sha: HEAD }, points: [{ ...example.points[0], reviewer }] }) })
+  const shown = async reviewer => (await render(t, 'ReviewTab', { pr, own: true, status: null, earlier, response: view(reviewer) }))
+  const yes = await shown('Agent review'); if (!yes) return
+  assert.match(yes, /Answered/); assert.match(yes, /Finish it for me ·/)
+  assert.doesNotMatch(await shown('alex'), /Answered/)
 })
