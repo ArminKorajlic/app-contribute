@@ -96,6 +96,10 @@ test('shell review intents name one ledger record without encoding presentation 
   assert.deepEqual(contributionReviewTargetFromIntent('reviews:queue'), {
     queue: true,
   })
+  // A chat card, and its action opened from a static card, open the queue.
+  for (const intent of ['chat:contributions']) {
+    assert.deepEqual(contributionReviewTargetFromIntent(intent), { queue: true }, intent)
+  }
 })
 
 test('a record intent resolves its current phase and enclosing stack', () => {

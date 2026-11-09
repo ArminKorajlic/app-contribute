@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { readFileSync } from 'node:fs'
 import { addressBrief, addressItems, RUNGS, savedFindings } from '../address-feedback.js'
 
 const pr = { number: 120, title: 'Put what needs you first', url: 'https://github.com/o/r/pull/120', headRefName: 'feature', baseRefName: 'main', headRefOid: 'abcdef1234567', author: { login: 'owner' }, repository: { nameWithOwner: 'o/r' } }
@@ -135,4 +136,11 @@ test('the brief carries the saved findings as quoted data and keeps them bounded
   assert.match(brief, /> 2\. No test covers the reply path\./)
   const long = addressBrief({ pr, items: addressItems(pr, { findings: { ...findings, summary: 'x'.repeat(50000) } }), rung: 'show' }).draft
   assert.ok(long.length < 14000, 'a huge saved review cannot swell the brief without limit')
+})
+
+test('the window reads the whole conversation and every thread, never just the first page', () => {
+  const source = readFileSync(new URL('../ui/AddressFeedback.jsx', import.meta.url), 'utf8')
+  assert.match(source, /loadAllPullActivity\(/)
+  assert.match(source, /loadAllPullThreads\(/)
+  assert.doesNotMatch(source, /\bloadPullActivity\(|\bloadPullThreads\(/)
 })

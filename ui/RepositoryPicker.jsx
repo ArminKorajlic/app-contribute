@@ -13,6 +13,8 @@ export function RepositoryPicker({ token, connected, onAdded, quiet = false }) {
   const rootRef = useRef(null)
   useEffect(() => {
     if (!open) return
+    // In the rail the form opens in flow, so in a short window it can open below what the rail shows.
+    rootRef.current?.scrollIntoView({ block: 'nearest' })
     const close = event => {
       if (event.key === 'Escape' || (event.type === 'pointerdown' && rootRef.current && !rootRef.current.contains(event.target))) setOpen(false)
     }
