@@ -80,6 +80,15 @@ test('count chips name next steps, filter the list, and skip empty ones; drafts 
   assert.match(drafts, /4 drafts are ready to open for review\./)
   const none = api.counts({ counts: { ...countsFixture, questions: 0, requests: 0, merge: 0, fix: 0, drafts: 0 }, onFilter: () => {}, onView: () => {} })
   assert.equal(none, '')
+  // The selected step stays even when a refresh empties it, so the control that clears the filter never vanishes
+  // while the other steps still hold what needs you.
+  const emptied = api.counts({ counts: { ...countsFixture, merge: 0 }, filter: 'merge', onFilter: () => {}, onView: () => {} })
+  assert.match(emptied, /aria-pressed="true"><b>0<\/b>Merge</)
+  assert.match(emptied, />Review</)
+  const unselected = api.counts({ counts: { ...countsFixture, merge: 0 }, filter: '', onFilter: () => {}, onView: () => {} })
+  assert.doesNotMatch(unselected, />Merge</)
+  const allGone = api.counts({ counts: { ...countsFixture, questions: 0, requests: 0, merge: 0, fix: 0, drafts: 0 }, filter: 'merge', onFilter: () => {}, onView: () => {} })
+  assert.match(allGone, /aria-pressed="true"><b>0<\/b>Merge</)
 })
 
 test('a side view keeps each app inside one card with its own name and Open', async t => {
