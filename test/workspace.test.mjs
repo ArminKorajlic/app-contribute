@@ -5,6 +5,7 @@ import {
 } from '../collaboration.js'
 import { beginProjectCycle, loadCurrentCycle, loadCycleState, projectCycleScope, saveCycleState, updateCurrentCycle } from '../storage.js'
 import { frontendModules, renderModule } from './render-harness.mjs'
+import { buildContributionRun } from '../run.js'
 
 // Real React SSR through the app's bundler. These tests do not claim browser
 // click coverage, focus/scroll behavior, or component mount lifetime: the
@@ -354,6 +355,60 @@ test('SSR selecting a focused contribution retains the project inventory and his
       for (const label of labels) assert.match(html, new RegExp(label), `${label} remains listed on ${defaultTab} for ${selectedId}`)
       assert.doesNotMatch(html, /This contribution moved|Archived proposals/)
     }
+  }
+})
+
+test('SSR reviewed work waiting on a source check asks the owner, with the reason and the right action', async t => {
+  const ui = await rendered(t)
+  if (!ui) return
+  const prepared = id => ({
+    id, type: 'pr', status: 'prepared', repo: 'owner/project', title: `Change ${id}`,
+    plan: { action: 'pr', repo: 'owner/project', title: `Change ${id}`, head_sha: HEAD },
+    quality_review: { state: 'all_clear', reviewed_head_sha: HEAD },
+  })
+  for (const [code, message, retry] of [
+    ['github_reconnect', /Reconnect GitHub in Möbius Settings → Accounts, then send again\./, false],
+    ['review_unavailable', /The source could not be checked just now\. Try again in a moment\./, true],
+  ]) {
+    const reviewStatus = { state: 'ready', byId: { one: { state: 'unavailable', code } } }
+    const current = buildContributionRun({ records: [prepared('one')], reviewStatus })
+    const [item] = current.decisions
+    assert.equal(item.kind, 'check_attention')
+    const props = { run: current, reviewStatus, githubState: 'connected', onRefresh: async () => {} }
+    const list = ui.render('ContributionRun', { ...props, selectedId: '' }, { activeId: '', host: null })
+    assert.match(list, /aria-label="To look at"[\s\S]*Change one/, code)
+    assert.doesNotMatch(list, /Prepared work/, code)
+    const focus = ui.render('ContributionRun', { ...props, selectedId: item.id }, { activeId: item.id, host: null })
+    assert.match(focus, message, code)
+    assert.doesNotMatch(focus, /Private review needed|Review all|>Review</, code)
+    assert.equal(/<button[^>]*>Try again<\/button>/.test(focus), retry, code)
+  }
+})
+
+test('SSR a selected source check stays in focus while it is checked again and once it recovers', async t => {
+  const ui = await rendered(t)
+  if (!ui) return
+  const records = [{
+    id: 'one', type: 'pr', status: 'prepared', repo: 'owner/project', title: 'Change one',
+    plan: { action: 'pr', repo: 'owner/project', title: 'Change one', head_sha: HEAD },
+    quality_review: { state: 'all_clear', reviewed_head_sha: HEAD },
+  }]
+  const failed = { state: 'unavailable', byId: {} }
+  const [item] = buildContributionRun({ records, reviewStatus: failed }).decisions
+  assert.equal(item.kind, 'check_attention')
+  const focusFor = reviewStatus => ui.render('ContributionRun', {
+    run: buildContributionRun({ records, reviewStatus }), reviewStatus,
+    githubState: 'connected', onRefresh: async () => {}, selectedId: item.id,
+  }, { activeId: item.id, host: null })
+  for (const [label, reviewStatus, expected] of [
+    ['checking', { state: 'loading', byId: {} }, /Checking the reviewed source…/],
+    ['recovered', { state: 'ready', byId: { one: { state: 'ready' } } }, /Change one/],
+  ]) {
+    const html = focusFor(reviewStatus)
+    assert.doesNotMatch(html, /This contribution moved/, label)
+    assert.match(html, /class="co-task-content"[\s\S]*Change one/, label)
+    assert.match(html, expected, label)
+    assert.doesNotMatch(html, /Private review needed|Review all|>Review</, label)
   }
 })
 
