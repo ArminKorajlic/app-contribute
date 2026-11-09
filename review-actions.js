@@ -1,3 +1,4 @@
+import { NAMES } from './names.js'
 // What the Review tab offers once a review exists, chosen by what actually
 // happened (not by the saved word alone): the next step comes first, a finished
 // review never offers "Stop review", and the conversation is a plain button for
@@ -29,20 +30,20 @@ export function reviewActionPlan({ tone, own = false, chat = false, asked = fals
   const stop = stoppable ? [quiet({ key: 'stop', label: 'Stop review' })] : []
   switch (tone) {
     case 'running':
-      return [...ask('Open review conversation').map(primary), ...stop]
+      return [...ask(NAMES.openChat).map(primary), ...stop]
     case 'halted':
-      return [...(can.retry ? [{ key: 'retry', label: 'Start again' }] : []), ...ask('Open review conversation')]
+      return [...(can.retry ? [{ key: 'retry', label: NAMES.reviewAgain }] : []), ...ask(NAMES.openChat)]
     case 'needs':
-      return [...ask(asked ? 'Answer in review conversation' : 'Open review conversation').map(primary), ...stop]
+      return [...ask(asked ? 'Answer in chat' : NAMES.openChat).map(primary), ...stop]
     case 'findings':
     case 'changes':
       return [
-        ...(own && can.fix ? [primary({ key: 'fix', label: 'Fix these findings' })] : []),
+        ...(own && can.fix ? [primary({ key: 'fix', label: NAMES.fixFindings })] : []),
         // On someone else's PR the next step is saying what you found. On your own PR nothing is ever
         // posted as a review of yourself (pr-machine.js): you fix it or set it aside.
-        ...(can.post && !own ? [primary({ key: 'post', label: 'Post to GitHub' })] : []),
+        ...(can.post && !own ? [primary({ key: 'post', label: NAMES.postToGitHub })] : []),
         ...(can.ignore ? [{ key: 'ignore', label: 'Ignore…' }] : []),
-        ...(can.again ? [{ key: 'again', label: 'Review again' }] : []),
+        ...(can.again ? [{ key: 'again', label: NAMES.reviewAgain }] : []),
         ...ask('Ask the reviewer something'),
       ]
     case 'ignored':

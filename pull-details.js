@@ -31,7 +31,7 @@ export async function githubRead(token, path, signal) {
 }
 export function assertPullVersion(pr, detail) {
   if (detail?.head?.sha !== pr.headRefOid || detail?.base?.sha !== pr.baseRefOid || detail?.base?.ref !== pr.baseRefName) {
-    const error = new Error('This PR changed. Refresh the PR list before reviewing this version.')
+    const error = new Error('This PR changed. Sync before reviewing this version.')
     error.code = 'stale'
     throw error
   }
@@ -84,8 +84,8 @@ export async function loadPullChecks(token, pr, page = 1, signal) {
     Promise.allSettled(sources.map(async ([name, url, field]) => {
     const data = await githubRead(token, url, signal)
     if (!Array.isArray(data?.[field])) throw new Error(`GitHub did not return ${name.toLowerCase()}.`)
-    if (field === 'statuses' && data.sha !== pr.headRefOid) throw Object.assign(new Error('Status results did not match the selected head. Refresh the PR list.'), { code: 'stale' })
-    if (field === 'check_runs' && data[field].some(item => item.head_sha !== pr.headRefOid)) throw Object.assign(new Error('Check runs did not match the selected head. Refresh the PR list.'), { code: 'stale' })
+    if (field === 'statuses' && data.sha !== pr.headRefOid) throw Object.assign(new Error('Status results did not match the selected head. Sync to read them again.'), { code: 'stale' })
+    if (field === 'check_runs' && data[field].some(item => item.head_sha !== pr.headRefOid)) throw Object.assign(new Error('Check runs did not match the selected head. Sync to read them again.'), { code: 'stale' })
     const total = count(data.total_count)
     return { name, total, items: data[field], hasMore: total === null ? data[field].length === 100 : total > page * 100, paginationUnknown: total === null }
     })),
@@ -204,4 +204,23 @@ export async function loadPullRelated(token, pr, signal) {
   if (!data.timelineItems) errors.push('Cross-references are unavailable.')
   return { items: [...related.values()], errors,
     truncated: data.closingIssuesReferences?.pageInfo?.hasNextPage === true || data.timelineItems?.pageInfo?.hasNextPage === true }
+}
+
+// One page of the PR's commits, oldest first, as GitHub lists them. Each carries what the Commits
+// tab shows: headline, message, time, authors (co-authors included) and the checks' overall result.
+// Like the other graph reads it is checked against the selected head and base, so a list from a
+// branch that moved is flagged stale instead of shown.
+export async function loadPullCommits(token, pr, after = null, signal) {
+  if (after !== null && (typeof after !== 'string' || after.length > 1024)) throw new Error('Invalid commit cursor.')
+  const { data, errors } = await pullGraphRead(token, pr, `commits(first:50, after:$after) {
+    totalCount pageInfo { hasNextPage endCursor } nodes { commit {
+      oid abbreviatedOid url messageHeadline messageBody committedDate
+      authors(first:5) { nodes { name user { login } } }
+      statusCheckRollup { state }
+    } }
+  }`, { after }, signal)
+  const connection = data.commits
+  if (!connection) errors.push('The commit list is unavailable.')
+  return { commits: (connection?.nodes || []).map(node => node?.commit).filter(Boolean), total: count(connection?.totalCount),
+    hasMore: connection?.pageInfo?.hasNextPage === true, nextCursor: connection?.pageInfo?.endCursor || null, head: pr.headRefOid, errors }
 }

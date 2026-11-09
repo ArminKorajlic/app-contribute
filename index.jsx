@@ -80,6 +80,8 @@ import { SourceMap } from './ui/SourceMap.jsx'
 import { SyncHubContext, useDeskReviewRuns, useReviewList } from './ui/useReviewList.js'
 import { SyncNote } from './ui/GithubParts.jsx'
 import { ProjectEdits } from './ui/ProjectEdits.jsx'
+import { NAMES } from './names.js'
+import { BootProgress } from './ui/BootProgress.jsx'
 import { RepositoryPicker } from './ui/RepositoryPicker.jsx'
 import { ReviewSelection } from './ui/ReviewSelection.jsx'
 import { reviewSelectionIdFromIntent } from './review-selection.js'
@@ -99,7 +101,7 @@ function Header({ appId, fromCache, checking, onBack, children }) {
     <header className="co-header">
       <div className="co-header-main">
         {onBack ? (
-          <button type="button" className="co-header-back" onClick={onBack} aria-label="Back to projects"><Icon name="left" size={18} /><span>Projects</span></button>
+          <button type="button" className="co-header-back" onClick={onBack} aria-label="Back to repositories"><Icon name="left" size={18} /><span>{NAMES.repositories}</span></button>
         ) : (
           <>
             {iconFailed ? (
@@ -1323,7 +1325,7 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
     if (!started.ok) {
       return {
         ...started,
-        error: 'Assigned on GitHub, but the review conversation did not start. Try again to resume it.',
+        error: 'Assigned on GitHub, but the review chat did not start. Try again to resume it.',
       }
     }
     // The assignment settled after any earlier incoming-review request began.
@@ -1626,7 +1628,8 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
     records,
     login: conn.login || '',
     reviews: reviewList.counts,
-  }), [sourceProjects, contributionRun, incomingReviews, records, conn.login, reviewList.counts])
+    reviewEntries: reviewList.entries,
+  }), [sourceProjects, contributionRun, incomingReviews, records, conn.login, reviewList.counts, reviewList.entries])
   const desk = {
     view: deskView,
     onView: setDeskView,
@@ -1815,11 +1818,8 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
     return (
       <div className="co-root" data-design-seed="ae1883df">
         <style>{CSS}</style>
-        <div className="co-boot" role="status">
-          <span className="ma-spinner" aria-hidden="true" />
-          <strong>Opening Contribute…</strong>
-          <span>Reading your projects and pull requests from GitHub.</span>
-        </div>
+        <BootProgress ledgerReady={ledgerReady} projectsReady={!sourceLoading} accountReady={conn.state !== 'checking'} accountConnected={conn.state === 'connected'}
+          pullsReady={incomingReady} runsReady={runsReady} projectCount={sourceProjects.length} pullCount={incomingReviews.length} />
       </div>
     )
   }
@@ -1834,7 +1834,8 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
           <SyncNote note={refreshNote} />
           <button type="button" className="co-btn co-toolbar-refresh" onClick={refreshAll} disabled={refreshingAll} aria-busy={refreshingAll} aria-label="Sync with GitHub">
             <Icon name={refreshingAll ? 'refresh' : 'github'} size={16} className={'co-icon' + (refreshingAll ? ' is-spinning' : '')} />
-            <span>{refreshingAll ? 'Syncing…' : 'Sync with GitHub'}</span>
+            <span className="co-label-long">{refreshingAll ? 'Syncing…' : 'Sync with GitHub'}</span>
+            <span className="co-label-short">{refreshingAll ? 'Syncing…' : NAMES.sync}</span>
           </button>
           <ConnectionSettings
             appId={appId} conn={conn} token={token} onChanged={refreshConnection}
@@ -1851,7 +1852,7 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
           onProjectOpenChange={setProjectOpen}
           conn={conn} loading={sourceLoading} error={sourceError}
           onRetry={refreshAll} checks={upstreamChecks} attention={projectAttention} loadProjectDiff={loadProjectDiff}
-          repositoryPicker={<RepositoryPicker token={token} connected={conn.state === 'connected'} onAdded={(repo, followed) => {
+          addProject={quiet => <RepositoryPicker quiet={quiet} token={token} connected={conn.state === 'connected'} onAdded={(repo, followed) => {
             setFollowedRepos(followed)
             setRepositoryAccess(old => ({ ...old, repositories: [...old.repositories.filter(item => item.nameWithOwner.toLowerCase() !== repo.nameWithOwner.toLowerCase()), repo] }))
             setProjectFocus({ key: sourceProjects.find(project => project.canonical_repo?.toLowerCase() === repo.nameWithOwner.toLowerCase())?.key || 'external:' + repo.nameWithOwner.toLowerCase(), nonce: crypto.randomUUID() })

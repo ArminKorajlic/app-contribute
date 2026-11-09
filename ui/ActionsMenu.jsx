@@ -9,7 +9,7 @@ import { useDismissableMenu } from './useDismissableMenu.js'
 // up with: 'end' for a trigger at the right of its row, 'start' for one at the
 // left, so the menu opens inward.
 function Choice({ item, onPick }) {
-  return <button type="button" role="menuitem" aria-disabled={item.off || undefined} className={(item.rec ? 'is-rec ' : '') + (item.off ? 'is-off' : '')} onClick={() => { if (!item.off) onPick(item.intent) }}>
+  return <button type="button" role="menuitem" aria-disabled={item.off || undefined} data-danger={item.danger || undefined} className={(item.rec ? 'is-rec ' : '') + (item.off ? 'is-off ' : '') + (item.danger ? 'is-danger' : '')} onClick={() => { if (!item.off) onPick(item.intent) }}>
     <span className="co-agent-menu-tile"><Icon name={item.icon} size={17} /></span><span><strong>{item.title}</strong><small>{item.off ? item.reason : item.detail}</small></span>
   </button>
 }
@@ -20,7 +20,7 @@ function Group({ title, items, onPick, named }) {
   if (!items.length) return null
   return <div role="group" aria-label={title}>
     {named ? <p className="co-agent-menu-group">{title}</p> : null}
-    {items.map(item => <div key={item.intent} className={item.intent === 'take_over' ? 'co-agent-menu-apart' : undefined}><Choice item={item} onPick={onPick} /></div>)}
+    {items.map(item => <div key={item.intent} className={item.intent === 'take_over' || item.danger ? 'co-agent-menu-apart' : undefined}><Choice item={item} onPick={onPick} /></div>)}
   </div>
 }
 
@@ -39,10 +39,10 @@ export function ActionsMenu({ onChoose, pulls = [], decisions = [], record = nul
   }
   const named = model.you.length > 0
   return <div className={`co-agent-menu is-align-${align}`} ref={root}>
-    <button type="button" className={`co-agent-menu-button is-${variant}`} aria-haspopup="menu" aria-expanded={open} aria-label={ariaLabel} disabled={disabled} onClick={() => setOpen(value => !value)}>
-      <Icon name="prepare" size={15} /><span>{label}</span><Icon name="chevron" size={14} />
+    <button type="button" className={`co-btn ${variant === 'button' ? '' : 'co-btn-quiet '}co-agent-menu-button is-${variant}`} aria-haspopup="menu" aria-expanded={open} aria-label={ariaLabel} disabled={disabled} onClick={() => setOpen(value => !value)}>
+      <Icon name="more" size={15} /><span>{label}</span><Icon name="chevron" size={14} />
     </button>
-    {open ? <div className="co-agent-menu-list" role="menu" aria-label="Actions">
+    {open ? <div className="co-agent-menu-list" role="menu" aria-label="Actions" tabIndex={-1}>
       {model.header ? <p className="co-agent-menu-head"><b>{model.header.label}</b>{model.header.text ? ` · ${model.header.text}` : ''}</p> : null}
       {model.headline ? <p className="co-agent-menu-standing">{model.headline}</p> : null}
       <Group title="You" items={model.you} onPick={choose} named={named} />

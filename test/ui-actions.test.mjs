@@ -44,7 +44,7 @@ test('publication copy describes automatic GitHub identity without picker langua
   assert.doesNotMatch(feedSource, /Choose Personal GitHub|Möbius relay supports standalone drafts/)
   assert.match(feedSource, /stageWords\(stage\)\.description/)
   assert.match(stageWords('draft').description + stageWords('ready').description, /your connected GitHub account/)
-  assert.match(sourceMapSource, /\['local', 'With your edits'\]/)
+  assert.match(sourceMapSource, /\['local', 'With local changes'\]/)
   assert.match(sourceMapSource, /\['updates', 'Behind GitHub'\]/)
 })
 
@@ -68,18 +68,19 @@ test('settings keep prompts and account management while model choice belongs to
 
 test('send actions keep a visible label instead of relying on the icon alone', () => {
   assert.match(cardSource, /<span>\{sending \? 'Sending…' : \(isUpdate \? 'Send update' : 'Send PR'\)\}<\/span>/)
-  assert.match(feedSource, /count === 1 \? 'Review and send' : `Review and send \$\{count\}`/)
+  assert.match(feedSource, /count === 1 \? NAMES\.sendToGitHub : `Send \$\{count\} to GitHub`/)
   assert.match(feedSource, /count === 1 \? 'Send to GitHub' : `Send \$\{count\} to GitHub`/)
   assert.doesNotMatch(feedSource, /Send all|Prepare latest/)
 })
 
 test('focused review actions keep one strong primary and compact phone-safe secondary controls', () => {
-  assert.match(cardSource, /className="co-icon-btn co-review-btn is-primary"/)
-  assert.match(themeSource, /\.co-icon-btn\.co-review-btn\.is-primary \{[\s\S]*?background: var\(--accent\); color: var\(--accent-fg\)/)
+  assert.match(cardSource, /className="co-btn co-btn-primary co-review-btn"/)
+  // The strong primary is the shared primary type (button-theme.js), not a per-card look.
+  assert.match(readFileSync(new URL('../button-theme.js', import.meta.url), 'utf8'), /\.co-btn-primary \{[^}]*background: var\(--accent-hover, var\(--accent\)\); color: var\(--accent-fg\)/)
   assert.match(themeSource, /\.co-focus-view \.co-review-actions \{[\s\S]*?grid-template-columns: minmax\(112px, 1fr\) auto auto/)
   assert.match(themeSource, /\.co-focus-view \.co-secondary-action \{[\s\S]*?width: auto;[\s\S]*?padding-inline: 11px/)
   assert.match(themeSource, /\.co-technical-summary \{[\s\S]*?grid-template-columns: minmax\(0, 1fr\) auto/)
-  assert.match(themeSource, /\.co-review-changes-head span \{[\s\S]*?white-space: nowrap;[\s\S]*?border-radius: 999px/)
+  assert.match(themeSource, /\.co-review-changes-head span \{[\s\S]*?white-space: nowrap;[\s\S]*?border-radius: var\(--co-radius-round\)/)
   assert.match(themeSource, /\.co-pr-metadata \{[^}]*align-self: stretch;[^}]*width: 100%/)
 })
 
@@ -140,7 +141,7 @@ test('global app handoffs stay durable while source-linked work returns to its c
   assert.doesNotMatch(sourceMapSource, /<AgentHandoffButton/)
   assert.match(sourceMapSource, /renderActivity\?\.\(project, navigation\)/)
   assert.match(feedSource, /function SourceChatChoices/)
-  assert.match(controlsSource, /Make PRs from my edits/)
+  assert.match(controlsSource, /Make PRs from local changes/)
   assert.match(controlsSource, /Open current conversation/)
   assert.match(appSource, /const onFeedback = useCallback/)
   assert.match(appSource, /type: 'moebius:open-chat', chatId: rec\.chat_id, draft \},[\s\S]{0,20}'\*'\)/)
@@ -190,7 +191,7 @@ test('contribution details retain their project parent and refresh only source d
 test('preparation runs as one cycle while every public send stays explicit', () => {
   assert.doesNotMatch(feedSource, /PrivateRunAction|<AgentHandoffButton/)
   assert.match(controlsSource, /start\(run.privateAction, prepareAgent\)/)
-  assert.match(controlsSource, /An agent groups your edits into PRs and checks them\. The PRs stay private on your Möbius\./)
+  assert.match(controlsSource, /An agent groups your local changes into PRs and checks them\. The PRs stay private on your Möbius\./)
   assert.match(cardSource, /<span>\{sending \? 'Sending…' : \(isUpdate \? 'Send update' : 'Send PR'\)\}<\/span>/)
   assert.match(feedSource, /role="alertdialog"/)
   assert.match(feedSource, /Nothing merges\./)
@@ -230,7 +231,7 @@ test('blocked contributions have one calm recovery action', () => {
 })
 
 test('published check follow-ups use the same calm refresh treatment', () => {
-  assert.match(cardSource, /className="co-icon-btn co-refresh-btn is-primary"/)
+  assert.match(cardSource, /className="co-btn co-btn-primary co-refresh-btn"/)
   assert.match(themeSource, /\.co-attention \{[^}]*var\(--accent\)[^}]*var\(--accent\)/)
   assert.doesNotMatch(
     themeSource,
@@ -249,7 +250,7 @@ test('Möbius-bot withdrawal keeps the destructive action behind confirmation', 
   assert.match(cardSource, /ref=\{keepRef\}[\s\S]*?>\s*Keep open\s*<\/button>/)
   assert.match(
     cardSource,
-    /className="co-btn co-btn-sm co-btn-caution"[\s\S]*?onClick=\{withdraw\}/,
+    /className="co-btn co-btn-danger"[\s\S]*?onClick=\{withdraw\}/,
   )
 })
 
@@ -303,7 +304,7 @@ test('Projects owns vertical scrolling and makes every row visibly navigable', (
 test('one scoped control surface starts private preparation without leaving the project', () => {
   assert.match(appSource, /<ProjectControls[\s\S]*projectProgress=\{progress\}/)
   assert.match(controlsSource, /start\(run.privateAction, prepareAgent\)/)
-  assert.match(controlsSource, /<h3>Make PRs from your edits<\/h3>/)
+  assert.match(controlsSource, /<h3>Make PRs from local changes<\/h3>/)
   assert.match(appSource, /recordsForProject\(records, project\)/)
   assert.match(appSource, /onStart=\{startAgentTask\}/)
   assert.match(themeSource, /\.co-project-controls \{/)
@@ -321,7 +322,7 @@ test('published-app handoffs finish automatically without a second owner action'
 
 test('cards use explicit links and detail buttons instead of a clickable container', () => {
   assert.doesNotMatch(cardSource, /handleCardClick|is-clickable/)
-  assert.match(cardSource, /className="co-details-toggle"/)
+  assert.match(cardSource, /className="co-btn co-btn-quiet co-details-toggle"/)
   assert.match(cardSource, /className="co-card-title"/)
 })
 
@@ -411,7 +412,7 @@ test('project chrome consolidates navigation, refresh, files, and preparation ch
   assert.doesNotMatch(sourceMapSource, /RefreshNote|refreshNote/)
   assert.doesNotMatch(sourceMapSource, /Refresh project status|Refresh projects/)
   assert.doesNotMatch(sourceMapSource, /Files, branch and versions <Icon/)
-  assert.match(controlsSource, /className="co-btn is-icon" onClick=\{\(\) => task\?\.open\('task:files'\)\} aria-label="See the files" title="See the files"><Icon name="review" size=\{16\} \/>/)
+  assert.match(controlsSource, /className="co-btn co-btn-icon" onClick=\{\(\) => task\?\.open\('task:files'\)\} aria-label="See the files" title="See the files"><Icon name="review" size=\{16\} \/>/)
 })
 
 test('private proposals have one actionable home without another merge workflow', () => {
@@ -449,7 +450,10 @@ test('GitHub is synced once per open: no hidden foreground re-sync, one explicit
 test('the workspace opens only after its first sync and never falls back to the boot screen', () => {
   assert.match(appSource, /const bootReady = ledgerReady && !sourceLoading && conn\.state !== 'checking'/)
   assert.match(appSource, /if \(bootReady\) setBooted\(true\)/)
-  assert.match(appSource, /className="co-boot" role="status"/)
+  // The opening screen names the same five reads bootReady waits for, so its progress cannot drift from it.
+  assert.match(appSource, /<BootProgress ledgerReady=\{ledgerReady\} projectsReady=\{!sourceLoading\} accountReady=\{conn\.state !== 'checking'\}/)
+  assert.match(appSource, /pullsReady=\{incomingReady\} runsReady=\{runsReady\}/)
+  assert.match(readFileSync(new URL('../ui/BootProgress.jsx', import.meta.url), 'utf8'), /className="co-boot" role="status"/)
 })
 
 test('a review chip opens the PR on its Review tab, and a started review no longer opens a pane in the list', () => {

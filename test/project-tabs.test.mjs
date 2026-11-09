@@ -26,7 +26,7 @@ test('project tabs put All PRs first, count review requests and keep one PR list
   assert.match(all, />All PRs</)
   assert.match(all, /aria-selected="true"[^>]*>All PRs/)
   assert.match(all, /Review requests<span class="co-tab-count is-you">3<\/span>/)
-  assert.match(all, />My work</)
+  assert.match(all, />Agent runs</)
   assert.match(all, /PR-LIST/)
   assert.match(all, /SAVED-WORK/)
   assert.doesNotMatch(all, /JOBS|FINISHED/)
@@ -86,7 +86,7 @@ test('Edits is a tab only while the project has edits, with its count, and the P
   if (!render) return
   const scopes = []
   const html = render('ProjectTabs', { reviewCount: 0, renderPullRequests: view => { scopes.push(view.scope); return 'PR-LIST' }, edits: 'EDITS-PANEL', editsCount: 22, defaultTab: 'edits' })
-  assert.match(html, />Edits<span class="co-tab-count">22<\/span>/)
+  assert.match(html, />Local changes<span class="co-tab-count">22<\/span>/)
   assert.match(html, /PR-LIST[\s\S]*EDITS-PANEL/)
   assert.deepEqual(scopes, ['edits'])
   const none = render('ProjectTabs', { reviewCount: 0, renderPullRequests: () => null, defaultTab: 'edits' })

@@ -1,9 +1,10 @@
 // Run: MOBIUS_FRONTEND_NODE_MODULES=/data/platform/frontend/node_modules \
 //      node test/workspace-browser.mjs
-// Six scenarios, each on a fresh page: runWorkspaceChecks (the project fixture),
+// Seven scenarios, each on a fresh page: runWorkspaceChecks (the project fixture),
 // runDeskFrameChecks (the whole app: a review started on a PR page frames its Desk row),
-// runReviewRequestChecks (the whole app: a review you submit takes its row out of Review requests) and
-// runReviewHelperWaitChecks (the whole app: a review waiting on its helper reads as at work, not stopped).
+// runReviewRequestChecks (the whole app: a review you submit takes its row out of Review requests),
+// runReviewHelperWaitChecks (the whole app: a review waiting on its helper reads as at work, not stopped) and
+// runRepositoryPickerChecks (the whole app: the Add repository form opens where it can be filled in and sent).
 // Run one with WORKSPACE_BROWSER_ONLY=runDeskFrameChecks (and one viewport with WORKSPACE_BROWSER_VIEWPORT=desktop), for example while
 // runWorkspaceChecks is red, so the Desk check can still show green.
 // Actual app components, native Chromium DOM, and no live app/backend. The
@@ -383,7 +384,8 @@ root.render(<Fixture />)
 const frame = () => new Promise(resolve => requestAnimationFrame(resolve))
 const text = node => node?.textContent?.replace(/\s+/g, ' ').trim() || ''
 const query = selector => document.querySelector(selector)
-const button = (name, root = document) => [...root.querySelectorAll('button')].find(node => text(node) === name)
+// An icon-only button has no text, so its accessible name counts too.
+const button = (name, root = document) => [...root.querySelectorAll('button')].find(node => text(node) === name || node.getAttribute('aria-label') === name)
 const review = () => query('.co-review-window')
 // The window's one way out is the X in its header; it has no Cancel.
 const closeReview = () => click(review().querySelector('[aria-label="Close"]'))
@@ -461,7 +463,7 @@ async function chooseProject(name) {
     switcher.dispatchEvent(new Event('change', { bubbles:true }))
     await frame(); await frame(); return
   }
-  const back = query('[aria-label="Back to projects"]')
+  const back = query('[aria-label="Back to repositories"]')
   if (back) await click(back)
   else { window.mobius.nav.back(); await frame(); await frame() }
   await until(() => query('.co-source-row'), 'Project list did not return')
@@ -480,10 +482,10 @@ window.runWorkspaceChecks = async () => {
     await check('project directory uses wrapped filter buttons instead of a dropdown or scroller', async () => {
       const filters=query('.co-directory-filters'), filterButtons=[...filters.querySelectorAll('button')]
       ensure(filters && !query('.co-directory-filter select') && !query('.co-lens-nav'), 'Project filters did not use the compact button group')
-      ensure(filterButtons.map(node => text(node)).join('|')==='All|With your edits2|Behind GitHub0', 'Project filter choices or counts drifted')
+      ensure(filterButtons.map(node => text(node)).join('|')==='All|With local changes2|Behind GitHub0', 'Project filter choices or counts drifted')
       ensure(button('All',filters).getAttribute('aria-pressed')==='true', 'The active project filter is not exposed')
       await click(query('.co-source-row'))
-      await until(() => document.querySelectorAll('.co-pr-row').length === 2 && button('Make PRs from my edits') && !button('Make PRs from my edits').disabled, 'Project did not settle')
+      await until(() => document.querySelectorAll('.co-pr-row').length === 2 && button('Make PRs from local changes') && !button('Make PRs from local changes').disabled, 'Project did not settle')
       ensure(query('.co-workspace-inventory') && !query('.co-task-content'), 'Opening a project displayed task work')
       ensure(!query('.co-task-content') && calls.starts.length === 0 && mutationRequests().length === 0, 'Opening project started work or opened an action')
     })
@@ -495,7 +497,7 @@ window.runWorkspaceChecks = async () => {
     const inventoryNavigationDepth = navigation.length
     await check('project tabs lead with All PRs, whose filter menu offers each view and change totals stay visible', async () => {
       const tabs=[...document.querySelectorAll('[role=tab]')].map(node => text(node).replace(/\d+$/, ''))
-      ensure(tabs.join('|')==='All PRs|Review requests|My work','Project tabs drifted: '+tabs.join('|'))
+      ensure(tabs.join('|')==='All PRs|Review requests|Agent runs','Project tabs drifted: '+tabs.join('|'))
       ensure([...document.querySelectorAll('[role=tab]')][0].getAttribute('aria-selected')==='true','All PRs is not the default tab')
       const select=query('.co-pr-filter-select')
       ensure(select && [...select.options].map(node => text(node)).join('|')==='Show: all|Show: unassigned|Show: assigned|Show: opened by me','PR filter choices drifted')
@@ -737,7 +739,7 @@ window.runWorkspaceChecks = async () => {
       ensure(text(review()).includes('all required checks pass'),'Review and required checks missing from approval')
       window.liveBase='d'.repeat(40)
       await enabled('Start review, merge when safe')
-      await until(() => reviewRuns.length === 1 && button('Open review conversation'),'Review did not start')
+      await until(() => reviewRuns.length === 1 && button('Open chat'),'Review did not start')
       const write=mutationRequests().at(-1)
       ensure(write.url.endsWith('/review-runs') && write.body.mode==='review_merge' && write.body.items.length===2,'Wrong workflow request')
       ensure(write.body.items[0].head_sha===HEAD && write.body.items[1].head_sha===SECOND_HEAD,'Approval lost selected heads')
@@ -765,7 +767,7 @@ window.runWorkspaceChecks = async () => {
       await closeReview(); await click(query('[aria-label="Clear selection"]'))
     })
     await check('explicit send joins the same public inventory without implying merge', async () => {
-      await inventory(); await click(button('Review and send'))
+      await inventory(); await click(button('Send to GitHub'))
       await until(() => button('Send to GitHub'),'Publication confirmation missing')
       ensure(calls.publications.length===0,'Opening publication sent work')
       await click(button('Send to GitHub'))
@@ -779,7 +781,7 @@ window.runWorkspaceChecks = async () => {
     })
     await check('dismissed work is discoverable without a link and only explicit Restore changes its local state', async () => {
       const before=mutationRequests().length, publications=calls.publications.length
-      await openTab('My work')
+      await openTab('Agent runs')
       const archive=query('.co-run-fold.is-recent')
       ensure(archive && !archive.open,'Dismissed contributions have no collapsed discovery route')
       await click(archive.querySelector('summary'))
@@ -794,7 +796,7 @@ window.runWorkspaceChecks = async () => {
       await until(()=>calls.restores.length===1 && !query('.co-run-fold.is-recent'),'Restore did not move exact record out of history')
       ensure(calls.restores[0]==='fixture-dismissed' && calls.publications.length===publications && mutationRequests().length===before,'Restore published work or restored another record')
       await inventory()
-      ensure(button('Review and send'),'Restored record did not return to private preparation')
+      ensure(button('Send to GitHub'),'Restored record did not return to private preparation')
       await backToPrs()
     })
     await check('PR inventory distinguishes failed refresh, empty results and loading without mutations', async () => {
@@ -844,7 +846,7 @@ window.runWorkspaceChecks = async () => {
       await inventory()
     })
     await check('source conversation scope loads lazily and remains separate from project preparation', async () => {
-      await click(button('Make PRs from my edits'))
+      await click(button('Make PRs from local changes'))
       await until(() => query('[data-task="task:prepare"]'),'Preparation did not open')
       const scope = query('.co-prepare-scope')
       ensure(text(scope).includes('1 edited file'),'Preparation did not show the collocated file scope')
@@ -866,7 +868,7 @@ window.runWorkspaceChecks = async () => {
       ensure(calls.starts.length===1 && calls.starts[0].draft.includes('app:fixture') && !calls.starts[0].draft.includes('app:other'),'Duplicate or wrong scope')
       await chooseProject('Other project'); ensure(!button('Open conversation'),'Other project inherited progress')
       await chooseProject('Fixture project')
-      await openTab('My work')
+      await openTab('Agent runs')
       await until(() => text(query('.co-work-progress-row')).includes('Agent working'),'Saved task did not restore')
       await click(query('.co-work-progress-row'))
       await until(() => button('Open current conversation',query('[data-task="task:cycle"]')),'Saved conversation unavailable')
@@ -875,18 +877,18 @@ window.runWorkspaceChecks = async () => {
     await check('losing merge rights hides new cycle starts but keeps current work and history visible', async () => {
       window.setProjectsFixture(old => old.map(project => project.key === 'app:fixture' ? { ...project, viewerPermission: 'READ' } : project))
       await chooseProject('Other project'); await chooseProject('Fixture project')
-      await openTab('My work')
+      await openTab('Agent runs')
       await until(() => text(query('.co-work-progress-row')).includes('Agent working'), 'Current work hidden without merge rights')
       await click(query('.co-work-progress-row'))
       const pane = () => query('[data-task="task:cycle"]')
       await until(() => pane() && button('Open current conversation', pane()), 'Cycle status hidden without merge rights')
       ensure(!button('Start fresh full merge cycle', pane()), 'A read-only project offered a new merge cycle')
-      await click(button('Make PRs from my edits'))
+      await click(button('Make PRs from local changes'))
       ensure(!text(query('[data-task="task:prepare"]')).includes('Follow through to merge'), 'A read-only project offered follow-through to merge')
       window.setProjectsFixture(old => old.map(project => project.key === 'app:fixture' ? { ...project, viewerPermission: 'WRITE' } : project))
     })
     await check('effort choices are 44px targets on every viewport', async () => {
-      await chooseProject('Other project'); await click(button('Make PRs from my edits'))
+      await chooseProject('Other project'); await click(button('Make PRs from local changes'))
       await until(() => query('[data-task="task:prepare"] .co-agent-trigger'), 'Make PRs launch did not open')
       const pane = query('[data-task="task:prepare"]')
       await click(pane.querySelector('.co-agent-trigger'))
@@ -915,14 +917,14 @@ window.runWorkspaceChecks = async () => {
       const starts = calls.starts.length
       window.lostStart = true
       const startIn = () => button('Start', query('[data-task="task:prepare"]'))
-      await click(button('Make PRs from my edits')); await until(() => startIn() && !startIn().disabled, 'Make PRs did not settle')
+      await click(button('Make PRs from local changes')); await until(() => startIn() && !startIn().disabled, 'Make PRs did not settle')
       await click(startIn())
-      await openTab('My work')
+      await openTab('Agent runs')
       await until(() => text(query('.co-work-progress-row')).includes('A start needs sending'), 'An unconfirmed start was not offered again')
       const original = calls.starts.at(-1)
       window.lostStart = false
       await chooseProject('Fixture project'); await chooseProject('Third project')
-      await openTab('My work')
+      await openTab('Agent runs')
       await until(() => text(query('.co-work-progress-row')).includes('A start needs sending'), 'The saved cycle was lost on reload')
       await click(query('.co-work-progress-row'))
       await enabled('Send again')
@@ -938,7 +940,7 @@ window.runWorkspaceChecks = async () => {
       const before=mutationRequests().length, starts=calls.starts.length
       const pane=()=>query('[data-task="task:prepare"]'), start=()=>button('Start', pane())
       ensure(!button('Pull updates') && !button('Start pull'),'Contribute still offered its own pull')
-      await click(button('Make PRs from my edits'))
+      await click(button('Make PRs from local changes'))
       await until(()=>start() && !start().disabled,'Make PRs action did not settle')
       ensure(calls.starts.length===starts && mutationRequests().length===before,'Opening preparation started or published work')
       window.failStart=true; await click(start())
@@ -964,7 +966,7 @@ window.runWorkspaceChecks = async () => {
     const historyEntry = id => query('[data-review-run="'+id+'"]')
     const historyFold = () => query('.co-review-history')
     async function openHistory() {
-      await openTab('My work')
+      await openTab('Agent runs')
       await until(()=>historyFold(),'Project review conversations are undiscoverable')
       if(!historyFold().open) await click(historyFold().querySelector('summary'))
     }
@@ -976,7 +978,7 @@ window.runWorkspaceChecks = async () => {
       const pane=()=>query('[data-task="task:run:'+id+'"]')
       await until(()=>pane(),'Saved run did not open: '+id)
       ensure(text(pane()).includes(expected),'Saved run lost its version context: '+text(pane()))
-      const conversation=button('Answer in review conversation',pane()) || button('Open review conversation',pane())
+      const conversation=button('Answer in chat',pane()) || button('Open chat',pane())
       // This hermetic page is top-level. Mock only the direct shell boundary,
       // retaining the component's actual opaque-frame postMessage path.
       const parentDescriptor=Object.getOwnPropertyDescriptor(window,'parent')
@@ -1033,7 +1035,7 @@ window.runWorkspaceChecks = async () => {
       window.fixtureChangedHead=true
       await click(checkButton())
       await until(()=>text(historyEntry('saved-needs')).includes('Older PR version'),'Changed-head review was hidden or shown as current')
-      // Searching PRs on All PRs never hides saved reviews in My work.
+      // Searching PRs on All PRs never hides saved reviews in Agent runs.
       await openTab('All PRs'); await fill(query('[aria-label="Find a pull request"]'),'no matching pull')
       await openSavedRun('saved-needs','Older PR version')
       await openTab('All PRs'); await fill(query('[aria-label="Find a pull request"]'),'')
@@ -1089,7 +1091,8 @@ window.runWorkspaceChecks = async () => {
       ensure(exactReads() - exactBefore === 2 && listReads() === listBefore, 'Links scanned open pages instead of exact identities')
       const provenance = query('.co-gh-provenance')
       const links = [...provenance.querySelectorAll('.co-gh-chat-link')]
-      ensure(links.map(text).join('|') === 'Saved work|Source chat|Review chat', 'Provenance is not one combined section: ' + links.map(text))
+      const names = links.map(link => link.getAttribute('aria-label'))
+      ensure(names.join('|') === 'Saved work|Open source chat|Open review chat' && links.every(link => !text(link)), 'Provenance is not one combined section of icon buttons: ' + names)
       ensure(document.querySelectorAll('.co-gh-provenance').length === 1, 'Provenance repeated')
       for (const link of links) {
         const box = link.getBoundingClientRect()
@@ -1127,7 +1130,7 @@ window.runWorkspaceChecks = async () => {
       await click(checkButton())
       await until(() => calls.exactRuns.length > exactBefore, 'Refresh did not reread the linked run')
       ensure(pane() && text(pane()).includes('Linked run findings'), 'A refresh evicted the linked run')
-      ensure(text(pane()).includes('Recorded version') && pane().querySelector('a[href*="pullrequestreview-1"]') && button('Open review conversation', pane()), 'Shared run detail lost its version note, posted review or owning chat')
+      ensure(text(pane()).includes('Recorded version') && pane().querySelector('a[href*="pullrequestreview-1"]') && button('Open chat', pane()), 'Shared run detail lost its version note, posted review or owning chat')
       ensure(mutationRequests().length === before && calls.starts.length === starts, 'Opening a run link started or changed work')
       pane().focus(); await nativeEscape()
       await until(() => !pane(), 'Run detail did not close')
@@ -1150,7 +1153,7 @@ window.runWorkspaceChecks = async () => {
       const shown = text(pane())
       ensure(shown.includes('Review & merge') && !shown.includes('Private review'), 'Minimized run was not titled by its mode')
       ensure(!/prompt snapshot|Older PR version|findings will appear here/.test(shown), 'Minimized run showed prompt or version warnings')
-      ensure(button('Open the owning conversation for details', pane()) && !button('Stop workflow', pane()), 'Minimized run lacks its owning-conversation link or offers Stop')
+      ensure(button('Open the owning chat for details', pane()) && !button('Stop workflow', pane()), 'Minimized run lacks its owning-conversation link or offers Stop')
       ensure(!calls.requests.some(call => call.url.includes(run.id) && call.url.endsWith('/observe')), 'A run this app does not own was observed')
       pane().focus(); await nativeEscape()
       await until(() => !pane(), 'Run detail did not close')
@@ -1266,33 +1269,33 @@ window.runWorkspaceChecks = async () => {
       await until(() => button('Start review, merge when safe') && !button('Start review, merge when safe').disabled, 'Approval did not become available')
       const confirm = button('Start review, merge when safe')
       confirm.click(); confirm.click()
-      await until(() => button('Open review conversation'), 'Approval did not open its owning conversation')
+      await until(() => button('Open chat'), 'Approval did not open its owning conversation')
       ensure(mutationRequests().length === beforeLink + 1, 'Approval did not produce exactly one request')
       const body = mutationRequests().at(-1).body
       ensure(body.request_id === 'selection-link-one' && body.items[0].head_sha === HEAD && !body.chat_approval, 'Browser forged chat authority or changed selected work')
     })
     await check('already approved chat selection opens its owner without another approval', async () => {
-      await click(button('Back to projects'))
+      await click(button('Back to repositories'))
       await showSelection('selection-link-one')
-      await until(() => button('Open review conversation'), 'Existing selection did not resolve its owner')
+      await until(() => button('Open chat'), 'Existing selection did not resolve its owner')
       ensure(!button('Start review, merge when safe') && mutationRequests().length === beforeLink + 1, 'Existing selection asked for duplicate approval')
     })
     await check('changed public version invalidates a link without silently advancing it', async () => {
-      await click(button('Back to projects'))
+      await click(button('Back to repositories'))
       const stale = savedSelection('selection-stale'); stale.items[0].head_sha = SECOND_HEAD
       await showSelection('selection-stale', stale)
       await until(() => text(query('.co-selection-page')).includes('changed or closed'), 'Changed version did not stop approval')
       ensure(!button('Start review, merge when safe') && mutationRequests().length === beforeLink + 1, 'Stale link mutated work')
     })
     await check('changed base version also invalidates a link without silently advancing it', async () => {
-      await click(button('Back to projects'))
+      await click(button('Back to repositories'))
       const stale = savedSelection('selection-stale-base'); stale.items[0].base_sha = 'd'.repeat(40)
       await showSelection('selection-stale-base', stale)
       await until(() => text(query('.co-selection-page')).includes('changed or closed'), 'Changed base did not stop approval')
       ensure(!button('Start review, merge when safe') && mutationRequests().length === beforeLink + 1, 'Stale-base link mutated work')
     })
     await check('editing saved selection during confirmation never approves replacement work', async () => {
-      await click(button('Back to projects'))
+      await click(button('Back to repositories'))
       await showSelection('selection-replaced')
       await until(() => button('Start review, merge when safe'), 'Proposal not ready')
       const changed = savedSelection('selection-replaced'); changed.items[0].number = 8
@@ -1302,7 +1305,7 @@ window.runWorkspaceChecks = async () => {
       ensure(mutationRequests().length === beforeLink + 1, 'Replaced proposal was approved')
     })
     await check('read-only contributor can privately review but cannot approve merging', async () => {
-      await click(button('Back to projects')); window.fixturePermission = 'READ'
+      await click(button('Back to repositories')); window.fixturePermission = 'READ'
       await showSelection('selection-reader')
       await until(() => button('Review privately instead'), 'Permission failure not explained')
       ensure(button('Start review, merge when safe')?.disabled, 'Read permission exposed active merge approval')
@@ -1312,8 +1315,8 @@ window.runWorkspaceChecks = async () => {
       window.fixturePermission = 'WRITE'
     })
     await check('adding an external repository is an explicit saved choice, not a GitHub mutation', async () => {
-      await click(button('Back to projects'))
-      await click(button('Add project'))
+      await click(button('Back to repositories'))
+      await click(button('Add repository'))
       const input = query('#co-repository-name')
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'team/community')
       input.dispatchEvent(new Event('input',{bubbles:true}))
@@ -1649,8 +1652,21 @@ window.runDeskFrameChecks = async () => {
     await click([...document.querySelectorAll('.co-desk-row')].find(node => text(node).includes('Contribution 7')))
     await until(() => query('[aria-label="Choose an action for PR 7"]'), 'The PR page did not open')
     await click(query('[aria-label="Choose an action for PR 7"]'))
+    // Opening the menu never lands the keyboard on a destructive choice, and Close pull request sits last and apart.
+    const menuItems = [...document.querySelectorAll('[role=menuitem]')], closeItem = menuItems.find(node => text(node.querySelector('strong')) === 'Close pull request')
+    ensure(document.activeElement?.getAttribute('role') === 'menuitem' && !document.activeElement.hasAttribute('data-danger'), 'The Actions menu put its first focus on: ' + text(document.activeElement))
+    ensure(!closeItem || (menuItems.at(-1) === closeItem && closeItem.closest('.co-agent-menu-apart')), 'Close pull request is not last and apart')
+    checks.push({ name: 'the Actions menu never starts its focus on a destructive choice', status: 'pass' })
     await click([...document.querySelectorAll('[role=menuitem]')].find(node => text(node.querySelector('strong')) === 'Review'))
     await until(() => review(), 'Review window did not open')
+    // The lock (green) or globe (amber) takes its colour from --seen: a quiet button's own colour must not win over it.
+    const seen = review().querySelector('.co-rw-seen'), seenButton = seen?.querySelector('.co-rw-seen-btn')
+    ensure(seenButton, 'The review window has no lock or globe')
+    seenButton.style.transition = 'none'
+    seen.style.setProperty('--seen', 'rgb(1, 2, 3)')
+    ensure(getComputedStyle(seenButton).color === 'rgb(1, 2, 3)', 'The lock or globe lost its colour: ' + getComputedStyle(seenButton).color)
+    seen.style.removeProperty('--seen')
+    checks.push({ name: 'the review window lock or globe keeps its green or amber', status: 'pass' })
     const start = () => [...review().querySelectorAll('button')].find(node => text(node).startsWith('Start'))
     await until(() => start() && !start().disabled, 'The review window never offered Start')
     await click(start())
@@ -1686,6 +1702,62 @@ window.runDeskFrameChecks = async () => {
   }
 }
 
+// The whole app on a fresh page: the Add repository form opens where the owner can see it and type in it.
+// On a desktop it belongs to the side menu's last row, a box that scrolls and so clips anything that floats
+// out of it; on a phone that menu is hidden and the form belongs to the All repositories list.
+window.runRepositoryPickerChecks = async () => {
+  const checks = []
+  // What a person can use: inside the window, inside every box that clips it, and the thing a click at its centre lands on.
+  const usable = (node, label) => {
+    const rect = node.getBoundingClientRect()
+    ensure(rect.left >= 0 && rect.right <= innerWidth && rect.top >= 0 && rect.bottom <= innerHeight, label + ' is outside the window: left=' + Math.round(rect.left) + ', right=' + Math.round(rect.right))
+    for (let box = node.parentElement; box; box = box.parentElement) {
+      const style = getComputedStyle(box), outer = box.getBoundingClientRect()
+      if (style.overflowX === 'visible' && style.overflowY === 'visible') continue
+      ensure(rect.left >= outer.left - 1 && rect.right <= outer.right + 1 && rect.top >= outer.top - 1 && rect.bottom <= outer.bottom + 1,
+        label + ' is clipped by ' + (box.className || box.tagName) + ': ' + [rect.left, rect.right, rect.top, rect.bottom].map(Math.round) + ' not in ' + [outer.left, outer.right, outer.top, outer.bottom].map(Math.round))
+    }
+    const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2)
+    ensure(hit === node || node.contains(hit), label + ' cannot be clicked: ' + (hit?.className || hit?.tagName))
+  }
+  const addFrom = async (scope, where) => {
+    await click(button('Add repository', query(scope)), 'No Add repository button in ' + where)
+    await until(() => query(scope + ' #co-repository-name'), 'Add repository did not open its form in ' + where)
+    const input = query(scope + ' #co-repository-name')
+    usable(input, 'The repository field in ' + where); usable(button('Close', query(scope + ' form')), 'The Close button in ' + where)
+    await fill(input, 'team/community')
+    usable(button('Add', query(scope + ' form')), 'The Add button in ' + where)
+    await click(button('Add', query(scope + ' form')))
+    await until(() => values.get('followed-repositories.json')?.includes('team/community'), 'The repository typed in ' + where + ' was not saved')
+    await until(() => !query(scope + ' form'), 'The form in ' + where + ' stayed open after adding')
+    // Back to the saved list this scenario began with, so the next form's save is waited for on its own.
+    values.set('followed-repositories.json', ['owner/project'])
+  }
+  try {
+    await mountDeskApp()
+    await until(() => query('.co-rail'), 'The Desk did not render')
+    if (getComputedStyle(query('.co-rail')).display !== 'none') {
+      await addFrom('.co-rail-add', 'the side menu')
+      checks.push({ name: 'the side menu opens the Add repository form inside itself and it can be filled in and sent', status: 'pass' })
+      // A short window leaves the menu scrolling: the form must be brought into view, not opened below the fold.
+      query('.co-rail').style.maxHeight = '320px'
+      await addFrom('.co-rail-add', 'a short side menu')
+      query('.co-rail').style.maxHeight = ''
+      checks.push({ name: 'a side menu that has to scroll scrolls the Add repository form into view', status: 'pass' })
+      await click(query('.co-rail-item.is-all'))
+    } else {
+      await click(query('.co-desk-chips-projects'))
+    }
+    await until(() => query('.co-directory-add'), 'The All repositories list did not open')
+    await addFrom('.co-directory-add', 'the All repositories list')
+    checks.push({ name: 'the All repositories list opens the Add repository form where it can be filled in and sent', status: 'pass' })
+    ensure(calls.forbidden.length === 0, 'Unexpected runtime/transport: ' + JSON.stringify(calls.forbidden))
+    return { status: 'pass', checks, forbidden: calls.forbidden }
+  } catch (error) {
+    return { status: 'fail', checks, error: error.stack, dom: text(query('main')).slice(0, 5000), calls, forbidden: calls.forbidden }
+  }
+}
+
 // The whole app on a fresh page: a review hands its PR to a reviewer helper and ends its own
 // turn ("completed") while the review still says "reviewing". That is a review at work, not one
 // that stopped: the Desk row and the PR page show the moving frame. Only a review the platform
@@ -1696,7 +1768,7 @@ window.runReviewHelperWaitChecks = async () => {
   const helperRun = execution => reviewingRun(execution)
   const openPull = async () => {
     await click([...document.querySelectorAll('.co-desk-row')].find(node => text(node).includes('Contribution 7')))
-    await until(() => query('.co-desk-back') && query('.co-pr-standing'), 'The PR page did not open')
+    await until(() => query('.co-desk-back') && query('.co-next-hint'), 'The PR page did not open')
   }
   try {
     reviewRuns.length = 0
@@ -1706,7 +1778,7 @@ window.runReviewHelperWaitChecks = async () => {
     ensure(deskFrame('Contribution 7') === 'reviewing', 'The Desk row of a review waiting on its helper did not wear the moving frame: ' + deskFrame('Contribution 7'))
     await openPull()
     ensure(query('.co-frame[data-frame="reviewing"]') && !query('.co-tab-dot.is-waiting'), 'The PR page did not frame a review waiting on its helper as at work')
-    ensure(text(query('.co-pr-standing')) === 'An agent is working on it', 'The PR page said: ' + text(query('.co-pr-standing')))
+    ensure(text(query('.co-next-hint')) === 'An agent is working on it', 'The PR page said: ' + text(query('.co-next-hint')))
     checks.push({ name: 'a review whose own turn ended while its helper works is shown as at work', status: 'pass' })
     // The platform reports "interrupted" once nothing can wake the review: now it is the owner's move.
     await click(query('.co-desk-back'))
@@ -1715,7 +1787,7 @@ window.runReviewHelperWaitChecks = async () => {
     shownAgain()
     await until(() => deskFrame('Contribution 7') === 'verdict', 'The Desk row of an interrupted review did not hold the amber frame: ' + deskFrame('Contribution 7'))
     await openPull()
-    ensure(text(query('.co-pr-standing')) === 'The agent stopped before it finished. Run it again', 'The PR page said: ' + text(query('.co-pr-standing')))
+    ensure(text(query('.co-next-hint')) === 'The agent stopped before it finished. Run it again', 'The PR page said: ' + text(query('.co-next-hint')))
     checks.push({ name: 'a review the platform reports interrupted is shown as stopped', status: 'pass' })
     ensure(calls.forbidden.length === 0, 'Unexpected runtime/transport: ' + JSON.stringify(calls.forbidden))
     return { status: 'pass', checks, forbidden: calls.forbidden }
@@ -2047,7 +2119,7 @@ async function main() {
     const protocol = cdp(browser), reports = []
     // Each scenario gets a fresh page, so the whole-app Desk scenario never inherits the project fixture's state.
     // WORKSPACE_BROWSER_ONLY=runDeskFrameChecks runs one scenario.
-    const scenarios = process.env.WORKSPACE_BROWSER_ONLY ? [process.env.WORKSPACE_BROWSER_ONLY] : ['runWorkspaceChecks', 'runDeskFrameChecks', 'runReviewRequestChecks', 'runReviewHelperWaitChecks', 'runSyncChecks', 'runStaleAnswerChecks']
+    const scenarios = process.env.WORKSPACE_BROWSER_ONLY ? [process.env.WORKSPACE_BROWSER_ONLY] : ['runWorkspaceChecks', 'runDeskFrameChecks', 'runReviewRequestChecks', 'runReviewHelperWaitChecks', 'runRepositoryPickerChecks', 'runSyncChecks', 'runStaleAnswerChecks']
     const viewports = [{ name: 'desktop', width: 1280, height: 900 }, { name: 'phone', width: 390, height: 844 }].filter(size => !process.env.WORKSPACE_BROWSER_VIEWPORT || size.name === process.env.WORKSPACE_BROWSER_VIEWPORT)
     for (const [viewport, scenario] of viewports.flatMap(size => scenarios.map(name => [size, name]))) {
       const { targetId } = await protocol.send('Target.createTarget', { url: 'about:blank' })

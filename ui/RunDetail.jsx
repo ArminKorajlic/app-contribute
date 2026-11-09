@@ -5,6 +5,7 @@ import { openAgentConversation } from './BatchAction.jsx'
 import { Icon } from './Icons.jsx'
 import { MarkdownView } from './MarkdownView.jsx'
 import { ResolvedPrompt } from './ReviewPromptSettings.jsx'
+import { NAMES, rerunName } from '../names.js'
 
 // Saved conversations outlive the open-PR inventory. Its current snapshot
 // provides context, never new approval or a fresh verdict for old findings.
@@ -108,10 +109,10 @@ export function RunDetail({ run, pulls, listState, busy = false, error = '', onS
         onCheck={onCheck && !elsewhere ? onCheck : null} /> : null}
       <RepairProposal item={item} busy={busy} onDecide={onRepair && !elsewhere ? (attempt, decision) => onRepair(item, attempt, decision) : null} />
     </div>)}</div>
-    {run.chat_id ? <button className="co-btn co-btn-primary co-task-primary" onClick={() => openAgentConversation(run.chat_id)}>{needsAnswer ? 'Answer in review conversation' : elsewhere ? 'Open the owning conversation for details' : 'Open review conversation'}</button> : null}
-    {stoppable && onStop ? <><button className="co-quiet-action" disabled={busy} onClick={onStop}>Stop workflow</button><p className="co-task-footnote">Stop prevents future actions. An already-started public action may finish; its outcome stays visible.</p></> : null}
-    {retryable ? <><button className="co-btn co-task-secondary" disabled={busy} onClick={() => onRetry(retryPulls)}>Start again</button><p className="co-task-footnote">Starts a new run on the current versions. You can pick another model.</p></> : null}
-    {!run.can_stop && run.state !== 'complete' && run.chat_id && !retryable ? <p className="co-task-footnote">Use Stop in the owning conversation to stop this workflow.</p> : null}
+    {run.chat_id ? <button className="co-btn co-btn-primary co-task-primary" onClick={() => openAgentConversation(run.chat_id)}>{needsAnswer ? 'Answer in chat' : elsewhere ? 'Open the owning chat for details' : NAMES.openChat}</button> : null}
+    {stoppable && onStop ? <><button className="co-btn co-btn-quiet" disabled={busy} onClick={onStop}>Stop workflow</button><p className="co-task-footnote">Stop prevents future actions. An already-started public action may finish; its outcome stays visible.</p></> : null}
+    {retryable ? <><button className="co-btn co-task-secondary" disabled={busy} onClick={() => onRetry(retryPulls)}>{rerunName(run.mode)}</button><p className="co-task-footnote">Starts a new run on the current versions. You can pick another model.</p></> : null}
+    {!run.can_stop && run.state !== 'complete' && run.chat_id && !retryable ? <p className="co-task-footnote">Use Stop in the owning chat to stop this workflow.</p> : null}
     {error ? <p role="alert">{error}</p> : null}
     {run.items?.some(item => item.state === 'merged') && updater ? <><p className="co-task-footnote">Merged on GitHub. {updater.where}</p><button className="co-btn co-task-secondary" onClick={updater.open}>{updater.label}</button></> : null}
     {run.items?.some(item => item.state === 'queued') ? <p>In the merge queue, not merged yet. Contribute checks GitHub and shows when it lands.</p> : null}

@@ -248,7 +248,7 @@ test('tabs carry GitHub-style count pills: comments, files and a checks dot, no 
   assert.doesNotMatch(html, /co-change-total/) // the +adds −dels stay inside the Files tab
 })
 
-test('several conversations of one kind fold into a Source chats dropdown, one stays a plain button', async t => {
+test('several chats of one kind fold into one Open chat dropdown, one stays a plain button', async t => {
   const pr = { number: 9, repository: { nameWithOwner: 'team/repo' }, headRefOid: 'a'.repeat(40), baseRefOid: 'b'.repeat(40), baseRefName: 'main', url: 'https://github.com/team/repo/pull/9' }
   const two = await render(t, 'PullRequestDetail', { pr, cacheStore: loadedConversation(), provenance: [
     { chat_id: 'c1', role: 'source', title: 'Build the thing' },
@@ -256,13 +256,15 @@ test('several conversations of one kind fold into a Source chats dropdown, one s
     { chat_id: 'c3', role: 'review', title: 'Review it' },
   ] })
   if (!two) return
-  assert.match(two, /Source chats/)
+  assert.match(two, /aria-label="Open chat · 2 where it started" data-tip="Open chat · 2 where it started"/)
   assert.match(two, /co-chat-group/)
-  assert.doesNotMatch(two, /Source chat 2|Source chat #1/) // the list opens on demand, closed by default
-  assert.match(two, /Review chat</) // a single review chat stays a plain button
+  assert.doesNotMatch(two, /Where it started #1/) // the list opens on demand, closed by default
+  assert.match(two, /aria-label="Open chat · review" data-tip="Open chat · review · Review it"/) // a single review chat stays a plain icon button, its own title in the tooltip
   const one = await render(t, 'PullRequestDetail', { pr, cacheStore: loadedConversation(), provenance: [{ chat_id: 'c1', role: 'source', title: 'Build the thing' }] })
-  assert.match(one, /Source chat</)
-  assert.doesNotMatch(one, /Source chats|co-chat-group/)
+  assert.match(one, /aria-label="Open chat" data-tip="Open chat · Build the thing"/, 'a PR with one chat says Open chat, then that chat\'s title')
+  const plain = await render(t, 'PullRequestDetail', { pr, cacheStore: loadedConversation(), provenance: [{ chat_id: 'c1', role: 'source', title: 'Source conversation' }] })
+  assert.match(plain, /aria-label="Open chat" data-tip="Open chat"/, 'a stand-in role title is not repeated in the tooltip')
+  assert.doesNotMatch(one, /where it started|co-chat-group/)
 })
 
 test('files read as one line each, coloured by change, and filter once the list is long', async t => {
@@ -279,12 +281,12 @@ test('files read as one line each, coloured by change, and filter once the list 
   assert.match(many, />Expand all</)
 })
 
-test('on a phone the secondary PR actions keep a name for screen readers', async t => {
+test('the secondary PR actions are icon buttons that keep a name for screen readers and show it in a tooltip', async t => {
   const html = await render(t, 'PullRequestDetail', { pr: { number: 7, repository: { nameWithOwner: 'team/repo' }, headRefOid: 'a'.repeat(40), baseRefOid: 'b'.repeat(40), baseRefName: 'main', url: 'https://github.com/team/repo/pull/7' } })
   if (!html) return
-  assert.match(html, /aria-label="View on GitHub: PR 7" title="View on GitHub"/)
+  assert.match(html, /aria-label="View on GitHub: PR 7" data-tip="View on GitHub"/)
   const css = (await import('node:fs')).readFileSync(new URL('../workspace-theme.js', import.meta.url), 'utf8')
-  assert.match(css, /\.co-pr-detail-actions \.co-btn-label, \.co-pr-detail \.co-tab-more \{ display:none/)
+  assert.match(css, /\.co-pr-detail \.co-tab-more \{ display:none/)
   // The checks dot says pass or fail on a phone; the passed/total pill needs room the Review tab uses.
   assert.match(css, /\.co-pr-detail \.co-tab-dot \+ \.co-tab-count \{ display:none/)
 })

@@ -3,24 +3,22 @@
 // ui/DeskViews.jsx; everything here is testable without a DOM.
 import { checkSummary, prKey } from './collaboration.js'
 import { attentionListItems } from './run.js'
-import {
-  localChangeSummary,
-  projectIsQuiet,
-  projectNeedsSorting,
-  projectReadyToPrepare,
-} from './source-map.js'
+import { NAMES } from './names.js'
+import { projectIsQuiet } from './source-map.js'
 
+// The four views (finding 2). Every other place a PR can be lives inside one of them.
+// `short` is the word under the count on the phone's four-segment bar.
 export const DESK_VIEWS = [
-  { key: 'needs', label: 'Needs you', icon: 'review' },
-  // The rail is narrow, so it says To confirm; the page says the whole thing.
-  { key: 'confirm', label: 'To confirm', heading: 'Waiting for your confirmation', icon: 'send' },
-  { key: 'requests', label: 'Review requests', icon: 'feedback' },
-  { key: 'mine', label: 'My PRs', icon: 'github' },
-  { key: 'work', label: 'My work', icon: 'prepare' },
-  { key: 'reviews', label: 'PR reviews', icon: 'review' },
-  { key: 'edits', label: 'Your edits', icon: 'edit' },
-  { key: 'merged', label: 'Merged this week', icon: 'check' },
+  { key: 'needs', label: NAMES.needsYou, short: NAMES.needsYou, icon: 'review' },
+  { key: 'requests', label: NAMES.reviewRequests, short: 'Requests', icon: 'feedback' },
+  { key: 'mine', label: NAMES.myPrs, short: NAMES.myPrs, icon: 'pull' },
+  { key: 'runs', label: NAMES.agentRuns, short: NAMES.agentRuns, icon: 'cycle' },
 ]
+
+// The views that were folded in, by the view that holds their rows now. A saved
+// place or an older link to one of them lands there.
+export const FOLDED_VIEWS = { confirm: 'needs', edits: 'needs', merged: 'mine', work: 'runs', reviews: 'runs' }
+export const deskViewKey = key => FOLDED_VIEWS[key] || key
 
 const sameLogin = (a, b) => !!a && !!b && a.toLowerCase() === b.toLowerCase()
 
@@ -77,12 +75,6 @@ export function chainPulls(pulls) {
   return groups
 }
 
-// Projects with local work to publish, rail and Your-edits view alike.
-export function editProjects(projects) {
-  return (projects || []).filter(project => project.kind !== 'external'
-    && (projectReadyToPrepare(project) || projectNeedsSorting(project)))
-}
-
 export const MERGED_WINDOW_DAYS = 7
 
 export function mergedRecently(records, now = Date.now()) {
@@ -115,46 +107,65 @@ export function projectNeedsCount(project, decisions, login) {
   return (project.reviewRequests?.length || 0) + items.length + needsPulls(project, items, login).length
 }
 
-// The clickable counts under the heading: what needs the owner, by next step.
-export function deskCounts({ projects = [], decisions = [], incoming = [], records = [], login = '', reviews = null } = {}) {
+// A review run that waits on you (its result, a draft to send, a question, a stop)
+// and is not already a row of its own in Needs you.
+const AGENT_WAITS = new Set(['waiting', 'stalled'])
+export const agentRunsWaiting = (entries, shownKeys) => (entries || [])
+  .filter(entry => AGENT_WAITS.has(entry.bucket) && !shownKeys.has(entry.id))
+
+// The PR keys Needs you already lists as rows: review requests, feedback cards, and
+// your own PRs with a step. An agent run on one of them is not counted twice.
+export function needsRowKeys(incoming, questionItems, login) {
+  const covered = feedbackPullKeys(questionItems)
+  const own = authoredPulls(incoming, login)
+    .filter(pr => !covered.has(pullKey(pr)))
+    .filter(pr => { const state = authoredPullState(pr); return state.tone === 'blocker' || state.key === 'ready' })
+  return new Set([...covered, ...(incoming || []).filter(pr => pr.reviewRequested).map(pullKey), ...own.map(pullKey)])
+}
+
+// The counts of the Needs you chips: one per next step. The rail badge is their sum
+// (needsCount), so the two can never disagree. A PR whose feedback card is listed
+// counts once, as that card. Drafts ready to open and local files are not urgent:
+// they get a quiet line and the project banner, never a number here.
+export function deskCounts({ projects = [], decisions = [], incoming = [], records = [], login = '', reviews = null, reviewEntries = [] } = {}) {
   const questionItems = attentionListItems(decisions)
   const covered = feedbackPullKeys(questionItems)
   const pulls = authoredPulls(incoming, login)
+  const open = pulls.filter(pr => !covered.has(pullKey(pr))).map(authoredPullState)
   const states = pulls.map(authoredPullState)
-  // A PR with a feedback card AND a merge or fix step is one thing to do, not two.
-  const doubled = pulls.filter((pr, index) => covered.has(pullKey(pr)) && (states[index].key === 'ready' || states[index].tone === 'blocker')).length
-  const edits = editProjects(projects)
   return {
     questions: questionItems.length,
-    doubled,
     requests: (incoming || []).filter(pr => pr.reviewRequested).length,
-    merge: states.filter(state => state.key === 'ready').length,
-    fix: states.filter(state => state.tone === 'blocker').length,
+    merge: open.filter(state => state.key === 'ready').length,
+    fix: open.filter(state => state.tone === 'blocker').length,
+    agent: agentRunsWaiting(reviewEntries, needsRowKeys(incoming, questionItems, login)).length,
     drafts: states.filter(state => state.key === 'approved_draft').length,
-    editedFiles: edits.reduce((total, project) => total + localChangeSummary(project).changed, 0),
-    editProjects: edits.length,
     mine: pulls.length,
-    work: decisions.length,
     merged: mergedRecently(records).length,
-    // Reviews you started: waiting on you (the badge) and agents still at work (a spinner).
-    reviewsWaiting: reviews?.waiting || 0,
     reviewsRunning: reviews?.running || 0,
-    reviewsConfirm: reviews?.confirm || 0,
+    reviewsFinished: (reviewEntries || []).length - (reviews?.running || 0),
   }
 }
 
-export const needsCount = counts => counts.questions + counts.requests + counts.merge + counts.fix - (counts.doubled || 0)
+// The Needs you chips, in order; each filters the list below it to its rows.
+export const NEEDS_CHIPS = [
+  { key: 'look', label: 'To look at', count: counts => counts.questions },
+  { key: 'review', label: 'Review', count: counts => counts.requests },
+  { key: 'merge', label: 'Merge', count: counts => counts.merge },
+  { key: 'fix', label: 'Fix', count: counts => counts.fix },
+  { key: 'agent', label: NAMES.agentRuns, count: counts => counts.agent || 0 },
+]
 
+export const needsCount = counts => NEEDS_CHIPS.reduce((total, chip) => total + chip.count(counts), 0)
+
+// A badge on a view that waits on you is purple and is the sum of that page's
+// chips; the others are a quiet total of what the page holds.
 export function railBadge(view, counts) {
   switch (view) {
     case 'needs': return needsCount(counts)
     case 'requests': return counts.requests
     case 'mine': return counts.mine
-    case 'work': return counts.work
-    case 'reviews': return counts.reviewsWaiting || 0
-    case 'confirm': return counts.reviewsConfirm || 0
-    case 'edits': return counts.editedFiles
-    case 'merged': return counts.merged
+    case 'runs': return counts.reviewsRunning || 0
     default: return 0
   }
 }

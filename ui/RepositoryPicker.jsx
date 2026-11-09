@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { discoverRepository } from '../collaboration.js'
 import { followRepository } from '../repositories.js'
+import { NAMES } from '../names.js'
 import { Icon } from './Icons.jsx'
 
-export function RepositoryPicker({ token, connected, onAdded }) {
+// `quiet`: the last row of the rail's Projects block; otherwise a secondary button (an empty state).
+export function RepositoryPicker({ token, connected, onAdded, quiet = false }) {
   const [value, setValue] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -11,6 +13,8 @@ export function RepositoryPicker({ token, connected, onAdded }) {
   const rootRef = useRef(null)
   useEffect(() => {
     if (!open) return
+    // In the rail the form opens in flow, so in a short window it can open below what the rail shows.
+    rootRef.current?.scrollIntoView({ block: 'nearest' })
     const close = event => {
       if (event.key === 'Escape' || (event.type === 'pointerdown' && rootRef.current && !rootRef.current.contains(event.target))) setOpen(false)
     }
@@ -33,9 +37,9 @@ export function RepositoryPicker({ token, connected, onAdded }) {
     finally { setBusy(false) }
   }
   return <div className={'co-repository-picker' + (open ? ' is-open' : '')} ref={rootRef}>
-    <button type="button" className="co-btn co-repository-trigger" aria-expanded={open} onClick={() => setOpen(value => !value)}><Icon name="plus" size={16} /><span>Add project</span></button>
+    <button type="button" className={'co-btn co-repository-trigger' + (quiet ? ' co-btn-quiet' : '')} aria-expanded={open} onClick={() => setOpen(value => !value)}><Icon name="plus" size={16} /><span>{NAMES.addRepository}</span></button>
     {open ? connected ? <form onSubmit={add}>
-      <header><strong>Add a GitHub repository</strong><button type="button" className="co-quiet-action" onClick={() => setOpen(false)}><Icon name="close" size={17} /> Close</button></header>
+      <header><strong>Add a GitHub repository</strong><button type="button" className="co-btn co-btn-quiet" onClick={() => setOpen(false)}><Icon name="close" size={17} /> Close</button></header>
       <label htmlFor="co-repository-name">Repository name or link</label>
       <div><input id="co-repository-name" value={value} onChange={event => setValue(event.target.value)} placeholder="owner/project or GitHub URL" disabled={busy} autoComplete="off" required />
       <button className="co-btn" disabled={busy || !value.trim()}>{busy ? 'Adding…' : 'Add'}</button></div>

@@ -31,7 +31,7 @@ test('their PR offers a review and, apart at the bottom, take over; never fixing
   assert.equal(item(menu(pull({ repository: { nameWithOwner: 'o/r', viewerPermission: 'MAINTAIN' } })), 'take_over').off, false)
   assert.equal(item(model, 'review').title, 'Review')
   const reviewed = pull({ viewerLatestReview: { state: 'COMMENTED', commit: { oid: OLD } } })
-  assert.equal(item(menu(reviewed), 'review').title, 'Re-review', 'once you reviewed it, the job is a re-review')
+  assert.equal(item(menu(reviewed), 'review').title, 'Review again', 'once you reviewed it, the job is Review again')
 })
 
 test('the highlighted choice is the machine’s next step, first in its group', () => {
@@ -76,4 +76,13 @@ test('every menu intent is a machine action, and the header says what GitHub sho
   for (const intent of [...AGENT_INTENTS, ...YOUR_INTENTS]) assert.ok(standingFor({ pr: mine(), login: 'alex' }).actions.some(action => action.id === intent) || standingFor({ pr: pull(), login: 'alex' }).actions.some(action => action.id === intent), intent)
   assert.deepEqual(pullHeader(pull({ isDraft: true, reviewDecision: 'APPROVED', ...checks('FAILURE', 1), mergeable: 'CONFLICTING' })),
     { label: '#7', text: 'draft · no reviews · 1 failing check · conflicts with main' }, 'GitHub’s approval summary is not repeated: the headline says who approved which version')
+})
+
+test('Close pull request is the one destructive row: red, apart, and last in You, whatever the machine highlights', () => {
+  const model = menu(mine({ latestOpinionatedReviews: { nodes: [{ state: 'APPROVED', author: { login: 'sam' }, commit: { oid: HEAD } }] } }))
+  assert.equal(model.you.at(-1).intent, 'close')
+  assert.equal(item(model, 'close').danger, true)
+  assert.equal(item(model, 'close').title, 'Close pull request')
+  assert.ok(model.you.filter(entry => entry.intent !== 'close').every(entry => !entry.danger))
+  assert.equal(model.you.at(-1).rec, false, 'closing is never the recommended step')
 })

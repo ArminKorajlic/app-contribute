@@ -52,7 +52,7 @@ test('a running review shows a smooth spinner, the clock, the version and Stop i
   assert.match(html, /co-review-elapsed/)
   assert.match(html, /aaaaaaa → main/)
   assert.match(html, /Stop review/)
-  assert.match(html, /Open review conversation/)
+  assert.match(html, /Open chat/)
   assert.match(html, /data-frame="reviewing"/)
 })
 
@@ -70,7 +70,7 @@ test('a run nothing is working on says so and offers to start again instead of "
   assert.match(html, /Not finished/)
   assert.doesNotMatch(html, /<h4>Reviewing<\/h4>/)
   assert.match(html, /Nothing is working on this review any more/)
-  assert.match(html, /Start again/)
+  assert.match(html, /Review again/)
   assert.doesNotMatch(html, /Stop review/, 'a halted run has nothing left to stop')
 })
 
@@ -116,7 +116,7 @@ test('a clear review is green with its copyable id; blockers and halted runs rea
   assert.match(changes, /is-changes/)
   const halted = await render(t, 'ReviewTab', { pr, status: status('reviewing', {}, { execution_state: 'stopped' }), onRetry: () => {} })
   assert.match(halted, /Not finished/)
-  assert.match(halted, /Start again/)
+  assert.match(halted, /Review again/)
 })
 
 test('the PR page carries a fourth Review tab with its state, and opens on it when asked', async t => {
@@ -152,12 +152,12 @@ test('a review whose request-changes verdict is posted reads as handed to the au
   const html = await render(t, 'ReviewTab', { pr, status: posted, onVerdict: () => {} })
   if (!html) return
   assert.match(html, /<h4>Changes requested<\/h4>/)
-  assert.doesNotMatch(html, /Answer in review conversation|is-verdict|data-frame="verdict"/, 'nothing here waits on you')
+  assert.doesNotMatch(html, /Answer in chat|is-verdict|data-frame="verdict"/, 'nothing here waits on you')
   assert.match(html, />Ask the reviewer something</, 'the conversation stays one button away, as a button')
   // The run page says the same: a finding is not a question for the conversation.
   const answering = status('needs_you', {}, { state: 'running', execution_state: 'awaiting_owner' })
   const asked = await render(t, 'ReviewTab', { pr, status: answering })
-  assert.match(asked, /Answer in review conversation/, 'a conversation that asked something still needs the answer')
+  assert.match(asked, /Answer in chat/, 'a conversation that asked something still needs the answer')
 })
 
 test('a finished review that found problems offers what to do about them, never "answer" or "stop"', async t => {
@@ -166,7 +166,7 @@ test('a finished review that found problems offers what to do about them, never 
   if (!own) return
   assert.match(own, /<h4>Your check found problems<\/h4>/)
   for (const label of ['Fix these findings', 'Ignore…', 'Review again', 'Ask the reviewer something']) assert.match(own, new RegExp(`>${label}<`), label)
-  assert.doesNotMatch(own, /Answer in review conversation|Stop review/)
+  assert.doesNotMatch(own, /Answer in chat|Stop review/)
   assert.match(own, /co-btn co-btn-primary">Fix these findings/, 'the fix is the one next step')
   // Someone else's PR has no fix to offer, and a closed PR offers nothing to start.
   const privateFound = status('needs_you', { summary: 'Three problems in the lost-reply path.' }, { state: 'needs_you', execution_state: 'completed', can_stop: true })

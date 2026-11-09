@@ -257,7 +257,7 @@ export const PR_FIELDS = `id number title url state headRefOid headRefName baseR
   labels(first:20) { nodes { name color } totalCount }
   comments { totalCount }
   reviews { totalCount }
-  commits(last:1) { nodes { commit { statusCheckRollup { state contexts {
+  commits(last:1) { totalCount nodes { commit { statusCheckRollup { state contexts {
     totalCount checkRunCountsByState { state count } statusContextCountsByState { state count }
   } } } } }
   reviewDecision mergeable
@@ -364,7 +364,7 @@ export async function assignIncomingReview({ appId, token, repo, number }) {
     }
     return { ok: true, data: await response.json() }
   } catch {
-    return { ok: false, error: 'Could not confirm the assignment. Refresh before trying again.' }
+    return { ok: false, error: 'Could not confirm the assignment. Sync before trying again.' }
   }
 }
 
@@ -638,7 +638,7 @@ export async function withdrawMobiusContribution({ appId, token, rec }) {
   } catch {
     return {
       uncertain: true,
-      error: 'The response was lost. Refresh Contribute before trying again.',
+      error: 'The response was lost. Sync before trying again.',
     }
   }
 }

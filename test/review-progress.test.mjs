@@ -81,11 +81,11 @@ test('one shared run detail keeps recorded versions, posted reviews and the owni
   assert.match(html, /Older base version · Recorded version <code>aaaaaaa → main \(bbbbbbb\)<\/code>/)
   assert.match(html, /Saved findings are not a new approval/)
   assert.match(html, /href="https:\/\/github.com\/owner\/repo\/pull\/7#pullrequestreview-1"/)
-  assert.match(html, /Open review conversation/)
+  assert.match(html, /Open chat/)
   const stopped = render({ run: { id: 'run-2', mode: 'review', state: 'reviewing', execution_state: 'stopped', can_stop: true, chat_id: 'chat-2', items: [{ ...item, state: 'reviewing', public_review: null }] },
     pulls: [pr], listState: {}, retryPulls: [pr], onRetry: () => {}, onStop: () => {} })
   assert.match(stopped, /#7 · Not finished/)
-  assert.match(stopped, /Start again/)
+  assert.match(stopped, /Review again/)
   assert.doesNotMatch(stopped, /Stop workflow/, 'a halted run cannot be stopped again')
 })
 

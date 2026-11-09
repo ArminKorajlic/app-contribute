@@ -17,7 +17,7 @@ export function openAgentConversation(chatId) {
 export function AgentHandoffButton({
   action,
   onStart,
-  className = 'co-btn co-btn-sm',
+  className = 'co-btn',
   icon = '',
   collapseOnStart = true,
 }) {

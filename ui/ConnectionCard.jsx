@@ -4,6 +4,7 @@ import { Icon } from './Icons.jsx'
 import { DEFAULT_STAGE, stageWords } from '../publication-stage.js'
 import { ReviewPromptSettings } from './ReviewPromptSettings.jsx'
 import { DefaultAgentSettings } from './DefaultAgentSettings.jsx'
+import { NAMES } from '../names.js'
 // Component-local settings layout. The app shell keeps its existing theme tokens.
 export const SETTINGS_CSS = `
 .co-settings-workspace { box-sizing:border-box; width:min(820px,calc(100vw - 32px)); height:min(947px,calc(100dvh - 110px)); max-height:calc(100dvh - 110px); display:flex; flex-direction:column; padding:20px; overflow:hidden; scrollbar-width:none; }
@@ -11,26 +12,26 @@ export const SETTINGS_CSS = `
 .co-settings-workspace > header { flex:0 0 auto; display:flex; align-items:center; justify-content:space-between; margin:0; padding-bottom:12px; border-bottom:1px solid var(--border); }
 .co-settings-layout { flex:1; min-height:0; display:flex; }
 .co-settings-content { flex:1; min-width:0; min-height:0; display:flex; flex-direction:column; padding-top:4px; overflow-y:auto; scrollbar-width:none; }
-.co-settings-content h3 { margin:14px 0 8px; font-size:14px; line-height:1.4; font-weight:650; color:var(--muted); }
+.co-settings-content h3 { margin:14px 0 8px; font-size:var(--co-text-meta); line-height:1.4; font-weight:650; color:var(--muted); }
 .co-settings-content .co-prompt-settings { flex:1 0 auto; min-height:0; display:flex; flex-direction:column; margin:0; padding:0; border:0; }
-.co-settings-content .co-prompt-settings textarea { flex:1; min-height:150px; font-size:15px; line-height:1.55; resize:none; }
+.co-settings-content .co-prompt-settings textarea { flex:1; min-height:150px; font-size:var(--co-text-body); line-height:1.55; resize:none; }
 .co-settings-skeleton { min-height:240px; padding:24px 0; color:var(--muted); }
 .co-prompt-editor-group { flex:1; min-height:0; display:flex; flex-direction:column; padding:0; }
 .co-settings-account,.co-settings-agent { flex:0 0 auto; }
 .co-set-picker { padding:0 12px 12px; }
 .co-set-picker .co-agent-picker { max-width:none; margin:0; }
 .co-settings-account .co-conn { display:block; }
-.co-set-card { border:1px solid var(--border); border-radius:12px; background:var(--bg); }
+.co-set-card { border:1px solid var(--border); border-radius:var(--co-radius-panel); background:var(--bg); }
 .co-set-row { display:flex; align-items:center; gap:12px; min-height:56px; padding:8px 12px; }
 .co-set-row + .co-set-row { border-top:1px solid var(--border); }
-.co-set-tile { flex:0 0 auto; display:grid; place-items:center; width:36px; height:36px; border-radius:9px; background:var(--surface-2,var(--surface)); color:var(--muted); }
+.co-set-tile { flex:0 0 auto; display:grid; place-items:center; width:36px; height:36px; border-radius:var(--co-radius-control); background:var(--surface-2,var(--surface)); color:var(--muted); }
 .co-set-text { flex:1; min-width:0; display:flex; flex-direction:column; gap:1px; cursor:default; }
-.co-set-text strong { font-size:15px; font-weight:650; }
-.co-set-text small { color:var(--muted); font-size:14px; line-height:1.4; }
+.co-set-text strong { font-size:var(--co-text-body); font-weight:650; }
+.co-set-text small { color:var(--muted); font-size:var(--co-text-meta); line-height:1.4; }
 .co-set-row > .co-seg { flex:0 0 auto; }
-.co-set-row .co-btn { flex:0 0 auto; gap:8px; height:40px; min-height:40px; padding:0 12px; font-size:14px; }
-.co-settings-workspace > header .co-quiet-action { display:grid; place-items:center; width:44px; min-height:44px; padding:0; border:0; border-radius:8px; background:none; color:var(--muted); cursor:pointer; }
-.co-settings-workspace > header .co-quiet-action:hover { background:var(--surface-2); color:var(--text); }
+.co-set-row .co-btn { flex:0 0 auto; gap:8px; height:40px; min-height:40px; padding:0 12px; font-size:var(--co-text-meta); }
+.co-settings-workspace > header .co-btn co-btn-quiet { display:grid; place-items:center; width:44px; min-height:44px; padding:0; border:0; border-radius:var(--co-radius-field); background:none; color:var(--muted); cursor:pointer; }
+.co-settings-workspace > header .co-btn co-btn-quiet:hover { background:var(--surface-2); color:var(--text); }
 @media(max-width:650px) { .co-set-row.has-choice { flex-wrap:wrap; } .co-set-row.has-choice > .co-set-text { min-width:200px; } .co-set-row.has-choice > .co-seg { margin-left:48px; } .co-settings-workspace { position:fixed; inset:68px 16px auto; width:auto; height:auto; max-height:calc(100dvh - 84px); padding:16px; overflow-y:auto; } .co-settings-content .co-prompt-settings textarea { flex:none; min-height:240px; } .co-set-row { flex-wrap:wrap; } }
 `
 
@@ -59,10 +60,10 @@ export function ConnectionSettings(props) {
     if (next) void props.onChanged?.()
   }}>
     <summary aria-label={`${accountStatus}${props.conn?.state === 'connected' && props.conn?.login ? ` as ${props.conn.login}` : ''} — Contribute settings`} title={`${accountStatus} · Settings`}>
-      <Icon name="settings" size={20} /><span>Settings</span>
+      <Icon name="settings" size={20} /><span className="co-label-long">{NAMES.settings}</span><span className="co-label-short">Settings</span>
     </summary>
     {open ? <div className="co-settings-panel co-settings-workspace"><style>{SETTINGS_CSS}</style>
-      <header><h2>Settings</h2><button type="button" className="co-quiet-action" aria-label="Close settings" title="Close" onClick={() => { ref.current.open = false; ref.current.querySelector('summary')?.focus() }}><Icon name="close" size={18} /></button></header>
+      <header><h2>{NAMES.settings}</h2><button type="button" className="co-btn co-btn-quiet co-btn-icon" aria-label="Close settings" title="Close" onClick={() => { ref.current.open = false; ref.current.querySelector('summary')?.focus() }}><Icon name="close" size={18} /></button></header>
       <div className="co-settings-layout">
         <div className="co-settings-content">
           <section className="co-settings-account" aria-label="GitHub account"><h3>GitHub</h3><ConnectionCard {...props} /></section>
@@ -77,7 +78,7 @@ export function ConnectionSettings(props) {
 const settingsButton = (label, primary = false) => (
   <button
     type="button"
-    className={primary ? 'co-btn co-btn-primary co-btn-block' : 'co-btn co-btn-sm'}
+    className={primary ? 'co-btn co-btn-primary co-btn-block' : 'co-btn'}
     onClick={openGithubSettings}
   >
     {label}
@@ -126,7 +127,7 @@ export function ConnectionCard({
             {' '}Your saved contribution feed is still available.
           </p>
           <div className="co-conn-actions">
-            <button type="button" className="co-btn co-btn-sm" onClick={retryStatus} disabled={statusRetrying} aria-busy={statusRetrying}>
+            <button type="button" className="co-btn" onClick={retryStatus} disabled={statusRetrying} aria-busy={statusRetrying}>
               {statusRetrying ? 'Checking…' : 'Check GitHub again'}
             </button>
           </div>

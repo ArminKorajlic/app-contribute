@@ -68,7 +68,7 @@ export function useProjectCycle(projectKey, deliver) {
     try { saved = await loadCycleState(requestedProject) } catch { unavailable = true }
     if (!isCurrent(requestedProject, generation)) return
     if (!saved) {
-      setCycle(unavailable ? current => ({ ...current, phase: 'unknown', error: 'Saved work could not be checked. Refresh to try again.' })
+      setCycle(unavailable ? current => ({ ...current, phase: 'unknown', error: 'Prepared PRs could not be checked. Sync to try again.' })
         : { phase: 'idle', chatId: '', history: [], error: '' })
       return
     }
@@ -173,7 +173,7 @@ export function useProjectCycle(projectKey, deliver) {
     try {
       let planned
       try { planned = await beginProjectCycle(requestedProject, frozen, previous.k || 0) }
-      catch { planned = { ok: false, error: 'Could not save this start. Refresh and try again.' } }
+      catch { planned = { ok: false, error: 'Could not save this start. Sync and try again.' } }
       if (!planned.ok) {
         if (isCurrent(requestedProject)) setCycle({ ...previous, error: planned.error })
         if (planned.changed) void recheck().then(() => { if (isCurrent(requestedProject)) setCycle(current => ({ ...current, error: current.error || planned.error })) })

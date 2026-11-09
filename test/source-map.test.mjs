@@ -909,7 +909,7 @@ test('the GitHub status line never turns last-fetched evidence into an online al
   const incoming = projectUpstreamLine({ ...project, semanticAvailable: true, incomingFiles: 2 }, { newCommits: 9 })
   assert.equal(incoming.strong, '2 files')
   assert.equal(incoming.text, ' from GitHub are not on this Möbius yet.')
-  assert.match(projectUpstreamLine({ ...project, conflictFiles: 1 }).text, /conflicts with your edits/)
+  assert.match(projectUpstreamLine({ ...project, conflictFiles: 1 }).text, /conflicts with your local changes/)
   assert.equal(projectUpstreamLine({ ...project, builtHere: true }), null)
   assert.equal(projectUpstreamLine({ ...project, kind: 'external' }), null)
 })

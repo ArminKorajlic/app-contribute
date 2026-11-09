@@ -31,6 +31,7 @@ import { MarkdownView } from './MarkdownView.jsx'
 import { useScreenshots } from './useScreenshots.js'
 import { Icon } from './Icons.jsx'
 import { AgentHandoffButton } from './BatchAction.jsx'
+import { NAMES } from '../names.js'
 
 // One ledger row. Cards deliberately expose explicit targets only — the title
 // is the link on a linked PR/issue card, and prepared cards use their
@@ -334,7 +335,7 @@ function SubmitErrorAlert({ rec, reviewState, onReview }) {
         <AgentHandoffButton
           action={recoveryReviewAction(rec)}
           onStart={onReview}
-          className="co-btn co-btn-sm co-btn-primary"
+          className="co-btn co-btn-primary"
           icon="review"
         />
       ) : null}
@@ -441,7 +442,7 @@ function AttentionCallout({ rec, onFeedback, onInspect }) {
       {canFixInChat ? (
         <button
           type="button"
-          className="co-icon-btn co-refresh-btn is-primary"
+          className="co-btn co-btn-primary co-refresh-btn"
           aria-label="Fix this contribution in chat"
           title="Fix in chat"
           onClick={handleAskAgent}
@@ -468,7 +469,7 @@ function ReconciliationHint({ hint, onDismiss }) {
           </a>
         ) : null}
       </div>
-      <button type="button" className="co-btn co-btn-sm" onClick={onDismiss}>
+      <button type="button" className="co-btn" onClick={onDismiss}>
         Dismiss
       </button>
     </div>
@@ -601,7 +602,7 @@ function ReviewActions({
       }
     } catch {
       setAccepted(false)
-      setNote('The result could not be confirmed. Refresh before trying again.')
+      setNote('The result could not be confirmed. Sync before trying again.')
     } finally {
       setSending(false)
     }
@@ -668,7 +669,7 @@ function ReviewActions({
             <button
               type="button"
               ref={keepButtonRef}
-              className="co-btn co-btn-sm"
+              className="co-btn"
               disabled={dismissing}
               onClick={() => setConfirmingDismiss(false)}
             >
@@ -676,20 +677,20 @@ function ReviewActions({
             </button>
             <button
               type="button"
-              className="co-btn co-btn-sm co-btn-caution"
+              className="co-btn co-btn-danger"
               disabled={dismissing}
               onClick={dismiss}
             >
-              {dismissing ? 'Dismissing…' : 'Dismiss'}
+              {dismissing ? 'Discarding…' : NAMES.discard}
             </button>
           </div>
         </div>
       ) : (
-        <div className="co-review-actions" role="group" aria-label="Contribution actions">
+        <div className="co-review-actions" role="group" aria-label="PR actions">
           {blocked ? (
             <button
               type="button"
-              className="co-icon-btn co-refresh-btn is-primary"
+              className="co-btn co-btn-primary co-refresh-btn"
               aria-label="Fix this contribution in chat"
               title="Fix in chat"
               onClick={feedback}
@@ -703,14 +704,14 @@ function ReviewActions({
                 <AgentHandoffButton
                   action={reviewAction || reviewAllAction([rec])}
                   onStart={onReview}
-                  className="co-icon-btn co-review-btn is-primary"
+                  className="co-btn co-btn-primary co-review-btn"
                   icon="review"
                 />
               ) : null}
               {!reviewIncomplete && !submitFailed && typeof onSend === 'function' ? (
                 <button
                   type="button"
-                  className={'co-icon-btn co-send-btn is-primary' + (sending ? ' is-sending' : '')}
+                  className={'co-btn co-btn-primary co-send-btn' + (sending ? ' is-sending' : '')}
                   disabled={sending}
                   onClick={send}
                   aria-busy={sending}
@@ -734,7 +735,7 @@ function ReviewActions({
           ) : typeof onFeedback === 'function' ? (
             <button
               type="button"
-              className="co-icon-btn co-send-btn is-primary"
+              className="co-btn co-btn-primary co-send-btn"
               onClick={feedback}
               aria-label="Open this request's source conversation"
               title="Open source conversation"
@@ -746,7 +747,7 @@ function ReviewActions({
           {!blocked && !attentionBlocked && isPr ? (
             <button
               type="button"
-              className="co-icon-btn co-secondary-action"
+              className="co-btn co-secondary-action"
               onClick={feedback}
               aria-label="Open source chat"
               title="Open source chat"
@@ -757,12 +758,12 @@ function ReviewActions({
           ) : null}
           <button
             type="button"
-            className={isPr ? 'co-icon-btn co-secondary-action co-history-action' : 'co-request-history'}
+            className={isPr ? 'co-btn co-btn-danger co-secondary-action co-history-action' : 'co-request-history'}
             onClick={() => setConfirmingDismiss(true)}
-            aria-label={isPr ? 'Dismiss prepared pull request' : 'Dismiss request draft'}
-            title="Dismiss"
+            aria-label={isPr ? 'Discard prepared PR' : 'Discard request draft'}
+            title={NAMES.discard}
           >
-            {isPr ? <span>Dismiss</span> : 'Dismiss'}
+            {isPr ? <span>{NAMES.discard}</span> : NAMES.discard}
           </button>
         </div>
       )}
@@ -812,7 +813,7 @@ function RestoreAction({ rec, onRestore }) {
     <div className="co-history-actions">
       <button
         type="button"
-        className="co-btn co-btn-sm"
+        className="co-btn"
         disabled={restoring}
         onClick={restore}
       >
@@ -901,7 +902,7 @@ function AutopilotPanel({ rec, onSetAutopilot }) {
         </span>
         <button
           type="button"
-          className="co-autopilot-toggle"
+          className="co-btn co-autopilot-toggle"
           onClick={toggle}
           disabled={busy}
         >
@@ -965,7 +966,7 @@ function WithdrawAction({ rec, onWithdraw }) {
       <div className="co-published-action">
         <button
           type="button"
-          className="co-btn co-btn-sm"
+          className="co-btn"
           onClick={() => { setNote(''); setConfirming(true) }}
         >
           Withdraw PR
@@ -990,7 +991,7 @@ function WithdrawAction({ rec, onWithdraw }) {
         <button
           type="button"
           ref={keepRef}
-          className="co-btn co-btn-sm"
+          className="co-btn"
           disabled={busy}
           onClick={() => setConfirming(false)}
         >
@@ -998,7 +999,7 @@ function WithdrawAction({ rec, onWithdraw }) {
         </button>
         <button
           type="button"
-          className="co-btn co-btn-sm co-btn-caution"
+          className="co-btn co-btn-danger"
           disabled={busy}
           onClick={withdraw}
         >
@@ -1203,7 +1204,7 @@ export function ContributionCard({
         <div className={`co-card-footer${rec.reconciliation_hint ? ' is-reconciliation' : ''}`}>
           <button
             type="button"
-            className="co-details-toggle"
+            className="co-btn co-btn-quiet co-details-toggle"
             aria-expanded={expanded}
             onClick={() => setExpanded((v) => !v)}
           >

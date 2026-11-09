@@ -148,7 +148,7 @@ test('a clean private review of their PR is settled, and comes back for re-revie
   // After new commits it is an older version: the PR is back in front of the reviewer.
   const pushed = decideFor(pull(), clean(OLD))
   assert.deepEqual([pushed.state, pushed.turn, pushed.next], ['reviewer.re_review', 'you', 'review'])
-  assert.equal(pushed.actions.find(action => action.id === 'review').title, 'Re-review')
+  assert.equal(pushed.actions.find(action => action.id === 'review').title, 'Review again')
   // Findings on a version the PR left behind are old news, and your own PR is never nagged about it.
   assert.equal(decideFor(pull(), [run({ state: 'needs_you', head_sha: OLD })]).state, 'reviewer.to_review')
   assert.equal(decideFor(mine(), clean(OLD)).state, 'author.waiting_review')

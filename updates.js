@@ -14,13 +14,13 @@ export function projectUpdater(project) {
   if (project.kind === 'platform') {
     return {
       label: 'Open Settings',
-      where: 'Update Möbius in Settings → Updates. Your edits stay safe.',
+      where: 'Update Möbius in Settings → Updates. Your local changes stay safe.',
       open: () => askHost({ type: 'moebius:open-settings' }),
     }
   }
   return {
     label: 'Open App Store',
-    where: `Update ${project.name || 'this app'} in the App Store. Your edits stay safe.`,
+    where: `Update ${project.name || 'this app'} in the App Store. Your local changes stay safe.`,
     open: () => askHost({ type: 'moebius:open-app', appId: 'store' }),
   }
 }

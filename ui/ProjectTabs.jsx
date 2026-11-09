@@ -1,6 +1,6 @@
 import { useId, useRef, useState } from 'react'
 
-const BASE_TABS = [['all', 'All PRs'], ['requests', 'Review requests'], ['mine', 'My work']]
+const BASE_TABS = [['all', 'All PRs'], ['requests', 'Review requests'], ['mine', 'Agent runs']]
 
 // One tab per job under the project's status and Needs you. The PR list stays
 // one mounted component whatever the tab, so its loaded pages, agent runs and
@@ -14,7 +14,7 @@ export function ProjectTabs({ reviewCount = 0, renderPullRequests, inventory, my
   const [total, setTotal] = useState(null)
   const id = useId()
   const list = useRef(null)
-  const TABS = edits ? [...BASE_TABS, ['edits', 'Edits']] : BASE_TABS
+  const TABS = edits ? [...BASE_TABS, ['edits', 'Local changes']] : BASE_TABS
   const tab = TABS.some(([key]) => key === chosen) ? chosen : 'all'
   const counts = { all: total, requests: reviewCount, mine: null, edits: editsCount }
   function moveWithArrows(event) {

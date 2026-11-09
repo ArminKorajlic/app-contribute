@@ -14,15 +14,12 @@ async function ui(t) {
     export { projectRailCount }
     export const rail = props => renderToStaticMarkup(React.createElement(DeskRail, props))
     export const counts = props => renderToStaticMarkup(React.createElement(DeskCounts, props))
-    // Where each chip leads, found by pressing it (DeskCounts holds no hooks, so it can be called directly).
-    export function chipDestinations(counts) {
-      const destinations = {}
+    // Where the drafts line leads, found by pressing it (DeskCounts holds no hooks, so it can be called directly).
+    export function draftsDestination(counts) {
       let pressed = null
-      for (const chip of DeskCounts({ counts, onView: view => { pressed = view } }).props.children) {
-        chip.props.onClick()
-        destinations[chip.props.children[1]] = pressed
-      }
-      return destinations
+      const line = DeskCounts({ counts, onFilter: () => {}, onView: view => { pressed = view } }).props.children[1]
+      line.props.children[1].props.onClick()
+      return pressed
     }
     export const view = props => renderToStaticMarkup(React.createElement(DeskView, props))
   `)
@@ -59,15 +56,18 @@ const projectFixture = (key, extra = {}) => ({
   ...extra,
 })
 
-const countsFixture = { questions: 1, requests: 2, merge: 3, fix: 1, drafts: 0, editedFiles: 28, editProjects: 1, mine: 4, work: 5, merged: 0 }
+const countsFixture = { questions: 1, requests: 2, merge: 3, fix: 1, agent: 0, drafts: 0, mine: 4, merged: 0, reviewsRunning: 0 }
 
-test('the rail shows every view with its count and marks the open project', async t => {
+test('the rail shows its four views with their counts, the Repositories block apart, and marks the open project', async t => {
   const api = await ui(t)
   if (!api) return
   const project = projectFixture('mobius', { reviewRequests: [pullFixture(1)] })
   const html = api.rail({ view: 'needs', counts: countsFixture, projects: [project], attention: { mobius: 2 }, selectedKey: 'mobius', onView: () => {}, onOpenProject: () => {} })
   assert.match(html, /Needs you/)
-  assert.match(html, /Merged this week/)
+  for (const name of ['Needs you', 'Review requests', 'My PRs', 'Agent runs']) assert.match(html, new RegExp(name))
+  assert.doesNotMatch(html, /Merged this week|To confirm|PR reviews|My work|Your edits/)
+  // Projects are a block of their own: a labelled nav under the four views, with Add project last.
+  assert.match(html, /<nav class="co-rail-projects" aria-labelledby="co-rail-projects-head"><h2 class="co-rail-head" id="co-rail-projects-head">Repositories<\/h2>/)
   assert.match(html, /Möbius/)
   // The project row shows exactly the count held for it (what its Needs you card lists).
   assert.equal(api.projectRailCount(project, { mobius: 3 }), 3)
@@ -75,25 +75,45 @@ test('the rail shows every view with its count and marks the open project', asyn
   assert.match(html, /aria-current="page"[^>]*>[\s\S]*?Möbius|Möbius[\s\S]*?aria-current/)
 })
 
-test('counts chips name next steps and skip empty edits', async t => {
-  const api = await ui(t)
-  if (!api) return
-  const html = api.counts({ counts: countsFixture, onView: () => {} })
-  assert.match(html, />Review</)
-  assert.match(html, />Merge</)
-  assert.match(html, /28 files/)
-  const none = api.counts({ counts: { ...countsFixture, questions: 0, editedFiles: 0, requests: 0, merge: 0, fix: 0, drafts: 0 }, onView: () => {} })
-  assert.equal(none, '')
+test('the side menu opens the Add repository form in flow, because the menu scrolls and would clip a floating panel', () => {
+  const read = file => readFileSync(new URL(`../${file}`, import.meta.url), 'utf8')
+  const work = read('workspace-theme.js')
+  assert.match(work, /\.co-rail \{[^}]*overflow-y:auto;/, 'the menu scrolls, so anything that floats out of it is cut off')
+  assert.match(work, /\.co-rail-add \.co-repository-picker form,\.co-rail-add \.co-repository-note \{ position:static; width:auto;/, 'in the menu the form and the note take the menu\'s width in flow')
+  assert.match(read('ui/RepositoryPicker.jsx'), /rootRef\.current\?\.scrollIntoView\(/, 'a short menu scrolls the opened form into view')
 })
 
-test('every count chip leads to a view that lists what it counted', async t => {
+test('count chips name next steps, filter the list, and skip empty ones; drafts are a quiet line', async t => {
   const api = await ui(t)
   if (!api) return
-  // An approved draft opened outside Contribute: counted by Mark ready, with no saved decision behind it.
+  const html = api.counts({ counts: countsFixture, filter: 'merge', onFilter: () => {}, onView: () => {} })
+  assert.match(html, />Review</)
+  assert.match(html, /aria-pressed="true"><b>3<\/b>Merge</)
+  assert.doesNotMatch(html, /files|Local changes/)
+  assert.doesNotMatch(html, /co-desk-quiet-line/)
+  const drafts = api.counts({ counts: { ...countsFixture, drafts: 4 }, onFilter: () => {}, onView: () => {} })
+  assert.match(drafts, /4 drafts are ready to open for review\./)
+  const none = api.counts({ counts: { ...countsFixture, questions: 0, requests: 0, merge: 0, fix: 0, drafts: 0 }, onFilter: () => {}, onView: () => {} })
+  assert.equal(none, '')
+  // The selected step stays even when a refresh empties it, so the control that clears the filter never vanishes
+  // while the other steps still hold what needs you.
+  const emptied = api.counts({ counts: { ...countsFixture, merge: 0 }, filter: 'merge', onFilter: () => {}, onView: () => {} })
+  assert.match(emptied, /aria-pressed="true"><b>0<\/b>Merge</)
+  assert.match(emptied, />Review</)
+  const unselected = api.counts({ counts: { ...countsFixture, merge: 0 }, filter: '', onFilter: () => {}, onView: () => {} })
+  assert.doesNotMatch(unselected, />Merge</)
+  const allGone = api.counts({ counts: { ...countsFixture, questions: 0, requests: 0, merge: 0, fix: 0, drafts: 0 }, filter: 'merge', onFilter: () => {}, onView: () => {} })
+  assert.match(allGone, /aria-pressed="true"><b>0<\/b>Merge</)
+})
+
+test('the drafts line leads to a view that lists what it counted', async t => {
+  const api = await ui(t)
+  if (!api) return
+  // An approved draft opened outside Contribute: counted as a draft ready to open, with no saved decision behind it.
   const draft = pullFixture(9, { author: { login: 'owner' }, reviewDecision: 'APPROVED', isDraft: true })
   const project = projectFixture('kanban', { incomingReviews: [draft] })
   const counts = { ...countsFixture, questions: 0, requests: 0, merge: 0, fix: 0, editedFiles: 0, drafts: 1, mine: 1, work: 0 }
-  const view = api.chipDestinations(counts)['Mark ready']
+  const view = api.draftsDestination(counts)
   const html = api.view({ view, projects: [project], records: [], login: 'owner', decisionsFor: () => [], lastLooked: '', query: '', onOpenProject: () => {}, onOpenPull: () => {}, onOpenRecord: () => {} })
   assert.match(html, /Improve thing 9/)
   assert.match(html, /Approved, still a draft/)
@@ -177,7 +197,7 @@ test('each app card folds with a chevron: down means open it, up means fold it',
   if (!api) return
   const base = { view: 'requests', records: [], login: 'owner', decisionsFor: () => [], lastLooked: '', query: '', onOpenProject: () => {}, onOpenPull: () => {}, onOpenRecord: () => {} }
   const two = api.view({ ...base, projects: [projectFixture('mobius', { reviewRequests: [pullFixture(7), pullFixture(8)] })] })
-  assert.match(two, /class="co-envelope-toggle"[^>]*aria-expanded="true"[^>]*aria-label="Collapse Möbius"/)
+  assert.match(two, /class="co-btn co-btn-quiet co-btn-icon co-envelope-toggle"[^>]*aria-expanded="true"[^>]*aria-label="Collapse Möbius"/)
   assert.match(two, /Improve thing 7/)
   // One row has nothing to fold away.
   const one = api.view({ ...base, projects: [projectFixture('mobius', { reviewRequests: [pullFixture(7)] })] })
@@ -200,16 +220,6 @@ test('a PR with a feedback card is listed once in Needs you, and My PRs keeps it
   assert.match(api.view({ ...base, view: 'mine' }), /Improve thing 5/)
 })
 
-test('Your edits shows the fact once: no second Open, and it says what the files do', async t => {
-  const api = await ui(t)
-  if (!api) return
-  const project = projectFixture('mobius', { localFiles: 3, compatibleFiles: 3 })
-  const html = api.view({ view: 'edits', projects: [project], records: [], login: 'owner', decisionsFor: () => [], lastLooked: '', query: '', onOpenProject: () => {}, onOpenPull: () => {}, onOpenRecord: () => {} })
-  assert.doesNotMatch(html, /on this Möbius/)
-  assert.match(html, /differ from GitHub/)
-  assert.equal((html.match(/>Open</g) || []).length, 1)
-})
-
 test('the new-dot legend shows only when a dot is on screen', () => {
   const css = readFileSync(new URL('../workspace-theme.js', import.meta.url), 'utf8')
   assert.match(css, /\.co-desk-legend \{ display:none/)
@@ -218,9 +228,9 @@ test('the new-dot legend shows only when a dot is on screen', () => {
 
 test('the project status is one panel of equal rows, with real buttons and icons, never a text link', () => {
   const css = readFileSync(new URL('../workspace-theme.js', import.meta.url), 'utf8')
-  assert.match(css, /\.co-project-position \{ margin:12px 0 16px; border:1px solid var\(--border\); border-radius:12px;/)
+  assert.match(css, /\.co-project-position \{ margin:12px 0 16px; border:1px solid var\(--border\); border-radius:var\(--co-radius-panel\);/)
   assert.match(css, /\.co-status-row \{ display:flex; align-items:center; gap:12px; min-height:56px;/)
-  assert.match(css, /\.co-status-actions \.co-btn \{ gap:8px; height:40px; min-height:40px;/)
+  assert.match(css, /\.co-status-actions \.co-btn \{ gap:8px; padding:0 12px; \}/)
   assert.doesNotMatch(css, /co-link-action/)
 })
 
@@ -229,7 +239,7 @@ test('a feedback card is shaped like a PR row: title, why, chip, no second butto
   if (!api) return
   const project = projectFixture('mobius')
   const item = { id: 'f1', kind: 'public_attention', label: '#9 Feedback title', detail: 'A GitHub review requested changes.', record: { repo: 'o/r', number: 9, attention: { type: 'changes_requested', detected_at: '2026-11-02T08:00:00Z' } } }
-  const html = api.view({ view: 'work', projects: [project], records: [], login: 'owner', decisionsFor: () => [item], lastLooked: '', query: '', onOpenProject: () => {}, onOpenPull: () => {}, onOpenRecord: () => {} })
+  const html = api.view({ view: 'needs', projects: [project], records: [], login: 'owner', decisionsFor: () => [item], lastLooked: '', query: '', onOpenProject: () => {}, onOpenPull: () => {}, onOpenRecord: () => {} })
   assert.match(html, /class="co-desk-row is-changes"/)
   assert.match(html, /co-desk-row-title">#9 Feedback title/)
   assert.match(html, /co-desk-row-why">A GitHub review requested changes\./)
@@ -242,10 +252,10 @@ test('rail badges mark only what waits on you; information shows a quiet number'
   if (!api) return
   const html = api.rail({ view: 'needs', counts: countsFixture, projects: [], attention: {}, selectedKey: '', onView: () => {}, onOpenProject: () => {} })
   assert.match(html, /co-rail-count is-you">7</)
-  assert.match(html, /co-rail-quiet" title="28 edited files">28</)
-  assert.match(html, /Merged this week<\/span>/)
-  // Edits, My PRs and Merged are quiet numbers, never pills.
-  assert.equal((html.match(/co-rail-quiet/g) || []).length, 2)
+  // My PRs is a quiet total, never a pill; Agent runs says how many are running.
+  assert.match(html, /co-rail-total">4</)
+  const running = api.rail({ view: 'needs', counts: { ...countsFixture, reviewsRunning: 2 }, projects: [], attention: {}, selectedKey: '', onView: () => {}, onOpenProject: () => {} })
+  assert.match(running, /co-rail-total">2 running</)
 })
 
 test('the sync note says only when it last checked, or that GitHub could not be reached', () => {
@@ -253,17 +263,17 @@ test('the sync note says only when it last checked, or that GitHub could not be 
   assert.match(guard, /note\.outcome\?\.ok \? <TimeAgo prefix="Checked " value=\{note\.at\} \/> : 'Couldn’t reach GitHub'/)
   const theme = readFileSync(new URL('../theme.js', import.meta.url), 'utf8')
   // Beside the button on a wide header; a phone header has no room for it.
-  assert.match(theme, /\.co-toolbar-refresh span, \.co-sync-note \{ display: none; \}/)
+  assert.match(theme, /\.co-toolbar \.co-label-long, \.co-sync-note \{ display: none; \}/)
 })
 
-test('list labels are a dot and plain text, two at most, and a bot says bot', async t => {
+test('list labels are filled pills like the PR page, two at most, and a bot says bot', async t => {
   const html = await (async () => {
     if (!frontendModules) { t.skip('MOBIUS_FRONTEND_NODE_MODULES is required'); return null }
     const mod = await renderModule(`
       import React from 'react'
       import { renderToStaticMarkup } from 'react-dom/server'
-      import { QuietLabels, PullStateChips } from './ui/GithubParts.jsx'
-      export const labels = pr => renderToStaticMarkup(React.createElement(QuietLabels, { pr }))
+      import { PullLabels, PullStateChips } from './ui/GithubParts.jsx'
+      export const labels = pr => renderToStaticMarkup(React.createElement(PullLabels, { pr }))
       export const chips = pr => renderToStaticMarkup(React.createElement(PullStateChips, { pr }))
     `)
     return mod
@@ -271,12 +281,12 @@ test('list labels are a dot and plain text, two at most, and a bot says bot', as
   if (!html) return
   const node = (name, color = '0075ca') => ({ name, color })
   const human = html.labels({ author: { login: 'owner' }, labels: { nodes: [node('area: ui'), node('bug', 'd73a4a'), node('maintenance')] } })
-  assert.match(human, /<i aria-hidden="true"><\/i>ui</)
+  assert.match(human, /class="co-gh-label"[^>]*--co-label-dark-bg[^>]*>ui</)
   assert.doesNotMatch(human, /area:/)
-  assert.match(human, /is-more" title="maintenance">\+1</)
-  assert.equal((human.match(/co-quiet-label"/g) || []).length, 2)
+  assert.match(human, /co-label-more" title="maintenance">\+1</)
+  assert.equal((human.match(/class="co-gh-label"/g) || []).length, 2)
   const bot = html.labels({ author: { login: 'dependabot' }, labels: { nodes: [node('dependencies'), node('javascript')] } })
-  assert.match(bot, /is-bot">bot</)
+  assert.match(bot, /co-gh-label is-plain">bot</)
   assert.doesNotMatch(bot, /dependencies/)
   const chips = html.chips({ isDraft: true, reviewDecision: 'APPROVED' })
   assert.match(chips, /co-desk-chip">Draft</)
@@ -301,11 +311,14 @@ test('state chips sit beside the title, and the hover Assign is an icon so the r
   assert.match(css, /\.co-pr-assign\.is-quiet span \{ display:inline; \}/)
 })
 
-test('labels sit on their own line under the meta line, in list rows and desk rows', () => {
+test('a row reads title, facts, labels, then pills, each on its own line, in list rows and desk rows', () => {
   const list = readFileSync(new URL('../ui/PullRequests.jsx', import.meta.url), 'utf8')
-  assert.match(list, /<div className="co-pr-meta">[\s\S]*?<\/div>\s*<div className="co-pr-labels"><QuietLabels pr=\{pr\} \/><\/div>/)
+  assert.match(list, /<div className="co-pr-meta">[\s\S]*?<\/div>\s*<div className="co-pr-labels"><PullLabels pr=\{pr\} \/><\/div>\s*<div className="co-row-pills">\s*<PullStateChips pr=\{pr\} \/>/)
   const desk = readFileSync(new URL('../ui/DeskViews.jsx', import.meta.url), 'utf8')
-  assert.match(desk, /<\/span>\s*<span className="co-pr-labels"><QuietLabels pr=\{pr\} \/><\/span>/)
+  assert.match(desk, /<\/span>\s*<span className="co-pr-labels"><PullLabels pr=\{pr\} \/><\/span>\s*\{chip \|\| standingChip \? <span className="co-row-pills">/)
+  // The facts line holds no pill: the chip that says whose turn it is lives on the pills line.
+  const factsLine = desk.slice(desk.indexOf('<span className="co-desk-row-meta">'), desk.indexOf('<span className="co-pr-labels">'))
+  assert.doesNotMatch(factsLine, /co-desk-chip/)
 })
 
 test('the attention bar does not sit inside a second border', () => {
@@ -331,4 +344,33 @@ test('attention rows and the show-more control stay inside the bar', () => {
   const css = readFileSync(new URL('../workspace-theme.js', import.meta.url), 'utf8')
   assert.match(css, /\.co-attention-row \{ box-sizing:border-box;/)
   assert.match(css, /\.co-attn-more \{ box-sizing:border-box;/)
+})
+
+test('on a phone the four views are one segmented bar with every segment on screen, and the repository list is one quiet link', async t => {
+  if (!frontendModules) return t.skip('MOBIUS_FRONTEND_NODE_MODULES is required')
+  const { renderToStaticMarkup, React, DeskChips } = await (await renderModule(`
+    import React from 'react'
+    import { renderToStaticMarkup } from 'react-dom/server'
+    import { DeskChips } from './ui/Desk.jsx'
+    export { React, renderToStaticMarkup, DeskChips }
+  `))
+  const html = renderToStaticMarkup(React.createElement(DeskChips, { view: 'needs', counts: { questions: 1, requests: 2, merge: 3, fix: 1, mine: 17, reviewsRunning: 0 }, onView() {} }))
+  assert.equal((html.match(/<button/g) || []).length, 5, 'four views plus the project link, no scrolling row of nine')
+  assert.match(html, /aria-pressed="true" aria-label="Needs you, 7"><b>7<\/b><span>Needs you<\/span>/)
+  assert.match(html, /aria-label="Review requests, 2"><b>2<\/b><span>Requests<\/span>/)
+  assert.match(html, /<b>·<\/b><span>Agent runs<\/span>/)
+  assert.match(html, /co-desk-chips-projects[^>]*>.*?All repositories/)
+  assert.doesNotMatch(html, /To confirm|Merged this week|PR reviews|My work|Your edits/)
+})
+
+test('the phone keeps Sync and Settings labelled, a sticky review footer and decision bar, and an unsqueezed group header', () => {
+  const read = file => readFileSync(new URL(`../${file}`, import.meta.url), 'utf8')
+  const theme = read('theme.js'), work = read('workspace-theme.js'), app = read('index.jsx')
+  assert.match(app, /<span className="co-label-short">\{refreshingAll \? 'Syncing…' : NAMES\.sync\}<\/span>/)
+  assert.match(theme, /\.co-toolbar \.co-label-short \{ display: inline; \}/)
+  assert.doesNotMatch(work, /\.co-header \.co-settings > summary > span \{ display:none; \}/, 'Settings keeps its word on a phone')
+  assert.match(work, /\.co-rw-foot \{ position:sticky; bottom:0;/)
+  assert.match(work, /\.co-decision-bar \{ display:flex; position:sticky; bottom:0;/)
+  assert.match(work, /\.co-envelope-head \.co-project-icon,\.co-envelope-head \.co-source-tag,\.co-envelope-head \.co-rail-count \{ flex:none; \}/)
+  assert.match(work, /\.co-envelope-head strong \{ min-width:0;/)
 })

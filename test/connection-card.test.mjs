@@ -50,12 +50,12 @@ test('the header shows the connected handle without claiming an unchecked connec
   const { renderSettings } = await connectionRenderer()
   const connected = renderSettings({ state: 'connected', login: 'octocat' })
   assert.match(connected, /octocat[\s\S]*Contribute settings/)
-  assert.match(connected, /<span>Settings<\/span>/)
+  assert.match(connected, /<span class="co-label-long">Contribute settings<\/span><span class="co-label-short">Settings<\/span>/, 'the long name on a wide screen, Settings on a phone')
   assert.match(connected, /GitHub connected as octocat — Contribute settings/)
   assert.doesNotMatch(connected, /Connect GitHub|co-settings-panel/)
   for (const state of ['checking', 'unknown', 'unsupported']) {
     const html = renderSettings({ state })
-    assert.match(html, /<span>Settings<\/span>/)
+    assert.match(html, /<span class="co-label-short">Settings<\/span>/)
     assert.doesNotMatch(html, /GitHub connected|Connect GitHub|co-settings-panel/)
   }
 })

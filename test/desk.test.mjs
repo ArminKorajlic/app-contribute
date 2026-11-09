@@ -2,12 +2,13 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   DESK_VIEWS,
+  NEEDS_CHIPS,
+  deskViewKey,
   authoredPullState,
   authoredPulls,
   chainPulls,
   deskCounts,
   projectNeedsCount,
-  editProjects,
   mergedRecently,
   needsCount,
   newSince,
@@ -115,7 +116,8 @@ test('the counts name next steps and the rail badges follow them', () => {
   assert.equal(needsCount(counts), 4)
   assert.equal(railBadge('needs', counts), 4)
   assert.equal(railBadge('requests', counts), 1)
-  assert.equal(railBadge('work', counts), 2)
+  assert.equal(railBadge('runs', counts), 0)
+  assert.equal(railBadge('runs', { reviewsRunning: 2 }), 2)
 })
 
 test('projects with review requests never fold into the quiet group', () => {
@@ -124,12 +126,6 @@ test('projects with review requests never fold into the quiet group', () => {
   const groups = splitProjects([quiet, asked], {})
   assert.deepEqual(groups.quiet.map(project => project.key), ['a'])
   assert.deepEqual(groups.active.map(project => project.key), ['b'])
-})
-
-test('edit projects count committed and in-progress files once', () => {
-  const project = { key: 'a', kind: 'app', available: true, localFiles: 2, localOnlyPaths: ['x', 'y'], compatibleFiles: 0, conflictFiles: 0, workingFiles: 0, head_sha: 'abc', origin: { sha: 'abc' } }
-  const edits = editProjects([project])
-  assert.equal(edits.length >= 0, true)
 })
 
 test('feedback on a published PR opens the PR itself; publication decisions keep their card', async () => {
@@ -145,10 +141,9 @@ test('a PR with a feedback card and a fix step counts once in Needs you', () => 
   const owned = number => ({ number, repository: { nameWithOwner: 'o/r' }, author: { login: 'owner' }, reviewDecision: 'CHANGES_REQUESTED' })
   const decisions = [{ kind: 'public_attention', record: { repo: 'o/r', number: 1 } }]
   const counts = deskCounts({ decisions, incoming: [owned(1), owned(2)], records: [], login: 'owner' })
-  // One feedback card + two fixes, but #1 is the same work as its card.
+  // One feedback card + two PRs to fix, but #1 is the same work as its card: it counts once, as the card.
   assert.equal(counts.questions, 1)
-  assert.equal(counts.fix, 2)
-  assert.equal(counts.doubled, 1)
+  assert.equal(counts.fix, 1)
   assert.equal(needsCount(counts), 2)
   assert.equal(railBadge('needs', counts), 2)
 })
@@ -162,12 +157,39 @@ test('a project number is what its Needs you card lists: requests, feedback card
   assert.equal(projectNeedsCount({ incomingReviews: [] }, [], 'owner'), 0)
 })
 
-test('To confirm is on the rail, and its page says Waiting for your confirmation', () => {
-  const view = DESK_VIEWS.find(item => item.key === 'confirm')
-  assert.equal(view.label, 'To confirm')
-  assert.equal(view.heading, 'Waiting for your confirmation')
-  assert.equal(railBadge('confirm', { reviewsConfirm: 2 }), 2)
-  assert.equal(railBadge('confirm', {}), 0)
+test('the rail has four views and every older view lands inside one of them', () => {
+  assert.deepEqual(DESK_VIEWS.map(view => view.label), ['Needs you', 'Review requests', 'My PRs', 'Agent runs'])
+  assert.deepEqual(DESK_VIEWS.map(view => view.key), ['needs', 'requests', 'mine', 'runs'])
+  const landing = { confirm: 'needs', edits: 'needs', merged: 'mine', work: 'runs', reviews: 'runs', needs: 'needs', runs: 'runs' }
+  for (const [old, now] of Object.entries(landing)) assert.equal(deskViewKey(old), now, old)
+})
+
+test('the Needs you badge is the sum of the chips next to it, whatever the page holds', () => {
+  const incoming = [
+    pr(1, { reviewRequested: true, author: { login: 'teammate' } }),
+    pr(2, { reviewDecision: 'APPROVED' }),
+    pr(3, { commits: rollup(3, 1) }),
+    pr(4, { reviewDecision: 'APPROVED', isDraft: true }),
+  ]
+  const entries = [
+    { id: 'o/r#7', bucket: 'waiting', item: { repo: 'o/r', number: 7 } },
+    { id: 'o/r#8', bucket: 'running', item: { repo: 'o/r', number: 8 } },
+    { id: 'o/r#9', bucket: 'done', item: { repo: 'o/r', number: 9 } },
+  ]
+  const counts = deskCounts({ decisions: [], incoming, records: [], login: 'owner', reviews: { running: 1 }, reviewEntries: entries })
+  const chips = NEEDS_CHIPS.map(chip => chip.count(counts))
+  assert.deepEqual(chips, [0, 1, 1, 1, 1])
+  assert.equal(railBadge('needs', counts), chips.reduce((a, b) => a + b, 0))
+  // A draft ready to open and local files are not urgent: they never enter the number.
+  assert.equal(counts.drafts, 1)
+})
+
+test('an agent run on a PR that already has a row in Needs you is not counted twice', () => {
+  const incoming = [pr(1, { reviewRequested: true, author: { login: 'teammate' } })]
+  const entries = [{ id: 'o/r#1', bucket: 'waiting', item: { repo: 'o/r', number: 1 } }, { id: 'o/r#2', bucket: 'stalled', item: { repo: 'o/r', number: 2 } }]
+  const counts = deskCounts({ incoming, login: 'owner', reviewEntries: entries })
+  assert.equal(counts.agent, 1)
+  assert.equal(counts.requests, 1)
 })
 
 test('a submitted review takes only its own PR out of the review requests', () => {

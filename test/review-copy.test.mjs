@@ -120,6 +120,6 @@ test('each Agent menu job titles its own window', async () => {
   const merge = reviewWindowCopy({ mode: 'review_merge', intent: 'review', posting: true, verdict: true })
   assert.equal(merge.title, 'Review', 'merging is a switch inside Review, not its own job')
   assert.equal(merge.steps.length, 5)
-  assert.equal(reviewWindowCopy({ mode: 'review', intent: 'check_my_pr' }).title, 'Check my PR')
+  assert.equal(reviewWindowCopy({ mode: 'review', intent: 'check_my_pr' }).title, 'Review')
   assert.equal(reviewWindowCopy({ mode: 'review' }).title, 'Review', 'a saved link or retry without a job')
 })

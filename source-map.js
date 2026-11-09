@@ -325,7 +325,7 @@ export function projectUpstreamLine(project, check = null) {
   if (!project || project.builtHere || project.kind === 'external' || !project.canonical_repo) return null
   if (!project.available) return { tone: 'muted', strong: 'The local files', text: ' could not be read.' }
   if (project.conflictFiles > 0 || project.state === 'conflict') {
-    return { tone: 'warn', strong: 'An update from GitHub', text: ' conflicts with your edits.', update: true }
+    return { tone: 'warn', strong: 'An update from GitHub', text: ' conflicts with your local changes.', update: true }
   }
   if (projectHasSharedUpdates(project)) {
     const count = Number((project.semanticAvailable ? project.incomingFiles : project.originBehind) || 0)

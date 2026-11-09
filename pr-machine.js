@@ -15,6 +15,7 @@
 //   - Only new commits bring their PR back for re-review; replies never do.
 //   - One agent job per PR at a time.
 // Pure: no DOM, no network.
+import { NAMES, rerunName } from './names.js'
 
 const WRITE = ['WRITE', 'MAINTAIN', 'ADMIN']
 const MAINTAINER = ['MAINTAIN', 'ADMIN']
@@ -76,7 +77,7 @@ export const STATES = {
   'reviewer.to_review': { turn: 'you', label: 'To review', headline: 'Their PR · your turn: review it', next: 'review' },
   'reviewer.result_ready': { turn: 'you', label: 'Review ready', headline: 'Their PR · your review is ready. Send a verdict or keep it private', next: 'draft_verdict' },
   'reviewer.waiting_author': { turn: 'other', label: 'Waiting on {author}', headline: 'Their PR · you asked for changes. Waiting on {author}' },
-  'reviewer.re_review': { turn: 'you', label: 'New commits · review again', headline: 'Their PR · new commits since your review. Re-review', next: 'review' },
+  'reviewer.re_review': { turn: 'you', label: 'New commits · review again', headline: 'Their PR · new commits since your review. Review again', next: 'review' },
   'reviewer.reviewed': { turn: 'none', label: 'Reviewed', headline: 'Their PR · you reviewed this version' },
   'reviewer.kept_private': { turn: 'none', label: 'Kept private', headline: 'Their PR · you kept your review of this version private' },
   'reviewer.mergeable': { turn: 'you', label: 'Ready to merge', headline: 'Their PR · approved at this version, {green}. Merge it', next: 'merge' },
@@ -154,15 +155,15 @@ const outboxIs = (d, state) => (d.outbox?.state === state ? '' : 'Nothing like t
 // Every action. `by` says who acts: an agent job, or your own tap (each behind a
 // confirm sheet). `when` returns '' when allowed, otherwise the reason it is not.
 export const ACTIONS = [
-  { id: 'check_my_pr', by: 'agent', roles: ['author'], title: 'Check my PR', detail: 'Private. Nothing is posted.',
+  { id: 'check_my_pr', by: 'agent', roles: ['author'], title: NAMES.review, detail: 'Private. Nothing is posted.',
     when: (facts, d) => firstReason(readable(facts), stillOpen(facts), jobIdle(facts), nothingInFlight(d)) },
-  { id: 'respond', by: 'agent', roles: ['author'], title: 'Respond to feedback', detail: 'Answers every point, then one approval sheet for the pushes and replies.',
+  { id: 'respond', by: 'agent', roles: ['author'], title: NAMES.respond, detail: 'Answers every point, then one approval sheet for the pushes and replies.',
     when: (facts, d) => firstReason(readable(facts), stillOpen(facts), jobIdle(facts), nothingInFlight(d), somethingToAnswer(facts, d) ? '' : 'Nothing to respond to.') },
-  { id: 'finish_it', by: 'agent', roles: ['author'], title: 'Finish it for me', detail: 'Responds, checks and fixes. Stops for your approval before each push.',
+  { id: 'finish_it', by: 'agent', roles: ['author'], title: NAMES.finishIt, detail: 'Responds, checks and fixes. Stops for your approval before each push.',
     when: (facts, d) => firstReason(readable(facts), stillOpen(facts), mayWrite(facts.permission) ? '' : 'Needs write access to this repository.', jobIdle(facts), nothingInFlight(d)) },
-  { id: 'review', by: 'agent', roles: ['reviewer'], title: d => (d.mine || d.result || d.earlier ? 'Re-review' : 'Review'), detail: 'Private, drafted for you, or posted by the agent if you allow it.',
+  { id: 'review', by: 'agent', roles: ['reviewer'], title: d => (d.mine || d.result || d.earlier ? NAMES.reviewAgain : NAMES.review), detail: 'Private, drafted for you, or posted by the agent if you allow it.',
     when: (facts, d) => firstReason(readable(facts), stillOpen(facts), jobIdle(facts), nothingInFlight(d)) },
-  { id: 'take_over', by: 'agent', roles: ['reviewer'], title: 'Take over', detail: 'Maintainers only. Needs a reason, and says so on the PR. Each push needs your approval.',
+  { id: 'take_over', by: 'agent', roles: ['reviewer'], title: NAMES.takeOver, detail: 'Maintainers only. Needs a reason, and says so on the PR. Each push needs your approval.',
     when: (facts, d) => firstReason(readable(facts), stillOpen(facts), MAINTAINER.includes(facts.permission) ? '' : 'Only maintainers can take over someone else’s PR.', jobIdle(facts), nothingInFlight(d)) },
 
   { id: 'send_draft', by: 'you', roles: ['author', 'reviewer'], title: 'Send…', when: (facts, d) => outboxIs(d, 'drafted') },
@@ -173,16 +174,16 @@ export const ACTIONS = [
     when: (facts, d) => firstReason(readable(facts), d.result && !d.mineAtHead && !d.outbox ? '' : 'Review this version first.') },
   { id: 'set_aside', by: 'you', roles: ['author', 'reviewer'], title: 'Set aside…',
     when: (facts, d) => firstReason(readable(facts), d.result && !d.result.setAside && (facts.role === 'reviewer' || d.openFindings) ? '' : 'Nothing to set aside.') },
-  { id: 'open_for_review', by: 'you', roles: ['author'], title: 'Open for review', when: facts => firstReason(readable(facts), facts.lifecycle === 'draft' ? jobIdle(facts) : 'It is already open for review.') },
-  { id: 'back_to_draft', by: 'you', roles: ['author'], title: 'Back to draft', when: facts => firstReason(readable(facts), facts.lifecycle === 'open' ? jobIdle(facts) : 'It is not open for review.') },
-  { id: 'ask_rereview', by: 'you', roles: ['author'], title: 'Ask for re-review',
+  { id: 'open_for_review', by: 'you', roles: ['author'], title: NAMES.openForReview, when: facts => firstReason(readable(facts), facts.lifecycle === 'draft' ? jobIdle(facts) : 'It is already open for review.') },
+  { id: 'back_to_draft', by: 'you', roles: ['author'], title: NAMES.backToDraft, when: facts => firstReason(readable(facts), facts.lifecycle === 'open' ? jobIdle(facts) : 'It is not open for review.') },
+  { id: 'ask_rereview', by: 'you', roles: ['author'], title: NAMES.askRereview,
     when: (facts, d) => (d.changesOlder.length || d.approvedOlder.length ? firstReason(readable(facts), stillOpen(facts)) : 'Nobody reviewed an older version.') },
-  { id: 'merge', by: 'you', roles: ['author', 'reviewer'], title: 'Merge', when: (facts, d) => mergeBlocker(facts, d) },
-  { id: 'close', by: 'you', roles: ['author', 'reviewer'], title: 'Close',
+  { id: 'merge', by: 'you', roles: ['author', 'reviewer'], title: NAMES.merge, when: (facts, d) => mergeBlocker(facts, d) },
+  { id: 'close', by: 'you', roles: ['author', 'reviewer'], title: NAMES.closePr,
     when: facts => firstReason(readable(facts), stillOpen(facts), facts.role === 'author' || mayWrite(facts.permission) ? '' : 'Needs write access.', jobIdle(facts)) },
   { id: 'retry', by: 'you', roles: ['author', 'reviewer'], title: 'Try again', when: facts => (readable(facts) ? '' : 'Already up to date.') },
   { id: 'open_job', by: 'you', roles: ['author', 'reviewer'], title: 'Answer the agent', when: facts => (facts.job?.state === 'needs_answer' ? '' : 'No question is waiting.') },
-  { id: 'rerun_job', by: 'you', roles: ['author', 'reviewer'], title: 'Run it again', when: facts => (facts.job?.state === 'stalled' ? '' : 'Nothing has stalled.') },
+  { id: 'rerun_job', by: 'you', roles: ['author', 'reviewer'], title: (d, facts) => rerunName(facts.job?.kind), when: facts => (facts.job?.state === 'stalled' ? '' : 'Nothing has stalled.') },
 ]
 
 // The people a headline names: who approved this version, or whose review is of an older one.
@@ -196,8 +197,8 @@ function headlineFor(key, facts, d) {
     .replace('{checks}', checks).replace('{green}', facts.checks === 'none' ? 'no checks' : 'checks green')
 }
 
-// The one entry point: facts in, { role, state, turn, label, headline, next, waitingOn, actions,
-// approvedBy, rereviewFrom } out. The last two name people: who approved this version, and
+// The one entry point: facts in, { role, state, turn, label, headline, next, jobKind, waitingOn, actions,
+// approvedBy, rereviewFrom } out. `jobKind` is the kind of the PR's agent job ('' when none). The last two name people: who approved this version, and
 // whose review is of an older one.
 export function decide(facts) {
   const d = derive(facts)
@@ -205,11 +206,11 @@ export function decide(facts) {
   const state = STATES[key]
   const actions = ACTIONS.filter(action => action.roles.includes(facts.role)).map(action => {
     const reason = action.when(facts, d)
-    const title = typeof action.title === 'function' ? action.title(d) : action.title
+    const title = typeof action.title === 'function' ? action.title(d, facts) : action.title
     return { id: action.id, by: action.by, title, detail: action.detail || '', enabled: !reason, reason, highlighted: action.id === state.next && !reason }
   })
   const waitingOn = state.turn !== 'other' ? '' : facts.role === 'reviewer' ? facts.author || 'the author' : headlineWho(key, d).join(', ') || 'reviewers'
   const label = state.label.replace('{author}', facts.author || 'the author')
-  return { role: facts.role, state: key, turn: state.turn, label, headline: headlineFor(key, facts, d), next: state.next || '', waitingOn, actions,
+  return { role: facts.role, state: key, turn: state.turn, label, headline: headlineFor(key, facts, d), next: state.next || '', jobKind: facts.job?.kind || '', waitingOn, actions,
     approvedBy: d.approvedAtHead, rereviewFrom: [...new Set([...d.changesOlder, ...d.approvedOlder])] }
 }

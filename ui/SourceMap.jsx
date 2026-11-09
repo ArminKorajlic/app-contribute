@@ -11,14 +11,15 @@ import { ProjectIcon } from './ProjectIcon.jsx'
 import { TimeAgo } from './GithubParts.jsx'
 import { ProjectFileChanges } from './ProjectEdits.jsx'
 import { TaskContext, TaskPane } from './TaskPane.jsx'
-import { DESK_VIEWS, splitProjects } from '../desk.js'
+import { DESK_VIEWS, deskViewKey, splitProjects } from '../desk.js'
+import { NAMES } from '../names.js'
 import { DeskChips, DeskCounts, DeskRail } from './Desk.jsx'
 import { DeskView } from './DeskViews.jsx'
 import { openGithubSettings } from '../github-connection.js'
 
 const FILTERS = [
   ['all', 'All'],
-  ['local', 'With your edits'],
+  ['local', 'With local changes'],
   ['updates', 'Behind GitHub'],
 ]
 
@@ -221,13 +222,15 @@ export function SourceMap({
   onRetry,
   loadProjectDiff,
   renderActivity,
-  repositoryPicker,
+  addProject = null,
   onProjectOpenChange,
   checks = {},
   attention = {},
   desk = { view: 'projects', onView: () => {}, counts: {}, login: '', records: [], lastLooked: '', decisionsFor: () => [], onOpenPull: () => {}, pull: null, onClosePull: () => {}, renderPull: () => null },
 }) {
   const [filter, setFilter] = useState('all')
+  // A Needs you chip narrows the list to its rows; a second tap shows them all again.
+  const [needsFilter, setNeedsFilter] = useState('')
   const [query, setQuery] = useState('')
   const [deskQuery, setDeskQuery] = useState('')
   const filtered = useMemo(
@@ -359,7 +362,7 @@ export function SourceMap({
   // first, then local-only apps, quiet apps, and repositories on GitHub.
   const deskGroups = splitProjects(projects, attention)
   const orderedProjects = [...deskGroups.active, ...deskGroups.builtHere, ...deskGroups.quiet, ...deskGroups.external]
-  const openView = key => { desk.onClosePull(); if (selected) closeProject(); desk.onView(key) }
+  const openView = key => { desk.onClosePull(); if (selected) closeProject(); setNeedsFilter(''); desk.onView(deskViewKey(key)) }
   const openProjectFromRail = key => { desk.onClosePull(); void openProject(key) }
   function openRecordFromDesk(project, item) {
     void openProject(project.key)
@@ -368,11 +371,11 @@ export function SourceMap({
   const externalQuestions = external.reduce((count, project) => count + (project.reviewRequests?.length || 0), 0)
   if (loading && !snapshot && !projects.length) return <LoadingState />
   const currentView = DESK_VIEWS.find(item => item.key === desk.view)
-  const viewLabel = currentView?.heading || currentView?.label || 'Your projects'
+  const viewLabel = currentView?.heading || currentView?.label || NAMES.repositories
   return (
     <section className={'co-projects-view' + (selectedProject ? ' is-focus' : '')} aria-label="Project details">
       <div className="co-desk">
-      <DeskRail view={desk.view} counts={desk.counts} projects={projects} attention={attention} selectedKey={selected} onView={openView} onOpenProject={openProjectFromRail} />
+      <DeskRail view={desk.view} counts={desk.counts} projects={projects} attention={attention} selectedKey={selected} onView={openView} onOpenProject={openProjectFromRail} addProject={addProject?.(true)} />
       <div className="co-desk-pane">
       {desk.pull ? (
         <div className="co-pull-page">
@@ -388,11 +391,8 @@ export function SourceMap({
           <div>
             <h2>{viewLabel}</h2>
           </div>
-          <div className="co-project-view-actions">
-            {repositoryPicker}
-          </div>
         </header>
-        {desk.view === 'needs' ? <DeskCounts counts={desk.counts} onView={openView} /> : null}
+        {desk.view === 'needs' ? <DeskCounts counts={desk.counts} filter={needsFilter} onFilter={setNeedsFilter} onView={openView} /> : null}
         {desk.view !== 'projects' && desk.lastLooked ? <p className="co-desk-legend"><span className="co-newdot" /><TimeAgo prefix="marks what changed since you last looked, " value={desk.lastLooked} /></p> : null}
         </>
       )}
@@ -419,9 +419,9 @@ export function SourceMap({
           <>
             <label className="co-desk-search">
               <Icon name="search" size={16} />
-              <input type="search" placeholder="Find a PR, person or project" aria-label="Find a PR, person or project" value={deskQuery} onChange={event => setDeskQuery(event.target.value)} />
+              <input type="search" placeholder="Find a PR, person or repository" aria-label="Find a PR, person or repository" value={deskQuery} onChange={event => setDeskQuery(event.target.value)} />
             </label>
-            <DeskView view={desk.view} projects={orderedProjects} records={desk.records} login={desk.login} decisionsFor={desk.decisionsFor} lastLooked={desk.lastLooked} query={deskQuery} runs={desk.runs} chats={desk.respondChats} ignored={desk.ignored} reviews={desk.reviews} onOpenProject={openProject} onOpenPull={desk.onOpenPull} onOpenRecord={openRecordFromDesk} />
+            <DeskView view={desk.view} projects={orderedProjects} records={desk.records} login={desk.login} decisionsFor={desk.decisionsFor} lastLooked={desk.lastLooked} query={deskQuery} runs={desk.runs} chats={desk.respondChats} ignored={desk.ignored} reviews={desk.reviews} counts={desk.counts} needsFilter={needsFilter} onOpenProject={openProject} onOpenPull={desk.onOpenPull} onOpenRecord={openRecordFromDesk} />
           </>
         ) : (
         <>
@@ -472,6 +472,7 @@ export function SourceMap({
             <p>Shown because Contribute has saved history here, you added the repository, or a pull request currently involves you. Other repositories stay on GitHub until you add or work on them.</p>
             <ProjectGroup label="" projects={external} selectedKey="" onSelect={openProject} />
           </details> : null}
+          {addProject ? <div className="co-directory-add">{addProject(false)}</div> : null}
           </div>
         </>
         )

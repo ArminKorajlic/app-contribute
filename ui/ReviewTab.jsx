@@ -8,6 +8,7 @@ import { CopyId, commentReference } from './CopyId.jsx'
 import { ReviewFrame } from './ReviewFrame.jsx'
 import { TimeAgo } from './GithubParts.jsx'
 import { RepairProposal, VerdictProposal, savedVersion } from './RunDetail.jsx'
+import { NAMES } from '../names.js'
 
 // Seconds since the run started, ticking once a second while `running`.
 function useElapsed(startedAt, running) {
@@ -55,7 +56,7 @@ export function ReviewTab({ pr, status, standing = null, earlier = null, own = n
     // The Agent button above already starts a review, so there is nothing to offer here.
     return <div className="co-review-box" aria-label="Review">
       <h4>No review yet</h4>
-      <p className="co-review-note" style={{ color: 'var(--text)', fontSize: 15 }}>You haven’t made a review for this PR.</p>
+      <p className="co-review-note" style={{ color: 'var(--text)', fontSize: 'var(--co-text-body)' }}>You haven’t made a review for this PR.</p>
       {readOnly ? null : <p className="co-review-note">Use Agent above to start one.</p>}
     </div>
   }
@@ -84,13 +85,13 @@ export function ReviewTab({ pr, status, standing = null, earlier = null, own = n
     {item.verdict_proposal ? <VerdictProposal proposal={item.verdict_proposal} mode={run.mode} busy={busy} own={own}
       onDecide={onVerdict ? (proposal, decision, extra) => onVerdict(item, proposal, decision, extra) : null} onCheck={onCheck || null} /> : null}
     <RepairProposal item={item} busy={busy} onDecide={onRepair && !readOnly ? (attempt, decision) => onRepair(item, attempt, decision) : null} />
-    {posted ? <a className="co-quiet-action" href={item.public_review.url} target="_blank" rel="noopener noreferrer">View the posted review on GitHub</a> : null}
+    {posted ? <a className="co-btn co-btn-quiet" href={item.public_review.url} target="_blank" rel="noopener noreferrer">View the posted review on GitHub</a> : null}
     {item.tests ? <details className="co-task-details"><summary>What it ran</summary><p className="co-review-note">{item.tests}</p></details> : null}
     <p className="co-review-note">{savedVersion(item, pulls, listState)}</p>
     {error ? <p role="alert">{error}</p> : null}
     {tone.key === 'ignored' && note ? <p className="co-review-note">Ignored: {note.reason}. Only for this version; it comes back if the PR changes.</p> : null}
     <div className="co-review-actions">
-      {plan.map(action => <button key={action.key} type="button" disabled={busy && action.key !== 'ask'} className={action.primary ? 'co-btn co-btn-primary' : action.quiet ? 'co-quiet-action' : 'co-btn'} onClick={handlers[action.key]}>{action.label}</button>)}
+      {plan.map(action => <button key={action.key} type="button" disabled={busy && action.key !== 'ask'} className={action.primary ? 'co-btn co-btn-primary' : action.quiet ? 'co-btn co-btn-quiet' : 'co-btn'} onClick={handlers[action.key]}>{action.label}</button>)}
     </div>
   </div>
   return <ReviewFrame state={standing ? frameOf(standing) : 'idle'} radius={12}>{body}</ReviewFrame>
@@ -105,10 +106,10 @@ function EarlierReview({ earlier, readOnly, onStart, role }) {
       <h4>Reviewed an earlier version</h4>
       <span className="co-review-version">{item.head_sha?.slice(0, 7) || '…'} → {item.base_ref || 'main'}</span>
     </div>
-    <p className="co-review-note" style={{ color: 'var(--text)', fontSize: 15 }}>The last review was <TimeAgo value={run.created_at} />, on commit <code>{item.head_sha?.slice(0, 7)}</code>. This PR has changed since, so its findings may no longer apply.</p>
+    <p className="co-review-note" style={{ color: 'var(--text)', fontSize: 'var(--co-text-body)' }}>The last review was <TimeAgo value={run.created_at} />, on commit <code>{item.head_sha?.slice(0, 7)}</code>. This PR has changed since, so its findings may no longer apply.</p>
     {item.summary ? <ClampedMarkdown markdown={item.summary} /> : null}
     <div className="co-review-actions">
-      {run.chat_id ? <button type="button" className="co-btn" onClick={() => openAgentConversation(run.chat_id)}>Open that review conversation</button> : null}
+      {run.chat_id ? <button type="button" className="co-btn" onClick={() => openAgentConversation(run.chat_id)}>{NAMES.openChat}</button> : null}
       {readOnly ? null : <button type="button" className="co-btn co-btn-primary" onClick={() => onStart?.(role === 'author' ? 'check_my_pr' : 'review')}>{role === 'author' ? 'Check this version' : 'Review this version'}</button>}
     </div>
   </div>

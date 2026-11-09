@@ -24,7 +24,7 @@ export function SeenOnGithub({ tone, text }) {
     setPinned(false)
   }
   return <span ref={root} className={'co-rw-seen ' + (quiet ? 'is-private' : 'is-public') + (pinned ? ' is-pinned' : '')} onKeyDown={dismiss}>
-    <button type="button" className="co-rw-seen-btn" aria-label="Seen on GitHub" aria-describedby={cardId} onClick={() => setPinned(value => !value)}>
+    <button type="button" className="co-btn co-btn-quiet co-btn-icon co-rw-seen-btn" aria-label="Seen on GitHub" aria-describedby={cardId} onClick={() => setPinned(value => !value)}>
       <Icon name={quiet ? 'lock' : 'globe'} size={20} />
     </button>
     <span id={cardId} role="tooltip" className="co-rw-seen-card"><strong>Seen on GitHub:</strong> {text}</span>

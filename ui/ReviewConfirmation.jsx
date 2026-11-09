@@ -7,6 +7,7 @@ import { Icon } from './Icons.jsx'
 import { ReviewPromptPreview } from './ReviewPromptSettings.jsx'
 import { AgentModelSettings } from './AgentModelSettings.jsx'
 import { SeenOnGithub } from './SeenOnGithub.jsx'
+import { CloseWindowButton, WindowHead } from './WindowHead.jsx'
 
 // Finish it for me and Take over promise to stop before every push for your approval and never to
 // merge. Only a Möbius that advertises the PR machine keeps that promise: an older one pushes without
@@ -28,7 +29,7 @@ function Switch({ checked, disabled, label, detail, onChange }) {
 // tap; "Agent posts" lets the agent send its verdict itself, and only when you pick it.
 const WHO = [
   ['private', 'Only me', 'It writes its findings for you. Nothing reaches GitHub.'],
-  ['draft', 'Draft for me', 'It drafts approve, request changes or comment with its wording. Nothing is posted until you send it. It waits under To confirm.'],
+  ['draft', 'Draft for me', 'It drafts approve, request changes or comment with its wording. Nothing is posted until you send it. It waits under Needs you.'],
   ['agent', 'Agent posts', 'It posts its verdict from your account: approve, request changes or comment. You allowed it here, for this review only.'],
 ]
 export const WHO_OPTIONS = {
@@ -58,23 +59,6 @@ function TakeoverReason({ value, disabled, onChange }) {
       onChange={event => onChange(event.target.value)} />
     <small>Posted on the PR as a comment from your account, so its author knows{value.trim() ? <>: “Taking this PR over: {value.trim()}”</> : '.'}</small>
   </label>
-}
-
-function PullHeading({ pulls, title, titleId, onCancel, takeover, seen }) {
-  const one = pulls.length === 1
-  return <header className="co-rw-head">
-    <span className="co-rw-icon"><Icon name={takeover ? 'fix' : 'review'} size={22} /></span>
-    <div>
-      <h3 id={titleId}>{title}</h3>
-      {one
-        ? <p className="co-rw-pr"><strong>#{pulls[0].number} {pulls[0].title}</strong><span>{pulls[0].repository.nameWithOwner}</span></p>
-        : <><p className="co-rw-pr"><strong>{pulls.length} PRs</strong></p><ul className="co-rw-list">{pulls.map(pr => <li key={prKey(pr)}><strong>#{pr.number}</strong> {pr.title}<span>{pr.repository.nameWithOwner}</span></li>)}</ul></>}
-    </div>
-    {seen || onCancel ? <div className="co-rw-tools">
-      {seen}
-      {onCancel ? <button type="button" className="co-quiet-action co-rw-close" aria-label="Close" onClick={onCancel}><Icon name="close" size={18} /></button> : null}
-    </div> : null}
-  </header>
 }
 
 function WhatHappens({ copy }) {
@@ -119,10 +103,12 @@ function ReviewSwitches({ choice, promptOptions, capabilities, onModeChange, onO
     onOptionsChange({ ...promptOptions, ...choice.options, ...WHO_OPTIONS[key] })
     if (key !== 'draft' && granted.merge) onModeChange?.('review')
   }
-  const mergeSwitch = onModeChange && choice.intent === 'review' ? <Switch checked={granted.merge} disabled={busy || (!granted.merge && !!mergeBlocker)}
-    label="Merge after I approve"
-    detail={!granted.merge && mergeBlocker ? mergeBlocker : hints.merge}
-    onChange={checked => onModeChange(checked ? 'review_merge' : 'review')} /> : null
+  // A switch that cannot be turned on is no switch: the reason is a plain line, so nothing looks available that is not.
+  const blocked = !granted.merge && !!mergeBlocker
+  const mergeSwitch = !onModeChange || choice.intent !== 'review' ? null : blocked
+    ? <p className="co-rw-option is-line"><strong>Merge after I approve</strong><small>{mergeBlocker}</small></p>
+    : <Switch checked={granted.merge} disabled={busy} label="Merge after I approve" detail={hints.merge}
+      onChange={checked => onModeChange(checked ? 'review_merge' : 'review')} />
   return <>
     {canDraft ? <WhoSees who={who} agentAllowed={capabilities?.agent_submits_verdict === true} disabled={busy || !promptOptions} onChange={pick} /> : null}
     {mergeSwitch && canDraft ? <div className="co-rw-options">{mergeSwitch}</div> : null}
@@ -132,7 +118,7 @@ function ReviewSwitches({ choice, promptOptions, capabilities, onModeChange, onO
 
 // The exact heads and target tips behind this approval, out of the way.
 function VersionDetails({ pulls, live }) {
-  return <details className="co-task-details co-rw-versions"><summary>{live ? 'Versions it starts from' : 'Exact versions'}</summary>
+  return <details className="co-task-details co-rw-versions"><summary>{live ? (pulls.length === 1 ? 'Commit this review covers' : 'Commits this review covers') : 'Exact versions'}</summary>
     {pulls.map(pr => <p key={prKey(pr)}>#{pr.number}: <code>{pr.headRefOid?.slice(0, 7)} → {pr.baseRefName} ({live ? 'last seen ' : ''}{baseTip(pr)?.slice(0, 7)})</code></p>)}
   </details>
 }
@@ -182,7 +168,8 @@ export function ReviewConfirmation({ choice, busy, disabled, error, onConfirm, o
   const postingUnavailable = choice.mode === 'review_merge' && !!capabilities && !(capabilities.post_review === true && capabilities.propose_verdict === true)
   const startBlocked = takeover && !!blocker
   return <section ref={confirmation} tabIndex={-1} className="co-review-window" aria-labelledby={titleId}>
-    <PullHeading pulls={choice.pulls} title={copy.title} titleId={titleId} onCancel={onCancel} takeover={takeover} seen={<SeenOnGithub tone={copy.publicEffect.tone} text={copy.publicEffect.text} />} />
+    <WindowHead icon={takeover ? 'fix' : 'review'} title={copy.title} titleId={titleId} pulls={choice.pulls}
+      tools={<><SeenOnGithub tone={copy.publicEffect.tone} text={copy.publicEffect.text} />{onCancel ? <CloseWindowButton onClick={onCancel} /> : null}</>} />
     <div className="co-rw-body">
       {takeover && choice.intent === 'take_over' && onReasonChange ? <TakeoverReason value={choice.takeover_reason || ''} disabled={busy} onChange={onReasonChange} /> : null}
       {takeover

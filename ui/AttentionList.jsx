@@ -98,7 +98,7 @@ export function AttentionList({ items = [], heading, onSelect }) {
         <span className="co-attn-toggle"><span className="co-attn-show">{items.length === 1 ? 'Show' : `Show ${items.length}`}</span><span className="co-attn-hide">Hide</span><Icon name="chevron" size={14} /></span>
       </summary>
       <div className="co-run-list">{shown.map(item => <AttentionRow key={item.id} item={item} heading={heading} onSelect={onSelect} />)}</div>
-      {rest > 0 ? <button type="button" className="co-attn-more" onClick={() => setShowAll(!showAll)}><Icon name="chevron" size={14} />{showAll ? 'Show fewer' : rest === 1 ? 'Show the other one' : `Show the other ${rest}`}</button> : null}
+      {rest > 0 ? <button type="button" className="co-btn co-btn-quiet co-attn-more" onClick={() => setShowAll(!showAll)}><Icon name="chevron" size={14} />{showAll ? 'Show fewer' : rest === 1 ? 'Show the other one' : `Show the other ${rest}`}</button> : null}
     </details>
   )
 }
