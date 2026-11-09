@@ -12,7 +12,8 @@ the commits and changed files, the tests) and the owner presses **Post**, **Repl
 chat** or **Discard**. Post sends the same chat one message that tells it to run
 `respond_result.py post`; that command checks the owner's approval and posts exactly
 what was shown, in a fixed order: push the commits, post the replies, update the
-description, ask for the re-review.
+description, ask for the re-review. **Until the host can vouch for the owner's press
+(the gate, below), Post is off**: the card still shows everything, and nothing is posted.
 
 ## Where things live
 
@@ -29,6 +30,37 @@ whose slug is `contribute`; the helper finds it in the database, like
 
 One result per PR: saving again replaces it. Two writers never share a file, so nothing
 needs compare-and-swap. Every write is atomic (temporary file, then rename).
+
+## The gate: Post is off until the host vouches for the owner
+
+The decision file is an ordinary file in the app's storage, and the responding agent can
+write that storage itself, so a decision that names the right result and digest does not
+show that the owner pressed Post. Until the host can show it, nothing is published.
+
+* **The capability.** The host advertises `owner_grant` in the `capabilities` of
+  `GET /api/github/contributions/<app id>/review-presets`, the place the app already reads
+  `merge_now`, `review_fix_merge` and the other host features. `true` means: the host
+  provides an owner grant, bound to one result and digest, that only the owner's own
+  session can issue and the responding agent cannot mint. No Möbius advertises it today,
+  so the gate is **off**.
+* **Where it is checked, once on each side.** In the app, `ownerGrantOffered()` in
+  `respond-result.js` (constant `OWNER_GRANT_CAPABILITY`) decides whether the card's Post,
+  Send again and Try again are on (`ownerGrant` on `ResponseCard`, from `reviewProps` in
+  `ui/PullRequests.jsx`) and whether `approveResponse()` in `respond-flow.js` writes
+  anything. In the helper, `owner_grant_offered()` in `respond_result.py` (constant
+  `OWNER_GRANT_CAPABILITY`) is asked by `post` before it reads or writes anything. It asks
+  the host the way `review_prs.py` does (`SCRIPTS_DIR`, then review-presets) and counts any
+  failure to ask as no.
+* **Off means.** `post` exits 3 with one sentence and publishes nothing (no receipts, no
+  state change, not even a lock file); `post --dry-run`, `save` and `show` work as before.
+  In the app the Post button is disabled with the reason on the card ("Post is off for now:
+  Möbius cannot yet confirm it was you who pressed it. The answer stays saved. Copy the
+  replies to post them yourself, or use Reply in chat."); Reply in chat and Discard (which
+  publishes nothing) stay on; the answer, replies and description stay readable.
+* **On means only that the first check passes.** The approval, the digest and the PR checks
+  below stay exactly as they are and are the second check. The gate does not itself verify a
+  grant: whoever makes a host advertise `owner_grant` must also make Post obtain the grant
+  and `post` check it, or the approval file is trusted again.
 
 ## The result (`version: 1`)
 
@@ -136,7 +168,9 @@ Prints the saved result without patches, and whether the owner has approved it.
 ### `post --pr owner/repo#N --id RESULT_ID [--dry-run]`
 
 The only command that does public things. Contribute tells the chat to run it after the
-owner presses Post. In this order, it:
+owner presses Post. Unless `--dry-run` is given it first asks the gate (above) and, when
+the host does not offer the owner grant, refuses with exit 3 before touching anything.
+Then, in this order, it:
 
 1. loads the result (its `id` must match; `posted` means nothing to do, exit 0);
 2. requires the decision file to say `approved` for this `result_id` and the stored `digest`;
@@ -169,11 +203,13 @@ owner presses Post. In this order, it:
    already went out stays in the receipts;
 7. sets `state` to `posted`.
 
-Refusals before step 6 change nothing and exit 3 with the reason (not approved, digest or id
-mismatch, PR closed, PR moved or retargeted). A failure inside step 6 sets `state` to `failed` with
+Refusals before step 6 change nothing and exit 3 with the reason (no owner grant from the
+host, not approved, digest or id mismatch, PR closed, PR moved or retargeted). A failure inside step 6 sets `state` to `failed` with
 `error`, keeps the receipts and exits 4. Every GitHub write goes through `gh api` with the
 JSON body on standard input. Test hooks: `RESPOND_APP_DIR` replaces the storage directory;
-`RESPOND_GIT_REMOTE` replaces the Git URL used to fetch and push.
+`RESPOND_GIT_REMOTE` replaces the Git URL used to fetch and push; the gate reads the host through
+`SCRIPTS_DIR` (its `github_review.py`), which the tests point at `test/fixtures/fake_host`, a fake
+host whose capabilities come from `FAKE_HOST_CAPABILITIES`.
 
 Exit codes: 0 done, 2 bad input, 3 refused, 4 failed part-way.
 
@@ -189,8 +225,9 @@ Exit codes: 0 done, 2 bad input, 3 refused, 4 failed part-way.
   reads "Feedback to answer" again.
 * **Review tab card**: points with their ending, the replies word for word, the description,
   commits and changed files, the tests, what Post will do in order, and Post, Reply in chat and
-  Discard. Post is off while the PR moved, while the chat is working, and while the chat waits on
-  one of its own cards (a chat with an open card refuses new messages).
+  Discard. Post is off without the host's owner grant (the gate), while the PR moved, while the
+  chat is working, and while the chat waits on one of its own cards (a chat with an open card
+  refuses new messages); the card says why in words.
 * **Post** re-reads the result, checks its digest is the one on screen and the PR head is still
   `pr.head_sha`, writes the decision (`approved`), then sends the chat (`chat_id`) this message
   with the stable id `respond-post-<result id>`; if the platform definitely refuses it, the

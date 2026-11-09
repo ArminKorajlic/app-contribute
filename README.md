@@ -476,12 +476,15 @@ point and how it ended, the exact replies, the description, who to ask again, th
 in `respond-results/<owner>__<repo>__<number>.json`. The PR's Review tab shows it with
 **Post**, **Reply in chat** and **Discard**. Post writes the owner's approval
 (`respond-decisions/<slug>.json`) for that exact result and its digest, then tells the
-same chat to run `respond_result.py post`, the only command that publishes. It refuses
-unless the approval names this result, its content is unchanged and the PR is still
-where the work was built; then it pushes the commits (a fast-forward, never forced, so
-they keep their ids), posts the replies, updates the description and asks for the
-re-review, recording each step so a second run repeats nothing. The files, rules, exit
-codes and the app side are in `respond-result.md`.
+same chat to run `respond_result.py post`, the only command that publishes. **Post is off
+until the host can vouch for the owner's press**: an approval file is not proof, because the
+agent can write it, so Post works only on a Möbius that advertises the `owner_grant`
+capability (none does yet); until then the button is disabled with its reason and `post`
+refuses. Past that gate, `post` refuses unless the approval names this result, its content
+is unchanged and the PR is still where the work was built; then it pushes the commits (a
+fast-forward, never forced, so they keep their ids), posts the replies, updates the
+description and asks for the re-review, recording each step so a second run repeats
+nothing. The files, rules, exit codes and the app side are in `respond-result.md`.
 
 ## How the screens stay in sync
 

@@ -4,7 +4,7 @@ import { PullFiles } from './PullFiles.jsx'
 import { openAgentConversation } from './BatchAction.jsx'
 import { Icon } from './Icons.jsx'
 import { NAMES } from '../names.js'
-import { planSteps, stepDone } from '../respond-result.js'
+import { planSteps, POST_OFF_REASON, stepDone } from '../respond-result.js'
 
 // A saved Respond-to-feedback answer on its PR's Review tab: what each point came to, the replies word for word, the commits and
 // changed files, and what Post will do. Reading it is the owner's side of the approval; Post only writes the decision (respond-flow.js).
@@ -91,28 +91,32 @@ function Steps({ result, status }) {
   </div>
 }
 
-function Actions({ view, chat, busy, readOnly, onPost, onDiscard, onRespondAgain }) {
+// Why Post, Send again and Try again are off, or ''. The host's owner grant (the gate) comes before anything about the chat.
+const postBlocker = (status, chat, ownerGrant) => (ownerGrant ? (status === 'ready' ? holdReason(chat) : '') : POST_OFF_REASON)
+
+function Actions({ view, chat, busy, readOnly, ownerGrant, onPost, onDiscard, onRespondAgain }) {
   const { status, result } = view
-  const blocked = holdReason(chat)
+  const blocked = postBlocker(status, chat, ownerGrant)
   const chatButton = label => <button key={label} type="button" className="co-btn" onClick={() => openAgentConversation(result.chat_id)}>{label}</button>
   if (readOnly || status === 'posted') return null
   const buttons = {
     ready: [<button key="post" type="button" className="co-btn co-btn-primary" disabled={busy || !!blocked} onClick={() => onPost(false)}>{busy ? 'Working…' : NAMES.postAnswer}</button>, chatButton(NAMES.replyInChat),
       <button key="discard" type="button" className="co-btn co-btn-quiet" disabled={busy} onClick={onDiscard}>{NAMES.discard}</button>],
-    approved: [<button key="again" type="button" className="co-btn co-btn-primary" disabled={busy} onClick={() => onPost(true)}>{busy ? 'Working…' : NAMES.sendAgain}</button>, chatButton(NAMES.openChat)],
-    failed: [<button key="retry" type="button" className="co-btn co-btn-primary" disabled={busy} onClick={() => onPost(true)}>{busy ? 'Working…' : NAMES.tryAgain}</button>, chatButton(NAMES.openChat)],
+    approved: [<button key="again" type="button" className="co-btn co-btn-primary" disabled={busy || !!blocked} onClick={() => onPost(true)}>{busy ? 'Working…' : NAMES.sendAgain}</button>, chatButton(NAMES.openChat)],
+    failed: [<button key="retry" type="button" className="co-btn co-btn-primary" disabled={busy || !!blocked} onClick={() => onPost(true)}>{busy ? 'Working…' : NAMES.tryAgain}</button>, chatButton(NAMES.openChat)],
     posting: [chatButton(NAMES.openChat)],
     // A second pass is offered only when the PR logic still allows one.
     stale: [onRespondAgain ? <button key="again" type="button" className="co-btn co-btn-primary" disabled={busy} onClick={onRespondAgain}>{NAMES.respondAgain}</button> : null,
       <button key="discard" type="button" className="co-btn co-btn-quiet" disabled={busy} onClick={onDiscard}>{NAMES.discard}</button>],
   }[status]
   return <>
-    {status === 'ready' && blocked ? <p className="co-review-note" role="status">{blocked}</p> : null}
+    {['ready', 'approved', 'failed'].includes(status) && blocked ? <p className="co-review-note" role="status">{blocked}</p> : null}
     <div className="co-review-actions">{buttons}</div>
   </>
 }
 
-export function ResponseCard({ pr, response: view, chat = null, busy = false, error = '', readOnly = false, onPost, onDiscard, onRespondAgain }) {
+// `ownerGrant`: the host offers the grant that lets Post work (respond-result.js, THE GATE). Off unless the caller says it is on.
+export function ResponseCard({ pr, response: view, chat = null, busy = false, error = '', readOnly = false, ownerGrant = false, onPost, onDiscard, onRespondAgain }) {
   const { status, result } = view
   // While the chat holds the PR (it works, or waits on a card of its own) its box above is the one that asks for you.
   const held = status === 'ready' && Boolean(holdReason(chat))
@@ -130,7 +134,7 @@ export function ResponseCard({ pr, response: view, chat = null, busy = false, er
       {status === 'posted' ? null : <Details result={result} open={['ready', 'approved', 'stale'].includes(status)} />}
       {status === 'stale' ? null : <Steps result={result} status={status} />}
       {error ? <p role="alert" className="co-run-error">{error}</p> : null}
-      <Actions view={view} chat={chat} busy={busy} readOnly={readOnly} onPost={onPost} onDiscard={onDiscard} onRespondAgain={onRespondAgain} />
+      <Actions view={view} chat={chat} busy={busy} readOnly={readOnly} ownerGrant={ownerGrant} onPost={onPost} onDiscard={onDiscard} onRespondAgain={onRespondAgain} />
     </div>
   </ReviewFrame>
 }

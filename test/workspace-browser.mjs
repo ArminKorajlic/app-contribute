@@ -6,7 +6,8 @@
 // runReviewRequestChecks (the whole app: a review you submit takes its row out of Review requests) and
 // runReviewHelperWaitChecks (the whole app: a review waiting on its helper reads as at work, not stopped) and
 // runRespondAnswerChecks (the whole app: a Respond-to-feedback chat that asks you is answered from the Review tab, with no Answer-the-agent button),
-// runRespondResultChecks (the whole app: a saved Respond-to-feedback answer is a draft to send in the Review tab, and Post, Discard and its stale and busy states work) and
+// runRespondResultChecks (the whole app, on a Möbius that offers the owner grant: a saved Respond-to-feedback answer is a draft to send in the Review tab, and Post, Discard and its stale and busy states work),
+// runRespondPostOffChecks (the whole app, on a Möbius without the owner grant: Post is off with its reason in words, at every width, and the rest of the card still works) and
 // runRespondAgainChecks (the whole app: Respond again is delivered into the PR's existing conversation as a message).
 // Run one with WORKSPACE_BROWSER_ONLY=runDeskFrameChecks (and one viewport with WORKSPACE_BROWSER_VIEWPORT=desktop), for example while
 // runWorkspaceChecks is red, so the Desk check can still show green.
@@ -1896,6 +1897,7 @@ const savedResponse = (patch = {}) => ({ version: 1, id: 'r-3f9a1c2b04d5', repo:
   commits: [], files: [], bundle: null, digest: 'd'.repeat(64), receipts: { push: null, replies: [], description: null, rerequest: null }, error: null, ...patch })
 const RESPONSE_KEY = 'respond-results/owner__project__7.json', DECISION_KEY = 'respond-decisions/owner__project__7.json'
 window.runRespondResultChecks = async () => {
+  window.fixtureCapabilities = { review_fix_merge: false, post_review: false, owner_grant: true } // a Möbius that offers the owner grant: Post is on
   const checks = []
   const deskFrame = title => [...document.querySelectorAll('.co-frame')].find(node => text(node).includes(title))?.dataset.frame
   const button = label => [...document.querySelectorAll('button')].find(node => text(node) === label)
@@ -1958,6 +1960,48 @@ window.runRespondResultChecks = async () => {
     await until(() => button(NAMES.postAnswer) && button(NAMES.postAnswer).disabled && reviewBody().includes('waiting for your answer to its own card'), 'Post was not held back for the chat’s own card: ' + reviewBody())
     checks.push({ name: 'an out-of-date answer and a chat with a card of its own each hold Post back, in words', status: 'pass' })
     ensure(document.documentElement.scrollWidth <= window.innerWidth, 'The page scrolls sideways: ' + document.documentElement.scrollWidth + ' of ' + window.innerWidth)
+    ensure(calls.forbidden.length === 0, 'Unexpected runtime/transport: ' + JSON.stringify(calls.forbidden))
+    return { status: 'pass', checks, forbidden: calls.forbidden }
+  } catch (error) {
+    return { status: 'fail', checks, error: error.stack, dom: text(query('main')).slice(0, 5000), calls, forbidden: calls.forbidden }
+  }
+}
+
+// A Möbius that does not offer the owner grant (today's: the default fixture capabilities): the answer is readable and can be discussed or
+// discarded, but Post is off, says why in words that fit the screen, and cannot write an approval or message the chat.
+window.runRespondPostOffChecks = async () => {
+  const checks = []
+  const button = label => [...document.querySelectorAll('button')].find(node => text(node) === label)
+  const reviewBody = () => text(query('.co-pr-detail-body'))
+  const reason = 'Post is off for now: Möbius cannot yet confirm it was you who pressed it.'
+  try {
+    reviewRuns.length = 0
+    respondChats.length = 0
+    values.set(RESPONSE_KEY, savedResponse())
+    await mountDeskApp({ pullPatch: OWN_PULL_WITH_FEEDBACK })
+    await until(() => [...document.querySelectorAll('.co-desk-row')].some(node => text(node).includes('Contribution 7')), 'The Desk did not list the PR')
+    await click([...document.querySelectorAll('.co-desk-row')].find(node => text(node).includes('Contribution 7')))
+    await until(() => reviewBody().includes('Replies ready') && button(NAMES.postAnswer), 'The Review tab did not show the saved answer: ' + reviewBody())
+    await until(() => button(NAMES.postAnswer).disabled, 'Post stayed on without the owner grant')
+    ensure(reviewBody().includes(reason) && reviewBody().includes('Reply in chat'), 'The card did not say why Post is off: ' + reviewBody())
+    ensure(reviewBody().includes('Both points are answered.') && reviewBody().includes('A lost answer is unresolved'), 'The answer is no longer readable: ' + reviewBody())
+    ensure(!button(NAMES.replyInChat).disabled && !button(NAMES.discard).disabled, 'Reply in chat or Discard was switched off with Post')
+    checks.push({ name: 'without the owner grant Post is off with its reason in words, and the answer, Reply in chat and Discard stay', status: 'pass' })
+    // The reason and the buttons fit the screen: at 390 px nothing is cut off or scrolls sideways.
+    const note = [...document.querySelectorAll('.co-review-note')].find(node => text(node).startsWith(reason))
+    const edge = node => node.getBoundingClientRect().right
+    ensure(note && edge(note) <= window.innerWidth && edge(button(NAMES.postAnswer)) <= window.innerWidth, 'The reason or Post runs past the screen edge: ' + [note && edge(note), edge(button(NAMES.postAnswer)), window.innerWidth])
+    ensure(document.documentElement.scrollWidth <= window.innerWidth, 'The page scrolls sideways: ' + document.documentElement.scrollWidth + ' of ' + window.innerWidth)
+    checks.push({ name: 'the reason and Post fit the screen width', status: 'pass' })
+    // A press on the disabled Post does nothing: no approval, no message. (The click helper refuses a disabled control, so press it raw.)
+    button(NAMES.postAnswer).click()
+    await new Promise(resolve => setTimeout(resolve, 300))
+    ensure(!values.get(DECISION_KEY) && calls.messages.length === 0, 'Post wrote ' + JSON.stringify(values.get(DECISION_KEY)) + ' and sent ' + calls.messages.length + ' messages')
+    checks.push({ name: 'a press on the disabled Post writes no approval and sends the chat nothing', status: 'pass' })
+    // Discard publishes nothing, so it still works.
+    await click(button(NAMES.discard))
+    await until(() => values.get(DECISION_KEY)?.decision === 'discarded', 'Discard wrote no decision')
+    checks.push({ name: 'Discard still works', status: 'pass' })
     ensure(calls.forbidden.length === 0, 'Unexpected runtime/transport: ' + JSON.stringify(calls.forbidden))
     return { status: 'pass', checks, forbidden: calls.forbidden }
   } catch (error) {
@@ -2316,7 +2360,7 @@ async function main() {
     const protocol = cdp(browser), reports = []
     // Each scenario gets a fresh page, so the whole-app Desk scenario never inherits the project fixture's state.
     // WORKSPACE_BROWSER_ONLY=runDeskFrameChecks runs one scenario.
-    const scenarios = process.env.WORKSPACE_BROWSER_ONLY ? [process.env.WORKSPACE_BROWSER_ONLY] : ['runWorkspaceChecks', 'runPopupFitChecks', 'runDeskFrameChecks', 'runReviewRequestChecks', 'runReviewHelperWaitChecks', 'runRespondAnswerChecks', 'runRespondResultChecks', 'runRespondAgainChecks', 'runSyncChecks', 'runStaleAnswerChecks']
+    const scenarios = process.env.WORKSPACE_BROWSER_ONLY ? [process.env.WORKSPACE_BROWSER_ONLY] : ['runWorkspaceChecks', 'runPopupFitChecks', 'runDeskFrameChecks', 'runReviewRequestChecks', 'runReviewHelperWaitChecks', 'runRespondAnswerChecks', 'runRespondResultChecks', 'runRespondPostOffChecks', 'runRespondAgainChecks', 'runSyncChecks', 'runStaleAnswerChecks']
     const viewports = [{ name: 'desktop', width: 1280, height: 900 }, { name: 'phone', width: 390, height: 844 }].filter(size => !process.env.WORKSPACE_BROWSER_VIEWPORT || size.name === process.env.WORKSPACE_BROWSER_VIEWPORT)
     for (const [viewport, scenario] of viewports.flatMap(size => scenarios.map(name => [size, name]))) {
       const { targetId } = await protocol.send('Target.createTarget', { url: 'about:blank' })

@@ -34,6 +34,7 @@ FIXTURE = Path(__file__).parent / "fixtures" / "respond-result.example.json"
 TOKEN = "TEST-TOKEN-that-must-never-be-printed"
 
 FAKE_GH = (Path(__file__).parent / "fixtures" / "fake_gh.py").read_text(encoding="utf-8")  # shared with respond-contract.test.mjs
+FAKE_HOST = Path(__file__).parent / "fixtures" / "fake_host"  # a Möbius core (SCRIPTS_DIR) that says what it offers; shared too
 
 REPLY_WITH_AWKWARD_TEXT = (
   "@alex both findings were real \u2014 fixed \U0001F680 \u05e9\u05dc\u05d5\u05dd\r\n\r\n"
@@ -125,6 +126,9 @@ class RespondWorld(unittest.TestCase):
       "FAKE_GH_CONFIG": str(self.fake_config),
       "CHAT_ID": "chat-under-test",
       "GH_TOKEN": TOKEN,
+      # Every world but GateTests' posts on a Möbius that offers the owner grant; a test of the gate says otherwise, out loud.
+      "SCRIPTS_DIR": str(FAKE_HOST),
+      "FAKE_HOST_CAPABILITIES": json.dumps({"owner_grant": True}),
     }
     patcher = mock.patch.dict(os.environ, environment)
     patcher.start()
@@ -1252,6 +1256,68 @@ class PostTests(RespondWorld):
       outcome = self.post(result["id"])
     self.assertRefused(outcome, 4, "unexpected RuntimeError: boom")
     self.assertEqual(self.saved_result()["state"], "failed")
+
+
+# --- the gate: no post until the host can vouch for the owner's press ------------------------------------------
+
+
+class GateTests(RespondWorld):
+  """The agent can write the approval file itself, so `post` publishes only on a Möbius that advertises an owner
+  grant it cannot mint (capability `owner_grant`). Without it everything else keeps working."""
+
+  def host_says(self, capabilities) -> None:
+    os.environ["FAKE_HOST_CAPABILITIES"] = capabilities if isinstance(capabilities, str) else json.dumps(capabilities)
+
+  def test_a_forged_approval_publishes_nothing_while_the_host_cannot_vouch_for_the_owner(self):
+    _, _, result = self.approved_result()  # the approval is on disk, however it got there
+    cases = [
+      ("a Möbius that does not advertise the grant", lambda: self.host_says({})),
+      ("the grant advertised as off", lambda: self.host_says({"owner_grant": False})),
+      ("anything but a plain true", lambda: self.host_says({"owner_grant": "yes"})),
+      ("an answer that cannot be read", lambda: self.host_says("{oops")),
+      ("no Möbius core to ask", lambda: os.environ.pop("SCRIPTS_DIR")),
+    ]
+    for name, arrange in cases:
+      with self.subTest(name):
+        with mock.patch.dict(os.environ):
+          arrange()
+          before = self.snapshot()
+          self.assertRefused(self.post(result["id"]), 3, "Post is off for now")
+        self.assertEqual(self.snapshot(), before, "nothing changed, on disk or on GitHub")
+        stored = self.saved_result()
+        self.assertEqual((stored["state"], stored["error"], stored["receipts"]["push"], stored["receipts"]["replies"]), ("ready", None, None, []))
+        self.assertEqual(self.remote_branch(), self.base, "and nothing was pushed")
+    self.assertEqual(self.gh_writes(), [])
+
+  def test_a_post_the_gate_refuses_leaves_no_trace_even_with_nothing_saved(self):
+    self.host_says({})
+    self.assertRefused(self.post("r-000000000000"), 3, "Post is off for now")
+    self.assertFalse(self.app.exists())
+
+  def test_a_dry_run_still_shows_what_post_would_do_while_post_is_off(self):
+    _, _, result = self.approved_result()
+    self.host_says({})
+    before = self.snapshot()
+    outcome = self.post(result["id"], "--dry-run")
+    self.assertEqual(outcome.code, 0, outcome.err)
+    self.assertIn("Post would, in this order:", outcome.out)
+    self.assertEqual(self.snapshot(), before)
+
+  def test_save_and_show_keep_working_while_post_is_off(self):
+    self.host_says({})
+    outcome = self.save(self.input_for(self.two_commits()))
+    self.assertEqual(outcome.code, 0, outcome.err)
+    shown = self.cli("show", "--pr", PULL)
+    self.assertEqual(shown.code, 0, shown.err)
+    self.assertFalse(json.loads(shown.out)["approved"])
+
+  def test_the_approval_is_still_the_second_check_once_the_host_offers_the_grant(self):
+    shas = self.two_commits()
+    self.assertEqual(self.save(self.input_for(shas)).code, 0)
+    result = self.saved_result()
+    self.assertRefused(self.post(result["id"]), 3, "no decision is saved")  # the gate is open, the approval is missing
+    self.decide(result)
+    self.assertEqual(self.post(result["id"]).code, 0)
 
 
 class ProgramTests(RespondWorld):

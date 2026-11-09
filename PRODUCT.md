@@ -181,7 +181,10 @@ the owner, and folds apps with nothing to do.
   how it ended, the replies word for word, the new description, the commits and changed
   files, the tests, and what Post will do in order, with **Post**, **Reply in chat** and
   **Discard**. Post saves the owner's approval for exactly that answer and tells the chat
-  to run one checked command; nothing is pushed or posted before it. The PR reads **Draft
+  to run one checked command; nothing is pushed or posted before it. **Post is off until
+  Möbius can confirm it was the owner who pressed it** (an approval the agent could have
+  written itself proves nothing): the button is disabled with that reason on the card, and
+  the answer, Reply in chat and Discard keep working. The PR reads **Draft
   to send** while the answer waits, **Sending** while it posts and **Not confirmed** if it
   stops part-way (a retry skips what already went out, and a reply that may have gone out
   is only looked for, never sent again). When the PR moves after the answer, the card says

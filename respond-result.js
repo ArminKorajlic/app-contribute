@@ -3,6 +3,16 @@
 //
 // The app reads strictly: a file that breaks a rule is not a response at all, never half shown. The helper
 // has already enforced the same rules, so a file that fails here was edited or is from another version.
+import { NAMES } from './names.js'
+
+// THE GATE on Post. The responding agent shares the app's storage, so it can write an approval itself: a matching approval file does
+// not show the owner pressed Post. Post is therefore offered only when this Möbius advertises an owner grant the agent cannot mint,
+// in the `capabilities` of review-presets (the same place the other host features are read). No Möbius does yet, so Post is off.
+// respond_result.py holds the same name (OWNER_GRANT_CAPABILITY) and asks the same question before it publishes anything.
+export const OWNER_GRANT_CAPABILITY = 'owner_grant'
+export const ownerGrantOffered = capabilities => capabilities?.[OWNER_GRANT_CAPABILITY] === true
+// Until the capabilities are known (or when they cannot be read) the answer is the same as for a Möbius without the grant: off.
+export const POST_OFF_REASON = `${NAMES.postAnswer} is off for now: Möbius cannot yet confirm it was you who pressed it. The answer stays saved. Copy the replies to post them yourself, or use ${NAMES.replyInChat}.`
 
 export const RESULT_FOLDER = 'respond-results/'
 export const DECISION_FOLDER = 'respond-decisions/'

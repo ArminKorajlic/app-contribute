@@ -15,7 +15,7 @@ import { ActionsMenu } from './ActionsMenu.jsx'
 import { ReviewDialog } from './ReviewDialog.jsx'
 import { AddressFeedbackWindow } from './AddressFeedback.jsx'
 import { savedFindings } from '../address-feedback.js'
-import { responseView } from '../respond-result.js'
+import { ownerGrantOffered, responseView } from '../respond-result.js'
 import { approveResponse, discardResponse } from '../respond-flow.js'
 import { ReviewConfirmation } from './ReviewConfirmation.jsx'
 import { ActionConfirm } from './ActionConfirm.jsx'
@@ -529,9 +529,10 @@ export function PullRequests({ appId, token, project, conn, onChanged, onReviewP
       onStart: job => choose([pr], job, prKey(pr)),
       onFix: onStartAgent ? () => choose([pr], 'respond', prKey(pr)) : undefined,
       response: answer,
+      ownerGrant: ownerGrantOffered(capabilities),
       respondBusy: respondBusy === prKey(pr),
       respondError: respondFailure?.key === prKey(pr) ? respondFailure.message : '',
-      onPostResponse: answer && (again => answerAction(pr, () => approveResponse({ slug: answer.slug, digest: answer.result.digest, pr, chat: respondChatOf(respondChats, pr), token, again }))),
+      onPostResponse: answer && (again => answerAction(pr, () => approveResponse({ slug: answer.slug, digest: answer.result.digest, pr, chat: respondChatOf(respondChats, pr), token, capabilities, again }))),
       onDiscardResponse: answer && (() => answerAction(pr, () => discardResponse({ slug: answer.slug, digest: answer.result.digest }))),
       onRespondAgain: onStartAgent ? () => choose([pr], 'respond', prKey(pr)) : undefined,
       onIgnore: onIgnoreReview ? item => setIgnoring({ pr, item }) : undefined,

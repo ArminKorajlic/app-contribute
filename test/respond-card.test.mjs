@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFileSync } from 'node:fs'
 import { frontendModules, renderModule } from './render-harness.mjs'
-import { normalizeDecision, normalizeResult, responseView } from '../respond-result.js'
+import { normalizeDecision, normalizeResult, POST_OFF_REASON, responseView } from '../respond-result.js'
 import { standingFor } from '../pr-standing.js'
 import { NAMES } from '../names.js'
 
@@ -32,7 +32,8 @@ const response = (state = 'ready', patch = {}, decision = null, prPatch = {}) =>
   const entry = { slug: 'owner__repo__7', result: normalizeResult({ ...example(), state, ...patch }), decision }
   return responseView([entry], { ...pr, ...prPatch })
 }
-const card = (t, view, props = {}) => render(t, 'ResponseCard', { pr: { ...pr, ...(props.prPatch || {}) }, response: view, onPost() {}, onDiscard() {}, onRespondAgain() {}, ...props })
+// The card is tested on a Möbius that offers the owner grant (ownerGrant: true); the card without it has its own tests below.
+const card = (t, view, props = {}) => render(t, 'ResponseCard', { pr: { ...pr, ...(props.prPatch || {}) }, response: view, ownerGrant: true, onPost() {}, onDiscard() {}, onRespondAgain() {}, ...props })
 const texts = html => html.replace(/<[^>]+>/g, ' ').replace(/&#x27;|&#39;/g, "'").replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim()
 const buttons = html => [...html.matchAll(/<button[^>]*>(.*?)<\/button>/g)].map(match => texts(match[1])).filter(Boolean)
 // The steps once Post has started: each one's state and its words, including what a screen reader hears.
@@ -80,6 +81,35 @@ test('Post stays off, with the reason in words, while the chat works or waits on
   assert.match(await card(t, response()), /data-frame="verdict"/, 'on its own it is the box that asks for you')
   const busy = await card(t, response(), { busy: true })
   assert.match(busy, /disabled="">(Post|Working…)</)
+})
+
+test('without the host’s owner grant Post is off, with the reason in words, and the answer stays readable and discussable', async t => {
+  const html = await card(t, response(), { ownerGrant: false })
+  if (!html) return
+  assert.match(html, new RegExp(`<button type="button" class="co-btn co-btn-primary" disabled="">${NAMES.postAnswer}</button>`))
+  assert.ok(texts(html).includes(POST_OFF_REASON), 'the reason is on the card: ' + texts(html))
+  assert.match(html, /role="status"[^>]*>Post is off for now: Möbius cannot yet confirm it was you who pressed it\./)
+  assert.deepEqual(buttons(html).filter(label => [NAMES.postAnswer, NAMES.replyInChat, NAMES.discard].includes(label)), [NAMES.postAnswer, NAMES.replyInChat, NAMES.discard])
+  assert.doesNotMatch(html, new RegExp(`class="co-btn[^"]*"[^>]*disabled="">(${NAMES.replyInChat}|${NAMES.discard})<`), 'Reply in chat and Discard stay available')
+  for (const point of example().points) assert.ok(texts(html).includes(point.title), point.title)
+  assert.ok(texts(html).includes('@alex both findings were real and are fixed in new commits on this branch.'), 'the replies stay readable, word for word')
+  assert.match(texts(html), /Adds one shared write path\./, 'and so does the new description')
+  const without = await card(t, response(), { ownerGrant: undefined })
+  assert.match(without, new RegExp(`disabled="">${NAMES.postAnswer}<`), 'a caller that says nothing gets Post off')
+  const granted = await card(t, response())
+  assert.doesNotMatch(texts(granted), /Post is off for now/)
+})
+
+test('Send again and Try again are off for the same reason, with the reason on the card', async t => {
+  const approved = await card(t, response('ready', {}, approval('approved')), { ownerGrant: false })
+  if (!approved) return
+  assert.match(approved, new RegExp(`disabled="">${NAMES.sendAgain}<`))
+  assert.ok(texts(approved).includes(POST_OFF_REASON))
+  const receipts = { push: null, replies: [], description: null, rerequest: null }
+  const failed = await card(t, response('failed', { receipts, error: { step: 'replies', message: 'GitHub refused the comment.' } }, approval('approved')), { ownerGrant: false })
+  assert.match(failed, new RegExp(`disabled="">${NAMES.tryAgain}<`))
+  assert.ok(texts(failed).includes(POST_OFF_REASON))
+  assert.match(failed, new RegExp(`>${NAMES.openChat}<`), 'the conversation is still one button away')
 })
 
 test('a closed PR shows the answer but offers nothing to do with it', async t => {
@@ -173,6 +203,18 @@ test('the Review tab puts the answer first, then the live conversation, then an 
   const stacked = await render(t, 'ReviewTab', { pr, status: older, own: true, standing: standingWith(view), response: view, onPostResponse() {}, onDiscardResponse() {} })
   assert.ok(stacked.indexOf('Replies ready') > -1 && stacked.indexOf('Replies ready') < stacked.indexOf('Review clear'), 'the answer comes first')
   assert.equal((stacked.match(/data-frame="verdict"/g) || []).length, 1, 'one box asks for you; the finished review stays plain')
+})
+
+test('the Review tab hands the host’s owner grant to the card: Post is on with it and off without', async t => {
+  const view = response()
+  const props = { pr, status: null, own: true, standing: standingWith(view), response: view, onPostResponse() {}, onDiscardResponse() {} }
+  const off = await render(t, 'ReviewTab', props)
+  if (!off) return
+  assert.match(off, new RegExp(`disabled="">${NAMES.postAnswer}<`))
+  assert.ok(texts(off).includes(POST_OFF_REASON))
+  const on = await render(t, 'ReviewTab', { ...props, ownerGrant: true })
+  assert.match(on, new RegExp(`<button type="button" class="co-btn co-btn-primary">${NAMES.postAnswer}</button>`))
+  assert.doesNotMatch(texts(on), /Post is off for now/)
 })
 
 test('with no saved answer the Review tab is exactly what it was', async t => {
