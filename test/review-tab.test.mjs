@@ -130,7 +130,7 @@ test('the PR page carries a fourth Review tab with its state, and opens on it wh
   const ownClear = await render(t, 'PullRequestDetail', { pr, status: status('all_clear', {}, done), cacheStore: { entries: {} }, review: { own: true } })
   assert.match(ownClear, /Review<span class="co-tab-dot is-success"/, 'your clear check is simply green')
   const theirClear = await render(t, 'PullRequestDetail', { pr, status: status('all_clear', {}, done), cacheStore: { entries: {} } })
-  assert.match(theirClear, /Review<span class="co-tab-dot is-waiting"/, 'a clear review of their PR waits for your verdict')
+  assert.match(theirClear, /Review<span class="co-tab-dot is-success"/, 'a clean private review of their PR is settled: there is no verdict to send and nothing to set aside')
 })
 
 test('a PR that changed after its review says so, shows the old findings and offers to review this version', async t => {

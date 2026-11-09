@@ -352,6 +352,55 @@ test('human-required prepared attention stays in Needs you and outside private w
   assert.equal(run.privateAction, null)
 })
 
+test('reviewed work whose source check could not run asks the owner instead of a review', () => {
+  const run = buildContributionRun({
+    records: [prepared('reconnect'), prepared('transient'), prepared('unchecked')],
+    reviewStatus: { byId: {
+      reconnect: { state: 'unavailable', code: 'github_reconnect' },
+      transient: { state: 'unavailable', code: 'review_unavailable' },
+    } },
+  })
+
+  const byId = Object.fromEntries(run.decisions.map(item => [item.record.id, item]))
+  assert.equal(byId.reconnect.kind, 'check_attention')
+  assert.equal(byId.reconnect.reconnect, true)
+  assert.match(byId.reconnect.message, /^Reconnect GitHub in Möbius Settings → Accounts/)
+  assert.match(byId.reconnect.detail, /^Reconnect GitHub to send · /)
+  assert.equal(byId.transient.kind, 'check_attention')
+  assert.equal(byId.transient.reconnect, false)
+  assert.match(byId.transient.message, /could not be checked just now/)
+  // A record with no row in a successful check is still unknown work.
+  assert.equal(byId.unchecked.kind, 'private_review')
+  assert.equal(run.privateAction.count, 1, 'only the unchecked record is private work')
+})
+
+test('a failed status request never turns reviewed work into review work', () => {
+  const run = buildContributionRun({
+    records: [prepared('reviewed')],
+    reviewStatus: { state: 'unavailable', byId: {} },
+  })
+
+  assert.deepEqual(run.decisions.map(item => item.kind), ['check_attention'])
+  assert.match(run.decisions[0].message, /could not be checked just now/)
+  assert.equal(run.privateAction, null)
+})
+
+test('a status request still loading keeps reviewed work out of review work', () => {
+  const loading = buildContributionRun({
+    records: [prepared('reviewed')],
+    reviewStatus: { state: 'loading', byId: {} },
+  })
+  assert.deepEqual(loading.decisions, [])
+  assert.deepEqual(loading.working.map(item => item.kind), ['checking_source'])
+  assert.equal(loading.privateAction, null)
+  // A reload keeps the previous answer meanwhile.
+  const reloading = buildContributionRun({
+    records: [prepared('reviewed')],
+    reviewStatus: { state: 'loading', byId: { reviewed: { state: 'unavailable', code: 'review_unavailable' } } },
+  })
+  assert.deepEqual(reloading.decisions.map(item => item.kind), ['check_attention'])
+})
+
 test('incoming-only project is alignment work, never preparation', () => {
   const run = buildContributionRun({ projects: [{
     key: 'demo', name: 'Demo', canonical_repo: 'owner/demo',
