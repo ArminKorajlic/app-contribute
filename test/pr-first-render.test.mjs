@@ -60,7 +60,7 @@ test('drafts explain unavailable choices instead of hiding them', async t => {
 })
 
 test('take over waits for a written reason before it can start', async t => {
-  const caps = { review_fix_merge:true }
+  const caps = { review_fix_merge:true, pr_machine:true }
   const choice = reason => ({ pulls:[pr], mode:'review_fix_merge', intent:'take_over', takeover_reason: reason })
   const empty = await render(t, 'ReviewConfirmation', { choice: choice(''), capabilities: caps, onModeChange:() => {}, onReasonChange:() => {} })
   if (!empty) return

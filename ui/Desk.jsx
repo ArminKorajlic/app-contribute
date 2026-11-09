@@ -100,7 +100,7 @@ export function DeskCounts({ counts, onView }) {
     { label: 'Review', count: counts.requests, view: 'requests', you: true },
     { label: 'Merge', count: counts.merge, view: 'mine' },
     { label: 'Fix', count: counts.fix, view: 'mine' },
-    counts.drafts ? { label: 'Mark ready', count: counts.drafts, view: 'work' } : null,
+    counts.drafts ? { label: 'Mark ready', count: counts.drafts, view: 'mine' } : null,
     counts.editedFiles ? { label: 'Edits', count: `${counts.editedFiles} files`, view: 'edits' } : null,
   ].filter(chip => chip && (chip.count === undefined || chip.count !== 0))
   if (!chips.length) return null

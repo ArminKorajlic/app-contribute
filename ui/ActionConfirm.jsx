@@ -10,8 +10,10 @@ const FACT_ICON = { ok: 'check', warn: 'info', bad: 'close' }
 // the only way out, so there is no Cancel; a finished action swaps it for Done.
 // `copy` is the words and the icon (see action-copy.js; `says` shows text the action will post, `disabled` keeps the button off while it is not ready); `onConfirm` runs the action and
 // returns the outcome the app's handlers already use ({ ok } | { alreadyHandled }
-// | { pending, error } | { error }). Opened inside a ReviewDialog.
-export function ActionConfirm({ pr, copy, onConfirm, onClose, onDone }) {
+// | { pending, error } | { error }). A { pending } outcome may have happened on GitHub: the sheet
+// first has the owner's view read GitHub again (`onUnconfirmed`, read-only), and its button stays
+// off for good, so another attempt can only start from that fresh read. Opened inside a ReviewDialog.
+export function ActionConfirm({ pr, copy, onConfirm, onClose, onDone, onUnconfirmed }) {
   const region = useRef(null)
   const titleId = useId()
   const [phase, setPhase] = useState('confirm')
@@ -20,15 +22,20 @@ export function ActionConfirm({ pr, copy, onConfirm, onClose, onDone }) {
   const [picked, setPicked] = useState(copy.choices?.value || '')
   const [result, setResult] = useState(null)
   useEffect(() => { focusActionRegion(region.current) }, [])
-  const working = phase === 'working'
+  // Writing, or reading GitHub back after a write that could not be confirmed.
+  const working = phase === 'working' || phase === 'checking'
   async function confirm() {
     setPhase('working'); setError('')
     let outcome
-    try { outcome = await onConfirm({ choice: picked }) } catch { outcome = { error: 'Could not reach GitHub. Check the PR before trying again.' } }
+    // A handler that throws never said whether the write reached GitHub.
+    try { outcome = await onConfirm({ choice: picked }) } catch { outcome = { pending: true, error: 'Lost contact with GitHub. Check the PR before trying again.' } }
     if (outcome?.ok || outcome?.alreadyHandled) { setResult(outcome); setPhase('done'); onDone?.(outcome); return }
     setError(outcome?.error || 'Could not complete this. Nothing changed.')
+    if (!outcome?.pending) { setPhase('confirm'); return }
     // An unconfirmed result is read back, never repeated from here.
-    setPhase(outcome?.pending ? 'unconfirmed' : 'confirm')
+    setPhase('checking')
+    try { await onUnconfirmed?.() } catch { /* the view shows its own read error */ }
+    setPhase('unconfirmed')
   }
   const done = phase === 'done'
   const finished = typeof copy.done === 'function' ? copy.done(result) : copy.done
@@ -61,7 +68,7 @@ export function ActionConfirm({ pr, copy, onConfirm, onClose, onDone }) {
       <div className="co-rw-actions">
         {done
           ? <button type="button" className="co-btn co-btn-primary" onClick={onClose}>Done</button>
-          : <button type="button" className="co-btn co-btn-primary" disabled={working || phase === 'unconfirmed' || copy.disabled === true} aria-busy={working} onClick={confirm}>{working ? copy.working : selected?.action || copy.confirm}</button>}
+          : <button type="button" className="co-btn co-btn-primary" disabled={working || phase === 'unconfirmed' || copy.disabled === true} aria-busy={working} onClick={confirm}>{phase === 'checking' ? 'Checking GitHub…' : working ? copy.working : selected?.action || copy.confirm}</button>}
       </div>
     </footer>
   </section>
