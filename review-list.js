@@ -50,6 +50,11 @@ export function pendingRespondStarts(started, listed, now, graceMs) {
   return (started || []).filter(chat => !named.has(respondPull(chat)) && now - chat.at < graceMs)
 }
 
+// How long until the first of the started conversations stops standing in for its PR (never
+// negative), or null with none started: the one deadline a timer needs, whether reads succeed or not.
+export const respondStartsExpireIn = (started, now, graceMs) =>
+  (started || []).length ? Math.max(0, Math.min(...started.map(chat => chat.at + graceMs)) - now) : null
+
 // The started conversations with `chat` in place of an earlier start on the same PR.
 export const withRespondStart = (started, chat) => [...(started || []).filter(item => respondPull(item) !== respondPull(chat)), chat]
 
