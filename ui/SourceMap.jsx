@@ -14,6 +14,8 @@ import { TaskContext, TaskPane } from './TaskPane.jsx'
 import { DESK_VIEWS, deskViewKey, splitProjects } from '../desk.js'
 import { NAMES } from '../names.js'
 import { DeskChips, DeskCounts, DeskRail } from './Desk.jsx'
+import { SearchField } from './SearchField.jsx'
+import { FilterLine } from './FilterLine.jsx'
 import { DeskView } from './DeskViews.jsx'
 import { openGithubSettings } from '../github-connection.js'
 
@@ -386,7 +388,7 @@ export function SourceMap({
       <>
       {selectedProject ? <h2 className="co-visually-hidden">Project detail</h2> : (
         <>
-        <DeskChips view={desk.view} counts={desk.counts} onView={openView} />
+        <DeskChips view={desk.view} counts={desk.counts} projects={orderedProjects} onView={openView} />
         <header className="co-view-heading">
           <div>
             <h2>{viewLabel}</h2>
@@ -417,30 +419,14 @@ export function SourceMap({
       {!selectedProject ? (
         desk.view !== 'projects' ? (
           <>
-            <label className="co-desk-search">
-              <Icon name="search" size={16} />
-              <input type="search" placeholder="Find a PR, person or repository" aria-label="Find a PR, person or repository" value={deskQuery} onChange={event => setDeskQuery(event.target.value)} />
-            </label>
+            <SearchField label="Find a PR, person or repository" value={deskQuery} onChange={setDeskQuery} />
             <DeskView view={desk.view} projects={orderedProjects} records={desk.records} login={desk.login} decisionsFor={desk.decisionsFor} lastLooked={desk.lastLooked} query={deskQuery} runs={desk.runs} chats={desk.respondChats} ignored={desk.ignored} reviews={desk.reviews} counts={desk.counts} needsFilter={needsFilter} onOpenProject={openProject} onOpenPull={desk.onOpenPull} onOpenRecord={openRecordFromDesk} />
           </>
         ) : (
         <>
           <div className="co-directory">
-          <label className="co-project-search">
-            <span className="co-visually-hidden">Find a project</span>
-            <input
-              type="search"
-              value={query}
-              placeholder="Find a project"
-              onChange={(event) => {
-                const value = event.target.value
-                setQuery(value)
-              }}
-            />
-          </label>
-          <div className="co-directory-filters" role="group" aria-label="Filter projects">
-            {FILTERS.map(([key, label]) => <button type="button" key={key} aria-pressed={filter === key} onClick={() => setFilter(key)}>{label}{key !== 'all' ? <span>{filterCounts[key]}</span> : null}</button>)}
-          </div>
+          <FilterLine label="Filter projects" items={FILTERS.map(([key, label]) => ({ key, label, count: key === 'all' ? null : filterCounts[key] }))} active={filter} onPick={setFilter} />
+          <SearchField label="Find a project" value={query} onChange={setQuery} />
 
           {filtered.length === 0 ? (
             <div className="co-stage-empty">

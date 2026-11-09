@@ -22,6 +22,10 @@ export const BUTTON_CSS = `
 .co-btn-danger:not(.co-btn-quiet) { border-color: color-mix(in srgb, var(--danger) 45%, var(--border)); }
 .co-btn-icon { flex: 0 0 auto; width: var(--co-control-height); min-width: var(--co-control-height); padding: 0; }
 .co-btn-block { width: 100%; }
+/* A button that is also a name: the repository's icon and name on a card header (the owner's choice, 2026-11-06).
+   Fully rounded with a faint fill so it reads as pressable; the accent shows while it is pressed. */
+.co-btn-chip { min-width: 0; max-width: 100%; padding: 0 14px 0 8px; border-radius: var(--co-radius-round); background: var(--surface-2, var(--bg)); text-align: left; white-space: normal; }
+.co-btn-chip:not(:disabled):active { border-color: var(--accent); background: var(--accent-dim, var(--surface-2)); }
 .co-btn > .co-icon { flex: 0 0 auto; align-self: center; margin: 0; }
 @media (hover: hover) {
   .co-btn:not(:disabled):hover { border-color: color-mix(in srgb, var(--accent) 34%, var(--border)); background: var(--surface-2, var(--surface)); }
@@ -32,5 +36,8 @@ export const BUTTON_CSS = `
   .co-btn-quiet:not(:disabled):hover { border-color: transparent; background: var(--co-btn-tone-fill, var(--surface-2, var(--surface))); color: var(--co-btn-tone, var(--text)); }
   .co-btn-danger:not(:disabled):hover { background: color-mix(in srgb, var(--danger) 8%, var(--surface)); color: var(--danger); }
 }
+/* The Actions button is on every PR, on every screen width. Its edge is the strong one (--co-edge), so a quiet one in a row still
+   reads as a button; the Actions menu is drawn in workspace-theme.js with the same edge. */
+.co-agent-menu-button { border-color: var(--co-edge); }
 /* /mobius-ui:Button */
 `

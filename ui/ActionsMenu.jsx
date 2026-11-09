@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
 import { actionsMenuModel } from '../actions-menu.js'
+import { NAMES } from '../names.js'
 import { Icon } from './Icons.jsx'
 import { useDismissableMenu } from './useDismissableMenu.js'
 import { useKeepOnScreen } from './useKeepOnScreen.js'
@@ -8,7 +9,9 @@ import { useKeepOnScreen } from './useKeepOnScreen.js'
 // it. Choosing only opens the confirm sheet or review window; nothing starts
 // until the owner confirms there. `align` names the trigger edge the menu lines
 // up with: 'end' for a trigger at the right of its row, 'start' for one at the
-// left, so the menu opens inward.
+// left, so the menu opens inward. On a phone the menu is a sheet from the bottom edge instead
+// (CSS only, workspace-theme.js): it cannot run off a side, and the scrim dims the page behind it and
+// closes it when pressed. Cancel is the sheet's way out and shows on a phone only.
 function Choice({ item, onPick }) {
   return <button type="button" role="menuitem" aria-disabled={item.off || undefined} data-danger={item.danger || undefined} className={(item.rec ? 'is-rec ' : '') + (item.off ? 'is-off ' : '') + (item.danger ? 'is-danger' : '')} onClick={() => { if (!item.off) onPick(item.intent) }}>
     <span className="co-agent-menu-tile"><Icon name={item.icon} size={17} /></span><span><strong>{item.title}</strong><small>{item.off ? item.reason : item.detail}</small></span>
@@ -35,21 +38,28 @@ export function ActionsMenu({ onChoose, pulls = [], decisions = [], record = nul
   useDismissableMenu(root, open, setOpen)
   useKeepOnScreen(list, open)
   // The trigger takes focus back first, so whatever opens next returns there.
-  function choose(intent) {
+  function close() {
     setOpen(false)
     root.current?.querySelector('button')?.focus({ preventScroll: true })
+  }
+  function choose(intent) {
+    close()
     onChoose(intent)
   }
   const named = model.you.length > 0
   return <div className={`co-agent-menu is-align-${align}`} ref={root}>
     <button type="button" className={`co-btn ${variant === 'button' ? '' : 'co-btn-quiet '}co-agent-menu-button is-${variant}`} aria-haspopup="menu" aria-expanded={open} aria-label={ariaLabel} disabled={disabled} onClick={() => setOpen(value => !value)}>
-      <Icon name="more" size={15} /><span>{label}</span><Icon name="chevron" size={14} />
+      <Icon name="act" size={16} /><span>{label}</span><Icon name="chevron" size={14} />
     </button>
-    {open ? <div className="co-agent-menu-list" ref={list} role="menu" aria-label="Actions" tabIndex={-1}>
-      {model.header ? <p className="co-agent-menu-head"><b>{model.header.label}</b>{model.header.text ? ` · ${model.header.text}` : ''}</p> : null}
-      {model.headline ? <p className="co-agent-menu-standing">{model.headline}</p> : null}
-      <Group title="You" items={model.you} onPick={choose} named={named} />
-      <Group title="Agent" items={model.agent} onPick={choose} named={named} />
-    </div> : null}
+    {open ? <>
+      <div className="co-agent-menu-scrim" aria-hidden="true" onClick={close} />
+      <div className="co-agent-menu-list" ref={list} role="menu" aria-label="Actions" tabIndex={-1}>
+        {model.header ? <p className="co-agent-menu-head"><b>{model.header.label}</b>{model.header.text ? ` · ${model.header.text}` : ''}</p> : null}
+        {model.headline ? <p className="co-agent-menu-standing">{model.headline}</p> : null}
+        <Group title="You" items={model.you} onPick={choose} named={named} />
+        <Group title="Agent" items={model.agent} onPick={choose} named={named} />
+        <button type="button" className="co-btn co-agent-menu-cancel" onClick={close}>{NAMES.cancel}</button>
+      </div>
+    </> : null}
   </div>
 }

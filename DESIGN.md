@@ -145,9 +145,9 @@ The palette is semantic and theme-responsive. Accent identifies actions, selecti
 
 ## Typography
 
-Use the inherited shell font and monospace stack. There are four sizes: 28px titles, 22px section headings, 16px body and row titles, and 14px for metadata and controls. Nothing is smaller. Long titles, labels, versions, and paths wrap rather than forcing the viewport wider.
+Use the inherited shell font and monospace stack. There are four sizes: 28px titles, 22px section headings, 16px body and row titles, and 14px for metadata and controls. Nothing is smaller, with one exception the owner chose on 2026-11-06: a PR's description on a phone is 13px text and 12px code (`--co-text-reading`, `--co-text-code`), and nothing else may use those two. Long titles, labels, versions, and paths wrap rather than forcing the viewport wider.
 
-**The Readable Floor Rule.** Never shrink workflow copy to fit the phone. Keep practical control targets at least 44px; prompt tabs are 48px tall.
+**The Readable Floor Rule.** Never shrink workflow copy to fit the phone. A PR's own description is the author's reading text, not workflow copy, and on a phone it is the one place that reads smaller (13px, code 12px). Keep practical control targets at least 44px; prompt tabs are 48px tall.
 
 ## Layout
 
@@ -213,7 +213,7 @@ A single flat prompt editor groups Review, Fix and Merge decision. Tabs have gen
 
 **The One Name Rule.** One name for one meaning, everywhere. Every button, menu row, hint, pill and test reads its words from `names.js`; to rename something, change it there. A pill says what is true, a hint is one sentence, a button says what you do. Three agent jobs stay separate on purpose (Fix these findings, Finish it for me, Respond to feedback); a stopped fix job starts again as Run it again, a stopped review as Review again. `test/names.test.mjs` keeps retired names out of screen text.
 
-**The Token Sheet Rule.** Five corner radii (6, 8, 10, 12 and round) and four type sizes (14, 16, 22, 28), none under 14px, named as custom properties in `theme.js`; no rule carries a raw value (`test/style-tokens.test.mjs`). Buttons come in three types: primary (filled), secondary (bordered) and quiet (text), plus a danger modifier and an icon-only shape, all 44px (`button-theme.js`). A class that only adds layout may sit beside them; none sets its own border, fill, colour, corner or height. Purple text on its tinted fill is mixed toward the text colour so it reads at 4.5:1 and above.
+**The Token Sheet Rule.** Five corner radii (6, 8, 10, 12 and round) and four type sizes (14, 16, 22, 28; plus 13 and 12 for the phone PR description only), none under 14px except the two phone-description sizes above, named as custom properties in `theme.js`; no rule carries a raw value (`test/style-tokens.test.mjs`). Buttons come in three types: primary (filled), secondary (bordered) and quiet (text), plus a danger modifier and an icon-only shape, all 44px (`button-theme.js`). A class that only adds layout may sit beside them; none sets its own border, fill, colour, corner or height. Purple text on its tinted fill is mixed toward the text colour so it reads at 4.5:1 and above.
 
 **The Four Views Rule.** The rail has four views: Needs you, Review requests, My PRs and Agent runs, then Repositories as a block of its own (a heading, a divider, More repositories folded, Add repository last; its form opens in flow under that row, because the rail scrolls and would clip a floating panel). Older places live inside them (`deskViewKey`). “Projects” is the Möbius shell's own word, so the app's list is Repositories and its settings popover is Contribute settings.
 
@@ -223,11 +223,11 @@ A single flat prompt editor groups Review, Fix and Merge decision. Tabs have gen
 
 ## The PR page's next step
 
-Under the facts line sit a state line (Draft, In review, Approved, Merged, from the PR's own data; an approval counts only for this exact version) and one panel: a pill for what is true, the PR machine's own sentence, and one filled button for the next step it names. The button runs the same handler as the Actions menu (a stopped job starts again through the same window), opens the Review tab, or Syncs; it is absent when the step is not the owner's, is refused, or this Möbius cannot run it. On a phone the button pins to the foot of the page and leaves the panel, so one next step is on screen, never two. The Commits tab follows Comments: grouped by day, each commit with title, authors (the agent's commits marked), time, the checks' result in words, short hash, a labelled Copy hash and a GitHub link; a line shows where the last review stopped and a Review again banner offers the machine's own review action for newer commits. Close pull request is red, apart and last in Actions, and the menu never starts its focus on it.
+Under the facts line sit a state line (Draft, In review, Approved, Merged, from the PR's own data; an approval counts only for this exact version) and one panel: a pill for what is true, the PR machine's own sentence, and one filled button for the next step it names. The button runs the same handler as the Actions menu (a stopped job starts again through the same window), opens the Review tab, or Syncs; it is absent when the step is not the owner's, is refused, or this Möbius cannot run it. On a phone the button pins to the foot of the page and leaves the panel, so one next step is on screen, never two. The Commits tab follows Comments: grouped by day, each commit with its title (when the commit has more to say, the whole title row opens the rest of the message at the card's full width, under a bordered chevron), authors (the agent's commits marked), time, the checks' result in words, short hash, a labelled Copy hash and a GitHub link; a line shows where the last review stopped and a Review again banner offers the machine's own review action for newer commits. Close pull request is red, apart and last in Actions, and the menu never starts its focus on it.
 
 ## On a phone
 
-The four views are one segmented bar with every segment on screen; the repository list is one quiet link. Sync and Settings keep a word. The review window's footer stays on screen so Start is never below the fold. The opening screen names its five reads with a progress bar and real counts, from the same conditions the app waits on.
+The four views are one segmented bar with every segment on screen, the word first and its count after it (two by two on the narrowest phones, never overlapping). The repository list is a button of its own under the bar, with a few project icons, a count and a chevron, so it reads as a place you go to and never as a search. Needs you and Repositories share one layout: a filter line (plain text, the count first in the accent colour, the chosen word underlined), then the same search field with its magnifier, then the list. The Actions button has the strong edge (`--co-edge`) on every width, with the same icon, and its menu has the same edge; on a phone that menu is a sheet from the bottom edge, with a grab handle, a dimmed page behind it, rows of at least 48px and a Cancel row, so it can never run off a side. Sync and Settings keep a word. The review window's footer stays on screen so Start is never below the fold. The opening screen names its five reads with a progress bar and real counts, from the same conditions the app waits on.
 
 ## Do's and Don'ts
 
@@ -237,6 +237,8 @@ The four views are one segmented bar with every segment on screen; the repositor
 - **Do** keep selection independent from row detail and route agent action through the review window.
 - **Do** name every control by its result, from `names.js`; an icon-only button always carries an accessible name and the same words in its tooltip.
 - **Do** distinguish assignment, private review, legacy merge scope, and scoped takeover.
+- **Do** use the one search field (`ui/SearchField.jsx`) for every search: filled surface, thin edge, magnifier, Clear while there is text, one purple edge and soft ring on focus, 44px tall, a 16px input so phones do not zoom. Never draw a screen's own search input.
+- **Do** open a repository from the rounded button that holds its icon and name on a card header (`co-btn-chip`, button-theme.js): a faint fill so it reads as pressable, the accent while pressed, a long name ending in an ellipsis. There is no separate Open word.
 - **Do** keep detail controls stable while context loads and scrolls below them.
 - **Do** show paused work by name and preserve its remaining steps without automatic restart.
 - **Do** keep editable prompts separate from frozen run snapshots and immutable safety instructions.
@@ -247,5 +249,5 @@ The four views are one segmented bar with every segment on screen; the repositor
 - **Don't** equate passing checks with a review verdict or queued work with merged work.
 - **Don't** start agent work merely from selecting a PR or assigning a person.
 - **Don't** hide changed-version removal, scope drift, or ambiguous outcomes.
-- **Don't** shrink 14px metadata, 16px body copy, or 44px controls to fit the phone.
+- **Don't** shrink 14px metadata, 16px body copy, or 44px controls to fit the phone. The one exception is the PR description's reading text on a phone (13px, code 12px), by the owner's choice.
 - **Don't** invent fixed colors, fonts, icons, approval states, or product permissions outside the shell and implemented contract.

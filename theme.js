@@ -19,7 +19,12 @@ export const CSS = `
   --co-text-body: 16px;
   --co-text-section: 22px;
   --co-text-title: 28px;
+  /* The two sizes under the 14px floor: a PR description on a phone only (owner's choice, 2026-11-06; DESIGN.md). */
+  --co-text-reading: 13px;
+  --co-text-code: 12px;
   --co-control-height: 44px;
+  /* The edge of a control that must read as a control on a dark phone screen: a plain --border is too faint. */
+  --co-edge: color-mix(in srgb, var(--text) 32%, var(--border));
   /* "Your move" purple text on its tinted fill: the plain accent read 4.1:1 there; mixed
      toward the text colour it reads about 6:1 in dark and light, same look. */
   --co-you-text: color-mix(in srgb, var(--accent) 65%, var(--text));
@@ -207,18 +212,6 @@ export const CSS = `
   color: var(--muted); font-size: var(--co-text-meta); line-height: 1.5;
 }
 .co-view-warning { border-left-color: var(--co-warn); color: var(--text); }
-.co-project-search { display: block; margin: 0 0 10px; }
-.co-project-search input {
-  width: 100%; min-height: 46px; padding: 10px 13px;
-  border: 1px solid var(--border); border-radius: var(--co-radius-panel);
-  background: var(--surface); color: var(--text); caret-color: var(--accent);
-  font: inherit; font-size: var(--co-text-body);
-}
-.co-project-search input::placeholder { color: var(--muted); }
-.co-project-search input:focus-visible {
-  outline: 2px solid var(--accent); outline-offset: 2px;
-  border-color: color-mix(in srgb, var(--accent) 42%, var(--border));
-}
 .co-lens-nav {
   display: flex; align-items: stretch; gap: 22px; min-height: 44px;
   margin: 0 0 26px; overflow-x: auto; overflow-y: hidden;
