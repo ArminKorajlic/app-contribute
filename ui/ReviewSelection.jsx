@@ -6,7 +6,7 @@ import { openAgentConversation } from './BatchAction.jsx'
 import { Icon } from './Icons.jsx'
 import { reviewOptions } from '../review-prompts.js'
 
-export function ReviewSelection({ selectionId, appId, token, onClose }) {
+export function ReviewSelection({ selectionId, appId, token, onClose, onRunsChanged }) {
   const [state, setState] = useState({ loading: true })
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -39,6 +39,7 @@ export function ReviewSelection({ selectionId, appId, token, onClose }) {
       const { run } = await collaborationRequest(token, appId, 'review-runs', reviewRunRequest({ ...choice,
         options:reviewOptions(resolved.options), agent:resolved.agent, preview_sha256:resolved.preview.preview_sha256 }))
       setState(old => ({ ...old, choice: null, run }))
+      void onRunsChanged?.()
     } catch (error) { setError(error.message) }
     finally { inFlight.current = false; setBusy(false) }
   }
