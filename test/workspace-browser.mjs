@@ -1637,8 +1637,10 @@ window.runPopupFitChecks = async () => {
     const trigger = scope.querySelector('.co-agent-menu-button')
     await click(trigger)
     await until(() => scope.querySelector('.co-agent-menu-list'), 'The ' + name + ' Actions menu did not open')
-    const box = scope.querySelector('.co-agent-menu-list').getBoundingClientRect()
+    const list = scope.querySelector('.co-agent-menu-list'), box = list.getBoundingClientRect()
     ensure(box.left >= 0 && box.right <= window.innerWidth, 'The ' + name + ' Actions menu ran off the screen: ' + Math.round(box.left) + ' to ' + Math.round(box.right) + ' of ' + window.innerWidth + 'px')
+    // On a desktop screen the menu already fits, so it stays where it hangs from its button: this is the desktop "after" that the phone screenshots cannot show.
+    ensure(window.innerWidth <= 680 || list.style.transform === '', 'The ' + name + ' Actions menu was moved on a desktop screen: ' + list.style.transform)
     await click(trigger)
     await until(() => !scope.querySelector('.co-agent-menu-list'), 'The ' + name + ' Actions menu did not close')
     checks.push({ name: 'the ' + name + ' Actions menu stays on the screen', status: 'pass' })
