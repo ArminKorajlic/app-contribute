@@ -1,18 +1,21 @@
 import { Fragment, useState } from 'react'
-import { authorLine, authorNames, checkWords, commitGroups, madeWithAgent, reviewMarker } from '../pull-commits.js'
+import { authorLine, authorNames, checkWords, commitGroups, copyText, madeWithAgent, reviewMarker } from '../pull-commits.js'
 import { NAMES } from '../names.js'
 import { safeDetailLink } from '../pull-details.js'
 import { Icon } from './Icons.jsx'
 
-// Copy a commit's short hash. The button says what it does; the icon only helps the eye.
+// Copy a commit's full hash. The button says what it does; the icon only helps the eye. It says
+// "Copied" only after the write succeeded; otherwise it says so, and the short hash beside it is
+// on screen to copy by hand.
 function CopyHash({ oid }) {
-  const [copied, setCopied] = useState(false)
+  const [result, setResult] = useState('')
+  const copied = result === 'copied'
+  const label = copied ? 'Copied' : result === 'failed' ? 'Couldn\u2019t copy' : NAMES.copyHash
   return <button type="button" className="co-btn co-btn-quiet" aria-label={`${NAMES.copyHash} ${oid.slice(0, 7)}`}
-    onClick={() => {
-      try { navigator.clipboard?.writeText(oid) } catch { /* the short hash is on screen to copy by hand */ }
-      setCopied(true)
-      window.setTimeout(() => setCopied(false), 1500)
-    }}><Icon name={copied ? 'check' : 'copy'} size={16} /><span>{copied ? 'Copied' : NAMES.copyHash}</span></button>
+    onClick={async () => {
+      setResult((await copyText(oid)) ? 'copied' : 'failed')
+      window.setTimeout(() => setResult(''), 1500)
+    }}><Icon name={copied ? 'check' : 'copy'} size={16} /><span>{label}</span></button>
 }
 
 function CommitTime({ value }) {

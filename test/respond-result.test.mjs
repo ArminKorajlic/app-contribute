@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFileSync } from 'node:fs'
-import { RESEND_AFTER_MS, WATCH_MS, chatStarting, normalizeDecision, normalizeResult, planSteps, POST_COMMAND, postMessage, postingSoon, resultSlug, responseFor, responseOutbox, responseStatus, responseView } from '../respond-result.js'
+import { RESEND_AFTER_MS, WATCH_MS, chatStarting, normalizeDecision, normalizeResult, OWNER_GRANT_CAPABILITY, ownerGrantOffered, planSteps, POST_COMMAND, postMessage, postingSoon, resultSlug, responseFor, responseOutbox, responseStatus, responseView } from '../respond-result.js'
 
 // The example the Python helper's own tests also pin the digest of: one file, both sides of the contract.
 const example = () => JSON.parse(readFileSync(new URL('./fixtures/respond-result.example.json', import.meta.url), 'utf8'))
@@ -11,6 +11,15 @@ const pull = (extra = {}) => ({ number: 7, headRefOid: HEAD, repository: { nameW
 const result = (patch = {}) => normalizeResult({ ...example(), ...patch })
 const decision = (patch = {}) => normalizeDecision({ version: 1, result_id: 'r-3f9a1c2b04d5', digest: example().digest, decision: 'approved', at: '2026-11-06T09:30:00Z', ...patch })
 const entry = (state = 'ready', pairedDecision = null, patch = {}) => ({ slug: 'owner__repo__7', result: result({ state, ...patch }), decision: pairedDecision })
+
+test('the gate on Post is one capability of review-presets, offered only by a plain true', () => {
+  assert.equal(OWNER_GRANT_CAPABILITY, 'owner_grant', 'respond_result.py and respond-result.md use this name')
+  assert.equal(ownerGrantOffered({ owner_grant: true, merge_now: true }), true)
+  for (const capabilities of [{}, { owner_grant: false }, { owner_grant: 'true' }, { owner_grant: 1 }, { merge_now: true }, null, undefined]) {
+    assert.equal(ownerGrantOffered(capabilities), false, JSON.stringify(capabilities))
+  }
+  assert.match(readFileSync(new URL('../respond_result.py', import.meta.url), 'utf8'), /^OWNER_GRANT_CAPABILITY = "owner_grant"$/m, 'the helper asks for the same capability')
+})
 
 test('the slug is lower case owner__repo__number, the name the helper writes', () => {
   assert.equal(resultSlug('Owner/Repo', 7), 'owner__repo__7')

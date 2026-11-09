@@ -600,6 +600,7 @@ class ContributionPushTest(unittest.TestCase):
     job.node["reviewDecision"] = "APPROVED"
     job.run()
     self.assertFalse(job.record["needs_attention"])
+    self.assertIsNone(job.record["attention"], "a resolved request is not kept as outside activity")
 
   def test_conflict_masked_by_failing_checks_is_raised_once_checks_pass(self):
     job = JobEndpoints()

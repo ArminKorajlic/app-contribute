@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { addressItems, respondAction } from '../address-feedback.js'
 import { requestOptions } from '../collaboration.js'
 import { loadWorkflowOptions, previewWorkflow, reviewOptions } from '../review-prompts.js'
-import { loadPullActivity, loadPullThreads } from '../pull-details.js'
+import { loadAllPullActivity, loadAllPullThreads } from '../pull-details.js'
 import { AgentModelSettings } from './AgentModelSettings.jsx'
 import { SeenOnGithub } from './SeenOnGithub.jsx'
 import { CloseWindowButton, WindowHead } from './WindowHead.jsx'
@@ -43,11 +43,11 @@ export function AddressFeedbackWindow({ pr, findings = null, response = null, to
   useEffect(() => { focusActionRegion(root.current) }, [])
   useEffect(() => {
     const controller = new AbortController()
-    Promise.allSettled([loadPullActivity(token, pr, 1, controller.signal), loadPullThreads(token, pr, null, controller.signal)]).then(([activity, threads]) => {
+    Promise.allSettled([loadAllPullActivity(token, pr, controller.signal), loadAllPullThreads(token, pr, controller.signal)]).then(([activity, threads]) => {
       if (controller.signal.aborted) return
       if (activity.status === 'rejected' && threads.status === 'rejected') { setState({ phase: 'error', items: [], partial: false }); return }
       setState({
-        phase: 'ready', partial: activity.status === 'rejected' || threads.status === 'rejected' || !!activity.value?.errors?.length || !!threads.value?.errors?.length,
+        phase: 'ready', partial: activity.status === 'rejected' || threads.status === 'rejected' || !!activity.value?.partial || !!threads.value?.partial,
         items: addressItems(pr, { activity: activity.value?.items || [], threads: threads.value?.threads || [], findings }),
       })
     })
