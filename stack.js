@@ -204,21 +204,21 @@ export function stackReadiness(unit) {
       continue
     }
     const previous = records[index - 1]
-    if (
-      meta.parentRecordId !== previous.id ||
-      meta.baseBranch !== recordBranch(previous) ||
-      (
-        rec.status === 'prepared' &&
-        String(rec?.plan?.base_sha || '') !== String(previous?.plan?.head_sha || '')
-      )
-    ) {
-      return fail('invalid', 'A layer no longer matches its reviewed parent.')
+    // In order: a layer that names another parent or base branch is not this
+    // chain; a prepared layer over a merged parent must move to the main
+    // branch (whatever its old base); only then is a prepared layer whose
+    // base is not its parent's reviewed head one to rebuild on that parent.
+    if (meta.parentRecordId !== previous.id || meta.baseBranch !== recordBranch(previous)) {
+      return fail('invalid', 'A layer points at a different parent than the layer below it.')
     }
     if (rec.status === 'prepared' && previous.status === 'merged') {
       return fail(
         'refresh',
         'A parent PR has merged. Refresh the remaining layers on the repository’s main branch before publishing.',
       )
+    }
+    if (rec.status === 'prepared' && String(rec?.plan?.base_sha || '') !== String(previous?.plan?.head_sha || '')) {
+      return fail('restack', 'A layer no longer matches its reviewed parent.')
     }
   }
   if (ready.length === 0) {

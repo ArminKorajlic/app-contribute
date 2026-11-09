@@ -1,7 +1,7 @@
 {
   "id": "contribute",
   "name": "Contribute",
-  "version": "0.5.43",
+  "version": "0.5.44",
   "description": "See local project changes, prepare and review them privately, and follow shared work through acceptance.",
   "author": "mobius-os",
   "license": "MIT",
@@ -14,6 +14,10 @@
     "chat.blocks.passive": {
       "version": 1,
       "reason": "Shows the current state of the contributions a chat card names, and sends them to GitHub only after you press Confirm on that card."
+    },
+    "chat.blocks.ask": {
+      "version": 1,
+      "reason": "When a contribution on a chat card needs a fix, Fix in chat sends a short request naming it to that chat's agent as your message."
     }
   },
   "offline": {
@@ -56,6 +60,7 @@
     "review.js",
     "run.js",
     "refresh.js",
+    "publication-observer.js",
     "stack.js",
     "source-map.js",
     "upstream-check.js",
@@ -68,6 +73,8 @@
     "storage.js",
     "prepared_reconcile.py",
     "ledger_scan.py",
+    "publication_observe.py",
+    "github_events.py",
     "agent_snapshot.py",
     "contributing/SKILL.md",
     "contributing/cycle.md",
@@ -80,6 +87,7 @@
     "contributing/adapter-mobius.md",
     "contributing/adapter-github.md",
     "contributing/legacy-bot.md",
+    "contributing/card-asks.md",
     "attached-work.md",
     "review-followup.md",
     "ui/Icons.jsx",
@@ -110,6 +118,7 @@
     "ui/TaskPane.jsx",
     "workspace-theme.js",
     "ui/useProjectCycle.js",
+    "ui/useScreenshots.js",
     "ui/SourceConversations.jsx",
     "repositories.js",
     "ui/RepositoryPicker.jsx",
@@ -128,6 +137,8 @@
     "ui/RunDetail.jsx",
     "send-readiness.js",
     "inline-session.js",
+    "card-asks.js",
+    "inline-session-v1.js",
     "block-protocol.js",
     "ui/InlineBlockSession.jsx",
     "prepared_block.py"

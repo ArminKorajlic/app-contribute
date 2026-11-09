@@ -1,30 +1,44 @@
 #!/usr/bin/env python3
-"""Print the chat card for one or more prepared contributions. No writes.
+"""Print the chat card for prepared contributions. No writes.
 
-The card names ledger records only. Its facts are a snapshot from this read;
-when the owner taps Contribute (or Contribute all), Contribute re-reads the
-records, checks they are reviewed and current, and shows the exact changes on
-the same button as Confirm. Nothing is sent before that Confirm. Independent
-contributions are sent in parallel; the layers of one stack are sent in order.
+The card is the chat's live view of its contributions. On a Möbius that runs
+it (`rows-v2`), the card shows what the ledger says now: the records it names,
+followed to their current version and kept only when they belong to the chat
+the card is shown in, each as its title over its project and lines changed,
+with its state once something happens. Its one action, Send (Send N for
+several), becomes Not now / Confirm over exactly the records that are ready at
+that tap; nothing is sent before that Confirm. Only the newest card of a chat is
+live: an earlier one folds to "Continued below". Every card has the same
+block intent, so the chat host can tell which card is the newest.
+
+The items printed here are a static fallback for a host that cannot run the
+card. They name where to look; they never decide what is sent.
+The card has no inline app view (`"expand": false`).
 """
 import argparse
 import json
+import os
 import re
 from pathlib import Path
 
 from agent_snapshot import find_ledger
+from pr_block import bounded, utf16_length
 
 RECORD_ID = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,127}')
-REPO = re.compile(r'[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}')
+# The whole stripped `git diff --shortstat` line, as the app parses it
+# (inline-session.js lineCounts). Anything else has no readable size.
 STAT = re.compile(r'(\d+) files? changed(?:, (\d+) insertions?\(\+\))?(?:, (\d+) deletions?\(-\))?')
-VERDICTS = {'all_clear': 'All clear', 'changes_needed': 'Changes needed', 'reviewing': 'Reviewing'}
-MAX_BATCH = 12
-TEXT_LIMIT = 240
-
-
-def bounded(text, limit=TEXT_LIMIT):
-  text = ' '.join(str(text).split())
-  return text if len(text) <= limit else text[:limit - 1].rstrip() + '…'
+# A staged screenshot entry, as the app counts them (domain.js planScreenshots).
+SCREENSHOT_NAME = re.compile(r'[a-z0-9][a-z0-9-]{0,60}\.png')
+SHA256 = re.compile(r'[0-9a-f]{64}')
+# The chat host shows at most 12 rows, and one action covers at most 12.
+MAX_ITEMS = 12
+# One intent for every card, so a chat host that attests it can tell the
+# newest card in a chat. The one action keeps the earlier card's shape: on a
+# host without `rows-v2` it must match the items, which are then exactly what
+# it sends; on one with it, the app decides at the owner's tap.
+CHAT_INTENT = 'chat:contributions'
+JSON_LIMIT = 16384
 
 
 def batch_handle(ids):
@@ -50,63 +64,142 @@ def read_record(record_id, ledger):
   raise ValueError(f'No contribution {record_id} in the Contribute ledger.')
 
 
-def stack_layers(record, ledger):
+def stack_of(record):
   stack = (record.get('plan') or {}).get('stack')
-  if not isinstance(stack, dict) or not stack.get('id'):
-    return []
-  layers = []
-  for path in Path(ledger).glob('*.json'):
+  return (stack.get('id'), (record.get('plan') or {}).get('repo') or record.get('repo')) if isinstance(stack, dict) and stack.get('id') else None
+
+
+def with_complete_stacks(records, ledger):
+  """Every prepared layer of each listed record's stack, in layer order where
+  that stack first appears. Contribute sends a stack's ready phase as one, and
+  the card's one action covers only what it lists, so a card naming one layer
+  must list the whole phase (otherwise Contribute refuses it in chat)."""
+  layers = {}
+  for path in sorted(Path(ledger).glob('*.json')):
     try:
       other = json.loads(path.read_text(encoding='utf-8'))
     except (OSError, ValueError):
       continue
-    if isinstance(other, dict) and ((other.get('plan') or {}).get('stack') or {}).get('id') == stack['id']:
-      layers.append(other)
-  return layers
+    if isinstance(other, dict) and other.get('status') == 'prepared' and stack_of(other) and RECORD_ID.fullmatch(str(other.get('id') or '')):
+      layers.setdefault(stack_of(other), {})[other['id']] = other
+  listed, seen = [], set()
+  for record in records:
+    group = layers.get(stack_of(record), {}) if stack_of(record) else {}
+    members = sorted(group.values(), key=lambda layer: ((layer.get('plan') or {}).get('stack') or {}).get('position') or 0) if record['id'] in group else [record]
+    for member in members:
+      if member['id'] not in seen:
+        seen.add(member['id'])
+        listed.append(member)
+  return listed
 
 
-def verdict(record):
-  plan = record.get('plan') or {}
-  review = record.get('quality_review') if isinstance(record.get('quality_review'), dict) else {}
-  state = review.get('state')
-  # A verdict for an older head does not cover this one.
-  return None if state == 'all_clear' and review.get('reviewed_head_sha') != plan.get('head_sha') else state
+def line_counts(plan):
+  """Lines added and removed (inline-session.js lineCounts), or None."""
+  stat = STAT.fullmatch(str(plan.get('diff_stat') or '').strip())
+  return {'added': int(stat[2] or 0), 'removed': int(stat[3] or 0)} if stat else None
 
 
-def prepared_card(record, ledger):
+def screenshot_count(plan):
+  shots = plan.get('screenshots')
+  return sum(1 for shot in shots if isinstance(shot, dict) and SCREENSHOT_NAME.fullmatch(str(shot.get('name') or ''))
+    and SHA256.fullmatch(str(shot.get('sha256') or ''))) if isinstance(shots, list) else 0
+
+
+def stack_layer(plan):
+  """'Layer k of n', or '' (inline-session.js stackLayer, same rule): a stack
+  with a non-empty string id and whole-number position and total, with
+  1 <= position <= total, 2 <= total <= 999. Booleans, strings and anything
+  else omit the layer (test/fixtures/stack-layers.json)."""
+  stack = plan.get('stack') if isinstance(plan.get('stack'), dict) else {}
+  count = lambda n: (isinstance(n, int) and not isinstance(n, bool) or isinstance(n, float) and n.is_integer()) and 1 <= n <= 999
+  position, total, stack_id = stack.get('position'), stack.get('total'), stack.get('id')
+  if not (isinstance(stack_id, str) and stack_id and count(position) and count(total) and total >= 2 and position <= total):
+    return ''
+  return f'Layer {int(position)} of {int(total)}'
+
+
+def prepared_item(record):
+  """A fallback row: project, the screenshots the PR will publish, the stack
+  layer, then the change size, exactly as the live row and Confirm's row show
+  them (inline-session.js rowValues). The change size carries its counts as
+  `lines`, which a current host draws in colour; an older one shows the text."""
   plan = record.get('plan') if isinstance(record.get('plan'), dict) else {}
   if record.get('status') != 'prepared' or plan.get('action') not in ('pr', 'pr_update'):
     raise ValueError('Only a prepared pull request or pull-request update has a Send card.')
-  repo = plan.get('repo') or record.get('repo') or ''
-  number = record.get('number')
-  facts = [{'label': 'Repository', 'value': bounded(repo or 'Unknown'),
-      **({'href': f'https://github.com/{repo}'} if REPO.fullmatch(repo) else {})},
-    {'label': 'Action', 'value': f'Update PR #{number}' if plan.get('action') == 'pr_update' and number else 'New PR'}]
-  stat = STAT.search(str(plan.get('diff_stat') or ''))
-  if stat:
-    files = int(stat[1])
-    facts.append({'label': 'Change', 'value': f'{files} {"file" if files == 1 else "files"} · +{stat[2] or 0} −{stat[3] or 0}'})
-  state = verdict(record)
-  facts.append({'label': 'Review', 'value': VERDICTS.get(state, 'Not reviewed')})
-  card = {'title': bounded(plan.get('title') or record.get('title') or 'Prepared contribution'),
-    'intent': f'review:{record["id"]}', 'facts': facts}
-  layers = stack_layers(record, ledger)
-  if state == 'all_clear' and (len(layers) < 2 or any(layer.get('status') == 'prepared' for layer in layers)):
-    card['action'] = {'label': 'Contribute', 'intent': f'chat-send:{record["id"]}'}
-  return card
+  shots, layer, lines = screenshot_count(plan), stack_layer(plan), line_counts(plan)
+  return {'title': bounded(plan.get('title') or record.get('title') or 'Prepared contribution'),
+    'intent': f'review:{record["id"]}',
+    'facts': [{'label': 'Project', 'value': bounded(plan.get('repo') or record.get('repo') or 'Unknown')},
+      *([{'label': 'Screenshots', 'value': f'{shots} screenshot' + ('' if shots == 1 else 's')}] if shots else []),
+      *([{'label': 'Stack', 'value': layer}] if layer else []),
+      {'label': 'Change', **({'value': f"+{lines['added']}\u00a0−{lines['removed']}", 'lines': lines} if lines else {'value': 'Size not recorded'})}]}
 
 
-def card_block(records, ledger):
-  if not 1 <= len(records) <= MAX_BATCH:
-    raise ValueError(f'A card names 1 to {MAX_BATCH} prepared records.')
-  cards = [prepared_card(record, ledger) for record in records]
-  if len(cards) == 1:
-    return {'app': 'contribute', 'inline': True, 'interaction': 'inline', **cards[0]}
-  block = {'app': 'contribute', 'intent': 'reviews:queue', 'title': f'{len(cards)} contributions ready',
-    'inline': True, 'interaction': 'inline', 'items': cards}
-  sendable = [record['id'] for record, card in zip(records, cards) if 'action' in card]
-  if len(sendable) >= 2:
-    block['action'] = {'label': 'Contribute all', 'intent': f'chat-send-batch:{batch_handle(sendable)}'}
+def all_clear(record):
+  """Reviewed all clear for its exact current head; Contribute re-checks on tap."""
+  plan = record.get('plan') or {}
+  review = record.get('quality_review') if isinstance(record.get('quality_review'), dict) else {}
+  return review.get('state') == 'all_clear' and bool(plan.get('head_sha')) and review.get('reviewed_head_sha') == plan.get('head_sha')
+
+
+def in_chat(record, chat_id):
+  """The chat created the record or reconciled it (contributing/ledger.md)."""
+  ids = record.get('chat_ids') if isinstance(record.get('chat_ids'), list) else []
+  return bool(chat_id) and (record.get('chat_id') == chat_id or chat_id in ids)
+
+
+def chat_records(chat_id, ledger):
+  """Every prepared pull request of this chat that is all clear for its
+  current head, oldest first. The newest card in a chat is its only live one,
+  so it names all of the chat's ready work, not only what this turn prepared.
+  Unreviewed work is never pulled in, so it cannot hold the card."""
+  found = []
+  for path in sorted(Path(ledger).glob('*.json')):
+    try:
+      record = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+      continue
+    if (isinstance(record, dict) and record.get('status') == 'prepared' and in_chat(record, chat_id)
+        and RECORD_ID.fullmatch(str(record.get('id') or '')) and path.name == f'{record["id"]}.json'
+        and (record.get('plan') or {}).get('action') in ('pr', 'pr_update') and all_clear(record)):
+      found.append(record)
+  return sorted(found, key=lambda record: str(record.get('created_at') or ''))
+
+
+def card_block(records, ledger=None, chat_id=None):
+  records = list({record['id']: record for record in records}.values())
+  if chat_id and ledger is not None:
+    # The chat's other ready work joins only with its whole stack ready and
+    # from this chat, so it can never hold or refuse the card.
+    ready = lambda group: all(all_clear(member) and in_chat(member, chat_id) for member in group)
+    joining = [record for record in chat_records(chat_id, ledger) if ready(with_complete_stacks([record], ledger))]
+    records = list({record['id']: record for record in [*records, *joining]}.values())
+  if ledger is not None:
+    records = with_complete_stacks(records, ledger)
+  if not records:
+    raise ValueError('A card names at least one prepared record.')
+  # The final set, stack layers included, is what the card names: every one
+  # all clear for its current head and, with a chat, from this chat.
+  waiting = [record['id'] for record in records if not all_clear(record)]
+  if waiting:
+    raise ValueError(f'{", ".join(waiting)} is not all clear for its current version. Review it (and every layer of its stack) before printing the card.')
+  stray = [record['id'] for record in records if chat_id and not in_chat(record, chat_id)]
+  if stray:
+    raise ValueError(f'{", ".join(stray)} is not from this chat. Restage it from this chat first, so its record names this chat.')
+  if len(records) > MAX_ITEMS:
+    raise ValueError(f'This chat has {len(records)} contributions ready; a card shows at most {MAX_ITEMS}. '
+      'Ask the owner to send some from Contribute first, then print the card.')
+  items = [prepared_item(record) for record in records]
+  block = {'app': 'contribute', 'intent': CHAT_INTENT,
+    'title': '1 contribution' if len(records) == 1 else f'{len(records)} contributions',
+    'inline': True, 'interaction': 'inline', 'expand': False,
+    # Every value reads on its own, so fallback and Confirm rows show values
+    # only (labels kept for assistive technology).
+    'item_facts': 'values', 'confirm_facts': 'values', 'items': items,
+    'action': ({'label': 'Send', 'intent': f'chat-send:{records[0]["id"]}'} if len(records) == 1
+      else {'label': f'Send {len(records)}', 'intent': f'chat-send-batch:{batch_handle([record["id"] for record in records])}'})}
+  if utf16_length(json.dumps(block, ensure_ascii=False)) > JSON_LIMIT:
+    raise ValueError('This card is too large for chat. Print fewer contributions per card.')
   return block
 
 
@@ -114,9 +207,13 @@ def main():
   parser = argparse.ArgumentParser(description=__doc__)
   parser.add_argument('record_ids', nargs='+')
   parser.add_argument('--ledger-dir', type=Path)
+  parser.add_argument('--chat-id', default=os.environ.get('CHAT_ID', ''),
+    help='The chat this card is printed in (default: $CHAT_ID). Its other ready contributions join the card.')
   args = parser.parse_args()
+  if not args.chat_id:
+    parser.error('the chat this card is printed in is required: pass --chat-id or set CHAT_ID')
   ledger = args.ledger_dir or find_ledger()
-  block = card_block([read_record(record_id, ledger) for record_id in args.record_ids], ledger)
+  block = card_block([read_record(record_id, ledger) for record_id in args.record_ids], ledger, args.chat_id or None)
   print('```mobius-app\n' + json.dumps(block, ensure_ascii=False) + '\n```')
 
 

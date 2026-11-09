@@ -104,7 +104,10 @@ test('scheduled autopilot retries durable attention after a lost respond call', 
 test('scheduled autopilot ignores exact own replies, not all owner activity', () => {
   const source = readFileSync(new URL('../job.sh', import.meta.url), 'utf8')
   assert.match(source, /ignored_event_urls/)
-  assert.match(source, /comment\.get\("url"\) in ignored/)
+  // The classifier lives in github_events.py (behavior: test_github_events.py).
+  const events = readFileSync(new URL('../github_events.py', import.meta.url), 'utf8')
+  assert.match(events, /comment\.get\("url"\) not in ignored/)
+  assert.match(events, /review\.get\("url"\) not in ignored/)
   assert.doesNotMatch(source, /gh", "api", "user"/)
   assert.doesNotMatch(source, /ignore_login/)
 })
@@ -146,4 +149,11 @@ test('the chat-card capability says plainly that it can send after Confirm', () 
   assert.match(capability.reason, /sends them to GitHub only after you press Confirm/)
   assert.doesNotMatch(capability.reason, /without sending/)
   assert.ok(manifest.source_files.includes('prepared_block.py'))
+})
+
+test('the ask capability says plainly that it sends a message as the owner', () => {
+  const capability = manifest.capabilities['chat.blocks.ask']
+  assert.equal(capability.version, 1)
+  assert.match(capability.reason, /Fix in chat sends a short request .* as your message/)
+  assert.ok(manifest.source_files.includes('card-asks.js'))
 })

@@ -1,8 +1,8 @@
 import { contributionScopeHash } from './review.js'
 
 // Chat blocks are destinations, never approval. Opening one navigates to an
-// exact identity in the project workspace; nothing starts or is sent. A send
-// key only names records; the owner's Confirm on the card is the approval.
+// exact identity in the project workspace; nothing starts or is sent. Only the
+// owner's Confirm on the card, of the list it shows then, is the approval.
 const REPOSITORY_PART = /^[A-Za-z0-9_.-]{1,100}$/
 const RECORD_ID = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/
 export const MAX_BATCH = 12
@@ -20,8 +20,17 @@ export function chatBlockTarget(intent) {
   return Number.isSafeInteger(value) ? { kind: 'pull', repo: `${owner}/${name}`, number: value } : null
 }
 
+// The chat card (prepared_block.py). Its block intent is the same for every
+// card, so a chat host that attests it (`rows-v2`) can tell which card is the
+// newest of its chat; there the card's action covers what the ledger says this
+// chat has ready at the moment of Confirm, and its items only say where to
+// look. Its one action keeps the earlier card's shape, so a host without
+// `rows-v2` runs it exactly as before (inline-session-v1.js): the action must
+// match the items, which are then exactly what it sends.
+export const CHAT_INTENT = 'chat:contributions'
 const SEND = /^chat-send:(.+)$/
 const BATCH = /^chat-send-batch:([0-9a-f]{16})$/
+const REVIEW_ITEM = /^review:(.+)$/
 
 // A short, content-addressed handle for the records a batch card lists. It
 // binds the exact set (prepared_block.py computes the same value) and keeps
@@ -29,17 +38,61 @@ const BATCH = /^chat-send-batch:([0-9a-f]{16})$/
 // an approval token.
 export const batchHandle = ids => contributionScopeHash(['contribute-batch-v1', ...[...new Set(ids)].sort()].join('\n'))
 
-// Resolve one card action. A batch resolves only against the per-record send
-// actions listed on the same card; a handle naming any other set is refused.
-export function sendTarget(key, cardKeys = []) {
-  const single = SEND.exec(String(key || ''))
-  if (single) return validRecordId(single[1]) ? { kind: 'record', ids: [single[1]] } : null
-  const batch = BATCH.exec(String(key || ''))
-  if (!batch) return null
-  const ids = [...new Set(cardKeys.map(other => SEND.exec(String(other || ''))?.[1]).filter(validRecordId))]
-  return ids.length >= 2 && ids.length <= MAX_BATCH && batchHandle(ids) === batch[1]
-    ? { kind: 'batch', ids } : { kind: 'batch', ids: [], invalid: true }
+// The records a card names, from the item intents the host sends with the
+// session (`init.items`, in card order, deduplicated by the host). Every item
+// must be a ledger entry (`review:<id>`); any other item makes the card
+// unresolvable rather than silently narrowing it. null means the host sent no
+// items (an older Möbius), so the card's action names nothing.
+export function itemRecordIds(items) {
+  if (!Array.isArray(items)) return null
+  const ids = items.map(item => REVIEW_ITEM.exec(String(item?.intent || ''))?.[1])
+  return ids.every(validRecordId) ? [...new Set(ids)] : []
 }
 
-// Every record a card's send actions name, for read-only status requests.
-export const cardRecordIds = keys => [...new Set(keys.flatMap(key => sendTarget(key, keys)?.ids || []))]
+// Resolve the card's one action against the records its items name, on a
+// host without `rows-v2`. The action is `chat-send:<id>` for a one-item card
+// or `chat-send-batch:<handle>` over every item; either must match the items
+// exactly, or it is refused. The items, never the action, are the source of
+// the record set. A card printed before its items named records has no
+// `review:` item: its one-record action names the record whose status it
+// shows (`legacy`), but a refused target never sends (`ids` stays empty).
+export function sendTarget(key, items) {
+  const single = SEND.exec(String(key || ''))
+  const batch = BATCH.exec(String(key || ''))
+  if (!(single ? validRecordId(single[1]) : batch)) return null
+  const kind = single ? 'record' : 'batch'
+  const ids = itemRecordIds(items)
+  if (!ids) return { kind, ids: [], needsItems: true }
+  const matches = ids.length >= 1 && ids.length <= MAX_BATCH
+    && (single ? ids.length === 1 && ids[0] === single[1] : batchHandle(ids) === batch[1])
+  if (matches) return { kind, ids }
+  const legacy = single && !items.some(item => REVIEW_ITEM.test(String(item?.intent || '')))
+  return legacy ? { kind, ids: [], invalid: true, legacy: single[1] } : { kind, ids: [], invalid: true }
+}
+
+// Every record a card's action names, for read-only status requests.
+export const cardRecordIds = (keys, items) => [...new Set(keys.flatMap(key => sendTarget(key, items)?.ids || []))]
+
+// The record ids a card's items name (`review:<id>` intents, in card order).
+export function hintedIds(items) {
+  return [...new Set((Array.isArray(items) ? items : []).map(item => REVIEW_ITEM.exec(String(item?.intent || ''))?.[1])
+    .filter(validRecordId))].slice(0, MAX_BATCH)
+}
+
+// A Contribute card's one action and the record ids it hints at: its items,
+// or for a one-record card printed before items named records, the record its
+// action names. null for anything Contribute does not print. Whether it is
+// the chat's live card is the host's attested block intent, not the card.
+export function cardKind(actions, items) {
+  const keys = (Array.isArray(actions) ? actions : []).map(action => String(action?.key || ''))
+  const key = keys.find(value => SEND.test(value) || BATCH.test(value))
+  if (!key) return null
+  const hints = hintedIds(items)
+  const legacy = SEND.exec(key)?.[1]
+  return { key, hints: hints.length || !validRecordId(legacy) ? hints : [legacy] }
+}
+
+// A record belongs to a chat when that chat created it or reconciled it
+// (`chat_id`, `chat_ids`; contributing/ledger.md).
+export const inChat = (record, chatId) => Boolean(chatId) && (record?.chat_id === chatId
+  || (Array.isArray(record?.chat_ids) && record.chat_ids.includes(chatId)))
