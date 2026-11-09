@@ -183,6 +183,7 @@
     "ui/RunDetail.jsx",
     "ui/ReviewFrame.jsx",
     "ui/ReviewTab.jsx",
+    "ui/RespondJobBox.jsx",
     "send-readiness.js",
     "inline-session.js",
     "card-asks.js",

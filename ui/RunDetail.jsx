@@ -109,7 +109,7 @@ export function RunDetail({ run, pulls, listState, busy = false, error = '', onS
         onCheck={onCheck && !elsewhere ? onCheck : null} /> : null}
       <RepairProposal item={item} busy={busy} onDecide={onRepair && !elsewhere ? (attempt, decision) => onRepair(item, attempt, decision) : null} />
     </div>)}</div>
-    {run.chat_id ? <button className="co-btn co-btn-primary co-task-primary" onClick={() => openAgentConversation(run.chat_id)}>{needsAnswer ? 'Answer in chat' : elsewhere ? 'Open the owning chat for details' : NAMES.openChat}</button> : null}
+    {run.chat_id ? <button className="co-btn co-btn-primary co-task-primary" onClick={() => openAgentConversation(run.chat_id)}>{needsAnswer ? NAMES.answerInChat : elsewhere ? 'Open the owning chat for details' : NAMES.openChat}</button> : null}
     {stoppable && onStop ? <><button className="co-btn co-btn-quiet" disabled={busy} onClick={onStop}>Stop workflow</button><p className="co-task-footnote">Stop prevents future actions. An already-started public action may finish; its outcome stays visible.</p></> : null}
     {retryable ? <><button className="co-btn co-task-secondary" disabled={busy} onClick={() => onRetry(retryPulls)}>{rerunName(run.mode)}</button><p className="co-task-footnote">Starts a new run on the current versions. You can pick another model.</p></> : null}
     {!run.can_stop && run.state !== 'complete' && run.chat_id && !retryable ? <p className="co-task-footnote">Use Stop in the owning chat to stop this workflow.</p> : null}
