@@ -1,7 +1,8 @@
 // One readiness model for every Send surface: which publication unit owns a
 // record, whether its next phase can be sent now, and why not. Pure; the
 // guarded Send handlers in index.jsx remain the only publication path.
-import { qualityReviewFor, reviewStateFor } from './review.js'
+import { uncertainPublication } from './domain.js'
+import { leadingReason, qualityReviewFor, reviewCheckBlocker, reviewStateFor } from './review.js'
 import { publicationStackUnit, stackIntent, stackPublicationRecords, stackReadiness } from './stack.js'
 
 const PUBLIC_STATUSES = new Set(['draft', 'open', 'landing', 'merged', 'closed'])
@@ -29,8 +30,12 @@ export function sendBlocker(record, reviewState, { requireCheck = false } = {}) 
   }
   if (!['pr', 'pr_update'].includes(record.plan?.action)) return 'Only pull requests can be sent from here.'
   if (needsSourceRefresh(reviewState)) return 'The reviewed source changed. Refresh it in Contribute.'
+  // The last send may already be public: it stays locked until observed.
+  if (uncertainPublication(record)) return 'GitHub has not confirmed the last send yet.'
   if (sendNeedsAttention(record)) return 'The last send needs attention in Contribute.'
   if (reviewIncomplete(record)) return 'This exact version needs review first.'
+  const unchecked = reviewCheckBlocker(reviewState)
+  if (unchecked) return unchecked
   if (requireCheck && reviewState?.state !== 'ready') return 'This contribution needs a current source check in Contribute.'
   return ''
 }
@@ -46,8 +51,11 @@ export function publicationUnit(record, records, reviewStatus, options) {
   const unit = publicationStackUnit(record, records)
   const readiness = stackReadiness(unit)
   const phase = readiness.ok ? stackPublicationRecords(unit) : []
-  const reason = readiness.ok ? phase.map(blocker).find(Boolean) || '' : readiness.code === 'settled' ? '' : readiness.message
-  return { key: `stack:${unit.id}`, stack: true, records: unit.records, ready: reason ? [] : phase, reason }
+  const reason = readiness.ok ? leadingReason(phase.map(blocker)) : readiness.code === 'settled' ? '' : readiness.message
+  // `stackCode` says why a stack cannot be sent as a whole (stack.js
+  // stackReadiness: incomplete, invalid, restack, refresh), '' when it can.
+  return { key: `stack:${unit.id}`, stack: true, records: unit.records, ready: reason ? [] : phase, reason,
+    stackCode: readiness.ok || readiness.code === 'settled' ? '' : readiness.code }
 }
 
 // Distinct units for the named records. Several layers of one stack share one.

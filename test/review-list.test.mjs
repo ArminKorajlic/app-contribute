@@ -75,6 +75,15 @@ test('a PR that is no longer open is history, whatever its review said', () => {
   assert.equal(read(item('verdict_pending'), live({ state: 'CLOSED' })).bucket, 'done')
 })
 
+test('a clean private review is done, and a push after it puts the PR back to review', () => {
+  const clean = item('all_clear')
+  const done = read(clean)
+  assert.deepEqual([done.bucket, done.confirm, labels(done)], ['done', false, ['Kept private']], 'nothing to send: it does not wait on you')
+  const moved = read(clean, live({ headRefOid: 'b'.repeat(40) }))
+  assert.deepEqual([moved.bucket, labels(moved)], ['waiting', ['New commits · review again']])
+  assert.equal(read(clean, live({ headRefOid: 'b'.repeat(40), author: { login: 'owner' } })).bucket, 'done', 'your own PR is not nagged about an older clean check')
+})
+
 test('a PR GitHub did not return is unknown, never classified from the saved review', () => {
   const entry = { run: run(), item: item('verdict_pending') }
   const unknown = classifyReview(entry, { login: 'owner', live: null, runs: [entry.run] })
@@ -101,8 +110,17 @@ test('every PR is read live in batches of 25, one batch after another, and only 
     assert.equal(read.size, 29, 'the PR GitHub did not return stays unknown')
     assert.equal(read.has('o/r#2'), false)
     assert.equal((await loadReviewPulls('token', [])).size, 0)
+    // One batch GitHub cannot answer fails the whole read: a half-read history is never taken for a complete one.
+    let calls = 0
+    globalThis.fetch = async (url, options) => {
+      calls += 1
+      if (calls === 2) return { ok: false }
+      const count = (JSON.parse(options.body).query.match(/p\d+:repository/g) || []).length
+      return { ok: true, json: async () => ({ data: Object.fromEntries(Array.from({ length: count }, (_, index) => [`p${index}`, { pullRequest: live({ number: index }) }])) }) }
+    }
+    await assert.rejects(() => loadReviewPulls('token', refs), /Could not read/)
     globalThis.fetch = async () => ({ ok: false })
-    assert.equal((await loadReviewPulls('token', [{ repo: 'o/r', number: 1 }])).size, 0, 'a failed read leaves every PR unknown')
+    await assert.rejects(() => loadReviewPulls('token', [{ repo: 'o/r', number: 1 }]), /Could not read/)
   } finally { globalThis.fetch = previous }
 })
 
