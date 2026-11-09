@@ -829,8 +829,12 @@ input[type=checkbox].co-switch:focus-visible { outline:2px solid var(--accent); 
 .co-search input::placeholder { color:var(--muted); }
 .co-search input::-webkit-search-cancel-button { display:none; }
 .co-search:has(input:disabled) { opacity:.5; }
-.co-search-clear { flex:none; display:grid; place-items:center; width:36px; height:36px; padding:0; border:0; border-radius:var(--co-radius-round); background:none; color:var(--muted); cursor:pointer; }
-.co-search-clear:hover,.co-search-clear:focus-visible { background:var(--surface-2,var(--bg)); color:var(--text); outline:none; }
+/* The button is a full control tall and wide (44px); the field's 1px edge is taken back with a negative margin so the field stays 44px.
+   Only the 36px circle behind the 16px icon is drawn, so it looks as small as before and a thumb still hits it. */
+.co-search-clear { position:relative; isolation:isolate; flex:none; display:grid; place-items:center; width:var(--co-control-height); height:var(--co-control-height); margin:-1px 0; padding:0; border:0; background:none; color:var(--muted); cursor:pointer; }
+.co-search-clear::before { content:''; position:absolute; z-index:-1; inset:4px; border-radius:var(--co-radius-round); }
+.co-search-clear:hover,.co-search-clear:focus-visible { color:var(--text); outline:none; }
+.co-search-clear:hover::before,.co-search-clear:focus-visible::before { background:var(--surface-2,var(--bg)); }
 .co-pr-list-controls .co-search,.co-file-tools .co-search { margin:0; flex:1; }
 .co-person-search { margin:16px 0 12px; }
 @media(prefers-reduced-motion:reduce) { .co-search { transition:none; } }
