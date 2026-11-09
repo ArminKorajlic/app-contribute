@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """A fake `gh api`: logs every call and answers from FAKE_GH_CONFIG. Shared by test_respond_result.py and respond-contract.test.mjs."""
+import datetime
 import json
 import os
 import re
@@ -45,6 +46,7 @@ def watch():
     "push": bool(receipts["push"]),
     "replies": [item["index"] for item in receipts["replies"]],
     "description": bool(receipts["description"]),
+    "sending": (receipts.get("sending") or {}).get("index"),
   }
 
 
@@ -90,6 +92,20 @@ if method == "GET" and path is not None and path.startswith(ref_prefix):
     finish({"ok": False}, error="gh: Not Found (HTTP 404)")
   finish({"ok": True}, {"ref": "refs/heads/" + name, "object": {"type": "commit", "sha": sha}})
 
+
+def comments_of(kind):
+  """What the owner's comments look like when listed: the plain PR comments, or the review-thread replies."""
+  return [item for item in config.get("comments", []) if item["kind"] == kind]
+
+
+if method == "GET" and lowered == "user":
+  finish({"ok": True}, {"login": config.get("me", "owner-login")})
+
+for kind, listing in (("issue", pull_path.replace("/pulls/", "/issues/") + "/comments"), ("review", pull_path + "/comments")):
+  if method == "GET" and lowered.split("?")[0] == listing:
+    page = int(re.search(r"[?&]page=([0-9]+)", lowered).group(1)) if "page=" in lowered else 1
+    finish({"ok": True}, [item["comment"] for item in comments_of(kind)] if page == 1 else [])
+
 WRITES = [
   ("POST", re.compile(re.escape(pull_path.replace("/pulls/", "/issues/")) + "/comments")),
   ("POST", re.compile(re.escape(pull_path) + "/comments/[0-9]+/replies")),
@@ -104,7 +120,24 @@ if any(m == method and route.fullmatch(lowered) for m, route in WRITES):
     save_config()
     entry["ok"] = False
     finish(entry, error="gh: Server Error (HTTP 500)")
+  comment = {"id": 9000 + config["writes"], "html_url": f"https://example.test/c/{config['writes']}",
+             "user": {"login": config.get("me", "owner-login")}, "body": json.loads(body).get("body"),
+             "created_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
+  is_reply = "/comments/" in lowered
+  is_comment = lowered.endswith("/comments") or is_reply
+  if is_comment:
+    if is_reply:
+      comment["in_reply_to_id"] = int(lowered.split("/comments/")[1].split("/")[0])
+    config.setdefault("comments", []).append({"kind": "review" if is_reply else "issue", "comment": comment})
+  moved = config.get("after_write") or {}
+  if moved.get("at") == config["writes"]:
+    config["pr"].update(moved["pr"])  # the PR changes right after this write: the next read sees it
+  if config.get("lose_at") == config["writes"]:
+    config["lose_at"] = None  # GitHub took the write but its answer never reached us, once
+    save_config()
+    entry["ok"] = "lost"
+    finish(entry, error="gh: Post https://api.github.com/: connection reset by peer")
   save_config()
-  finish(entry, {"html_url": f"https://example.test/c/{config['writes']}"})
+  finish(entry, {"html_url": comment["html_url"]})
 
 finish({"ok": False, "unexpected": True}, error="gh: Not Found (HTTP 404)")

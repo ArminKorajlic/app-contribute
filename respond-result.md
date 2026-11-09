@@ -75,8 +75,11 @@ needs compare-and-swap. Every write is atomic (temporary file, then rename).
   `patch_omitted` is `true` (binary files also have `binary: true`).
 * Caps: 30 points; point title 160, answer 400, reviewer 60 characters; 12 replies of at
   most 20 000 characters; description at most 60 000; 10 logins; tests 500; 60 commits;
-  300 files; a file's patch 60 000 and all patches together 400 000 characters.
-  Text must be valid Unicode (no lone surrogates).
+  300 files; a file's path 4 096 (Linux's `PATH_MAX`, so every path Git reports fits); a file's
+  patch 60 000 and all patches together 400 000 characters. A commit title longer than 300
+  characters is cut to 300 (ending in `…`) when saved; the SHA is what names the commit. Every
+  count is in characters (Unicode code points), on both sides: an emoji is one character, in
+  Python and in the app's JavaScript. Text must be valid Unicode (no lone surrogates).
 * `digest` is the SHA-256 (lower-case hex) of the UTF-8 bytes of this object written with
   `json.dumps(..., sort_keys=True, separators=(",", ":"), ensure_ascii=False)`:
   `{"v": 1, "pr_head": pr.head_sha, "tip": tip_sha, "points": [{reviewer, title, ending, commit, answer}…],
@@ -84,6 +87,7 @@ needs compare-and-swap. Every write is atomic (temporary file, then rename).
   It binds what the owner read to what gets posted.
 * `receipts`: `push` is `{"sha", "at"}` once done; `replies` is a list of
   `{"index", "url", "at"}`; `description` is `{"at"}`; `rerequest` is `{"at", "reviewers"}`.
+  `sending` is `{"index", "at"}` while a reply may be on its way (below), else `null`.
   `error` is `{"step", "message"}` when `state` is `failed`.
 
 ## The decision (`respond-decisions/<slug>.json`, written by the app)
@@ -137,7 +141,7 @@ owner presses Post. In this order, it:
 1. loads the result (its `id` must match; `posted` means nothing to do, exit 0);
 2. requires the decision file to say `approved` for this `result_id` and the stored `digest`;
 3. recomputes the digest from the result's content and requires it to equal the stored one;
-4. reads the PR from GitHub: open, and its head is `pr.head_sha` (or `tip_sha` when the
+4. reads the PR from GitHub: open, still aimed at `pr.base_ref`, and its head is `pr.head_sha` (or `tip_sha` when the
    push already happened, see below);
 5. with `--dry-run`, prints the plan and stops here;
 6. sets `state` to `posting`, then does each step that has no receipt yet:
@@ -145,15 +149,25 @@ owner presses Post. In this order, it:
      (never forced), from the bundle (fetch the PR head, fetch the bundle, push); then check
      GitHub shows `tip_sha` as that branch's head. Skipped when there are no commits;
    * **replies**: one `POST` each (`issues/<n>/comments`, or
-     `pulls/<n>/comments/<reply_to>/replies` when `reply_to` is set), in order;
+     `pulls/<n>/comments/<reply_to>/replies` when `reply_to` is set), in order. Before each
+     write `receipts.sending` is saved, and it is cleared once the receipt is. A run that finds
+     `sending` set (the answer was lost, or the process ended mid-write) first looks on GitHub,
+     through the owner's recent comments (`GET user`, then `issues/<n>/comments` or
+     `pulls/<n>/comments` with `since` a minute before `sending.at`), for one with exactly that
+     body (and in that thread): found, it is receipted with its link and not sent again; not
+     found, nothing went out and the reply is sent. If GitHub cannot be asked, the step stops
+     and nothing is sent blind;
    * **description**: `PATCH pulls/<n>` with the new body, when `description` is not `null`;
    * **re-request**: `POST pulls/<n>/requested_reviewers`, when `rerequest` is not empty;
    each success is written to `receipts` at once, so a second run continues where the first
-   stopped and never repeats a step;
+   stopped and never repeats a step. The PR is read again (open, same head branch, same base,
+   head still `pr.head_sha` or the tip) right before every step after the first and before every
+   reply, so a PR that moved, was retargeted or was closed part-way stops what is left; what
+   already went out stays in the receipts;
 7. sets `state` to `posted`.
 
 Refusals before step 6 change nothing and exit 3 with the reason (not approved, digest or id
-mismatch, PR closed, PR moved). A failure inside step 6 sets `state` to `failed` with
+mismatch, PR closed, PR moved or retargeted). A failure inside step 6 sets `state` to `failed` with
 `error`, keeps the receipts and exits 4. Every GitHub write goes through `gh api` with the
 JSON body on standard input. Test hooks: `RESPOND_APP_DIR` replaces the storage directory;
 `RESPOND_GIT_REMOTE` replaces the Git URL used to fetch and push.

@@ -48,7 +48,10 @@ MAX_DESCRIPTION = 60_000
 MAX_LOGINS = 10
 MAX_TESTS = 500
 MAX_COMMITS = 60
+MAX_COMMIT_TITLE = 300
 MAX_FILES = 300
+MAX_LOOKUP_PAGES = 10  # of 100 comments: where a reply that may have gone out is looked for
+MAX_PATH = 4096  # Linux PATH_MAX: no checkout holds a longer one, so the app can read every path Git reports
 MAX_FILE_PATCH = 60_000
 MAX_ALL_PATCHES = 400_000
 # The app reads these numbers in JavaScript, where larger integers lose precision.
@@ -446,7 +449,10 @@ def list_commits(repo: Path, pr_head: str) -> list[dict[str, str]]:
   commits = []
   for record in filter(None, output.split("\0")):
     sha, _, message = record.lstrip("\n").partition("\n")
-    commits.append({"sha": sha, "title": message.split("\n", 1)[0].strip()})
+    title = message.split("\n", 1)[0].strip()
+    if len(title) > MAX_COMMIT_TITLE:
+      title = title[:MAX_COMMIT_TITLE - 1].rstrip() + "…"  # a label, cut for display: the SHA names the commit
+    commits.append({"sha": sha, "title": title})
   if len(commits) > MAX_COMMITS:
     raise BadInput(f"There are {len(commits)} new commits; the limit is {MAX_COMMITS}. Split the work.")
   return commits
@@ -516,6 +522,10 @@ def changed_files(repo: Path, pr_head: str) -> list[dict[str, Any]]:
     files.append(entry)
   if len(files) > MAX_FILES:
     raise BadInput(f"{len(files)} files changed; the limit is {MAX_FILES}. Split the work.")
+  for entry in files:
+    for name in (entry["path"], entry.get("previous_path") or ""):
+      if len(name) > MAX_PATH:
+        raise BadInput(f"A changed file's path has {len(name)} characters; the limit is {MAX_PATH}.")
   add_patches(repo, pr_head, files)
   return files
 
@@ -571,7 +581,7 @@ def build_result(
     "files": work.files,
     "bundle": f"{result_id}.bundle" if work.commits else None,
     "digest": None,
-    "receipts": {"push": None, "replies": [], "description": None, "rerequest": None},
+    "receipts": {"push": None, "replies": [], "description": None, "rerequest": None, "sending": None},
     "error": None,
   }
   result["digest"] = compute_digest(result)
@@ -714,10 +724,11 @@ def show_command(args: argparse.Namespace) -> int:
 # --- post ---------------------------------------------------------------------------------
 
 
-def require_same_pull(result: dict[str, Any], facts: dict[str, Any]) -> None:
+def require_same_pull(result: dict[str, Any], facts: dict[str, Any], outcome: str = "nothing was posted") -> None:
+  """The PR is still the one the owner approved. `outcome` says what the refusal leaves undone."""
   pr = result["pr"]
   if facts["state"] != "open":
-    raise Refused(f"The PR is {facts['state']}, not open, so nothing was posted.")
+    raise Refused(f"The PR is {facts['state']}, not open, so {outcome}.")
   # Once the push is receipted, GitHub's head is the tip; before that it is still the head the
   # work was built on, or the tip when a finished push lost its receipt (the push step then
   # finds nothing left to send and only records it).
@@ -725,10 +736,14 @@ def require_same_pull(result: dict[str, Any], facts: dict[str, Any]) -> None:
   if facts["head_sha"] not in allowed:
     raise Refused(
       f"The PR moved: GitHub's head is {facts['head_sha'][:7]} but this result was built on "
-      f"{pr['head_sha'][:7]}, so nothing was posted. Ask for another Respond pass."
+      f"{pr['head_sha'][:7]}, so {outcome}. Ask for another Respond pass."
     )
   if facts["head_ref"] != pr["head_ref"] or str(facts["head_repo"]).lower() != pr["head_repo"].lower():
-    raise Refused("The PR's head branch is not the one this result was built on, so nothing was posted.")
+    raise Refused(f"The PR's head branch is not the one this result was built on, so {outcome}.")
+  if facts["base_ref"] != pr["base_ref"]:
+    raise Refused(
+      f"The PR now targets {facts['base_ref']}, not {pr['base_ref']} as when this result was approved, so {outcome}."
+    )
 
 
 def require_postable(store: Store, pull: PullRef, result: dict[str, Any]) -> None:
@@ -808,21 +823,83 @@ class Posting:
     self.persist()
     print(f"Pushed {counted(len(commits), 'commit')} to {pr['head_repo']}:{pr['head_ref']} (tip {tip[:7]}).")
 
+  def recheck(self) -> None:
+    """The PR is read again right before a public step, so a PR that moved, was retargeted or was
+    closed part-way through stops what is left. What already went out stays in the receipts."""
+    try:
+      facts = read_pull(self.pull)
+    except CommandError as error:
+      raise CommandError(f"could not confirm the PR on GitHub before this step ({error})") from error
+    require_same_pull(self.result, facts, "the steps still to do were not posted")
+
+  def published_reply(self, index: int, since: str) -> str | None:
+    """The link of the comment a reply that may have reached GitHub became, or None when none
+    of the owner's comments says exactly that since the attempt began."""
+    repo, number, reply = self.result["repo"], self.result["number"], self.result["replies"][index]
+    me = str(gh_api("user").get("login", "")).lower()
+    if not me:
+      raise CommandError("GitHub did not say whose comments to look for")
+    # Clocks differ a little: look from a minute before the attempt began.
+    cutoff = (dt.datetime.fromisoformat(since.replace("Z", "+00:00")) - dt.timedelta(minutes=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    thread = reply["reply_to"]
+    listing = (f"repos/{repo}/issues/{number}/comments" if thread is None else f"repos/{repo}/pulls/{number}/comments")
+    wanted = reply["body"].replace("\r\n", "\n").strip()
+    for page in range(1, MAX_LOOKUP_PAGES + 1):
+      comments = gh_api(f"{listing}?per_page=100&since={cutoff}&page={page}")
+      if not isinstance(comments, list):
+        raise CommandError("GitHub's list of comments was not a list")
+      for comment in comments:
+        if not isinstance(comment, dict) or str((comment.get("user") or {}).get("login", "")).lower() != me:
+          continue
+        if thread is not None and comment.get("in_reply_to_id") != thread:
+          continue
+        if str(comment.get("body", "")).replace("\r\n", "\n").strip() == wanted and str(comment.get("created_at", "")) >= cutoff:
+          return str(comment.get("html_url") or "")
+      if len(comments) < 100:
+        return None
+    raise CommandError("too many recent comments to tell whether the reply went out")
+
+  def settle_unknown_reply(self) -> None:
+    """A reply that was being sent when an earlier run ended (an answer lost, a crash) is looked up on
+    GitHub first: found, it is receipted and never sent again; not found, nothing went out and it is
+    sent normally. When GitHub cannot be asked the step stops, so a reply is never sent blind."""
+    receipts = self.result["receipts"]
+    attempt = receipts.get("sending")
+    if not attempt:
+      return
+    if not (isinstance(attempt, dict) and isinstance(attempt.get("index"), int) and isinstance(attempt.get("at"), str)
+            and 0 <= attempt["index"] < len(self.result["replies"])):
+      raise CommandError("the record of the reply that was being sent is unreadable, so it was not sent again")
+    index = attempt["index"]
+    if all(receipt["index"] != index for receipt in receipts["replies"]):
+      url = self.published_reply(index, attempt["at"])
+      if url is not None:
+        receipts["replies"].append({"index": index, "url": url, "at": utc_now()})
+        print(f"Reply {index + 1} of {len(self.result['replies'])} had reached GitHub already: {url or 'no link returned'}")
+    receipts["sending"] = None
+    self.persist()
+
   def post_replies(self) -> None:
     repo, number, replies = self.result["repo"], self.result["number"], self.result["replies"]
-    receipts = self.result["receipts"]["replies"]
-    posted = {receipt["index"] for receipt in receipts}
+    receipts = self.result["receipts"]
+    self.settle_unknown_reply()
     for index, reply in enumerate(replies):
-      if index in posted:
+      if any(receipt["index"] == index for receipt in receipts["replies"]):
         continue
+      self.recheck()
       path = (f"repos/{repo}/issues/{number}/comments" if reply["reply_to"] is None
               else f"repos/{repo}/pulls/{number}/comments/{reply['reply_to']}/replies")
+      # Saved before the write: whatever happens to this process or the connection, the next run
+      # knows this reply may be out and looks for it before sending anything.
+      receipts["sending"] = {"index": index, "at": utc_now()}
+      self.persist()
       try:
         response = gh_api(path, "POST", {"body": reply["body"]})
       except CommandError as error:
         raise CommandError(f"reply {index + 1} of {len(replies)}: {error}") from error
       url = response.get("html_url") if isinstance(response, dict) else None
-      receipts.append({"index": index, "url": url if isinstance(url, str) else "", "at": utc_now()})
+      receipts["replies"].append({"index": index, "url": url if isinstance(url, str) else "", "at": utc_now()})
+      receipts["sending"] = None
       self.persist()
       print(f"Posted reply {index + 1} of {len(replies)}: {url or 'no link returned'}")
 
@@ -830,6 +907,7 @@ class Posting:
     result = self.result
     if result["description"] is None or result["receipts"]["description"]:
       return
+    self.recheck()
     gh_api(f"repos/{result['repo']}/pulls/{result['number']}", "PATCH", {"body": result["description"]})
     result["receipts"]["description"] = {"at": utc_now()}
     self.persist()
@@ -839,6 +917,7 @@ class Posting:
     result = self.result
     if not result["rerequest"] or result["receipts"]["rerequest"]:
       return
+    self.recheck()
     reviewers = list(result["rerequest"])
     gh_api(f"repos/{result['repo']}/pulls/{result['number']}/requested_reviewers", "POST", {"reviewers": reviewers})
     result["receipts"]["rerequest"] = {"at": utc_now(), "reviewers": reviewers}
@@ -846,7 +925,7 @@ class Posting:
     print(f"Asked {', '.join(reviewers)} for a new review.")
 
   def fail(self, step: str, error: Exception) -> PostFailed:
-    message = str(error) if isinstance(error, CommandError) else f"unexpected {type(error).__name__}: {error}"
+    message = str(error) if isinstance(error, (CommandError, Stop)) else f"unexpected {type(error).__name__}: {error}"
     self.result["state"] = "failed"
     self.result["error"] = {"step": step, "message": message}
     self.persist()

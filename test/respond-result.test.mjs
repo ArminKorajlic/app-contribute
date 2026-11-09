@@ -138,3 +138,16 @@ test('the message that tells the chat to post is exact, names the one command, a
   assert.match(message, /Do not push, comment, reply or edit anything on GitHub by hand\. If it refuses, say why and stop\./)
   assert.match(message, /checks the approval and the PR head itself/)
 })
+
+test('a length is counted in characters, as the helper counts it: an emoji is one, not two', () => {
+  const rocket = '\u{1F680}'
+  assert.notEqual(result({ tests: 'a'.repeat(499) + rocket }), null, '499 letters and one emoji is 500 characters')
+  assert.equal(result({ tests: 'a'.repeat(500) + rocket }), null, '501 characters is still refused')
+  assert.equal(result({ tests: rocket.repeat(500) }).tests.length, 1000, 'the same 500 characters, all emoji')
+  assert.notEqual(result({ commits: [{ sha: '1'.repeat(40), title: rocket.repeat(300) }] }), null, 'a 300 character title of emoji')
+  assert.equal(result({ commits: [{ sha: '1'.repeat(40), title: 't'.repeat(301) }] }), null)
+  const nested = Array.from({ length: 10 }, () => 'd'.repeat(50)).join('/') + '/file.txt'
+  assert.notEqual(result({ files: [{ ...example().files[0], path: nested }] }), null, 'a valid nested path of 509 characters')
+  assert.notEqual(result({ files: [{ ...example().files[0], path: 'p'.repeat(4096) }] }), null)
+  assert.equal(result({ files: [{ ...example().files[0], path: 'p'.repeat(4097) }] }), null)
+})
