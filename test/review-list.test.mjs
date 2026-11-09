@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { DESK_VIEWS, deskCounts, railBadge } from '../desk.js'
-import { changedReviewRuns, classifyReview, loadReviewPulls, reviewCounts, reviewEntries, reviewKey, withReviewRun } from '../review-list.js'
+import { changedReviewRuns, classifyReview, loadReviewPulls, mergeReviewPulls, readReviewPulls, reviewCounts, reviewEntries, reviewKey, withReviewRun } from '../review-list.js'
 
 const HEAD = 'a'.repeat(40)
 const run = (extra = {}) => ({ id: 'r', state: 'complete', execution_state: 'completed', chat_id: 'c', created_at: '2026-11-03T22:00:00Z', ...extra })
@@ -75,6 +75,15 @@ test('a PR that is no longer open is history, whatever its review said', () => {
   assert.equal(read(item('verdict_pending'), live({ state: 'CLOSED' })).bucket, 'done')
 })
 
+test('a clean private review is done, and a push after it puts the PR back to review', () => {
+  const clean = item('all_clear')
+  const done = read(clean)
+  assert.deepEqual([done.bucket, done.confirm, labels(done)], ['done', false, ['Kept private']], 'nothing to send: it does not wait on you')
+  const moved = read(clean, live({ headRefOid: 'b'.repeat(40) }))
+  assert.deepEqual([moved.bucket, labels(moved)], ['waiting', ['New commits · review again']])
+  assert.equal(read(clean, live({ headRefOid: 'b'.repeat(40), author: { login: 'owner' } })).bucket, 'done', 'your own PR is not nagged about an older clean check')
+})
+
 test('a PR GitHub did not return is unknown, never classified from the saved review', () => {
   const entry = { run: run(), item: item('verdict_pending') }
   const unknown = classifyReview(entry, { login: 'owner', live: null, runs: [entry.run] })
@@ -101,8 +110,49 @@ test('every PR is read live in batches of 25, one batch after another, and only 
     assert.equal(read.size, 29, 'the PR GitHub did not return stays unknown')
     assert.equal(read.has('o/r#2'), false)
     assert.equal((await loadReviewPulls('token', [])).size, 0)
+    // One batch GitHub cannot answer fails the whole read: a half-read history is never taken for a complete one.
+    let calls = 0
+    globalThis.fetch = async (url, options) => {
+      calls += 1
+      if (calls === 2) return { ok: false }
+      const count = (JSON.parse(options.body).query.match(/p\d+:repository/g) || []).length
+      return { ok: true, json: async () => ({ data: Object.fromEntries(Array.from({ length: count }, (_, index) => [`p${index}`, { pullRequest: live({ number: index }) }])) }) }
+    }
+    await assert.rejects(() => loadReviewPulls('token', refs), /Could not read/)
     globalThis.fetch = async () => ({ ok: false })
-    assert.equal((await loadReviewPulls('token', [{ repo: 'o/r', number: 1 }])).size, 0, 'a failed read leaves every PR unknown')
+    await assert.rejects(() => loadReviewPulls('token', [{ repo: 'o/r', number: 1 }]), /Could not read/)
+  } finally { globalThis.fetch = previous }
+})
+
+test('a read of some PRs replaces just those: one GitHub did not return is unknown again, the others keep their last read', async () => {
+  const previous = globalThis.fetch
+  let missing = new Set()
+  const answering = async (url, options) => {
+    const query = JSON.parse(options.body).query
+    const numbers = [...query.matchAll(/pullRequest\(number:(\d+)\)/g)].map(match => Number(match[1]))
+    return { ok: true, json: async () => ({ data: Object.fromEntries(numbers.map((number, index) => [`p${index}`, { pullRequest: missing.has(number) ? null : live({ number, state: 'OPEN' }) }])) }) }
+  }
+  globalThis.fetch = answering
+  const refs = [1, 2, 3].map(number => ({ repo: 'o/r', number }))
+  const readInto = async (known, keys) => mergeReviewPulls(known, await readReviewPulls('token', refs, keys))
+  const keysOf = pulls => [...pulls.keys()].sort()
+  try {
+    const everything = await readInto(new Map(), null)
+    assert.deepEqual(keysOf(everything), ['o/r#1', 'o/r#2', 'o/r#3'])
+    // GitHub no longer returns PR 1 (permission lost, deleted): the targeted read of PRs 1 and 2 finds only PR 2.
+    missing = new Set([1])
+    const partial = await readInto(everything, new Set(['o/r#1', 'o/r#2']))
+    assert.deepEqual(keysOf(partial), ['o/r#2', 'o/r#3'], 'PR 1 kept its old read instead of becoming unknown')
+    assert.equal(partial.get('o/r#3'), everything.get('o/r#3'), 'a PR nobody asked about lost its last read')
+    assert.deepEqual(keysOf(everything), ['o/r#1', 'o/r#2', 'o/r#3'], 'the earlier read was changed')
+    // A read GitHub cannot answer fails, whether it asked for some PRs or all (see loadReviewPulls): the hub's failed handler keeps what the last read said.
+    globalThis.fetch = async () => ({ ok: false })
+    await assert.rejects(() => readInto(partial, new Set(['o/r#3'])), /Could not read/)
+    await assert.rejects(() => readInto(partial, null), /Could not read/)
+    // A read of everything that GitHub answers replaces the whole set.
+    globalThis.fetch = answering
+    missing = new Set([1, 2, 3])
+    assert.equal((await readInto(partial, null)).size, 0)
   } finally { globalThis.fetch = previous }
 })
 

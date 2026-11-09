@@ -33,8 +33,9 @@ PREFIX = "contributions/"
 STATE_FILE = "ledger-scan.json"
 SCHEMA = 1
 
-# Records the job polls, reconciles, or settles on every pass.
-LIVE_STATUSES = frozenset(("draft", "open", "landing", "prepared"))
+# Records the job polls, reconciles, or settles on every pass. A record still
+# `submitting` may hold a send GitHub has not confirmed (publication_observe.py).
+LIVE_STATUSES = frozenset(("draft", "open", "landing", "prepared", "submitting"))
 # Terminal records still owe cleanup while their disposable checkout exists.
 TERMINAL_STATUSES = frozenset((
     "merged", "closed", "superseded", "commented", "abandoned",

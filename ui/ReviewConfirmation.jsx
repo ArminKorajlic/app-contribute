@@ -8,11 +8,13 @@ import { ReviewPromptPreview } from './ReviewPromptSettings.jsx'
 import { AgentModelSettings } from './AgentModelSettings.jsx'
 import { SeenOnGithub } from './SeenOnGithub.jsx'
 
-// A fresh launch offers only the workflows this Möbius advertises.
-export function takeoverCapabilityBlocker({ capabilities, saved }) {
-  if (saved) return ''
+// Finish it for me and Take over promise to stop before every push for your approval and never to
+// merge. Only a Möbius that advertises the PR machine keeps that promise: an older one pushes without
+// asking and can merge when the review is clear, whatever this window says. So the launch needs it,
+// and a saved link needs it too (it asks the same mode, in the same scope).
+export function takeoverCapabilityBlocker({ capabilities }) {
   if (!capabilities) return 'Checking what this Möbius supports…'
-  return capabilities.review_fix_merge === true ? '' : 'Needs a newer Möbius.'
+  return capabilities.review_fix_merge === true && capabilities.pr_machine === true ? '' : 'Needs a newer Möbius.'
 }
 
 function Switch({ checked, disabled, label, detail, onChange }) {
@@ -137,9 +139,9 @@ function VersionDetails({ pulls, live }) {
 
 // Rights do not depend on the capability read, so they explain first. A draft can be
 // taken over: the agent never marks it ready, you do.
-function takeoverBlockerFor(choice, capabilities, saved) {
-  return takeoverBlocker(choice.pulls, { allowDraft: true })
-    || takeoverCapabilityBlocker({ capabilities, saved })
+function takeoverBlockerFor(choice, capabilities) {
+  return takeoverBlocker(choice.pulls)
+    || takeoverCapabilityBlocker({ capabilities })
     || (choice.intent === 'take_over' && !String(choice.takeover_reason || '').trim() ? 'Write why you are taking it over.' : '')
 }
 
@@ -171,8 +173,7 @@ export function ReviewConfirmation({ choice, busy, disabled, error, onConfirm, o
   useEffect(() => { if (choice) focusActionRegion(confirmation.current) }, [choice])
   if (!choice) return null
   const takeover = choice.mode === 'review_fix_merge'
-  const saved = !!choice.preview_sha256
-  const blocker = takeover ? takeoverBlockerFor(choice, capabilities, saved) : ''
+  const blocker = takeover ? takeoverBlockerFor(choice, capabilities) : ''
   const own = takeover ? 0 : ownedPulls(choice.pulls, ownLogin).length
   const ownOnly = own > 0 && own === choice.pulls.length
   // On your own PR the agent only checks, so the words describe a private review.
