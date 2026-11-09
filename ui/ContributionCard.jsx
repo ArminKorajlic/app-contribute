@@ -294,7 +294,9 @@ function SubmitErrorAlert({ rec, reviewState, onReview }) {
   // human headline and tuck the raw Git message behind Details. A persisted
   // last_submit_error carries no fresh code, so name it as one. An unmapped code
   // returns '' and the raw message becomes the headline (lenient fallback).
-  const code = reviewState?.code || (rec.last_submit_error ? 'previous_submit_failure' : '')
+  // Only a source change's code describes this alert; any other check's code
+  // (an unavailable check, say) is not why the last send failed.
+  const code = (blocked && reviewState.code) || (rec.last_submit_error ? 'previous_submit_failure' : '')
   const headline = problemHeadline(code)
   const displayHeadline = headline || (blocked ? 'Fresh review needed' : 'Review needs refreshing')
   const reviewedHead = String(rec.plan?.head_sha || '')
