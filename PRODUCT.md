@@ -59,8 +59,10 @@ position. Agent work progresses in place; only actual questions need the owner.
 
 ### Selected-PR run contract
 
-Keep the local/upstream overview and prepare/pull loop; extend their project
-workspace rather than introducing a replacement Reviews room. PR body, checks,
+Keep the local and GitHub overview and the prepare loop; extend that project
+workspace rather than introducing a replacement Reviews room. Updates belong
+to Möbius Settings (platform) and the App Store (apps); Contribute reports
+them and links there instead of running a second updater. PR body, checks,
 labels, reviewers/comments and source conversation are deliberate detail.
 
 Review-only, legacy pinned conditional merge and explicit named-PR
@@ -110,7 +112,7 @@ Keyboard-accessible controls, state labels that do not depend on color, readable
 
 ## Minimal daily workflow (owner direction, 2026-10-02)
 
-Use a linked project repository, real status refresh, prepare/pull launch panels, actionable prepared work above PRs, compact PR authors/labels/check counts and person assignment. Agent launch offers private review with optional review-only autopilot, or scoped review/fix/merge with automatic continuation; model and effort belong to that launch. Settings contains one grouped prompt editor, not a second automation or model console. Project work and History retain meaningful current/past work (a new full merge cycle is a Prepare option offered with merge rights); hiding archived proposals never deletes their records. Version/scope/prompt freezing stays mandatory underneath but does not require routine disclosures or duplicate decisions. Read-only guards remain intentional. New explicitly approved draft takeover reviews and fixes while draft, then marks ready only after fresh independent review and checks. Old grants retain their draft boundary.
+Use a linked project repository, real status refresh, a prepare launch panel, actionable prepared work above PRs, compact PR authors/labels/check counts and person assignment. Agent launch offers private review with optional review-only autopilot, or scoped review/fix/merge with automatic continuation; model and effort belong to that launch. Settings contains one grouped prompt editor, not a second automation or model console. Project work and History retain meaningful current/past work (a new full merge cycle is a Prepare option offered with merge rights); hiding archived proposals never deletes their records. Version/scope/prompt freezing stays mandatory underneath but does not require routine disclosures or duplicate decisions. Read-only guards remain intentional. New explicitly approved draft takeover reviews and fixes while draft, then marks ready only after fresh independent review and checks. Old grants retain their draft boundary.
 
 ## GitHub alignment and live versions (2026-10-03)
 
@@ -124,3 +126,14 @@ upstream position states incoming files (or commits behind), the same units as
 local work. Default review, fix and merge prompts are short, readable guidance
 that widens review scope and fixes causes; mechanics and authority stay in the
 fixed run brief and mandatory instructions.
+
+## Plain words (owner direction, 2026-10-26)
+
+Every control says what it does for someone who has never used Contribute:
+"Make PRs from my edits" rather than "Prepare changes", "Check GitHub" with a
+visible result rather than a silent refresh icon, "Mark ready for review" for
+an own draft, and labelled **Assign** and **Agent ▾** actions on PR rows. An
+action shows feedback when used. Check GitHub asks GitHub read-only whether a
+repository moved past the compared commit; a quiet project reads "Up to date at
+the last check" until a fresh check says more. The agent review window states
+its steps, what GitHub will see and which model runs it before anything starts.

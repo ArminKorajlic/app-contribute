@@ -142,15 +142,15 @@ components:
 
 **Creative North Star: "The Continuous Project Desk"**
 
-Contribute is one calm project workspace, not a separate agent dashboard or Reviews room. A compact local/upstream position keeps the prepare and pull loop visible, then the open pull-request list becomes the principal working surface. Titles, authors, labels, check counts and assignment are scannable before detail is opened. Prepared work appears above PRs only when actionable. Project work and History appear below the inventory once there is some; old work is never restarted merely by opening it.
+Contribute is one calm project workspace, not a separate agent dashboard or Reviews room. Two plain status lines say what is local and how the project compares with GitHub, then the open pull-request list becomes the principal working surface. Every control names its result in plain words ("Make PRs from my edits", "Check GitHub", "Mark ready for review"); none is an unlabeled icon. Titles, authors, labels, check counts and assignment are scannable before detail is opened. Prepared work appears above PRs only when actionable. Project work and History appear below the inventory once there is some; old work is never restarted merely by opening it.
 
-Selection belongs to the list: native checkboxes change a stable, in-flow action toolbar. An agent handoff leads to an inline choice and exact confirmation; it is not a direct action on selection. Details open inside the row, with a reserved scrolling body below stable actions and tabs. Settings is flat: Review, Fix and Merge guidance share a tabbed editor, with account management first. Model and effort are chosen per launch. Version, consent and safety checks remain implementation contracts, not routine settings content. The Möbius shell owns theme colors, typography, and icons.
+Selection belongs to the list: native checkboxes change a stable, in-flow action toolbar. An agent handoff is a two-item **Agent ▾** menu (Review only; Review, fix and merge) that opens the review window for exact confirmation; it is not a direct action on selection. Details open inside the row, with a reserved scrolling body below stable actions and tabs. Settings is flat: Review, Fix and Merge guidance share a tabbed editor, with account management first. Model and effort are chosen per launch. Version, consent and safety checks remain implementation contracts, not routine settings content. The Möbius shell owns theme colors, typography, and icons.
 
 **Key Characteristics:**
 - One continuous project workspace; no persistent split pane or second review room.
-- Compact two-line project position and immediate PR inventory.
-- Separate PR selection, detail, assignment, and agent action.
-- Inline review-mode choice and exact confirmation before a run starts.
+- Two plain-language status lines and immediate PR inventory.
+- Separate PR selection, detail, assignment, and agent action, each a labelled control.
+- An Agent ▾ choice, then a review window with exact confirmation before a run starts.
 - Stable row detail actions and tabs above a bounded, scrolling context region.
 - Named paused work and saved history remain reachable below current work.
 
@@ -173,9 +173,9 @@ Use the inherited shell font and monospace stack. The project/section headline u
 ## Layout
 
 - **Project directory:** Search and factual All / Changes / Updates filters narrow actual local and shared project conditions. A remembered GitHub repository is not treated as an installed local project.
-- **Selected project:** A continuous workspace contains the compact two-line local/upstream position, Prepare and pull entry points, actionable prepared work, the PR list, then any project work and History. Branch/version detail remains inspectable; the position is not omitted to make room for PRs.
-- **PR inventory:** Laid out like GitHub's PR list: search and an All / Unassigned / Assigned / Mine segmented filter above one bordered list box. The box header shows select-all and “N open”; Assign and Take on with agent appear there only once PRs are selected. Each row has a native checkbox, the GitHub state icon, the title with colored labels beside it, and a meta line “#123 · author opened 2 days ago · ✓ 18/18 · +a −d” plus any agent state. Comments, assignee avatars, the person action and the small purple agent action sit on the right. Check counts treat skipped and neutral runs as passing, as GitHub does.
-- **Selection and confirmation:** Selection only changes selection. Starting agent work opens an inline, focused review choice and confirmation within the project. Review only, legacy merge scope, and explicit review/fix/merge remain distinct. A launch, assignment or run opened from one PR appears directly under that PR; a batch opens under the list header. The confirmation identifies each selected PR, offers per-run model/effort and explains public effects when applicable. Private-review autopilot lives inside its choice; repair-and-merge continues automatically within its approved scope. Exact versions and frozen instructions remain checked underneath, without a second routine preview panel. Assigning a person is separate and does not start review.
+- **Selected project:** A continuous workspace contains the two status lines (your edits; GitHub), **Check GitHub**, **Make PRs from my edits** when there are edits, actionable prepared work, the PR list, then agent jobs and finished work. When GitHub has updates the GitHub line links to the place that applies them (Settings → Updates for Möbius, the App Store for apps); Contribute starts no update of its own. Edited files and exact versions remain inspectable through **See the files**.
+- **PR inventory:** Laid out like GitHub's PR list: search and an All / Unassigned / Assigned / Mine segmented filter above one bordered list box. The box header shows select-all and “N open”; Assign and Agent ▾ appear there only once PRs are selected. Each row has a native checkbox, the GitHub state icon, the title with colored labels beside it, and a meta line “#123 · author opened 2 days ago · ✓ 18/18 · +a −d” plus any agent state. Comments, then the quiet text actions **Assign** (or the assignee avatars) and **Agent ▾** sit on the right; they brighten when the row is in use. Check counts treat skipped and neutral runs as passing, as GitHub does.
+- **Selection and confirmation:** Selection only changes selection. Choosing a job in Agent ▾ opens the review window, a modal dialog with protected focus. Review only (with its **Allow posting the review on GitHub** and **Merge when safe** switches) and Review, fix and merge remain distinct; posting and merging block each other because the platform admits posting only in plain review. An assignment or run opened from one PR appears directly under that PR. The window names the job and each selected PR, lists numbered "What happens" steps, states what GitHub will see (green and private, or amber with the exact public effects), offers per-run model/effort, and labels its start button with exactly what is allowed. Private-review autopilot lives inside its choice; repair-and-merge continues automatically within its approved scope. Exact versions and frozen instructions remain checked underneath, without a second routine preview panel. Assigning a person is separate and does not start review.
 - **Detail:** Follows GitHub's PR page: title with #number, a state badge and “author wants to merge into base from head”, colored labels, then actions and Conversation / Files changed / Checks tabs. Conversation shows the description and comments as bordered comment boxes. The body below has a bounded scroll region so delayed data, long patches, empty states, and errors do not move those controls. Files, checks, and activity load on request; available patches may be incomplete.
 - **Settings:** One on-demand workspace groups Review / Fix / Merge decision tabs above a single editor. GitHub account comes first; Agent prompts follows with the same section heading. No Model or Automation settings sections. Preset changes affect new runs only; admitted-run instructions remain inspectable in deliberate run details.
 - **Responsive:** Current workspace content is capped near 1100px with 24px horizontal padding; at 640px padding becomes 16px. At 680px and below, local position remains compact, PR metadata wraps, side statuses move under the title, search becomes an explicit 44px control, and the action uses its short phone label. The settings workspace stacks at 650px. No horizontal viewport overflow or hidden primary action.
@@ -210,9 +210,9 @@ Two concise lines show local and upstream facts with adjacent prepare/pull paths
 
 The in-flow toolbar keeps select-all, count, Assign, and Take on with agent beside the rows. Individual checkboxes have a 44px target. A row title opens detail independently; author, labels, change totals, check count, meaningful work state, and assignment remain scannable. The purple agent action is icon-only on both device sizes and retains an accessible label. GitHub domain states use official Octicons; generic chrome keeps the shell icon vocabulary. A selected state is tonal, not the only indication of selection.
 
-### Inline confirmation and progress
+### Agent review window and progress
 
-Review mode cards show the difference between private review and scoped review/fix/merge. The compact confirmation explains public effects and Stop when relevant. For a draft takeover it explicitly includes marking ready after independent review and required checks; permission is saved in a new scope, never inferred for old runs. Exact head/base binding and prompt/model freeze are checked underneath, not repeated as routine disclosures. A run carries its own owning conversation and named remaining state; queued is not merged, and green checks do not imply independent approval.
+The window's title is the job ("Review only" or "Review, fix and merge") above the PR. Steps added by a switch are marked; the "Seen on GitHub" summary and the start button follow the same choice. The window explains public effects and Stop when relevant; exact versions stay in a collapsed detail. On a saved review link the same content renders inline on its page. For a draft takeover it explicitly includes marking ready after independent review and required checks; permission is saved in a new scope, never inferred for old runs. Exact head/base binding and prompt/model freeze are checked underneath, not repeated as routine disclosures. A run carries its own owning conversation and named remaining state; queued is not merged, and green checks do not imply independent approval.
 
 ### Contribution detail
 
@@ -225,9 +225,10 @@ A single flat prompt editor groups Review, Fix and Merge decision. Tabs have gen
 ## Do's and Don'ts
 
 ### Do:
-- **Do** preserve the local/upstream prepare-and-pull context above PR work.
+- **Do** preserve the plain local and GitHub status above PR work, and send updates to Settings or the App Store.
 - **Do** lead with visible PR title, colored labels, author and GitHub-style check counts; omit empty agent state.
-- **Do** keep selection independent from row detail and route agent action through inline confirmation.
+- **Do** keep selection independent from row detail and route agent action through the review window.
+- **Do** name every control by its result; no unlabeled icon actions.
 - **Do** distinguish assignment, private review, legacy merge scope, and scoped takeover.
 - **Do** keep detail controls stable while context loads and scrolls below them.
 - **Do** show paused work by name and preserve its remaining steps without automatic restart.

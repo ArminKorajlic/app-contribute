@@ -17,7 +17,7 @@ export function savedVersion(item, pulls = [], listState = {}) {
 
 // The one presentation of a review run, wherever it is opened from: a PR row,
 // the project's review history, or a chat link to the run.
-export function RunDetail({ run, pulls, listState, busy = false, error = '', onStop, retryPulls = [], onRetry, onPullUpdates }) {
+export function RunDetail({ run, pulls, listState, busy = false, error = '', onStop, retryPulls = [], onRetry, updater = null }) {
   const halted = reviewRunHalted(run)
   const needsAnswer = run.execution_state === 'awaiting_owner' || run.items?.some(item => ['needs_you', 'failed', 'merge_unknown', 'ready_unknown'].includes(item.state))
   const stoppable = run.can_stop && run.state !== 'complete' && !halted
@@ -41,7 +41,7 @@ export function RunDetail({ run, pulls, listState, busy = false, error = '', onS
     {retryable ? <><button className="co-btn co-task-secondary" disabled={busy} onClick={() => onRetry(retryPulls)}>Start again</button><p className="co-task-footnote">Starts a new run on the current versions. You can pick another model.</p></> : null}
     {!run.can_stop && run.state !== 'complete' && run.chat_id && !retryable ? <p className="co-task-footnote">Use Stop in the owning conversation to stop this workflow.</p> : null}
     {error ? <p role="alert">{error}</p> : null}
-    {run.items?.some(item => item.state === 'merged') && onPullUpdates ? <button className="co-btn co-task-secondary" onClick={onPullUpdates}>Pull updates</button> : null}
+    {run.items?.some(item => item.state === 'merged') && updater ? <><p className="co-task-footnote">Merged on GitHub. {updater.where}</p><button className="co-btn co-task-secondary" onClick={updater.open}>{updater.label}</button></> : null}
     {run.items?.some(item => item.state === 'queued') ? <p>In the merge queue, not merged yet. Contribute checks GitHub and shows when it lands.</p> : null}
   </>
 }

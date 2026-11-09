@@ -1,8 +1,10 @@
 import { useState } from 'react'
-import { contributionCycleAction, projectUpdateAction } from '../review.js'
+import { contributionCycleAction } from '../review.js'
 import { mayMerge } from '../collaboration.js'
-import { incomingCount, localChangeLabel, localChangeSummary, projectBoardFacts, projectCycleIdentity } from '../source-map.js'
+import { localChangeSentence, localChangeSummary, projectCycleIdentity, projectUpstreamLine } from '../source-map.js'
+import { projectUpdater } from '../updates.js'
 import { Icon } from './Icons.jsx'
+import { TimeAgo } from './GithubParts.jsx'
 import { SourceConversations } from './SourceConversations.jsx'
 import { useProjectCycle } from './useProjectCycle.js'
 import { TaskPane, useProjectTask } from './TaskPane.jsx'
@@ -13,9 +15,6 @@ const CYCLE_CSS = `
 .co-cycle-outlet{margin:12px 0 20px;border-bottom:1px solid var(--border)}
 .co-cycle-outlet .co-work-progress-row{margin:0}
 .co-cycle-outlet .co-task-content{margin:12px 0 16px}
-.co-work-route{display:flex;align-items:center;gap:10px;margin:16px 0;padding:12px 14px;border:1px solid var(--border);border-radius:10px;color:var(--text);font-size:14px}
-.co-work-route strong{font-weight:650}
-.co-work-route .co-icon{color:var(--accent);flex:none}
 .co-cycle-actions{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}
 .co-cycle-history{padding-left:20px}
 .co-cycle-history li{margin:4px 0}
@@ -25,16 +24,39 @@ const CYCLE_CSS = `
 .co-task-progress .co-cycle-actions{margin:12px 0 0}
 `
 
-function WorkRoute({ pull = false }) {
-  return <div className="co-work-route" role="img" aria-label={pull ? 'Accepted GitHub work moves into your local project' : 'Local work becomes a GitHub proposal only after your approval'}>
-    <strong>{pull ? 'GitHub' : 'Local work'}</strong><Icon name="right" size={18} /><strong>{pull ? 'Local project' : 'GitHub proposal'}</strong>
+// One plain-language fact about the project, with its next step beside it.
+function StatusLine({ icon, tone = 'plain', strong, text, sub, children }) {
+  return <div className={'co-position-line is-' + tone}>
+    <Icon name={icon} size={18} />
+    <div className="co-position-text"><p><strong>{strong}</strong>{text}</p>{sub ? <small>{sub}</small> : null}</div>
+    {children}
   </div>
+}
+
+const UPSTREAM_ICON = { ok: 'check', warn: 'refresh', muted: 'info' }
+
+function LocalLine({ project, run, task }) {
+  const local = localChangeSentence(project)
+  const files = local.edits ? <>{local.sub ? `${local.sub} ` : ''}<button type="button" className="co-link-action" onClick={() => task?.open('task:files')}>See the files</button></> : null
+  return <StatusLine icon="edit" strong={local.strong} text={local.text} sub={files}>
+    {local.edits ? <button type="button" className="co-btn" disabled={!run?.privateAction} onClick={() => task?.open('task:prepare')}>Make PRs from my edits</button> : null}
+  </StatusLine>
+}
+
+function UpstreamLine({ project, check }) {
+  const line = projectUpstreamLine(project, check)
+  if (!line) return null
+  const updater = line.update ? projectUpdater(project) : null
+  const checked = check?.checkedAt ? <TimeAgo prefix="Checked " value={check.checkedAt} /> : 'Use Check GitHub for the latest.'
+  return <StatusLine icon={UPSTREAM_ICON[line.tone]} tone={line.tone} strong={line.strong} text={line.text} sub={updater ? updater.where : checked}>
+    {updater ? <button type="button" className="co-btn" onClick={updater.open}>{updater.label}</button> : null}
+  </StatusLine>
 }
 
 const STATUS_LABELS = {
   restoring: 'Checking saved work', checking: 'Checking work status', starting: 'Starting agent', stopping: 'Stopping work',
-  waiting: 'Your agent has a question', paused: 'Work paused', failed: 'Work failed', stopped: 'Work stopped',
-  inactive: 'Agent not running', complete: 'Run completed', unknown: 'Status unknown',
+  waiting: 'Your agent has a question', paused: 'Paused', failed: 'Failed', stopped: 'Stopped',
+  inactive: 'Not running', complete: 'Finished', unknown: 'Status unknown',
   scheduled: 'Waiting to continue', deleted: 'Conversation deleted',
 }
 
@@ -65,14 +87,13 @@ function CycleNotice({ cycle, label, waiting, workflow }) {
   </div>
 }
 
-export function ProjectControls({ appId, token, project, run, onStart, loading, children }) {
+export function ProjectControls({ appId, token, project, run, onStart, loading, check = null, children }) {
   const task = useProjectTask()
   const workflow = useProjectCycle(projectCycleIdentity(project), onStart)
   const { cycle } = workflow
   const [error, setError] = useState('')
   const [follow, setFollow] = useState(false)
   const [prepareAgent, setPrepareAgent] = useState(DEFAULT_AGENT)
-  const [pullAgent, setPullAgent] = useState(DEFAULT_AGENT)
   const [cycleAgent, setCycleAgent] = useState(DEFAULT_AGENT)
   // Only positive platform evidence of work in progress blocks another cycle.
   // Every cycle is one message in the project's single conversation, so an
@@ -84,12 +105,8 @@ export function ProjectControls({ appId, token, project, run, onStart, loading, 
   const statusLabel = cycle.phase === 'running'
     ? (cycle.event === 'update_source_projects' ? 'Pulling accepted changes' : 'Preparing changes')
     : STATUS_LABELS[cycle.phase] || 'Status unknown'
-  const canUpdate = project.available && project.canonical_repo && project.kind !== 'external'
   const local = project.kind !== 'external'
   const changedFiles = localChangeSummary(project).changed
-  // Plain upstream position, like the local file count beside it. Counting
-  // merged records that touch incoming files overstated pending updates.
-  const incoming = project.incomingFiles > 0 || (!project.semanticAvailable && project.originBehind > 0) ? incomingCount(project) : ''
   // Starting a full merge cycle needs merge rights; seeing existing cycles never does.
   const cycleAction = contributionCycleAction(run, [project])
   const fullCycleAction = mayMerge(project.viewerPermission) && cycleAction ? { ...cycleAction, merge: true } : null
@@ -114,11 +131,11 @@ export function ProjectControls({ appId, token, project, run, onStart, loading, 
   const progressRow = hasCycle ? <section className="co-cycle-outlet" aria-label="Project work">
     <button type="button" className="co-work-progress-row" onClick={() => task?.open('task:cycle')} aria-expanded={task?.activeId === 'task:cycle'} aria-busy={active}>
       <span className={moving ? 'co-working-icon' : ''}><Icon name={waiting ? 'feedback' : 'prepare'} size={18} /></span>
-      <span><strong>{cycle.unsent && !moving ? 'A start needs sending' : !cycle.chatId ? 'Project work' : waiting ? 'Your agent has a question' : moving ? 'Agent working' : statusLabel}</strong><small>{cycle.chatId ? cycle.title || 'Current work' : 'Previous cycles and conversations'}</small></span><Icon name="right" size={16} />
+      <span><strong>{cycle.chatId ? cycle.title || 'Agent job' : 'Agent jobs'}</strong><small>{cycle.unsent && !moving ? 'A start needs sending' : !cycle.chatId ? 'Past jobs and their conversations' : waiting ? 'Your agent has a question' : moving ? 'Agent working' : statusLabel}</small></span><Icon name="right" size={16} />
     </button>
     <TaskPane id="task:cycle" dock={false}>
-      <h3>Project work</h3>
-      {cycle.chatId ? <p><strong>Current:</strong> {cycle.title || 'Project work'} · {statusLabel}{cycle.startedAt ? <> · <DateLabel value={cycle.startedAt} prefix="Started " /></> : null}</p> : <p>No current cycle.</p>}
+      <h3>Agent jobs</h3>
+      {cycle.chatId ? <p><strong>Current:</strong> {cycle.title || 'Project work'} · {statusLabel}{cycle.startedAt ? <> · <DateLabel value={cycle.startedAt} prefix="Started " /></> : null}</p> : <p>No agent job is running.</p>}
       <div className="co-cycle-actions">
         <button type="button" className="co-btn" disabled={['checking', 'restoring', 'starting', 'stopping'].includes(cycle.phase)} onClick={workflow.recheck}><Icon name="refresh" /> Check again</button>
         {cycle.chatId && cycle.phase !== 'deleted' ? <button type="button" className="co-btn" onClick={() => workflow.open()}>{waiting ? 'Answer question' : 'Open current conversation'}</button> : null}
@@ -130,7 +147,7 @@ export function ProjectControls({ appId, token, project, run, onStart, loading, 
         <button type="button" className="co-btn co-btn-primary co-task-primary" disabled={!canStart} onClick={() => start(fullCycleAction, cycleAgent)}>Start fresh full merge cycle</button>
       </> : null}
       {blockedReason || cycle.error || error ? <p role="status">{blockedReason || cycle.error || error}</p> : null}
-      {cycle.history?.length ? <details><summary>Previous cycles ({cycle.history.length})</summary><ul className="co-cycle-history">{cycle.history.map((item, index) => <li key={`${index}:${item.started_at || item.chat_id}`}><button type="button" className="co-quiet-action" onClick={() => workflow.open(item.chat_id)}>{item.title || 'Previous project work'}{item.started_at ? <> · <DateLabel value={item.started_at} prefix="Started " /></> : null}</button></li>)}</ul></details> : null}
+      {cycle.history?.length ? <details><summary>Past jobs ({cycle.history.length})</summary><ul className="co-cycle-history">{cycle.history.map((item, index) => <li key={`${index}:${item.started_at || item.chat_id}`}><button type="button" className="co-quiet-action" onClick={() => workflow.open(item.chat_id)}>{item.title || 'Previous project work'}{item.started_at ? <> · <DateLabel value={item.started_at} prefix="Started " /></> : null}</button></li>)}</ul></details> : null}
     </TaskPane>
   </section> : null
   const progress = cycle.chatId && (active || waiting || ['paused', 'failed'].includes(cycle.phase))
@@ -140,52 +157,27 @@ export function ProjectControls({ appId, token, project, run, onStart, loading, 
   const alert = error || cycle.error ? <div className="co-alert" role="alert"><strong>{cycle.phase === 'unknown' ? 'Couldn’t check work status' : 'Work needs attention'}</strong><p className="co-alert-text">{error || cycle.error}</p>{pendingRecovery}</div> : null
   const controls = <section className="co-local-work" aria-label={`Actions for ${project.name}`}>
     <style>{CYCLE_CSS}</style>
-    {local ? <div className="co-project-position" aria-label="Local and upstream changes">
-      <div className="co-position-line">
-        <Icon name="prepare" size={18} />
-        <button type="button" className="co-position-inspect" onClick={() => task?.open('task:files')}><span>Local</span><strong>{project.builtHere ? 'Only on your Möbius' : localChangeLabel(project)}</strong></button>
-        <button className="co-btn" disabled={!run?.privateAction} onClick={() => task?.open('task:prepare')}>Prepare changes</button>
-      </div>
-      {canUpdate ? <div className="co-position-line">
-        <Icon name="refresh" size={18} />
-        <button type="button" className="co-position-inspect" onClick={() => task?.open('task:update')}><span>Upstream</span><strong>{incoming ? `${incoming} incoming` : projectBoardFacts(project).shared}</strong></button>
-        <button type="button" className="co-btn" onClick={() => task?.open('task:update')}>Pull updates</button>
-      </div> : null}
+    {local ? <div className="co-project-position" aria-label="Your edits and GitHub">
+      <LocalLine project={project} run={run} task={task} />
+      <UpstreamLine project={project} check={check} />
     </div> : null}
     {local ? <SourceConversations project={project} appId={appId} token={token} /> : null}
     <TaskPane id="task:prepare" dock={false}>
-      <h3>Prepare changes</h3>
-      <p>Turn your local work into a clear proposal for private review.</p>
-      <WorkRoute />
+      <h3>Make PRs from your edits</h3>
+      <p>An agent groups your edits into PRs and checks them. The PRs stay private on your Möbius. Nothing goes to GitHub until you press Send on each one.</p>
       {cycle.phase === 'restoring' ? <p role="status">Checking existing work…</p> : null}
-      {local ? <button type="button" className="co-prepare-scope" onClick={() => task?.open('task:scope')}><span><small>Includes</small><strong>{changedFiles ? `${changedFiles} local ${changedFiles === 1 ? 'file' : 'files'}` : 'All local changes'}</strong></span><Icon name="right" size={16} /></button> : null}
+      {local ? <button type="button" className="co-prepare-scope" onClick={() => task?.open('task:scope')}><span><small>Includes</small><strong>{changedFiles ? `${changedFiles} edited ${changedFiles === 1 ? 'file' : 'files'}` : 'All your edits'}</strong></span><Icon name="right" size={16} /></button> : null}
       {fullCycleAction ? <label className="co-workflow-option co-follow-merge"><input type="checkbox" checked={follow} onChange={event => setFollow(event.target.checked)} /><span><strong>Follow through to merge</strong><small>Keep the agent with this change through review. You still approve sharing and merging.</small></span></label> : null}
       {progress}{startHeld ? null : <>
         <AgentModelSettings token={token} defaultHint="Your chat default" choice={prepareAgent} onChange={next => { setPrepareAgent(next); return true }} />
-        <button type="button" className="co-btn co-btn-primary co-task-primary" disabled={!canStart || !run?.privateAction} onClick={() => follow && fullCycleAction ? start(fullCycleAction, prepareAgent) : start(run.privateAction, prepareAgent)}><Icon name="prepare" size={18} /> {follow && fullCycleAction ? 'Prepare and follow' : 'Start preparation'}</button>
-        <p className="co-task-footnote">{blockedReason || 'Private until you approve sharing.'}</p>
+        <button type="button" className="co-btn co-btn-primary co-task-primary" disabled={!canStart || !run?.privateAction} onClick={() => follow && fullCycleAction ? start(fullCycleAction, prepareAgent) : start(run.privateAction, prepareAgent)}><Icon name="prepare" size={18} /> {follow && fullCycleAction ? 'Start and follow to merge' : 'Start'}</button>
+        <p className="co-task-footnote">{blockedReason || 'Nothing goes to GitHub until you press Send.'}</p>
       </>}
-      <details className="co-task-details"><summary>How preparation works</summary>
-        <p>Group related changes into the smallest sensible set of PRs. Compare with upstream, preserve unfinished work, and review thoroughly.</p>
+      <details className="co-task-details"><summary>How it works</summary>
+        <p>The agent groups related edits into the smallest sensible set of PRs, compares them with GitHub, keeps unfinished work safe, and reviews them.</p>
       </details>
       {alert}
     </TaskPane>
-    {canUpdate ? <TaskPane id="task:update" dock={false}>
-      <h3>Pull updates</h3>
-      <p>Check {project.name} against the newest shared version first, then bring the accepted work in. Unfinished local work stays safe.</p>
-      <WorkRoute pull />
-      <div className="co-task-scope"><strong>{projectBoardFacts(project).shared}</strong><span>Previous check</span></div>
-      {progress}{startHeld ? null : <>
-        <AgentModelSettings token={token} defaultHint="Your chat default" choice={pullAgent} onChange={next => { setPullAgent(next); return true }} />
-        <button className="co-btn co-btn-primary co-task-primary" disabled={!canStart} onClick={() => start(projectUpdateAction([project], Date.now()), pullAgent)}>Start pull</button>
-        {blockedReason ? <p className="co-task-footnote">{blockedReason}</p> : null}
-      </>}
-      <details className="co-task-details"><summary>How it works</summary>
-        <ul className="co-task-steps"><li>Check the latest shared version.</li><li>Test the combined result away from your live installation.</li><li>Bring conflicts back to you.</li></ul>
-        <p className="co-task-footnote">A merged PR does not update this installation automatically.</p>
-      </details>
-      {alert}
-    </TaskPane> : null}
   </section>
   return children ? children({ controls, progress: progressRow }) : <>{controls}{progressRow}</>
 }

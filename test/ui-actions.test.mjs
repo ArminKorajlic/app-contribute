@@ -41,16 +41,19 @@ test('disconnected projects offer a prominent GitHub connection action', () => {
 test('publication copy describes automatic GitHub identity without picker language', () => {
   assert.doesNotMatch(feedSource, /Choose Personal GitHub|Möbius relay supports standalone drafts/)
   assert.match(feedSource, /your connected GitHub account/)
-  assert.match(sourceMapSource, /\['local', 'Changes'\]/)
-  assert.match(sourceMapSource, /\['updates', 'Updates'\]/)
+  assert.match(sourceMapSource, /\['local', 'With your edits'\]/)
+  assert.match(sourceMapSource, /\['updates', 'Behind GitHub'\]/)
 })
 
-test('incoming upstream work is surfaced at project level with the safe update action', () => {
+test('incoming upstream work is surfaced at project level and sent to the place that updates it', () => {
   const controlsSource = readFileSync(new URL('../ui/ProjectControls.jsx', import.meta.url), 'utf8')
-  assert.match(controlsSource, /incoming \? `\$\{incoming\} incoming`/)
-  assert.match(controlsSource, /<h3>Pull updates<\/h3>/)
-  assert.match(controlsSource, />Start pull</)
-  assert.match(controlsSource, /task\?\.open\('task:update'\)/)
+  const updatesSource = readFileSync(new URL('../updates.js', import.meta.url), 'utf8')
+  assert.match(controlsSource, /projectUpstreamLine\(project, check\)/)
+  assert.match(controlsSource, /line\.update \? projectUpdater\(project\) : null/)
+  assert.doesNotMatch(controlsSource, /Pull updates|Start pull|task:update/)
+  // Settings owns Möbius updates and the App Store owns app updates.
+  assert.match(updatesSource, /type: 'moebius:open-settings'/)
+  assert.match(updatesSource, /type: 'moebius:open-app', appId: 'store'/)
 })
 
 test('settings keep prompts and account management while model choice belongs to each launch', () => {
@@ -134,7 +137,7 @@ test('global app handoffs stay durable while source-linked work returns to its c
   assert.doesNotMatch(sourceMapSource, /<AgentHandoffButton/)
   assert.match(sourceMapSource, /renderActivity\?\.\(project, navigation\)/)
   assert.match(feedSource, /function SourceChatChoices/)
-  assert.match(controlsSource, /Prepare changes/)
+  assert.match(controlsSource, /Make PRs from my edits/)
   assert.match(controlsSource, /Open current conversation/)
   assert.match(appSource, /const onFeedback = useCallback/)
   assert.match(appSource, /type: 'moebius:open-chat', chatId: rec\.chat_id, draft \},[\s\S]{0,20}'\*'\)/)
@@ -184,7 +187,7 @@ test('contribution details retain their project parent and refresh only source d
 test('preparation runs as one cycle while every public send stays explicit', () => {
   assert.doesNotMatch(feedSource, /PrivateRunAction|<AgentHandoffButton/)
   assert.match(controlsSource, /start\(run.privateAction, prepareAgent\)/)
-  assert.match(controlsSource, /Turn your local work into a clear proposal for private review/)
+  assert.match(controlsSource, /An agent groups your edits into PRs and checks them\. The PRs stay private on your Möbius\./)
   assert.match(cardSource, /<span>\{sending \? 'Sending…' : \(isUpdate \? 'Send update' : 'Send PR'\)\}<\/span>/)
   assert.match(feedSource, /role="alertdialog"/)
   assert.match(feedSource, /Nothing merges\./)
@@ -297,7 +300,7 @@ test('Projects owns vertical scrolling and makes every row visibly navigable', (
 test('one scoped control surface starts private preparation without leaving the project', () => {
   assert.match(appSource, /<ProjectControls[\s\S]*projectProgress=\{progress\}/)
   assert.match(controlsSource, /start\(run.privateAction, prepareAgent\)/)
-  assert.match(controlsSource, /Turn your local work into a clear proposal for private review/)
+  assert.match(controlsSource, /<h3>Make PRs from your edits<\/h3>/)
   assert.match(appSource, /recordsForProject\(records, project\)/)
   assert.match(appSource, /onStart=\{startAgentTask\}/)
   assert.match(themeSource, /\.co-project-controls \{/)
@@ -378,18 +381,19 @@ test('the Projects summary reserves its row while source checks refresh', () => 
   assert.match(appSource, /loading=\{sourceLoading\}/)
   assert.match(appSource, /if \(!quiet\) setSourceLoading\(true\)/)
   assert.match(sourceMapSource, /function LoadingState\(\)/)
-  assert.match(sourceMapSource, /Updated just now/)
+  assert.match(sourceMapSource, /running \? 'Checking…' : 'Check GitHub'/)
+  assert.match(sourceMapSource, /className="co-check-note" role="status"/)
   assert.match(sourceMapSource, /className="co-source-loading" role="status"/)
   assert.match(sourceMapSource, /Checking projects…/)
-  assert.match(sourceMapSource, /No local work to prepare/)
+  assert.match(sourceMapSource, /No projects with edits/)
 })
 
 test('project status and essential controls remain visible with a readable type floor', () => {
   assert.doesNotMatch(controlsSource, /More actions|View reviews/)
   assert.match(controlsSource, /className="co-btn co-btn-primary co-task-primary"/)
-  assert.match(sourceMapSource, /Refresh project status/)
-  assert.match(sourceMapSource, /visibleWork \? <span>\{visibleWork\}<\/span>/)
-  assert.match(sourceMapSource, /className="co-source-shared">\{facts.shared\}/)
+  assert.match(sourceMapSource, /<CheckGithub state=\{checkState\} note=\{checkNote\} onCheck=\{onRefresh\} scope=\{\[project\]\} \/>/)
+  assert.match(sourceMapSource, /<span>\{facts\.work\}<\/span>/)
+  assert.match(sourceMapSource, /className="co-source-shared">\{shared\}/)
   const sizes = [...(themeSource + workspaceTheme).matchAll(/font-size:\s*(\d+(?:\.\d+)?)px/g)].map(match => Number(match[1]))
   assert.ok(sizes.every(size => size === 0 || size >= 14))
 })
@@ -408,11 +412,11 @@ test('project chrome consolidates navigation, refresh, files, and preparation ch
   assert.match(appSource, /className="co-header-back"/)
   assert.match(appSource, /onProjectOpenChange=\{setProjectOpen\}/)
   assert.doesNotMatch(sourceMapSource, /className="co-project-switcher"/)
-  assert.match(sourceMapSource, /aria-label=\{loading \|\| manualRefresh === 'running' \? 'Refreshing projects'/)
-  assert.match(sourceMapSource, /aria-label="Refresh project status"/)
+  // One labelled Check GitHub control on the list and on each project.
+  assert.equal((sourceMapSource.match(/<CheckGithub /g) || []).length, 2)
+  assert.doesNotMatch(sourceMapSource, /Refresh project status|Refresh projects/)
   assert.doesNotMatch(sourceMapSource, /Files, branch and versions <Icon/)
-  assert.match(controlsSource, /co-position-inspect[\s\S]*task\?\.open\('task:files'\)/)
-  assert.match(controlsSource, /<span>Local<\/span>/)
+  assert.match(controlsSource, /className="co-link-action" onClick=\{\(\) => task\?\.open\('task:files'\)\}>See the files/)
 })
 
 test('private proposals have one actionable home without another merge workflow', () => {
@@ -427,7 +431,8 @@ test('private proposals have one actionable home without another merge workflow'
 test('the projects refresh control also renews the contribution feed and reports a partial one', () => {
   const retry = appSource.match(/onRetry=\{async \(\) => \{[\s\S]*?\n          \}\}/)?.[0] || ''
   assert.match(retry, /refreshCoordinatorRef\.current\(\)/)
-  assert.match(retry, /return sourceOk && ledgerCurrentRef\.current/)
+  assert.match(retry, /checkUpstream\(token, sourceProjects\)/)
+  assert.match(retry, /return \{ ok: sourceOk && ledgerCurrentRef\.current, upstream \}/)
 })
 
 test('the stale-feed note says offline only when the device is offline', () => {
@@ -445,7 +450,7 @@ test('adjacent local controls and PR inventory have distinct stable component id
 test('paused or failed project work sits above Start instead of replacing it', () => {
   // Only work in progress (a running turn or a question) holds a new start back.
   assert.match(controlsSource, /const startHeld = Boolean\(progress\) && \(active \|\| waiting\)/)
-  assert.equal((controlsSource.match(/\{progress\}\{startHeld \? null : <>/g) || []).length, 2)
+  assert.equal((controlsSource.match(/\{progress\}\{startHeld \? null : <>/g) || []).length, 1)
   assert.match(controlsSource, /function CycleNotice[\s\S]*cancelLabel\(cycle\.phase\)/)
   assert.doesNotMatch(controlsSource, /\{progress \|\| <>/)
 })

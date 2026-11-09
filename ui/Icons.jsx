@@ -6,7 +6,10 @@ import {
   Chat,
   ChevronDown,
   ChevronRight,
+  EditPencil,
+  Globe,
   InfoCircle,
+  Lock,
   Plus,
   Settings,
   Sparkle,
@@ -33,6 +36,9 @@ const SDK_ICONS = {
   person: User,
   search: Search,
   plus: Plus,
+  edit: EditPencil,
+  lock: Lock,
+  globe: Globe,
 }
 
 /*! GitHub Octicons — https://github.com/primer/octicons

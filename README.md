@@ -15,15 +15,24 @@ contribution. This app is the dashboard for that loop:
 
 - **One project workspace** — local changes, prepared work, incoming review
   requests, public progress, questions and history belong to their project.
-  There is no separate Reviews destination. All projects, Local changes and
-  Updates filter the same searchable overview.
+  There is no separate Reviews destination. All, **With your edits** and
+  **Behind GitHub** filter the same searchable overview.
 - **Task-first controls** — open a project to see its work list beside one
-  contextual task, with a compact project switcher rather than another sidebar. **Prepare changes** is the main action; **Pull updates**
-  stays visible in the project header. A permitted maintainer can choose
-  **Continue through merge** without granting unknown future public actions.
-  Preparation stays private, and updates use the reviewed adapter rather than
-  blindly rebasing the live checkout. On phones, a task takes the screen and
-  **Back to project** restores the same inventory.
+  contextual task, with a compact project switcher rather than another sidebar.
+  The project's status says in plain words what is local ("2 files changed on
+  this Möbius are not on GitHub yet") and how it compares with GitHub; **Make
+  PRs from my edits** is the main action and appears only when there are edits.
+  A permitted maintainer can choose **Follow through to merge** without granting
+  unknown future public actions. Contribute does not update projects itself:
+  when GitHub has updates it links to the place that applies them, Settings →
+  Updates for Möbius and the App Store for apps. On phones, a task takes the
+  screen and **Back to project** restores the same inventory.
+- **Check GitHub** — reloads this Möbius and asks GitHub, read-only, whether
+  each project's repository has commits newer than the one this Möbius last
+  compared with (`upstream-check.js`, one GraphQL query through the platform
+  proxy). It reports commits, never files: what an update changes is still the
+  reconciliation answer, and a quiet project reads "Up to date at the last
+  check" until a fresh check says more.
 - **Choose scope** — prepare all local work in a project, or find a source
   conversation, open it and ask it to prepare its changes. This metadata
   picker requires the companion platform source-chats route; older runtimes
@@ -266,13 +275,15 @@ before writing, while the cron refresh falls back to a plain best-effort write.
 
 ## Continuous Project Desk: private PR review runs
 
-The existing project workspace keeps local/upstream position, **Prepare
-changes** and **Pull updates**. PR state, private proposal, exact-head review,
+The existing project workspace keeps the local and GitHub position and **Make
+PRs from my edits**. PR state, private proposal, exact-head review,
 agent execution and settled history remain separate. Named paused work stays
 visible as unfinished; this iteration does not resume old cycles automatically.
 
 Review/Fix/Merge guidance shares one flat Settings editor. At launch choose
-Review, Review & merge or Review, fix & merge, plus model and effort. There is
+**Agent ▾ → Review only** (optionally **Merge when safe** or **Allow posting the
+review on GitHub**) or **Review, fix and merge**, plus model and effort, in the
+review window. There is
 no automatic-continuation option: the platform does not support it. Each launch
 sends only the options its mode accepts: review and merge prompts always, the
 fix prompt only for Review, fix & merge (new takeovers have no repair-round
@@ -513,4 +524,4 @@ Chromium (`CHROMIUM_PATH` can name it), blocks external network traffic, and
 cleans up its temporary profile. Live permission, activation and source-chat
 navigation checks are separate; passing this fixture is not a public merge.
 
-Project Refresh renews source, contribution, PR and run status without pulling code. Prepare and Pull open launch panels independently of old dormant work. Prepare's **Follow through to merge** (offered with merge rights) starts a full merge cycle. Once a project has work, its Project work row shows the current conversation, cancellation and retained history, also without merge rights; a fresh cycle start needs them. All of a project's agent work (Prepare, Pull and full merge cycles) runs in **one** app-owned conversation, scoped `contribute-cycle:<project digest>`; the platform keeps at most one active conversation per scope, so a project cannot have two owners. Cycle k is one message in it with the deterministic id `<scope>:k`: the first cycle uses the platform's scoped start, later ones send to that conversation. The platform de-duplicates that id per conversation, so every delivery (Start, **Send again**, after a reload) first re-reads the project record (online CAS) and acts only while k is its current, unconfirmed cycle; a stale or delivered cycle sends and changes nothing. The first attempt is recorded before it is made and is the only one that may create the conversation. A retry is bound to the conversation that cycle went to; if none holds it any more (deleted, or never created), it is not sent again and the owner starts new work instead. Model and effort are applied until one attempt has applied them. New starts wait while the platform reports work in progress: a running turn, an owner question, or an outstanding Wait, queued message, continuation, non-terminal run or background helper. If the owner deletes the conversation, a delivered cycle counts as finished and the next start creates a new conversation. The conversation's provider is fixed after its first turn, so later cycles may change the model only within that provider. Every launch (project work, review workflows and other agent handoffs) carries its own model choice; leaving it unset uses the chat default. The older single app-wide agent model setting is retired: Contribute removes its saved keys (`agent_provider`, `agent_model`, `agent_effort`) the next time it loads its settings.
+**Check GitHub** renews source, contribution, PR and run status without pulling code, and asks GitHub whether anything is new. **Make PRs from my edits** opens its launch panel independently of old dormant work; older Pull cycles stay visible as agent jobs, but Contribute no longer starts them. Prepare's **Follow through to merge** (offered with merge rights) starts a full merge cycle. Once a project has work, its Project work row shows the current conversation, cancellation and retained history, also without merge rights; a fresh cycle start needs them. All of a project's agent work (Prepare, Pull and full merge cycles) runs in **one** app-owned conversation, scoped `contribute-cycle:<project digest>`; the platform keeps at most one active conversation per scope, so a project cannot have two owners. Cycle k is one message in it with the deterministic id `<scope>:k`: the first cycle uses the platform's scoped start, later ones send to that conversation. The platform de-duplicates that id per conversation, so every delivery (Start, **Send again**, after a reload) first re-reads the project record (online CAS) and acts only while k is its current, unconfirmed cycle; a stale or delivered cycle sends and changes nothing. The first attempt is recorded before it is made and is the only one that may create the conversation. A retry is bound to the conversation that cycle went to; if none holds it any more (deleted, or never created), it is not sent again and the owner starts new work instead. Model and effort are applied until one attempt has applied them. New starts wait while the platform reports work in progress: a running turn, an owner question, or an outstanding Wait, queued message, continuation, non-terminal run or background helper. If the owner deletes the conversation, a delivered cycle counts as finished and the next start creates a new conversation. The conversation's provider is fixed after its first turn, so later cycles may change the model only within that provider. Every launch (project work, review workflows and other agent handoffs) carries its own model choice; leaving it unset uses the chat default. The older single app-wide agent model setting is retired: Contribute removes its saved keys (`agent_provider`, `agent_model`, `agent_effort`) the next time it loads its settings.

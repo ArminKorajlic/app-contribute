@@ -6,8 +6,10 @@ import {
   projectReadyToPrepare,
   projectBoardFacts,
 } from '../source-map.js'
+import { upstreamCheckSummary } from '../upstream-check.js'
 import { Icon } from './Icons.jsx'
 import { ProjectIcon } from './ProjectIcon.jsx'
+import { TimeAgo } from './GithubParts.jsx'
 import UnifiedDiff from './diff/UnifiedDiff.jsx'
 import { parseUnifiedDiff } from './diff/parseUnifiedDiff.js'
 import { TaskContext, TaskPane } from './TaskPane.jsx'
@@ -15,8 +17,8 @@ import { openGithubSettings } from '../github-connection.js'
 
 const FILTERS = [
   ['all', 'All'],
-  ['local', 'Changes'],
-  ['updates', 'Updates'],
+  ['local', 'With your edits'],
+  ['updates', 'Behind GitHub'],
 ]
 
 function projectMatchesJourney(project, filter) {
@@ -53,6 +55,20 @@ function ProjectPosition({ project }) {
       </dl>
     </details>
   )
+}
+
+// Check GitHub reloads this Möbius and asks GitHub whether anything is new;
+// the note under it says what the last check found.
+// `scope` is the projects the note speaks about: every project on the list,
+// only the open project on its own page.
+function CheckGithub({ state, note, onCheck, scope }) {
+  const running = state === 'running'
+  return <div className="co-check-github">
+    <button type="button" className="co-btn" onClick={onCheck} disabled={running} aria-busy={running}>
+      <Icon name="refresh" size={16} className={'co-icon' + (running ? ' is-spinning' : '')} />{running ? 'Checking…' : 'Check GitHub'}
+    </button>
+    {note && !running ? <p className="co-check-note" role="status">{upstreamCheckSummary(note.outcome, scope)} <TimeAgo prefix="Checked " value={note.at} /></p> : null}
+  </div>
 }
 
 function ProjectGlyph({ project }) {
@@ -119,7 +135,8 @@ function ProjectDetail({
   renderActivity,
   navigation,
   sourceRevision,
-  refreshing,
+  checkState,
+  checkNote,
 }) {
   const [publicKeys, setPublicKeys] = useState(new Set())
   const projectView = useRef(null)
@@ -147,12 +164,11 @@ function ProjectDetail({
       <article ref={projectView} className="co-workspace">
         <header className="co-workspace-head">
           <div className="co-workspace-title"><ProjectGlyph project={project} /><div>
-            <div className="co-workspace-name-row"><h2>{project.name}</h2>
-              <button className="co-icon-action" aria-label="Refresh project status" title="Refresh project status" disabled={refreshing} aria-busy={refreshing} onClick={onRefresh}><Icon name="refresh" size={17} /></button>
-            </div>
+            <div className="co-workspace-name-row"><h2>{project.name}</h2></div>
             <p>{project.canonical_repo ? <a href={`https://github.com/${project.canonical_repo}`} target="_blank" rel="noopener noreferrer">{project.canonical_repo}</a> : <span>Only on your Möbius</span>}
             </p>
           </div></div>
+          <CheckGithub state={checkState} note={checkNote} onCheck={onRefresh} scope={[project]} />
         </header>
         <div className="co-workspace-body">
           <div className="co-workspace-inventory">
@@ -160,8 +176,8 @@ function ProjectDetail({
           </div>
         </div>
         <TaskPane id="task:files" dock={false}>
-          <h3>Files, branch and versions</h3>
-          <p>See changed files and the exact versions being compared. Most work doesn’t need this view.</p>
+          <h3>Your edited files</h3>
+          <p>The files that differ from GitHub, and the exact versions being compared.</p>
           <ProjectFileChanges key={sourceRevision} project={project} loadProjectDiff={loadProjectDiff} onRefresh={onRefresh} />
           <ProjectPosition project={project} />
           {!project.available ? <p>No inspectable local source is available.</p> : null}
@@ -171,12 +187,15 @@ function ProjectDetail({
   )
 }
 
-function ProjectRow({ project, selected, onSelect, quiet = false }) {
+function ProjectRow({ project, selected, onSelect, check = null, quiet = false }) {
   const facts = projectBoardFacts(project)
-  const next = `${facts.work}; ${facts.shared}`
   const reviewRequests = project.reviewRequests?.length || 0
-  const visibleWork = reviewRequests ? facts.work.replace(/(?: · )?\d+ in review$/, '') : facts.work
+  const newCommits = check?.newCommits || 0
+  const shared = newCommits > 0 ? `${newCommits} new ${newCommits === 1 ? 'commit' : 'commits'} on GitHub since the last check.` : facts.shared
+  const next = `${facts.work} ${shared}`
   const showShared = !!(
+    newCommits > 0
+    ||
     project.conflictFiles
     || project.state === 'conflict'
     || projectHasSharedUpdates(project)
@@ -199,10 +218,10 @@ function ProjectRow({ project, selected, onSelect, quiet = false }) {
         <ProjectGlyph project={project} />
         <span className="co-source-row-id"><strong>{project.name}</strong></span>
         <span className="co-source-row-facts">
-          {quiet ? <span>{showShared ? facts.shared : 'No local changes'}</span> : <>
-            {visibleWork ? <span>{visibleWork}</span> : null}
-            {showShared ? <span className="co-source-shared">{facts.shared}</span> : null}
-            {reviewRequests ? <span className="co-source-attention">{reviewRequests} review {reviewRequests === 1 ? 'request' : 'requests'}</span> : null}
+          {quiet ? <span>{showShared ? shared : 'No edits.'}</span> : <>
+            <span>{facts.work}</span>
+            {showShared ? <span className="co-source-shared">{shared}</span> : null}
+            {reviewRequests ? <span className="co-source-attention">{reviewRequests} {reviewRequests === 1 ? 'PR waits' : 'PRs wait'} for your review.</span> : null}
           </>}
         </span>
         <span className="co-source-row-cue" aria-hidden="true">
@@ -214,12 +233,12 @@ function ProjectRow({ project, selected, onSelect, quiet = false }) {
   )
 }
 
-function ProjectGroup({ label, projects, selectedKey, onSelect, quiet = false }) {
+function ProjectGroup({ label, projects, selectedKey, onSelect, checks = {}, quiet = false }) {
   if (!projects.length) return null
   return (
     <div className="co-source-group">
       {label ? <div className="co-source-group-label">{label}</div> : null}
-      {projects.map((project) => <ProjectRow key={project.key} project={project} selected={project.key === selectedKey} onSelect={onSelect} quiet={quiet} />)}
+      {projects.map((project) => <ProjectRow key={project.key} project={project} selected={project.key === selectedKey} onSelect={onSelect} check={checks[project.key]} quiet={quiet} />)}
     </div>
   )
 }
@@ -240,8 +259,10 @@ export function SourceMap({
   renderActivity,
   repositoryPicker,
   onProjectOpenChange,
+  checks = {},
 }) {
   const [manualRefresh, setManualRefresh] = useState('idle')
+  const [checkNote, setCheckNote] = useState(null)
   const [filter, setFilter] = useState('all')
   const [query, setQuery] = useState('')
   const filtered = useMemo(
@@ -273,10 +294,12 @@ export function SourceMap({
     if (loading || manualRefresh === 'running') return
     setManualRefresh('running')
     try {
-      const ok = await onRetry?.()
-      setManualRefresh(ok ? 'done' : 'failed')
+      const outcome = await onRetry?.()
+      setManualRefresh(outcome?.ok ? 'done' : 'failed')
+      setCheckNote({ outcome, at: new Date().toISOString() })
     } catch {
       setManualRefresh('failed')
+      setCheckNote({ outcome: null, at: new Date().toISOString() })
     }
   }
 
@@ -389,18 +412,8 @@ export function SourceMap({
             <h2>Your projects</h2>
           </div>
           <div className="co-project-view-actions">
+            <CheckGithub state={loading ? 'running' : manualRefresh} note={checkNote} onCheck={refreshProjects} scope={projects} />
             {repositoryPicker}
-            <button
-              type="button"
-              className="co-icon-action"
-              aria-label={loading || manualRefresh === 'running' ? 'Refreshing projects' : manualRefresh === 'done' ? 'Projects updated just now' : manualRefresh === 'failed' ? 'Try refreshing projects again' : 'Refresh projects'}
-              title={manualRefresh === 'failed' ? 'Try refreshing projects again' : 'Refresh projects'}
-              onClick={refreshProjects}
-              disabled={loading || manualRefresh === 'running'}
-            >
-              <Icon name={manualRefresh === 'done' ? 'check' : 'refresh'} size={15} />
-              <span className="co-visually-hidden">{loading || manualRefresh === 'running' ? 'Refreshing…' : manualRefresh === 'done' ? 'Updated just now' : manualRefresh === 'failed' ? 'Try refresh again' : 'Refresh projects'}</span>
-            </button>
           </div>
         </header>
       )}
@@ -445,8 +458,8 @@ export function SourceMap({
           {filtered.length === 0 ? (
             <div className="co-stage-empty">
               <Icon name={query.trim() ? 'review' : 'check'} size={20} />
-              <strong>{query.trim() ? 'No matching project' : filter === 'updates' ? 'No shared updates found' : 'No local work to prepare'}</strong>
-              <span>{query.trim() ? 'Try a project name or repository.' : filter === 'all' ? 'No projects are available.' : 'All projects includes work already prepared or shared.'}</span>
+              <strong>{query.trim() ? 'No matching project' : filter === 'updates' ? 'Nothing is behind GitHub' : 'No projects with edits'}</strong>
+              <span>{query.trim() ? 'Try a project name or repository.' : filter === 'all' ? 'No projects are available.' : 'Choose All to see every project.'}</span>
             </div>
           ) : (
             <div className="co-project-index">
@@ -455,12 +468,14 @@ export function SourceMap({
                 projects={trackedActive}
                 selectedKey=""
                 onSelect={openProject}
+                checks={checks}
               />
               <ProjectGroup
                 label={trackedActive.length ? 'Everything else' : ''}
                 projects={trackedQuiet}
                 selectedKey=""
                 onSelect={openProject}
+                checks={checks}
                 quiet
               />
               <ProjectGroup
@@ -485,7 +500,8 @@ export function SourceMap({
             project={selectedProject}
             loadProjectDiff={loadProjectDiff}
             onRefresh={refreshProjects}
-            refreshing={manualRefresh === 'running'}
+            checkState={manualRefresh}
+            checkNote={checkNote}
             renderActivity={renderActivity}
             navigation={activityNavigation}
             sourceRevision={snapshot?.generated_at}

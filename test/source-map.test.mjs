@@ -20,7 +20,8 @@ import {
   projectStatus,
   projectWorkRevision,
   sourcePathRelationship,
-  localChangeLabel,
+  localChangeSentence,
+  projectUpstreamLine,
   localChangeSummary,
   projectIsQuiet,
 } from '../source-map.js'
@@ -889,12 +890,28 @@ test('tracked app work needs sorting when no current shared position is availabl
 test('the local count adds committed differences and edits, counting a file once', () => {
   const distinct = { localFiles: 1, localOnlyPaths: ['skill/core.md'], workingFiles: 1, working: { paths: [{ path: 'frontend/a.jsx' }] } }
   assert.deepEqual(localChangeSummary(distinct), { changed: 2, editing: 1 })
-  assert.equal(localChangeLabel(distinct), '2 changed files · 1 being edited')
+  assert.deepEqual(localChangeSentence(distinct), { strong: '2 files', text: ' changed on this Möbius are not on GitHub yet.', sub: '1 is still being edited in a chat.', edits: true })
   const same = { localFiles: 1, localOnlyPaths: ['api.js'], workingFiles: 1, working: { paths: [{ path: 'api.js' }] } }
   assert.deepEqual(localChangeSummary(same), { changed: 1, editing: 1 })
   // A shortened path list cannot prove overlap, so the counts are added.
   assert.equal(localChangeSummary({ localFiles: 3, localOnlyPaths: ['a'], workingFiles: 1 }).changed, 4)
-  assert.equal(localChangeLabel({}), 'No changes')
+  assert.deepEqual(localChangeSentence({}), { strong: 'No edits', text: ' on this Möbius.', edits: false })
+})
+
+test('the GitHub status line never turns last-fetched evidence into an online all-clear', () => {
+  const project = { kind: 'platform', available: true, canonical_repo: 'mobius-os/mobius', origin: { sha: 'a' } }
+  assert.equal(projectUpstreamLine(project).text, ' at the last check.')
+  assert.equal(projectUpstreamLine(project, { newCommits: 0, checkedAt: 'now' }).text, ' with GitHub.')
+  const moved = projectUpstreamLine(project, { newCommits: 3, checkedAt: 'now' })
+  assert.equal(moved.strong, '3 new commits')
+  assert.equal(moved.update, true)
+  // The file-level reconciliation answer outranks a commit count from the check.
+  const incoming = projectUpstreamLine({ ...project, semanticAvailable: true, incomingFiles: 2 }, { newCommits: 9 })
+  assert.equal(incoming.strong, '2 files')
+  assert.equal(incoming.text, ' from GitHub are not on this Möbius yet.')
+  assert.match(projectUpstreamLine({ ...project, conflictFiles: 1 }).text, /conflicts with your edits/)
+  assert.equal(projectUpstreamLine({ ...project, builtHere: true }), null)
+  assert.equal(projectUpstreamLine({ ...project, kind: 'external' }), null)
 })
 
 test('quiet projects have nothing for the owner; requests, updates and work are never quiet', () => {

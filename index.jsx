@@ -40,6 +40,7 @@ import { stackPublicationRecords } from './stack.js'
 import { deliverCycleMessage } from './cycle-delivery.js'
 import { abandonPrepared, cacheFeed, cacheSourceSnapshot, loadAppSettings, loadCachedFeed, loadCachedSourceSnapshot, loadContributionRecord, loadFreshContributionRecord, loadFreshContributionRecords, loadCycleState, loadFullDiff, loadLedger, restoreAbandoned, saveAppSettings } from './storage.js'
 import { createRefreshCoordinator, isVisibleFrameMessage } from './refresh.js'
+import { checkUpstream } from './upstream-check.js'
 import { sharedPublicationObserver } from './publication-observer.js'
 import {
   contributionPathDecision,
@@ -206,6 +207,8 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
   const [ledgerReady, setLedgerReady] = useState(false)
   const [omittedCount, setOmittedCount] = useState(0)
   const [sourceSnapshot, setSourceSnapshot] = useState(null)
+  // The last Check GitHub answer per project key; empty until the owner asks.
+  const [upstreamChecks, setUpstreamChecks] = useState({})
   const [projectFocus, setProjectFocus] = useState(null)
   // A chat PR link leases one exact PR in its project; the PR view hands the
   // lease back when the owner leaves that PR's detail or the project.
@@ -1653,10 +1656,15 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
               refreshSources(),
               refreshCoordinatorRef.current(),
             ])
-            if (conn.state === 'connected') await Promise.all([loadRepositories(), refreshIncomingReviews()])
+            let upstream = null
+            if (conn.state === 'connected') {
+              const [, , checked] = await Promise.all([loadRepositories(), refreshIncomingReviews(), checkUpstream(token, sourceProjects)])
+              upstream = checked
+              if (checked.ok) setUpstreamChecks(checked.results)
+            }
             setRefreshKey(value => value + 1)
-            return sourceOk && ledgerCurrentRef.current
-          }} loadProjectDiff={loadProjectDiff}
+            return { ok: sourceOk && ledgerCurrentRef.current, upstream }
+          }} checks={upstreamChecks} loadProjectDiff={loadProjectDiff}
           repositoryPicker={<RepositoryPicker token={token} connected={conn.state === 'connected'} onAdded={(repo, followed) => {
             setFollowedRepos(followed)
             setRepositoryAccess(old => ({ ...old, repositories: [...old.repositories.filter(item => item.nameWithOwner.toLowerCase() !== repo.nameWithOwner.toLowerCase()), repo] }))
@@ -1667,7 +1675,7 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
 
 
             {project ? <GithubPullsUnavailable conn={conn} onRetry={refreshConnection} /> : null}
-            {project ? <ProjectControls key={`controls:${project.key}`} appId={appId} token={token} project={project} run={projectRun(project)} loading={loading || !ledgerReady || sourceLoading || !!sourceError} onStart={startAgentTask}>
+            {project ? <ProjectControls key={`controls:${project.key}`} appId={appId} token={token} project={project} run={projectRun(project)} loading={loading || !ledgerReady || sourceLoading || !!sourceError} check={upstreamChecks[project.key] || null} onStart={startAgentTask}>
             {({ controls, progress }) => <ContributionRun
               renderPublicWork={project ? () => renderPullRequests(project, navigation) : null}
               controls={controls}

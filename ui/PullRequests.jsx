@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { awaitsGithub, baseTip, collaborationRequest, DRAFT_TAKEOVER_SCOPE, discoverPull, discoverPulls, liveSelection, loadReviewRuns, matchingPulls, mayAssign, mayMerge, mergeSelection, prKey, reviewForPull, reviewItemProgress, reviewRunRequest, reviewRunTitle, runDetailsElsewhere, notOursToObserve, assignPulls, takeoverBlocker, takeoverScope } from '../collaboration.js'
+import { awaitsGithub, collaborationRequest, discoverPull, discoverPulls, liveSelection, loadReviewRuns, matchingPulls, mayAssign, mergeSelection, prKey, reviewForPull, reviewItemProgress, reviewRunRequest, reviewRunTitle, runDetailsElsewhere, notOursToObserve, assignPulls, takeoverScope } from '../collaboration.js'
 import { acknowledgeAssignment, emptyPullView, invalidatedSelection, isOpenPull, observePulls, pullsInView } from '../pull-view.js'
 import { pullConversations, recordsForPull } from '../provenance.js'
 import { RunDetail, savedVersion } from './RunDetail.jsx'
@@ -8,8 +8,10 @@ import { Avatar, ChecksBadge, GithubLabel, PullStateIcon, REVIEW_DECISION, TimeA
 import { TaskPane, useProjectTask, focusActionRegion } from './TaskPane.jsx'
 import { useFocusLease } from './useFocusLease.js'
 import { Icon } from './Icons.jsx'
-import { ReviewPromptPreview } from './ReviewPromptSettings.jsx'
-import { AgentModelSettings } from './AgentModelSettings.jsx'
+import { AgentMenu } from './AgentMenu.jsx'
+import { ReviewDialog } from './ReviewDialog.jsx'
+import { ReviewConfirmation } from './ReviewConfirmation.jsx'
+import { projectUpdater } from '../updates.js'
 
 // One draft-scope decision for the chooser, its copy and the start body.
 const scopeFor = (mode, pulls) => mode === 'review_fix_merge' ? { confirmation_scope: takeoverScope(pulls) } : {}
@@ -26,14 +28,22 @@ function SelectionTray({ selection, busy, onClear, onReview, onAssign, visible, 
     <strong className="co-pr-box-count">{selected ? `${selected} selected` : <><Icon name="pull" size={16} />{loading && !shown ? 'Open pull requests' : `${shown} open`}</>}</strong>
     {selected ? <div className="co-pr-box-actions">
       <button className="co-btn" disabled={busy || selected > 20 || !selection.every(pr => mayAssign(pr.repository.viewerPermission))} onClick={onAssign} aria-label="Assign selected PRs to a person"><Icon name="person" size={16} /><span>Assign</span></button>
-      <button className="co-btn co-btn-primary" disabled={selected > 20 || busy} onClick={() => onReview(selection, 'review')} aria-label="Take selected PRs on with agent"><Icon name="prepare" size={16} /><span>Take on with agent</span></button>
+      <AgentMenu variant="button" disabled={selected > 20 || busy} onChoose={mode => onReview(selection, mode)} ariaLabel="Choose what an agent does with the selected PRs" />
       <button className="co-quiet-action" aria-label="Clear selection" onClick={onClear}><Icon name="close" size={16} /></button>
     </div> : null}
     {selected > 20 ? <p role="status">Choose up to 20 PRs per run.</p> : null}
   </div>
 }
 
-function AssigneePicker({ pulls, token, appId, ownLogin, onAssigned, onCancel }) {
+// One person in the assignment grid: name on top, GitHub login underneath.
+function PersonOption({ label, login, hint = login, ariaLabel, disabled, onPick }) {
+  return <button className="co-person-option" disabled={disabled} onClick={() => onPick(login)} aria-label={ariaLabel}>
+    <b className="co-avatar">{login[0].toUpperCase()}</b>
+    <span className="co-person-text"><span>{label}</span>{hint ? <small>{hint}</small> : null}</span>
+  </button>
+}
+
+function AssigneePicker({ pulls, token, appId, ownLogin, onAssigned, onClose }) {
   const picker = useRef(null)
   useEffect(() => {
     focusActionRegion(picker.current, picker.current?.querySelector('input[type=search]'))
@@ -60,7 +70,7 @@ function AssigneePicker({ pulls, token, appId, ownLogin, onAssigned, onCancel })
       const results = await assignPulls(token, appId, pending, login)
       setOutcomes(old => [...old.filter(item => !results.some(result => result.key === item.key)), ...results])
       onAssigned(login, results.filter(result => result.ok).map(result => result.key))
-      if (results.every(result => result.ok)) onCancel()
+      if (results.every(result => result.ok)) onClose()
     } finally { setBusy(false) }
   }
 
@@ -68,102 +78,20 @@ function AssigneePicker({ pulls, token, appId, ownLogin, onAssigned, onCancel })
   const own = people.assignees.find(person => person.login.toLowerCase() === ownLogin?.toLowerCase())
   return <div ref={picker} tabIndex={-1} className="co-pr-assignment" role="region" aria-label="Assign selected PRs">
     <h3>Assign {pulls.length === 1 ? `#${pr.number}` : `${pulls.length} PRs`}</h3>
-    <p>Choose a person to assign {pulls.map(item => `#${item.number}`).join(', ')} on GitHub. This doesn’t start a review.</p>
+    <p className="co-pr-assignment-note">The assignee is the person responsible for {pulls.length === 1 ? 'this PR' : 'these PRs'} on GitHub. This does not change the author, and it does not ask anyone for a review.</p>
     <input type="search" className="co-person-search" aria-label="Find a person" placeholder="Find a person…" value={query} onChange={event => setQuery(event.target.value)} disabled={busy} />
     {people.loading ? <p role="status">Loading people…</p> : null}
     <div className="co-person-list">
-      {own && !query ? <button className="co-person-option" aria-label="Assign to me" disabled={busy || !people.can_assign} onClick={() => assign(own.login)}><b className="co-avatar">{own.login[0].toUpperCase()}</b>Assign to me<span>{own.login}</span></button> : null}
-      {matching.filter(person => query || person.login !== own?.login).map(person => <button className="co-person-option" key={person.login} disabled={busy || !people.can_assign} onClick={() => assign(person.login)} aria-label={`Assign to ${person.login}`}><b className="co-avatar">{person.login[0].toUpperCase()}</b>{person.name || person.login}{person.name ? <span>{person.login}</span> : null}</button>)}
+      {own && !query ? <PersonOption label="Assign to me" login={own.login} ariaLabel="Assign to me" disabled={busy || !people.can_assign} onPick={assign} /> : null}
+      {matching.filter(person => query || person.login !== own?.login).map(person => <PersonOption key={person.login} label={person.name || person.login} login={person.login} hint={person.name ? person.login : ''} ariaLabel={`Assign to ${person.login}`} disabled={busy || !people.can_assign} onPick={assign} />)}
     </div>
     {!people.loading && !matching.length ? <p>No matching people in the loaded results.</p> : null}
     {busy ? <p role="status">Assigning…</p> : null}
     {people.next_page ? <button className="co-btn" disabled={busy || people.loading} onClick={() => load(people.next_page)}>Load more people</button> : null}
-    <button className="co-quiet-action" disabled={busy} onClick={onCancel}>Cancel</button>
     {outcomes.filter(result => !result.ok).map(result => <p key={result.key} role="alert" className="co-run-error">{result.key}: {result.error}</p>)}
     {outcomes.some(result => result.ok) ? <p role="status">{outcomes.filter(result => result.ok).length} assigned. Only remaining PRs will be retried.</p> : null}
     {error ? <div className="co-alert" role="alert"><p className="co-alert-text">{error}</p><button className="co-btn" disabled={busy} onClick={() => load()}>Retry</button></div> : null}
   </div>
-}
-
-// A saved (frozen) selection keeps its own scope; only fresh launches consult
-// the served capability. Unresolved capabilities are a pending check.
-export function draftCapabilityBlocker({ drafts, capabilities, saved, allowDraft }) {
-  if (!drafts || allowDraft || saved) return ''
-  if (!capabilities) return 'Checking draft support…'
-  return 'Draft takeover needs the Möbius update to be activated.'
-}
-
-// A fresh launch offers only the workflows this Möbius advertises.
-export function takeoverCapabilityBlocker({ capabilities, saved }) {
-  if (saved) return ''
-  if (!capabilities) return 'Checking what this Möbius supports…'
-  return capabilities.review_fix_merge === true ? '' : 'Needs a newer Möbius.'
-}
-
-export function ReviewConfirmation({ choice, busy, disabled, error, onConfirm, onCancel, onModeChange, appId, token, onResolved, onOptionsChange, onAgentChange, bindCurrentTarget = false, capabilities: served = null }) {
-  const confirmation = useRef(null)
-  const [promptOptions,setPromptOptions] = useState(null)
-  // null until the server preset resolves: loading is not the same as an
-  // inactive capability, so the launch must not claim an update is missing.
-  const [resolvedCapabilities,setCapabilities] = useState(null)
-  const [unsupported,setUnsupported] = useState(false)
-  const capabilities = resolvedCapabilities || served || (unsupported ? {} : null)
-  // The preview resolves what "default" means right now (owner background
-  // agent setting and its quota fallback); keep that answer for the picker.
-  const [defaultChoice,setDefaultChoice] = useState(null)
-  const resolve = useCallback(value => {
-    setPromptOptions(value?.options || null); setCapabilities(value ? (value.capabilities || {}) : null)
-    if (value) setUnsupported(false)
-    if (value && !value.agent) setDefaultChoice(value.preview?.options?.choice || null)
-    onResolved?.(value)
-  },[onResolved])
-  useEffect(() => {
-    if (choice) {
-      focusActionRegion(confirmation.current)
-    }
-  }, [choice])
-  if (!choice) return null
-  const takeover = choice.mode === 'review_fix_merge'
-  const merge = choice.mode === 'review_merge'
-  const saved = !!choice.preview_sha256
-  const drafts = choice.pulls.some(pr => pr.isDraft)
-  const draftScope = choice.confirmation_scope === DRAFT_TAKEOVER_SCOPE
-  const allowDraft = capabilities?.draft_takeover === true && (!saved || draftScope)
-  const mergeAllowed = choice.pulls.every(pr => mayMerge(pr.repository.viewerPermission) && !pr.isDraft)
-  // Rights do not depend on the capability read, so they explain first.
-  const blocker = takeoverBlocker(choice.pulls, { allowDraft: true })
-    || takeoverCapabilityBlocker({ capabilities, saved })
-    || draftCapabilityBlocker({ drafts, capabilities, saved, allowDraft })
-    || takeoverBlocker(choice.pulls, { allowDraft })
-  const takeoverAvailable = !blocker
-  // Posting makes Review only public, so its labels must stop saying private.
-  const posting = choice.mode === 'review' && (choice.options?.post_review ?? promptOptions?.post_review) === true
-  return <section ref={confirmation} tabIndex={-1} className="co-pr-confirm" aria-label="Confirm review workflow">
-
-    <h3>{choice.pulls.length === 1 ? `Take on #${choice.pulls[0].number} with an agent` : `Take on ${choice.pulls.length} PRs with an agent`}</h3>
-    <div className="co-pr-modes" role="group" aria-label="Agent workflow">
-      <div className="co-pr-mode-group"><button type="button" className="co-pr-mode" aria-pressed={!takeover} disabled={busy} onClick={() => onModeChange?.('review')}><strong>Review</strong><small>{merge ? 'Merges or queues after review and required checks. No code changes.' : posting ? 'May post its verdict on GitHub. No code changes.' : 'Private findings, no public changes.'}</small></button>
-        {choice.mode === 'review' && onOptionsChange && capabilities?.post_review === true ? <label className="co-workflow-option"><input type="checkbox" checked={(choice.options?.post_review ?? promptOptions?.post_review) === true} disabled={busy || !promptOptions} onChange={event => onOptionsChange({ ...promptOptions, ...choice.options, post_review:event.target.checked })} /><span>Allow posting the review on GitHub<small>The agent may post one comment review with a verdict it marks as public. Questions to you stay private. It never approves or requests changes.</small></span></label> : null}
-        {!takeover && onModeChange && mergeAllowed ? <label className="co-workflow-option"><input type="checkbox" checked={merge} disabled={busy} onChange={event => onModeChange(event.target.checked ? 'review_merge' : 'review')} /> Merge when safe</label> : null}</div>
-      {onModeChange ? <div className="co-pr-mode-group"><button type="button" className="co-pr-mode" aria-pressed={takeover} disabled={busy || !takeoverAvailable} onClick={() => onModeChange('review_fix_merge')}><strong>Review, fix &amp; merge</strong><small>{blocker || (drafts ? 'Reviews and fixes drafts, then marks ready and merges.' : 'Continues through scoped fixes and fresh review.')}</small></button></div> : null}
-    </div>
-    {/* Consent always names its exact PRs, even when it opened beside one. */}
-    <ul className="co-pr-confirm-list">{choice.pulls.map(pr => <li key={prKey(pr)}><strong>#{pr.number} {pr.title}</strong><span>{pr.repository.nameWithOwner}</span></li>)}</ul>
-    {takeover ? <p>Public effects: scoped fixes may be pushed{draftScope ? ', drafts marked ready' : ''}, then these PRs merged or queued after independent review and required checks. {draftScope ? 'Marking ready may notify reviewers. ' : ''}No public comments or unrelated edits. Stop prevents new actions; one already underway may finish.</p>
-      : merge ? <p>{bindCurrentTarget
-        ? 'Allow the agent to merge or queue these PR heads into their named target branches after a fresh review of the combined code and required checks. Questions come back to you. No branch edits or public review comments.'
-        : 'Allow the agent to merge or queue these exact versions after a thorough review and required checks. Changed versions and questions come back to you. No branch edits or public review comments.'}</p>
-      : posting ? <p>Possible public effect: one comment review per PR, only for a verdict the agent marks as public, posted on {choice.pulls.length === 1 ? 'this PR' : 'each PR'} from your connected GitHub account. Questions to you and unverified results stay private. It never approves, requests changes, edits code or merges.</p> : null}
-    {bindCurrentTarget ? <p>On confirmation, unchanged PR heads are bound to the current tip of the same target branch, which may be newer than the snapshot below. Changed heads, target branches or draft status require a fresh confirmation.</p> : null}
-    <details className="co-task-details"><summary>{bindCurrentTarget ? 'PR heads and target branches' : 'Exact versions covered by this approval'}</summary>{choice.pulls.map(pr => <p key={prKey(pr)}>#{pr.number}: version <code>{pr.headRefOid.slice(0, 7)} → {pr.baseRefName} ({bindCurrentTarget ? 'last seen ' : ''}{baseTip(pr)?.slice(0, 7)})</code></p>)}{!bindCurrentTarget ? <p>Changed code requires a fresh approval.</p> : null}</details>
-    {onAgentChange ? <AgentModelSettings token={token} choice={choice.agent} defaultChoice={defaultChoice} defaultHint="Your background agent setting" onChange={next => { onAgentChange(next); return true }} /> : null}
-    {appId && token ? <ReviewPromptPreview token={token} appId={appId} choice={choice} onResolved={resolve} onUnsupported={() => setUnsupported(true)} /> : null}
-    <div className="co-board-actions">
-      <button className="co-btn co-btn-primary" disabled={busy || disabled || (takeover && !takeoverAvailable)} onClick={onConfirm}>{busy ? 'Starting…' : takeover ? 'Allow scoped takeover' : merge ? 'Allow review & merge' : posting ? 'Start review, allow posting' : 'Start private review'}</button>
-      <button className="co-btn" disabled={busy} onClick={onCancel}>Cancel</button>
-    </div>
-    {error ? <p className="co-run-error" role="alert">{error}</p> : null}
-  </section>
 }
 
 // `focusPull` is a navigation lease from a chat link: while it is held, that
@@ -427,17 +355,17 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
   const runPane = run => <TaskPane key={run.id} dock={false} id={`task:run:${run.id}`}>
       <RunDetail run={run} pulls={pulls} listState={data} busy={busy} error={runError}
         onStop={() => stopRun(run)} retryPulls={retryPulls(run)} onRetry={retry => choose(retry, run.mode === 'review_merge' ? 'review' : run.mode, runAnchor(run))}
-        onPullUpdates={project.available && project.kind !== 'external' ? () => task?.open('task:update') : null} />
+        updater={projectUpdater(project)} />
     </TaskPane>
-  const reviewPane = <TaskPane id="task:review" dock={false}><ReviewConfirmation appId={appId} token={token} bindCurrentTarget onResolved={value => { setResolved(value); if (value?.capabilities) setCapabilities(value.capabilities) }} disabled={!resolved} onOptionsChange={options => { setResolved(null); setChoice(old => ({ ...old, options, request_id:crypto.randomUUID() })) }} onAgentChange={agent => { setResolved(null); setChoice(old => ({ ...old, agent, request_id:crypto.randomUUID() })) }} choice={choice} busy={busy} error={error} onConfirm={start} onCancel={() => { setChoice(null); task?.close() }} onModeChange={mode => { setError(''); setResolved(null); setChoice(old => ({ ...old, mode, confirmation_scope: undefined, ...scopeFor(mode, old.pulls), request_id: crypto.randomUUID() })) }} capabilities={capabilities} />{!choice ? <p>This selection has finished. Choose the current PRs to start another review.</p> : null}</TaskPane>
-  const assignPane = <TaskPane id="task:assign" dock={false}>{assigning ? <AssigneePicker key={assigning.map(prKey).join(',')} pulls={assigning} appId={appId} token={token} ownLogin={conn.login} onCancel={() => { setAssigning(null); task?.close() }} onAssigned={(login, keys) => {
+  const closeReview = () => { setChoice(null); task?.close() }
+  const reviewDialog = task?.activeId === 'task:review' && choice ? <ReviewDialog onClose={closeReview}><ReviewConfirmation appId={appId} token={token} bindCurrentTarget onResolved={value => { setResolved(value); if (value?.capabilities) setCapabilities(value.capabilities) }} disabled={!resolved} onOptionsChange={options => { setResolved(null); setChoice(old => ({ ...old, options, request_id:crypto.randomUUID() })) }} onAgentChange={agent => { setResolved(null); setChoice(old => ({ ...old, agent, request_id:crypto.randomUUID() })) }} choice={choice} busy={busy} error={error} onConfirm={start} onCancel={closeReview} onModeChange={mode => { setError(''); setResolved(null); setChoice(old => ({ ...old, mode, confirmation_scope: undefined, ...scopeFor(mode, old.pulls), request_id: crypto.randomUUID() })) }} capabilities={capabilities} /></ReviewDialog> : null
+  const assignPane = <TaskPane id="task:assign" dock={false}>{assigning ? <AssigneePicker key={assigning.map(prKey).join(',')} pulls={assigning} appId={appId} token={token} ownLogin={conn.login} onClose={() => { setAssigning(null); task?.close() }} onAssigned={(login, keys) => {
       viewRef.current = acknowledgeAssignment(viewRef.current, keys, login, ++generation.current)
       setView(viewRef.current)
       void onChanged?.()
     }} /> : null}</TaskPane>
   const visibleKeys = new Set(visible.map(prKey))
   const requestedKeys = new Set((project.reviewRequests || []).map(prKey))
-  const reviewAnchor = choice?.anchor && visibleKeys.has(choice.anchor) ? choice.anchor : ''
   const assignAnchor = assigning?.anchor && visibleKeys.has(assigning.anchor) ? assigning.anchor : ''
   return <section className="co-public-work" aria-label="Pull requests">
     <div className={'co-pr-list-controls' + (searchOpen ? ' is-searching' : '')}>
@@ -451,7 +379,6 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
     {data.error ? <div className="co-alert" role="alert"><strong>Couldn’t load pull requests</strong><p className="co-alert-text">{data.error}</p><button className="co-btn" disabled={data.loading} onClick={() => { void load(); void loadRuns() }}>Try again</button></div> : null}
     <div className="co-pr-box">
     <SelectionTray selection={selection} visible={selectableVisible} shown={data.hasNextPage ? data.total || visible.length : visible.length} loading={data.loading} busy={busy} onClear={() => setSelected(new Set())} onSelectVisible={() => setSelected(old => { const next = new Set(old); const all = selectableVisible.every(pr => next.has(prKey(pr))); selectableVisible.forEach(pr => all ? next.delete(prKey(pr)) : next.add(prKey(pr))); return next })} onReview={choose} onAssign={() => assignSelection()} />
-    {!reviewAnchor ? reviewPane : null}
     {!assignAnchor ? assignPane : null}
     {relevantRuns.filter(run => !visibleKeys.has(runAnchor(run))).map(runPane)}
     {data.loading && !pulls.length ? <p className="co-pr-empty" role="status">Loading pull requests…</p> : null}
@@ -490,11 +417,10 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
         <div className="co-pr-aside">
           {comments ? <span className="co-pr-comments" title={`${comments} ${comments === 1 ? 'comment' : 'comments'}`}><Icon name="comment" size={16} />{comments}</span> : null}
           {open && mayAssign(pr.repository.viewerPermission)
-            ? <button className="co-pr-assign" onClick={() => assignSelection([pr], key)} aria-label={assignees.length ? `Assigned to ${assignees.map(user => user.login).join(', ')}. Change assignment for PR ${pr.number}` : `Assign PR ${pr.number}`} title={assignees.length ? assignees.map(user => user.login).join(', ') : 'Assign'}>{assignees.length ? <span className="co-gh-avatars">{assignees.slice(0, 3).map(user => <Avatar key={user.login} login={user.login} />)}</span> : <Icon name="person" size={16} />}</button>
+            ? <button className="co-pr-assign" onClick={() => assignSelection([pr], key)} aria-label={assignees.length ? `Assigned to ${assignees.map(user => user.login).join(', ')}. Change assignment for PR ${pr.number}` : `Assign PR ${pr.number}`} title={assignees.length ? assignees.map(user => user.login).join(', ') : undefined}>{assignees.length ? <span className="co-gh-avatars">{assignees.slice(0, 3).map(user => <Avatar key={user.login} login={user.login} />)}</span> : <><Icon name="person" size={15} /><span>Assign</span></>}</button>
             : assignees.length ? <span className="co-gh-avatars" title={assignees.map(user => user.login).join(', ')}>{assignees.slice(0, 3).map(user => <Avatar key={user.login} login={user.login} />)}</span> : null}
-          {open ? <button type="button" className={'co-pr-agent-action' + (status && !progress.halted && (attention || !progress.settled) ? ' is-active' : '')} disabled={busy} onClick={() => choose([pr], 'review', key)} aria-label={`Take PR ${pr.number} on with an agent`} title="Take on with agent"><Icon name="prepare" size={16} /></button> : null}
+          {open ? <AgentMenu active={!!status && !progress.halted && (attention || !progress.settled)} disabled={busy} onChoose={mode => choose([pr], mode, key)} ariaLabel={`Choose what an agent does with PR ${pr.number}`} /> : null}
         </div>
-        {reviewAnchor === key ? reviewPane : null}
         {assignAnchor === key ? assignPane : null}
         {relevantRuns.filter(run => runAnchor(run) === key).map(runPane)}
         {opened === key ? <TaskPane id="task:detail" dock={false}>{detailPr ? <PullRequestDetail key={`${prKey(detailPr)}:${detailPr.headRefOid}:${detailPr.baseRefOid}:${detailRevision}`} cacheStore={detailSnapshot(detailPr)} pr={detailPr} token={token} onReview={mode => choose([detailPr], mode, key)} onAssign={() => assignSelection([detailPr], key)} onRefresh={() => load()} readOnly={!isOpenPull(detailPr)} canAssign={mayAssign(detailPr.repository.viewerPermission)} status={statusFor(detailPr)} onProgress={() => task?.open(`task:run:${statusFor(detailPr)?.run.id}`)} record={recordsForPull(records, detailPr)[0]} onRecord={onRecord} provenance={pullConversations(records, relevantRuns, detailPr)} /> : <p>This pull request is no longer in the current list. Refresh to see its latest status.</p>}</TaskPane> : null}
@@ -502,8 +428,9 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
     })}</div>
     </div>
     {data.hasNextPage ? <button className="co-btn" disabled={data.loading} onClick={() => load(data.endCursor)}>Load more PRs</button> : null}
+    {reviewDialog}
     {relevantRuns.length ? <details className="co-run-fold co-review-history">
-      <summary><span>Review conversations</span><b>{relevantRuns.length}</b><Icon name="chevron" size={14} /></summary>
+      <summary><span>Agent reviews</span><b>{relevantRuns.length}</b><Icon name="chevron" size={14} /></summary>
       <p className="co-pr-note">Saved findings apply only to their recorded versions. Open a conversation to answer questions or check an unresolved outcome.</p>
       <div>{relevantRuns.map(run => <button key={run.id} type="button" className="co-review-history-entry" data-review-run={run.id} onClick={() => task?.open(`task:run:${run.id}`)}>
         <strong>{reviewRunTitle(run)}</strong>

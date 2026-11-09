@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { collaborationRequest, reviewRunRequest } from '../collaboration.js'
 import { inspectReviewSelection, loadReviewSelection } from '../review-selection.js'
-import { ReviewConfirmation } from './PullRequests.jsx'
+import { ReviewConfirmation } from './ReviewConfirmation.jsx'
 import { openAgentConversation } from './BatchAction.jsx'
 import { Icon } from './Icons.jsx'
 import { reviewOptions } from '../review-prompts.js'

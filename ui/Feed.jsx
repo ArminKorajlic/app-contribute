@@ -434,9 +434,9 @@ function ExactBatchAction({
         </span>
         <div>
           <strong>{mode === 'ready'
-            ? `${count} ready for review`
+            ? `${count === 1 ? 'Your draft is' : `${count} drafts are`} ready for review`
             : `${count} prepared ${count === 1 ? 'PR' : 'PRs'}`}</strong>
-          <span className="co-visually-hidden">{mode === 'ready' ? 'Requesting review does not merge these changes.' : 'Privately reviewed. Nothing shared yet.'}</span>
+          <span className="co-visually-hidden">{mode === 'ready' ? 'Marking it ready for review does not merge it.' : 'Privately reviewed. Nothing shared yet.'}</span>
           {note ? <p className="co-run-error" role="status">{note}</p> : null}
         </div>
         <button
@@ -448,7 +448,7 @@ function ExactBatchAction({
             setApproval({ fingerprint, items: captureBatchItems(items) })
           }}
         >
-          {mode === 'ready' ? 'Request review' : count === 1 ? 'Review and send' : `Review and send ${count}`}
+          {mode === 'ready' ? 'Mark ready for review' : count === 1 ? 'Review and send' : `Review and send ${count}`}
         </button>
       </section>
     )
@@ -466,10 +466,10 @@ function ExactBatchAction({
     >
       <header>
         <h3>{mode === 'ready'
-          ? `Request review for ${count} ${count === 1 ? 'pull request' : 'pull requests'}?`
+          ? `Mark ${count === 1 ? 'this draft' : `${count} drafts`} ready for review?`
           : `Send ${count} reviewed ${count === 1 ? 'pull request' : 'pull requests'}?`}</h3>
         <p id={descriptionId}>{mode === 'ready'
-          ? 'Makes the named drafts ready for review. Nothing merges.'
+          ? 'GitHub takes it out of draft and tells the reviewers. Nothing merges.'
           : 'New pull requests use your connected GitHub account and open ready for review. Each line shows exactly where its change goes. Nothing merges.'}</p>
       </header>
       <ExactActionList
@@ -486,11 +486,11 @@ function ExactBatchAction({
         <button type="button" className="co-btn co-btn-primary" disabled={checking} onClick={closeResults}>{checking ? 'Checking result…' : 'Done'}</button>
       </div> : <div className="co-run-approval-actions">
         <button ref={safeRef} type="button" className="co-btn" disabled={busy} onClick={() => setApproval(null)}>
-          {mode === 'ready' ? 'Keep drafts' : 'Keep private'}
+          {mode === 'ready' ? (count === 1 ? 'Keep as draft' : 'Keep as drafts') : 'Keep private'}
         </button>
         <button type="button" className="co-btn co-btn-primary" disabled={busy} aria-busy={busy} onClick={applyAll}>
           {busy ? 'Working…' : mode === 'ready'
-            ? (count === 1 ? 'Request review on GitHub' : `Request review for ${count} on GitHub`)
+            ? (count === 1 ? 'Mark ready on GitHub' : `Mark ${count} ready on GitHub`)
             : (count === 1 ? 'Send to GitHub' : `Send ${count} to GitHub`)}
         </button>
       </div>}
@@ -526,7 +526,7 @@ const STATE_LABELS = {
   ready_attention: 'Review',
   route_attention: 'Choose route',
   check_attention: 'Source check',
-  public_attention: 'Resolve',
+  public_attention: 'Needs you',
   private_review: 'Review',
   connecting: 'Finishing publication',
   incoming_review: 'Incoming',
@@ -538,15 +538,25 @@ const STATE_LABELS = {
 const isPublicFeedback = item => item.kind === 'private_review'
   && runUnitRecords(item).some(record => ['open', 'draft'].includes(record?.status))
 
+// A public follow-up names what the owner will do; its attention type comes
+// from the scheduled job (job.sh) that noticed it.
+const ATTENTION_ACTION_LABELS = {
+  merge_conflict: 'Fix conflict',
+  checks_failed: 'Fix checks',
+  changes_requested: 'See feedback',
+  github_activity: 'See activity',
+}
+
 function decisionActionLabel(item) {
-  return isPublicFeedback(item) ? 'See feedback' : DECISION_ACTION_LABELS[item.kind] || 'Review'
+  if (isPublicFeedback(item)) return 'See feedback'
+  if (item.kind === 'public_attention') return ATTENTION_ACTION_LABELS[item.record?.attention?.type] || 'Open'
+  return DECISION_ACTION_LABELS[item.kind] || 'Review'
 }
 
 const DECISION_ACTION_LABELS = {
   ready_attention: 'Review',
   route_attention: 'Choose',
   check_attention: 'Open',
-  public_attention: 'Resolve',
   private_review: 'Review',
   request: 'Review',
 }
@@ -692,8 +702,8 @@ function ReadyAttentionFocus({ item, onMarkReady, onFeedback }) {
           {busy
             ? 'Working…'
             : record?.last_ready_error_code === 'ready_auto_merge_enabled'
-              ? 'I disabled auto-merge — request review'
-              : 'Request review again'}
+              ? 'I turned off auto-merge. Mark ready again'
+              : 'Mark ready for review again'}
         </button>
       ) : null}
       {record?.url ? <a className="co-review-link" href={record.url} target="_blank" rel="noopener noreferrer">Open pull request ↗</a> : null}
@@ -1083,7 +1093,7 @@ export function ContributionRun({
 
       {history.length > 0 ? (
         <details className="co-run-fold is-recent">
-          <summary><span>History</span><b>{history.length}</b><Icon name="chevron" size={14} /></summary>
+          <summary><span>Finished and closed work</span><b>{history.length}</b><Icon name="chevron" size={14} /></summary>
           <p className="co-inventory-note">Recorded outcomes and dismissed proposals, including closed, local-only, and superseded work. Not all were merged.</p>
           <div>{history.map(item => <QuietRow key={item.id} item={item} onSelect={selectRunItem} />)}</div>
         </details>

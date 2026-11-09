@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { attachSourceProjects, projectBoardFacts, projectHasSharedUpdates, recordsForProject } from '../source-map.js'
-import { contributionActionScope, contributionCycleAction, projectUpdateAction, organizePrivateWorkAction } from '../review.js'
+import { contributionCycleAction, organizePrivateWorkAction } from '../review.js'
 import { normalizeCycleState, normalizeAppSettings } from '../storage.js'
 import { frontendModules, renderModule } from './render-harness.mjs'
 
@@ -22,36 +22,37 @@ test('project facts never equate published review work with accepted or only-loc
   const facts = projectBoardFacts({ ...project, contributions: [
     { status: 'prepared' }, { status: 'open' }, { status: 'draft' }, { status: 'merged' },
   ] })
-  assert.equal(facts.work, '2 changed files · 1 private proposal · 2 shared contributions')
-  assert.equal(facts.shared, 'Last check found no shared updates')
-  assert.doesNotMatch(facts.shared, /Up to date|latest|linear/)
+  assert.equal(facts.work, '2 edited files are not on GitHub yet. 1 prepared PR waits for you to send. 2 of your PRs are open on GitHub.')
+  // Last-fetched evidence is never an online all-clear: it always names the last check.
+  assert.equal(facts.shared, 'Up to date at the last check.')
+  assert.doesNotMatch(facts.shared, /with GitHub|latest|linear/)
 })
 
 test('unknown comparison and installed baseline are not an online all-clear', () => {
-  assert.equal(projectBoardFacts({ ...project, origin: null }).shared, 'Compared with installed version')
-  assert.equal(projectBoardFacts({ ...project, origin: null, base_sha: null }).shared, 'Shared version not checked')
-  assert.equal(projectBoardFacts({ ...project, sourceComparisonRequired: true }).shared, 'Shared version not checked yet')
-  assert.equal(projectBoardFacts({ ...project, incomingFiles: 2 }).shared, 'Shared updates are available')
-  assert.equal(projectBoardFacts({ ...project, conflictFiles: 1 }).shared, 'Shared update needs attention')
+  assert.equal(projectBoardFacts({ ...project, origin: null }).shared, 'Same as the installed version.')
+  assert.equal(projectBoardFacts({ ...project, origin: null, base_sha: null }).shared, 'Not compared with GitHub yet.')
+  assert.equal(projectBoardFacts({ ...project, sourceComparisonRequired: true }).shared, 'Not compared with GitHub yet.')
+  assert.equal(projectBoardFacts({ ...project, incomingFiles: 2 }).shared, 'GitHub has updates for this project.')
+  assert.equal(projectBoardFacts({ ...project, conflictFiles: 1 }).shared, 'An update from GitHub needs your attention.')
 })
 
 test('prepared PR revisions are not counted as unpublished new proposals',()=>{
   const facts=projectBoardFacts({...project,contributions:[{status:'prepared',plan:{action:'pr_update'}},{status:'prepared',plan:{action:'pr'}},{status:'prepared',number:7,url:'https://github.com/owner/repo/pull/7'}]})
-  assert.match(facts.work,/1 private proposal · 2 prepared updates/)
+  assert.match(facts.work,/1 prepared PR waits for you to send\. 2 PR updates are ready to send\./)
   assert.doesNotMatch(facts.work,/not shared|in review/)
 })
 
 test('semantic comparison outranks a behind commit count when reporting shared updates', () => {
   const reconciled = { ...project, semanticAvailable: true, incomingFiles: 0, originBehind: 5 }
   assert.equal(projectHasSharedUpdates(reconciled), false)
-  assert.equal(projectBoardFacts(reconciled).shared, 'Last check found no shared updates')
+  assert.equal(projectBoardFacts(reconciled).shared, 'Up to date at the last check.')
   assert.equal(projectHasSharedUpdates({ ...reconciled, incomingFiles: 1 }), true)
   assert.equal(projectHasSharedUpdates({ ...reconciled, semanticAvailable: false }), true)
 })
 
 test('local-only apps and missing source remain explicit, not false sync success', () => {
-  assert.equal(projectBoardFacts({ ...project, builtHere: true, canonical_repo: null }).shared, 'No shared version yet')
-  assert.equal(projectBoardFacts({ ...project, available: false }).shared, 'Local source unavailable')
+  assert.equal(projectBoardFacts({ ...project, builtHere: true, canonical_repo: null }).shared, 'Not on GitHub.')
+  assert.equal(projectBoardFacts({ ...project, available: false }).shared, 'The local files could not be read.')
   assert.match(projectBoardFacts({ kind: 'external' }).work, /not checked/)
 })
 
@@ -64,18 +65,6 @@ test('project scope includes its complete records and never another repository',
   assert.deepEqual(recordsForProject(records, project).map(rec => rec.id), ['a', 'b'])
   assert.deepEqual(recordsForProject(records, { key: 'private' }), [])
   assert.equal(recordsForProject(records, null), records)
-})
-
-test('getting up to date preserves the reviewed update path and gives no public authority', () => {
-  const action = projectUpdateAction([project, { ...project, key: 'private', canonical_repo: null }], 'click-one')
-  assert.equal(action.count, 1)
-  assert.match(action.draft, /app:80; shared repository mobius-os\/app-contribute/)
-  assert.match(action.draft, /candidate in isolation/)
-  assert.match(action.draft, /Never reset, rebase, switch/)
-  assert.match(action.draft, /ask separately immediately before a server restart/)
-  assert.match(action.draft, /does not authorize preparing or publishing/)
-  assert.notEqual(contributionActionScope(action), contributionActionScope(projectUpdateAction([project], 'click-two')))
-  assert.equal(projectUpdateAction([{ ...project, kind: 'external' }], 'click'), null)
 })
 
 test('preparation names exact project scope and groups by coherent code rather than chat', () => {
@@ -91,7 +80,7 @@ test('the saved work title survives reopening without changing the legacy cycle 
   assert.equal(normalizeCycleState({ chat_id: 'work' }).title, undefined)
 })
 
-test('project controls keep preparation and updating direct without a competing merge button', async t => {
+test('project controls state edits and GitHub status in plain words, with no Pull updates or competing merge button', async t => {
   if (!frontendModules) return t.skip('MOBIUS_FRONTEND_NODE_MODULES is required')
   const { render } = await renderModule(`
     import React from 'react'
@@ -107,8 +96,11 @@ test('project controls keep preparation and updating direct without a competing 
   props.mergeRun = props.run
   const html = render(props)
   assert.match(html, /Actions for Contribute/)
-  assert.match(html, /Prepare changes/)
-  assert.match(html, /Pull updates/)
+  assert.match(html, /2 files<\/strong> changed on this Möbius are not on GitHub yet\./)
+  assert.match(html, /Make PRs from my edits/)
+  assert.match(html, /Up to date<\/strong> at the last check\./)
+  // Settings and the App Store own updates; Contribute no longer starts its own pull.
+  assert.doesNotMatch(html, /Pull updates|Start pull/)
   assert.doesNotMatch(html, /Bring accepted changes here/)
   assert.doesNotMatch(html, /Prepare &amp; merge|Prepare all|Update all/)
   assert.doesNotMatch(html, /More actions|View reviews/)

@@ -251,46 +251,89 @@ export function localChangeSummary(project) {
   return { changed, editing }
 }
 
-export function localChangeLabel(project) {
+const countOf = (count, one, many) => `${count} ${count === 1 ? one : many}`
+const verbFor = (count, one, many) => (count === 1 ? one : many)
+
+// The project screen's first status line, in plain words.
+export function localChangeSentence(project) {
+  if (project?.builtHere) return { strong: 'Only on this Möbius.', text: ' It is not on GitHub yet.', edits: true }
   const { changed, editing } = localChangeSummary(project)
-  if (!changed) return 'No changes'
-  const files = `${changed} changed ${changed === 1 ? 'file' : 'files'}`
-  return editing ? `${files} · ${editing} being edited` : files
+  if (!changed) return { strong: 'No edits', text: ' on this Möbius.', edits: false }
+  return {
+    strong: countOf(changed, 'file', 'files'),
+    text: ` changed on this Möbius ${verbFor(changed, 'is', 'are')} not on GitHub yet.`,
+    sub: editing ? `${editing} ${verbFor(editing, 'is', 'are')} still being edited in a chat.` : '',
+    edits: true,
+  }
 }
 
-// A source relationship and a publication state answer different questions.
+function workFacts(project, prepared, preparedUpdates, publicReviews) {
+  const work = []
+  const { changed } = localChangeSummary(project)
+  const proposals = prepared - preparedUpdates
+  if (project.builtHere) work.push('Only on this Möbius.')
+  else if (changed > 0) work.push(`${countOf(changed, 'edited file', 'edited files')} ${verbFor(changed, 'is', 'are')} not on GitHub yet.`)
+  if (proposals > 0) work.push(`${countOf(proposals, 'prepared PR waits', 'prepared PRs wait')} for you to send.`)
+  if (preparedUpdates > 0) work.push(`${countOf(preparedUpdates, 'PR update is', 'PR updates are')} ready to send.`)
+  if (publicReviews > 0) work.push(`${publicReviews} of your PRs ${verbFor(publicReviews, 'is', 'are')} open on GitHub.`)
+  return work
+}
+
 // Keep last-fetched evidence explicit: zero behind is not an online freshness
-// check, and neither commit counts nor file counts prove publication coverage.
+// check, so a quiet project is "up to date at the last check", never simply
+// up to date. Only a fresh GitHub check (upstream-check.js) earns more.
+function sharedFact(project) {
+  if (project.builtHere || !project.canonical_repo) return 'Not on GitHub.'
+  if (project.kind === 'external') return 'Not installed here.'
+  if (!project.available) return 'The local files could not be read.'
+  if (project.conflictFiles > 0 || project.state === 'conflict') return 'An update from GitHub needs your attention.'
+  if (projectHasSharedUpdates(project)) return 'GitHub has updates for this project.'
+  if (project.sourceComparisonRequired) return 'Not compared with GitHub yet.'
+  if (project.origin?.sha) return 'Up to date at the last check.'
+  if (project.base_sha) return 'Same as the installed version.'
+  return 'Not compared with GitHub yet.'
+}
+
+// A source relationship and a publication state answer different questions;
+// neither commit counts nor file counts prove publication coverage.
 export function projectBoardFacts(project) {
   const reviews = project.contributions || []
   const publicReviews = reviews.filter(rec => ['draft', 'open', 'landing'].includes(rec.status)).length
   const prepared = reviews.filter(rec => rec.status === 'prepared').length
   const preparedUpdates = reviews.filter(rec => rec.status === 'prepared' && (rec.plan?.action === 'pr_update' || rec.url || rec.number > 0)).length
-  const work = []
-  if (project.builtHere) work.push('Only on your Möbius')
-  else if (localChangeSummary(project).changed > 0) work.push(localChangeLabel(project))
-  if (prepared > preparedUpdates) work.push(`${prepared - preparedUpdates} private ${prepared - preparedUpdates === 1 ? 'proposal' : 'proposals'}`)
-  if (preparedUpdates > 0) work.push(`${preparedUpdates} prepared ${preparedUpdates === 1 ? 'update' : 'updates'}`)
-  if (publicReviews > 0) work.push(`${publicReviews} shared ${publicReviews === 1 ? 'contribution' : 'contributions'}`)
-  if (!work.length) work.push(project.available ? 'No local changes to prepare' : 'Local changes not checked')
+  const work = workFacts(project, prepared, preparedUpdates, publicReviews)
+  const hasWork = work.length > 0
+  if (!hasWork) work.push(project.available ? 'No edits.' : 'Edits not checked.')
+  return { work: work.join(' '), shared: sharedFact(project), publicReviews, prepared, hasWork }
+}
 
-  let shared = 'Shared version not checked'
-  if (project.builtHere || !project.canonical_repo) shared = 'No shared version yet'
-  else if (project.kind === 'external') shared = 'Not installed here'
-  else if (!project.available) shared = 'Local source unavailable'
-  else if (project.conflictFiles > 0 || project.state === 'conflict') shared = 'Shared update needs attention'
-  else if (projectHasSharedUpdates(project)) shared = 'Shared updates are available'
-  else if (project.sourceComparisonRequired) shared = 'Shared version not checked yet'
-  else if (project.origin?.sha) shared = 'Last check found no shared updates'
-  else if (project.base_sha) shared = 'Compared with installed version'
-  return { work: work.join(' · '), shared, publicReviews, prepared }
+// The project screen's second status line. File-level reconciliation stays
+// the answer to "is there an update"; a fresh GitHub check only adds whether
+// the shared repository moved past the commit this Möbius last compared with.
+// `update` marks lines whose next step belongs to Settings or the App Store.
+export function projectUpstreamLine(project, check = null) {
+  if (!project || project.builtHere || project.kind === 'external' || !project.canonical_repo) return null
+  if (!project.available) return { tone: 'muted', strong: 'The local files', text: ' could not be read.' }
+  if (project.conflictFiles > 0 || project.state === 'conflict') {
+    return { tone: 'warn', strong: 'An update from GitHub', text: ' conflicts with your edits.', update: true }
+  }
+  if (projectHasSharedUpdates(project)) {
+    const count = Number((project.semanticAvailable ? project.incomingFiles : project.originBehind) || 0)
+    return { tone: 'warn', strong: incomingCount(project), text: ` from GitHub ${verbFor(count, 'is', 'are')} not on this Möbius yet.`, update: true }
+  }
+  if (check?.newCommits > 0) {
+    return { tone: 'warn', strong: countOf(check.newCommits, 'new commit', 'new commits'), text: ' on GitHub since the last check.', update: true }
+  }
+  if (project.sourceComparisonRequired) return { tone: 'muted', strong: 'Not compared', text: ' with GitHub yet.' }
+  if (check) return { tone: 'ok', strong: 'Up to date', text: ' with GitHub.' }
+  return { tone: 'ok', strong: 'Up to date', text: ' at the last check.' }
 }
 
 // A project with nothing for the owner: no local changes, proposals, shared
 // contributions, review requests, incoming updates or conflicts. Quiet rows
 // follow the projects that have something going on.
 export function projectIsQuiet(project) {
-  return projectBoardFacts(project).work === 'No local changes to prepare'
+  return !projectBoardFacts(project).hasWork
     && !(project?.reviewRequests?.length)
     && !projectHasSharedUpdates(project)
     && !(project?.conflictFiles > 0)

@@ -378,7 +378,7 @@ export function buildContributionRun({
       decisions.push(decision('mark_ready', unit, byRepo, {
         record: personalDrafts[0],
         label: unitTitle(unit),
-        detail: `${personalDrafts.length} ${personalDrafts.length === 1 ? 'draft' : 'drafts'} ready to request review · ${unitRepo(unit)}`,
+        detail: `${personalDrafts.length === 1 ? 'Draft ready to mark ready for review' : `${personalDrafts.length} drafts ready to mark ready for review`} · ${unitRepo(unit)}`,
       }))
       continue
     }

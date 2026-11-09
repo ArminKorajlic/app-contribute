@@ -21,7 +21,7 @@ test('detail opens on the GitHub-style Conversation tab with Files changed and C
   assert.match(html, />Checks<\/button>/)
   assert.match(html, /wants to merge into <code>main<\/code>/)
   assert.match(html, /Loading description/)
-  assert.match(html, /Take on with agent/)
+  assert.match(html, /aria-label="Choose what an agent does with PR \d+"/)
 })
 for (const items of [[], [{ __typename: 'Issue', number: 2, title: 'Usable issue', url: 'https://github.com/team/repo/issues/2', repository: { nameWithOwner: 'team/repo' }, relationships: ['May close'] }]]) {
   test(`partial related context warns and retries with ${items.length} usable items`, async t => {
