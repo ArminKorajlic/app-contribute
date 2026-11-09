@@ -152,6 +152,31 @@ export function upsertRecord(records, update) {
   return next
 }
 
+// A personal publication whose outcome GitHub has not confirmed: a send still
+// claimed (`submitting`), or a prepared record whose last attempt the platform
+// recorded as possibly public. That is an unsettled push stage, an unconfirmed
+// code, or a known error raised after the branch push (stage `pushed` with an
+// error, for example a failed PR create, which the platform answers with a
+// truthful 409). Restaging clears the error, so a `pushed` stage with an
+// error always belongs to the current attempt. Its signed receipt keeps it
+// locked; only a read-only observation settles it, and its saved error is
+// never a refusal (mobius #2084).
+const UNSETTLED_SUBMIT_STAGES = new Set(['push_pending', 'push_ambiguous'])
+export const UNCONFIRMED_SUBMIT_CODES = new Set(['publication_unconfirmed', 'update_unconfirmed', 'create_unconfirmed', 'push_ambiguous'])
+export function uncertainPublication(record) {
+  if (record?.type !== 'pr' || record.submission_mode === 'mobius-bot') return false
+  if (record.status === 'submitting') return true
+  return record.status === 'prepared' && (UNSETTLED_SUBMIT_STAGES.has(record.last_submit_stage)
+    || UNCONFIRMED_SUBMIT_CODES.has(record.last_submit_error_code)
+    || record.last_submit_stage === 'pushed' && Boolean(record.last_submit_error))
+}
+
+// The exact record version an observation answers: its last write, reviewed
+// head and attempt identity. An answer or finding for another version is
+// stale and is never applied.
+export const publicationVersion = record => [record?.id, record?.updated_at, record?.plan?.head_sha,
+  record?.submit_started_at, record?.personal_submit_input_sha256].map(value => String(value ?? '')).join('|')
+
 // Resolve the ambiguous result of a public submit whose browser response was
 // lost. The durable ledger is the authority: a successful server action has
 // already advanced the row, while a rejected action has persisted its blocker.
@@ -162,7 +187,7 @@ export function resolveUncertainSubmission(rec, ledger) {
   }
   const stored = ledger.records.find((candidate) => candidate?.id === rec.id)
   if (!stored) return { state: 'unconfirmed', record: null }
-  if (['submitting'].includes(stored.status)) {
+  if (stored.status === 'submitting' || uncertainPublication(stored)) {
     return { state: 'publishing', record: stored }
   }
   if (['draft', 'open', 'merged', 'closed'].includes(stored.status)) {

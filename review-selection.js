@@ -62,5 +62,5 @@ export async function inspectReviewSelection(token, request) {
         || pr.state !== 'OPEN' || pr.headRefOid !== item.head_sha || pr.baseRef?.target?.oid !== item.base_sha || pr.baseRefName !== item.base_ref) throw new Error('A selected contribution changed or closed. Ask the agent for a fresh review link; nothing was approved.')
     return { ...pr, repository: { nameWithOwner: repository.nameWithOwner, viewerPermission: repository.isArchived ? null : repository.viewerPermission } }
   })
-  return { ...request, pulls, canMerge: request.mode === 'review_fix_merge' ? !takeoverBlocker(pulls, { allowDraft: true }) : pulls.every(pr => !pr.isDraft && mayMerge(pr.repository.viewerPermission)) }
+  return { ...request, pulls, canMerge: request.mode === 'review_fix_merge' ? !takeoverBlocker(pulls) : pulls.every(pr => !pr.isDraft && mayMerge(pr.repository.viewerPermission)) }
 }

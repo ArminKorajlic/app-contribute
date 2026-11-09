@@ -105,7 +105,9 @@ export async function loadContributionRecord(recordId) {
 // revalidate read above. Decisions that can publish or reconcile work cannot:
 // getWithVersion reaches the server while online and explicitly reports an
 // offline fallback, so those actions never accept a cached row as canonical.
-export async function loadFreshContributionRecord(recordId) {
+// With `strict`, a read that cannot reach the server (offline, or a runtime
+// without versioned reads) rejects, so null means the record is absent.
+export async function loadFreshContributionRecord(recordId, { strict = false } = {}) {
   const id = typeof recordId === 'string' ? recordId.trim() : ''
   const storage = window.mobius?.storage
   const readVersioned = typeof storage?.getWithVersion === 'function'
@@ -113,9 +115,13 @@ export async function loadFreshContributionRecord(recordId) {
     : (typeof storage?._getWithVersion === 'function'
         ? storage._getWithVersion.bind(storage)
         : null)
-  if (!readVersioned) return null
+  if (!readVersioned) {
+    if (strict) throw new Error('Contribution records cannot be read here')
+    return null
+  }
   for (const path of contributionRecordPaths(id)) {
     const loaded = await readVersioned(path, 'json')
+    if (loaded?.offline && strict) throw new Error('Contribution records cannot be read offline')
     if (loaded?.offline) return null
     const record = loaded?.value
     if (record && typeof record === 'object' && record.id === id) {
