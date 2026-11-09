@@ -16,6 +16,7 @@ import { sortStackRecords, stackMeta, stackPublicationRecords } from '../stack.j
 import {
   contributionTitle,
   findRunItemByRecord,
+  isPublicFeedback,
   runPrimaryRecord,
   runUnitKey,
   runUnitRecords,
@@ -24,6 +25,7 @@ import { openAgentConversation } from './BatchAction.jsx'
 import { ContributionCard, ContributionDecision } from './ContributionCard.jsx'
 import { Icon } from './Icons.jsx'
 import { ProjectIcon } from './ProjectIcon.jsx'
+import { ProjectTabs } from './ProjectTabs.jsx'
 
 function itemProject(item) {
   return item?.project || { name: item?.detail || 'Contribution' }
@@ -533,11 +535,6 @@ const STATE_LABELS = {
   request: 'Review draft',
 }
 
-// Feedback on a published pull request still belongs to the private run (the
-// Prepare agent picks it up), but for the owner it is news, not a draft.
-const isPublicFeedback = item => item.kind === 'private_review'
-  && runUnitRecords(item).some(record => ['open', 'draft'].includes(record?.status))
-
 // A public follow-up names what the owner will do; its attention type comes
 // from the scheduled job (job.sh) that noticed it.
 const ATTENTION_ACTION_LABELS = {
@@ -917,6 +914,8 @@ export function ContributionRun({
   renderPublicWork,
   controls,
   projectProgress,
+  reviewRequestCount = 0,
+  defaultTab = 'all',
   projectName = 'project',
   selectedId = '',
   onSelect,
@@ -1037,6 +1036,27 @@ export function ContributionRun({
       </TaskPane>
     ) : null
 
+  const fold = ([items, title]) => items.length ? (
+    <details key={title} className="co-run-fold" aria-label={title}>
+      <summary><span>{title}</span><b>{items.length}</b><Icon name="chevron" size={14} /></summary>
+      <div>{items.map(item => <QuietRow key={item.id} item={activityRowItem(item)} active={item.kind === 'review_in_progress' || actionsInProgress.includes(item) || runUnitRecords(item).some(isAutopilotResponding)} onSelect={selectRunItem} />)}</div>
+    </details>
+  ) : null
+  // All PRs keeps saved public work the live list does not show.
+  const inventory = <>{[[issues, 'Issues'], [otherShared, 'Shared work']].map(fold)}</>
+  // My work: agent jobs (above the PR list's agent reviews), then agent
+  // activity and finished work, out of the PR list's way.
+  const myWork = <>
+    {[[agentActivity, 'Agent activity'], [actionsInProgress, 'Actions in progress']].map(fold)}
+    {history.length > 0 ? (
+      <details className="co-run-fold is-recent">
+        <summary><span>Finished and closed work</span><b>{history.length}</b><Icon name="chevron" size={14} /></summary>
+        <p className="co-inventory-note">Recorded outcomes and dismissed proposals, including closed, local-only, and superseded work. Not all were merged.</p>
+        <div>{history.map(item => <QuietRow key={item.id} item={item} onSelect={selectRunItem} />)}</div>
+      </details>
+    ) : null}
+  </>
+
   const currentBatchRecords = useMemo(() => allItems.flatMap(runUnitRecords), [allItems])
   if (presentation === 'overview' && !actionCount(publishItems) && !readyCount(readyItems) && !omittedCount && !Object.values(batchOwnership).some(Boolean)) return null
 
@@ -1080,26 +1100,7 @@ export function ContributionRun({
       </details> : null}
       </div>
 
-      {presentation === 'project' ? <>
-      {renderPublicWork?.()}
-      {projectProgress}
-
-      {[[issues, 'Issues'], [otherShared, 'Shared work'], [agentActivity, 'Agent activity'], [actionsInProgress, 'Actions in progress']].map(([items, title]) => items.length ? (
-        <details key={title} className="co-run-fold" aria-label={title}>
-          <summary><span>{title}</span><b>{items.length}</b><Icon name="chevron" size={14} /></summary>
-          <div>{items.map(item => <QuietRow key={item.id} item={activityRowItem(item)} active={item.kind === 'review_in_progress' || actionsInProgress.includes(item) || runUnitRecords(item).some(isAutopilotResponding)} onSelect={selectRunItem} />)}</div>
-        </details>
-      ) : null)}
-
-      {history.length > 0 ? (
-        <details className="co-run-fold is-recent">
-          <summary><span>Finished and closed work</span><b>{history.length}</b><Icon name="chevron" size={14} /></summary>
-          <p className="co-inventory-note">Recorded outcomes and dismissed proposals, including closed, local-only, and superseded work. Not all were merged.</p>
-          <div>{history.map(item => <QuietRow key={item.id} item={item} onSelect={selectRunItem} />)}</div>
-        </details>
-      ) : null}
-
-      </> : null}
+      {presentation === 'project' ? <ProjectTabs reviewCount={reviewRequestCount} renderPullRequests={renderPublicWork} inventory={inventory} myJobs={projectProgress} myWork={myWork} defaultTab={defaultTab} /> : null}
       {presentation !== 'project' ? renderPublicWork?.() : null}
       {omittedCount > 0 ? <p className="co-run-maintenance">{omittedCount} contribution records could not be shown.</p> : null}
     </section>

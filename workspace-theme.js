@@ -338,12 +338,6 @@ export const WORKSPACE_CSS = `
 .co-workspace .co-pr-search input { flex:1; min-width:0; min-height:38px; padding:0; border:0; background:none; font-size:14px; }
 .co-pr-search input:focus { outline:none; }
 .co-pr-search-toggle { display:none; }
-.co-pr-filters { display:flex; flex:none; border:1px solid var(--border); border-radius:8px; overflow:hidden; }
-.co-pr-filters button { min-height:40px; padding:0 12px; border:0; border-left:1px solid var(--border); background:var(--surface); color:var(--muted); font:500 14px var(--font); cursor:pointer; }
-.co-pr-filters button:first-child { border-left:0; }
-.co-pr-filters button[aria-pressed=true] { background:var(--surface-2,var(--surface)); color:var(--text); }
-.co-pr-filters button:hover { color:var(--text); }
-.co-pr-filters button:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
 /* The box does not clip, so an Agent menu can open past its bottom edge even
    with one PR; the header and the last row round their own corners instead. */
 .co-pr-box { border:1px solid var(--border); border-radius:8px; }
@@ -421,8 +415,6 @@ export const WORKSPACE_CSS = `
 @media (max-width:680px) {
  .co-pr-list-controls { flex-wrap:wrap; }
  .co-pr-search { flex-basis:100%; }
- .co-pr-filters { flex:1; }
- .co-pr-filters button { flex:1; padding:0 6px; }
  .co-pr-row { grid-template-columns:36px 18px minmax(0,1fr); column-gap:4px; padding-right:4px; }
  /* Labelled row actions wrap under the title instead of squeezing it. */
  .co-pr-aside { grid-column:3; justify-content:flex-start; margin-left:-10px; padding-top:0; }
@@ -547,4 +539,39 @@ input[type=checkbox].co-switch:focus-visible { outline:2px solid var(--accent); 
  .co-dialog,.co-icon.is-spinning { animation:none; }
  input[type=checkbox].co-switch,input[type=checkbox].co-switch::after,.co-agent-menu-button > .co-icon:last-child { transition:none; }
 }
+/* Project tabs: one tab per job under the status card and Needs you. */
+.co-project-tabs { display:flex; gap:4px; margin:20px 0 0; border-bottom:1px solid var(--border); overflow-x:auto; scrollbar-width:none; }
+.co-project-tabs::-webkit-scrollbar { display:none; }
+.co-project-tab { position:relative; display:inline-flex; align-items:center; gap:8px; min-height:48px; padding:12px 14px; border:0; background:none; color:var(--muted); font:500 15px var(--font); white-space:nowrap; cursor:pointer; }
+.co-project-tab[aria-selected=true] { color:var(--text); }
+.co-project-tab[aria-selected=true]::after { content:''; position:absolute; left:10px; right:10px; bottom:-1px; height:2px; border-radius:2px; background:var(--accent); }
+.co-project-tab:hover { color:var(--text); }
+.co-project-tab:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; border-radius:8px; }
+.co-tab-count { min-width:22px; padding:0 7px; border-radius:999px; background:var(--surface-2,var(--surface)); color:var(--muted); font-size:14px; font-weight:600; line-height:22px; text-align:center; font-variant-numeric:tabular-nums; }
+.co-tab-count.is-you { background:var(--accent-dim); color:var(--accent); }
+.co-project-tabpanel { padding-top:16px; }
+.co-workspace .co-project-tabpanel > .co-public-work { margin-top:0; }
+.co-project-tabpanel > .co-cycle-outlet { margin-top:0; }
+.co-project-tabpanel > .co-work-progress-row { margin-bottom:8px; }
+.co-pr-intro,.co-mywork-empty { margin:0 0 14px; color:var(--muted); font-size:15px; }
+.co-pr-filter-select { flex:none; min-height:40px; padding:0 12px; border:1px solid var(--border); border-radius:8px; background:var(--surface); color:var(--text); font:500 14px var(--font); cursor:pointer; }
+.co-pr-filter-select:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+
+/* Projects list: what kind each project is, and quiet apps folded away. */
+.co-source-row-id { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.co-source-tag { padding:0 8px; border:1px solid var(--border); border-radius:999px; color:var(--muted); font-size:14px; font-weight:500; line-height:22px; }
+.co-quiet-projects { border-top:1px solid var(--border); }
+.co-quiet-projects > summary { display:flex; align-items:center; gap:10px; min-height:52px; padding:0 12px; color:var(--muted); font-size:15px; font-weight:500; list-style:none; cursor:pointer; }
+.co-quiet-projects > summary::-webkit-details-marker { display:none; }
+.co-quiet-projects > summary b { min-width:22px; padding:0 7px; border-radius:999px; background:var(--surface-2,var(--surface)); font-size:14px; font-weight:600; line-height:22px; text-align:center; }
+.co-quiet-projects > summary .co-icon { margin-left:auto; transition:transform .15s; }
+.co-quiet-projects[open] > summary .co-icon { transform:rotate(180deg); }
+.co-quiet-projects > summary:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; border-radius:8px; }
+@media(max-width:680px) {
+ .co-project-tabs { gap:0; }
+ .co-project-tab { padding:12px 9px; font-size:14px; gap:6px; }
+ .co-project-tab[aria-selected=true]::after { left:6px; right:6px; }
+ .co-pr-filter-select { flex:1; }
+}
+@media(prefers-reduced-motion:reduce) { .co-quiet-projects > summary .co-icon { transition:none; } }
 `

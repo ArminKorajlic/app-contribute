@@ -348,11 +348,13 @@ test('SSR selecting a focused contribution retains the project inventory and his
     recent: [work('Accepted work', 'done', 'merged')], archive: [work('Historical work', 'archived', 'abandoned')],
   })
   for (const selectedId of ['', privateWork.id, 'task:pulls', 'task:review']) {
-    const html = ui.render('ContributionRun', { run: current, selectedId }, { activeId: selectedId, host: null })
-    for (const label of ['Private work', 'Published work', 'Accepted work', 'Historical work']) {
-      assert.match(html, new RegExp(label), `${label} remains listed for ${selectedId}`)
+    // Selecting never hides inventory: All PRs keeps saved public work, My work keeps history.
+    const tabs = { all: ['Private work', 'Published work'], mine: ['Private work', 'Accepted work', 'Historical work'] }
+    for (const [defaultTab, labels] of Object.entries(tabs)) {
+      const html = ui.render('ContributionRun', { run: current, selectedId, defaultTab }, { activeId: selectedId, host: null })
+      for (const label of labels) assert.match(html, new RegExp(label), `${label} remains listed on ${defaultTab} for ${selectedId}`)
+      assert.doesNotMatch(html, /This contribution moved|Archived proposals/)
     }
-    assert.doesNotMatch(html, /This contribution moved|Archived proposals/)
   }
 })
 
@@ -424,10 +426,15 @@ test('SSR public review inventory replaces duplicate public rows but retains pri
     appId: 'fixture-app', token: 'fixture-only', project, conn: { state: 'connected', login: 'owner' },
   }, { activeId: 'task:review', host: null, publicKeys: new Set(['owner/project#7', 'owner/project#8']) })
   assert.match(html, /aria-label="Pull requests"/)
-  assert.match(html, />Mine<\/button>/)
-  assert.match(html, />Assigned<\/button>/)
-  for (const label of ['Private work', 'Still preparing', 'Accepted work', 'Unfetched PR', 'Different repository']) assert.match(html, new RegExp(label))
+  assert.match(html, /aria-label="Filter pull requests"/)
+  assert.match(html, /Show: opened by me/)
+  assert.match(html, /Show: assigned/)
+  for (const label of ['Private work', 'Still preparing', 'Unfetched PR', 'Different repository']) assert.match(html, new RegExp(label))
   assert.doesNotMatch(html, /Duplicate open row|Duplicate draft row|This contribution moved/)
+  const mine = ui.renderPublicRun({ run: current, githubState: 'connected', defaultTab: 'mine' }, {
+    appId: 'fixture-app', token: 'fixture-only', project, conn: { state: 'connected', login: 'owner' },
+  }, { host: null, publicKeys: new Set(['owner/project#7', 'owner/project#8']) })
+  assert.match(mine, /Accepted work/)
 })
 
 test('SSR unavailable GitHub cannot hide saved public contributions behind an empty review inventory', async t => {

@@ -137,3 +137,6 @@ action shows feedback when used. Check GitHub asks GitHub read-only whether a
 repository moved past the compared commit; a quiet project reads "Up to date at
 the last check" until a fresh check says more. The agent review window states
 its steps, what GitHub will see and which model runs it before anything starts.
+A project splits into All PRs, Review requests and My work under its status and
+Needs you; the projects list tags Platform and App projects, says what waits on
+the owner, and folds apps with nothing to do.

@@ -456,7 +456,8 @@ test('paused or failed project work sits above Start instead of replacing it', (
 })
 
 test('feedback on a published pull request is news for the owner, not a private draft', () => {
-  assert.match(feedSource, /const isPublicFeedback = item => item\.kind === 'private_review'/)
+  const runSource = readFileSync(new URL('../run.js', import.meta.url), 'utf8')
+  assert.match(runSource, /export const isPublicFeedback = item => item\.kind === 'private_review'/)
   assert.match(feedSource, /privateItems = decisions\.filter\(item => item\.kind === 'private_review' && !isPublicFeedback\(item\)\)/)
   assert.match(feedSource, /ownerDecisions = decisions\.filter\(item => isPublicFeedback\(item\) \|\|/)
   assert.match(feedSource, /'See feedback'/)

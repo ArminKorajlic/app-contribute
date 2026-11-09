@@ -16,7 +16,13 @@ contribution. This app is the dashboard for that loop:
 - **One project workspace** — local changes, prepared work, incoming review
   requests, public progress, questions and history belong to their project.
   There is no separate Reviews destination. All, **With your edits** and
-  **Behind GitHub** filter the same searchable overview.
+  **Behind GitHub** filter the same searchable overview, where each project
+  carries a Platform or App tag and apps with nothing to do fold away.
+- **One tab per job** — under the project's status and Needs you, **All PRs**
+  (the default), **Review requests** and **My work** (agent jobs, agent
+  reviews, agent activity and finished work) split the project by what the
+  owner came to do. Saved public work the live list cannot show stays on All
+  PRs, so an unreachable GitHub never hides it behind another tab.
 - **Task-first controls** — open a project to see its work list beside one
   contextual task, with a compact project switcher rather than another sidebar.
   The project's status says in plain words what is local ("2 files changed on

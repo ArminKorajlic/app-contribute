@@ -187,9 +187,20 @@ function ProjectDetail({
   )
 }
 
-function ProjectRow({ project, selected, onSelect, check = null, quiet = false }) {
+const PROJECT_TAGS = { platform: 'Platform', app: 'App' }
+
+function attentionLine(reviewRequests, needs) {
+  const parts = []
+  if (reviewRequests) parts.push(`${reviewRequests} ${reviewRequests === 1 ? 'PR waits' : 'PRs wait'} for your review.`)
+  if (needs) parts.push(`${needs} ${needs === 1 ? 'thing needs' : 'things need'} you.`)
+  return parts.join(' ')
+}
+
+function ProjectRow({ project, selected, onSelect, check = null, needs = 0, quiet = false }) {
   const facts = projectBoardFacts(project)
   const reviewRequests = project.reviewRequests?.length || 0
+  const attention = attentionLine(reviewRequests, needs)
+  const tag = PROJECT_TAGS[project.kind]
   const newCommits = check?.newCommits || 0
   const shared = newCommits > 0 ? `${newCommits} new ${newCommits === 1 ? 'commit' : 'commits'} on GitHub since the last check.` : facts.shared
   const next = `${facts.work} ${shared}`
@@ -216,12 +227,12 @@ function ProjectRow({ project, selected, onSelect, check = null, quiet = false }
         aria-label={`Open ${project.name}: ${next}`}
       >
         <ProjectGlyph project={project} />
-        <span className="co-source-row-id"><strong>{project.name}</strong></span>
+        <span className="co-source-row-id"><strong>{project.name}</strong>{tag ? <span className="co-source-tag">{tag}</span> : null}</span>
         <span className="co-source-row-facts">
-          {quiet ? <span>{showShared ? shared : 'No edits.'}</span> : <>
+          {quiet ? (showShared ? <span>{shared}</span> : null) : <>
             <span>{facts.work}</span>
             {showShared ? <span className="co-source-shared">{shared}</span> : null}
-            {reviewRequests ? <span className="co-source-attention">{reviewRequests} {reviewRequests === 1 ? 'PR waits' : 'PRs wait'} for your review.</span> : null}
+            {attention ? <span className="co-source-attention">{attention}</span> : null}
           </>}
         </span>
         <span className="co-source-row-cue" aria-hidden="true">
@@ -233,14 +244,23 @@ function ProjectRow({ project, selected, onSelect, check = null, quiet = false }
   )
 }
 
-function ProjectGroup({ label, projects, selectedKey, onSelect, checks = {}, quiet = false }) {
+function ProjectGroup({ label, projects, selectedKey, onSelect, checks = {}, attention = {}, quiet = false }) {
   if (!projects.length) return null
   return (
     <div className="co-source-group">
       {label ? <div className="co-source-group-label">{label}</div> : null}
-      {projects.map((project) => <ProjectRow key={project.key} project={project} selected={project.key === selectedKey} onSelect={onSelect} check={checks[project.key]} quiet={quiet} />)}
+      {projects.map((project) => <ProjectRow key={project.key} project={project} selected={project.key === selectedKey} onSelect={onSelect} check={checks[project.key]} needs={attention[project.key] || 0} quiet={quiet} />)}
     </div>
   )
+}
+
+// Apps with nothing for the owner fold away; a search opens them.
+function QuietProjects({ projects, onSelect, checks, searching }) {
+  if (!projects.length) return null
+  return <details className="co-quiet-projects" open={searching ? true : undefined}>
+    <summary><span>Apps with nothing to do</span><b>{projects.length}</b><Icon name="chevron" size={14} /></summary>
+    <ProjectGroup label="" projects={projects} selectedKey="" onSelect={onSelect} checks={checks} quiet />
+  </details>
 }
 
 function LoadingState() {
@@ -260,6 +280,7 @@ export function SourceMap({
   repositoryPicker,
   onProjectOpenChange,
   checks = {},
+  attention = {},
 }) {
   const [manualRefresh, setManualRefresh] = useState('idle')
   const [checkNote, setCheckNote] = useState(null)
@@ -399,8 +420,9 @@ export function SourceMap({
   const builtHere = filtered.filter((project) => project.builtHere)
   const tracked = filtered.filter((project) => !project.builtHere && project.kind !== 'external')
   // Projects with something going on lead; quiet ones follow, as in Kanban.
-  const trackedActive = tracked.filter((project) => !projectIsQuiet(project))
-  const trackedQuiet = tracked.filter(projectIsQuiet)
+  const isQuiet = project => projectIsQuiet(project) && !attention[project.key]
+  const trackedActive = tracked.filter((project) => !isQuiet(project))
+  const trackedQuiet = tracked.filter(isQuiet)
   const external = filtered.filter((project) => project.kind === 'external')
   const externalQuestions = external.reduce((count, project) => count + (project.reviewRequests?.length || 0), 0)
   if (loading && !snapshot && !projects.length) return <LoadingState />
@@ -469,15 +491,9 @@ export function SourceMap({
                 selectedKey=""
                 onSelect={openProject}
                 checks={checks}
+                attention={attention}
               />
-              <ProjectGroup
-                label={trackedActive.length ? 'Everything else' : ''}
-                projects={trackedQuiet}
-                selectedKey=""
-                onSelect={openProject}
-                checks={checks}
-                quiet
-              />
+              <QuietProjects projects={trackedQuiet} onSelect={openProject} checks={checks} searching={!!query.trim() || !trackedActive.length} />
               <ProjectGroup
                 label="Only on your Möbius"
                 projects={builtHere}

@@ -16,7 +16,35 @@ import { projectUpdater } from '../updates.js'
 // One draft-scope decision for the chooser, its copy and the start body.
 const scopeFor = (mode, pulls) => mode === 'review_fix_merge' ? { confirmation_scope: takeoverScope(pulls) } : {}
 
-const FILTERS = [['all', 'All'], ['unassigned', 'Unassigned'], ['assigned', 'Assigned'], ['authored', 'Mine']]
+const FILTERS = [['all', 'Show: all'], ['unassigned', 'Show: unassigned'], ['assigned', 'Show: assigned'], ['authored', 'Show: opened by me']]
+
+// Saved agent review conversations for this project, shown in My work.
+function AgentReviewHistory({ runs, pulls, listState, onOpen }) {
+  if (!runs.length) return <p className="co-pr-note co-mywork-empty">No agent reviews in this project yet.</p>
+  return <details className="co-run-fold co-review-history">
+    <summary><span>Agent reviews</span><b>{runs.length}</b><Icon name="chevron" size={14} /></summary>
+    <p className="co-pr-note">Saved findings apply only to their recorded versions. Open a conversation to answer questions or check an unresolved outcome.</p>
+    <div>{runs.map(run => <button key={run.id} type="button" className="co-review-history-entry" data-review-run={run.id} onClick={() => onOpen(run)}>
+      <strong>{reviewRunTitle(run)}</strong>
+      {run.items?.map(item => <span key={`${item.repo}:${item.number}`}>{item.repo} #{item.number} · Recorded: {reviewItemProgress(run, item).label}<small>{savedVersion(item, pulls, listState)}</small></span>)}
+    </button>)}</div>
+  </details>
+}
+
+// The tab badge counts every request, but this list filters only the loaded
+// pages: with more pages left, never claim the inbox is empty.
+function EmptyRequests({ query, hasNextPage, waiting }) {
+  if (!hasNextPage) return <div className="co-pr-empty"><strong>No review requests{query ? ' match' : ' right now'}</strong><p>When someone asks for your review, the PR appears here.</p></div>
+  const known = waiting && !query ? `You have ${waiting === 1 ? '1 review request' : `${waiting} review requests`} in this project. ` : ''
+  return <div className="co-pr-empty"><strong>No review requests{query ? ' match' : ''} in the PRs loaded so far</strong><p>{known}Load more PRs to check the rest.</p></div>
+}
+
+export function EmptyPulls({ scope, filter, query, hasNextPage, waiting = 0 }) {
+  if (scope === 'requests') return <EmptyRequests query={query} hasNextPage={hasNextPage} waiting={waiting} />
+  const kind = filter === 'unassigned' ? 'unassigned ' : filter === 'assigned' ? 'assigned ' : ''
+  const hint = hasNextPage ? 'Load more to search the remaining results.' : filter === 'all' ? 'When work is shared on GitHub, it appears here.' : 'Choose Show: all to see the project’s other pull requests.'
+  return <div className="co-pr-empty"><strong>No {kind}pull requests{query ? ' match' : ''}</strong><p>{hint}</p></div>
+}
 
 // GitHub-style list header: the count when nothing is selected, bulk actions
 // once something is. Selection never moves focus or interrupts browsing.
@@ -100,7 +128,9 @@ function AssigneePicker({ pulls, token, appId, ownLogin, onAssigned, onClose }) 
 // A run opens beside its PR when it covers one; batches open under the header.
 const runAnchor = run => run.items?.length === 1 ? `${run.items[0].repo.toLowerCase()}#${run.items[0].number}` : ''
 
-export function PullRequests({ appId, token, project, conn, onChanged, records = [], onRecord, refreshKey, focusPull, focusRun, onFocusRelease }) {
+// `scope` follows the project tabs: 'all' (every open PR), 'requests' (PRs that
+// ask for the owner's review) or 'mine' (the saved agent reviews only).
+export function PullRequests({ appId, token, project, conn, onChanged, records = [], onRecord, refreshKey, focusPull, focusRun, onFocusRelease, scope = 'all', onScope, onTotal }) {
   const repo = project?.canonical_repo || ''
   const task = useProjectTask()
   const [data, setData] = useState({ loading: true, error: '' })
@@ -282,7 +312,15 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
   // A run link's lease is held while that run's detail is open.
   const runLinkedHere = focusRun?.runId && focusRun.repo?.toLowerCase() === repo.toLowerCase() ? focusRun.nonce : ''
   useFocusLease({ nonce: runLinkedHere, held: runDetailOpen, connected, release: onFocusRelease })
-  const visible = matchingPulls(pulls, filter, conn.login).filter(pr => !query.trim() || `${pr.number} ${pr.title} ${pr.author?.login || ''}`.toLowerCase().includes(query.trim().toLowerCase()))
+  const requestedKeys = new Set((project?.reviewRequests || []).map(prKey))
+  const scoped = scope === 'requests'
+    ? pulls.filter(pr => requestedKeys.has(prKey(pr)) || prKey(pr) === focusKey)
+    : matchingPulls(pulls, filter, conn.login)
+  const visible = scope === 'mine' ? [] : scoped.filter(pr => !query.trim() || `${pr.number} ${pr.title} ${pr.author?.login || ''}`.toLowerCase().includes(query.trim().toLowerCase()))
+  // The All PRs tab shows this count; a chat link to a PR always lands on All PRs.
+  const openTotal = data.loading && !pulls.length ? null : data.hasNextPage ? data.total || pulls.length : pulls.filter(isOpenPull).length
+  useEffect(() => { onTotal?.(openTotal) }, [openTotal, onTotal])
+  useEffect(() => { if (focusKey && scope !== 'all') onScope?.('all') }, [focusKey, focusPull?.nonce])
   const selectableVisible = visible.filter(isOpenPull)
   const selection = pulls.filter(pr => isOpenPull(pr) && selected.has(prKey(pr)))
   const detailVisible = visible.some(pr => prKey(pr) === opened)
@@ -365,24 +403,34 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
       void onChanged?.()
     }} /> : null}</TaskPane>
   const visibleKeys = new Set(visible.map(prKey))
-  const requestedKeys = new Set((project.reviewRequests || []).map(prKey))
+  const openRun = run => task?.open(`task:run:${run.id}`)
+  // Saved reviews compare with the loaded PRs, so a failed read shows on every tab.
+  const loadError = data.error ? <div className="co-alert" role="alert"><strong>Couldn’t load pull requests</strong><p className="co-alert-text">{data.error}</p><button className="co-btn" disabled={data.loading} onClick={() => { void load(); void loadRuns() }}>Try again</button></div> : null
+  if (scope === 'mine') return <section className="co-public-work is-mine" aria-label="Agent reviews">
+    {runError ? <p className="co-pr-note" role="status">Agent progress unavailable: {runError}</p> : null}
+    {loadError}
+    {relevantRuns.map(runPane)}
+    {reviewDialog}
+    <AgentReviewHistory runs={relevantRuns} pulls={pulls} listState={data} onOpen={openRun} />
+  </section>
   const assignAnchor = assigning?.anchor && visibleKeys.has(assigning.anchor) ? assigning.anchor : ''
   return <section className="co-public-work" aria-label="Pull requests">
     <div className={'co-pr-list-controls' + (searchOpen ? ' is-searching' : '')}>
       <label className="co-pr-search"><Icon name="search" size={16} /><input ref={searchField} type="search" aria-label="Find a pull request" placeholder="Search pull requests" value={query} onChange={event => setQuery(event.target.value)} /></label>
       <button type="button" className="co-pr-search-toggle" aria-label={query ? `Search PRs: ${query}` : 'Search pull requests'} aria-expanded={searchOpen} onClick={() => setSearchOpen(value => !value)}><Icon name="search" size={18} /></button>
-      <div className="co-pr-filters" role="group" aria-label="Filter pull requests">{FILTERS.map(([key, label]) => <button key={key} aria-pressed={filter === key} onClick={() => setFilter(key)}>{label}</button>)}</div>
+      {scope === 'all' ? <select className="co-pr-filter-select" aria-label="Filter pull requests" value={filter} onChange={event => setFilter(event.target.value)}>{FILTERS.map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select> : null}
     </div>
+    {scope === 'requests' ? <p className="co-pr-intro">PRs where someone asked for your review. Start an agent review, or open the PR yourself.</p> : null}
     {selectionNotice ? <p className="co-pr-note" role="status">{selectionNotice}</p> : null}
     {focusRead ? <p className="co-pr-note" role="alert">Could not read that pull request: {focusRead.message}{focusRow ? ' Showing the previous snapshot.' : ''}</p> : null}
     {runError ? <p className="co-pr-note" role="status">Agent progress unavailable: {runError}</p> : null}
-    {data.error ? <div className="co-alert" role="alert"><strong>Couldn’t load pull requests</strong><p className="co-alert-text">{data.error}</p><button className="co-btn" disabled={data.loading} onClick={() => { void load(); void loadRuns() }}>Try again</button></div> : null}
+    {loadError}
     <div className="co-pr-box">
     <SelectionTray selection={selection} visible={selectableVisible} shown={data.hasNextPage ? data.total || visible.length : visible.length} loading={data.loading} busy={busy} onClear={() => setSelected(new Set())} onSelectVisible={() => setSelected(old => { const next = new Set(old); const all = selectableVisible.every(pr => next.has(prKey(pr))); selectableVisible.forEach(pr => all ? next.delete(prKey(pr)) : next.add(prKey(pr))); return next })} onReview={choose} onAssign={() => assignSelection()} />
     {!assignAnchor ? assignPane : null}
     {relevantRuns.filter(run => !visibleKeys.has(runAnchor(run))).map(runPane)}
     {data.loading && !pulls.length ? <p className="co-pr-empty" role="status">Loading pull requests…</p> : null}
-    {!data.loading && !data.error && !visible.length ? <div className="co-pr-empty"><strong>No {filter === 'unassigned' ? 'unassigned ' : filter === 'assigned' ? 'assigned ' : ''}pull requests{query ? ' match' : ''}</strong><p>{data.hasNextPage ? 'Load more to search the remaining results.' : filter === 'all' ? 'When work is shared on GitHub, it appears here.' : 'Try All to see the project’s other pull requests.'}</p></div> : null}
+    {!data.loading && !data.error && !visible.length ? <EmptyPulls scope={scope} filter={filter} query={query} hasNextPage={data.hasNextPage} waiting={requestedKeys.size} /> : null}
     <div className="co-pr-list">{visible.map(pr => {
       const key = prKey(pr)
       const status = statusFor(pr)
@@ -429,14 +477,6 @@ export function PullRequests({ appId, token, project, conn, onChanged, records =
     </div>
     {data.hasNextPage ? <button className="co-btn" disabled={data.loading} onClick={() => load(data.endCursor)}>Load more PRs</button> : null}
     {reviewDialog}
-    {relevantRuns.length ? <details className="co-run-fold co-review-history">
-      <summary><span>Agent reviews</span><b>{relevantRuns.length}</b><Icon name="chevron" size={14} /></summary>
-      <p className="co-pr-note">Saved findings apply only to their recorded versions. Open a conversation to answer questions or check an unresolved outcome.</p>
-      <div>{relevantRuns.map(run => <button key={run.id} type="button" className="co-review-history-entry" data-review-run={run.id} onClick={() => task?.open(`task:run:${run.id}`)}>
-        <strong>{reviewRunTitle(run)}</strong>
-        {run.items?.map(item => <span key={`${item.repo}:${item.number}`}>{item.repo} #{item.number} · Recorded: {reviewItemProgress(run, item).label}<small>{savedVersion(item, pulls, data)}</small></span>)}
-      </button>)}</div>
-    </details> : null}
 
 
   </section>

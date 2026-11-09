@@ -44,6 +44,17 @@ function needsPrivateAttention(record) {
     !(isAutopilotResponding(record) || isActionableAttention(record))
 }
 
+// Feedback on a published pull request still belongs to the private run (the
+// Prepare agent picks it up), but for the owner it is news, not a draft.
+export const isPublicFeedback = item => item.kind === 'private_review'
+  && runUnitRecords(item).some(record => ['open', 'draft'].includes(record?.status))
+
+// Decisions that wait on the owner: the project's Needs you, Mark ready and
+// Send rows. Private review work and requests belong to Prepared work.
+export function ownerAttentionCount(decisions = []) {
+  return decisions.filter(item => isPublicFeedback(item) || !['private_review', 'request'].includes(item.kind)).length
+}
+
 export function runUnitRecords(value) {
   const unit = value?.unit || value
   if (Array.isArray(unit?.records)) return unit.records.filter(Boolean)
