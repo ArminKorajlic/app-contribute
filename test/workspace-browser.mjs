@@ -2062,6 +2062,34 @@ window.runRespondResultChecks = async () => {
         await answer({}, null)
       }
     }
+    // A real screenshot is wider than the card: the list of what Post uploads shows it within the card at every width, not at its natural size
+    // running past the card's edge (the image outside the Markdown view has no width rule of its own, so the list needs one).
+    {
+      const canvas = document.createElement('canvas'); canvas.width = 1088; canvas.height = 240
+      const paint = canvas.getContext('2d'); paint.fillStyle = '#0a7'; paint.fillRect(0, 0, 1088, 240)
+      paint.fillStyle = '#fff'; paint.font = '40px sans-serif'; paint.fillText('A wide fixture screenshot', 40, 130)
+      const bytes = await new Promise(resolve => canvas.toBlob(resolve, 'image/png')).then(blob => blob.arrayBuffer())
+      const sha256 = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)), b => b.toString(16).padStart(2, '0')).join('')
+      const folder = '/api/storage/apps/fixture-app/respond-screenshots/r-3f9a1c2b04d5/', original = window.fetch
+      const shot = { name: 'wide.png', sha256, size: bytes.byteLength, alt: 'a wide screenshot' }
+      window.fetch = (url, options) => (String(url) === folder + 'wide.png' ? Promise.resolve(new Response(bytes.slice(0), { headers: { 'Content-Type': 'image/png' } })) : original(url, options))
+      try {
+        await answer({ description: 'Adds a list.\n\n![a wide screenshot](screenshot:wide.png)', screenshots: [shot] }, null)
+        await until(() => query('.co-pr-detail-body .co-response-shots img.co-markdown-shot')?.complete && query('.co-pr-detail-body .co-markdown img.co-markdown-shot')?.complete, 'The wide screenshot did not load in the list and the description: ' + reviewBody())
+        const listed = query('.co-pr-detail-body .co-response-shots img.co-markdown-shot'), copy = query('.co-pr-detail-body .co-markdown img.co-markdown-shot')
+        const card = query('.co-pr-detail-body .co-response'), column = query('.co-pr-detail-body .co-response-shots')
+        const right = node => node.getBoundingClientRect().right
+        ensure(listed.naturalWidth === 1088 && card.getBoundingClientRect().width < 1088, 'The picture is not wider than the card here: ' + listed.naturalWidth + ' in ' + card.getBoundingClientRect().width)
+        ensure(right(listed) <= right(card) + 0.5 && right(listed) <= right(column) + 0.5, 'The listed screenshot runs past the card: its right edge is ' + right(listed) + ', the list ends at ' + right(column) + ' and the card at ' + right(card))
+        ensure(right(copy) <= right(card) + 0.5, 'The description’s copy of the screenshot runs past the card: ' + right(copy) + ' of ' + right(card))
+        ensure(Math.abs(listed.clientWidth / listed.clientHeight - 1088 / 240) < 0.1, 'The listed screenshot lost its proportions: ' + listed.clientWidth + ' x ' + listed.clientHeight)
+        ensure(!button(NAMES.postAnswer).disabled, 'Post stayed off with the wide screenshot shown')
+        checks.push({ name: 'a screenshot wider than the card stays inside the card in the list of what Post uploads', status: 'pass' })
+      } finally {
+        window.fetch = original
+        await answer({}, null)
+      }
+    }
     // Screenshots are required for any front-end change: an answer that changes a screen without any says so where the owner decides.
     await answer({ files: [{ path: 'ui/Page.jsx', status: 'modified', added: 3, removed: 1, patch: null, patch_omitted: true }] }, null)
     await until(() => query('.co-pr-detail-body [data-missing-screenshots]'), 'An answer changing a screen without screenshots was not flagged: ' + reviewBody())

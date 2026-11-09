@@ -1042,6 +1042,7 @@ a.co-related-row:hover { border-color:color-mix(in srgb,var(--accent) 36%,var(--
 .co-response .co-task-details { margin-top:6px; }
 .co-response-shots { display:grid; gap:12px; margin:10px 0; padding:0; list-style:none; }
 .co-response-shots li { display:grid; gap:4px; min-width:0; }
+.co-response-shots img { box-sizing:border-box; max-width:100%; height:auto; }
 .co-response-shots small { color:var(--muted); font-size:var(--co-text-meta); line-height:1.45; overflow-wrap:anywhere; }
 .co-response-shots code { font:var(--co-text-meta) var(--mono,monospace); }
 @media(max-width:680px) { .co-response-points li { grid-template-columns:1fr; } }
