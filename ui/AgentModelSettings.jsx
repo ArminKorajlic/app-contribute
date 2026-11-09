@@ -117,12 +117,23 @@ async function readJson(token, path) {
   return response.json()
 }
 
+const NO_AGENT = Object.freeze({ provider: '', model: '', effort: '' })
+
+/** What picking the Default row sends. Usually nothing: the server resolves the
+ *  default when the work starts. A default the owner saved in this app is sent
+ *  as that model, so the row never names one model while the run uses another. */
+export function defaultRowChoice(defaultChoice, explicitDefault, effort) {
+  if (!explicitDefault || !defaultChoice?.model) return NO_AGENT
+  return { provider: defaultChoice.provider, model: defaultChoice.model, effort: effort || defaultChoice.effort || '' }
+}
+
 /** `choice` is `{provider, model, effort}`; an empty choice means the launch
  *  default, which the server resolves when the work starts. `defaultChoice`
  *  names that resolved model when the caller knows it, and `defaultHint` says
- *  which owner setting it comes from. Effort memory is per provider and local
- *  to this launch. */
-export function AgentModelSettings({ token, choice, onChange, defaultChoice = null, defaultHint = 'Your default model' }) {
+ *  which owner setting it comes from. `explicitDefault` marks a default the
+ *  owner saved in this app rather than one the server resolves. Effort memory
+ *  is per provider and local to this launch. */
+export function AgentModelSettings({ token, choice, onChange, defaultChoice = null, defaultHint = 'Your default model', explicitDefault = false }) {
   const [registry, setRegistry] = useState(null)
   const [status, setStatus] = useState(null)
   const [error, setError] = useState('')
@@ -172,7 +183,7 @@ export function AgentModelSettings({ token, choice, onChange, defaultChoice = nu
       : { provider: defaultChoice?.provider || '', title: defaultTitle, detail: defaultEffort || defaultHint }
 
   function chooseModel(provider, model) {
-    if (!model) return onChange?.({ provider: '', model: '', effort: '' })
+    if (!model) return onChange?.(defaultRowChoice(defaultChoice, explicitDefault, defaultEffortValue))
     const efforts = modelEfforts(provider, model)
     const effort = preferredEffort(efforts, effortByProvider[provider] ?? (choice?.provider === provider ? choice.effort : ''), model)
     setEffortByProvider(old => ({ ...old, [provider]: effort }))

@@ -3,18 +3,22 @@ import { openGithubSettings } from '../github-connection.js'
 import { Icon } from './Icons.jsx'
 import { DEFAULT_STAGE, stageWords } from '../publication-stage.js'
 import { ReviewPromptSettings } from './ReviewPromptSettings.jsx'
+import { DefaultAgentSettings } from './DefaultAgentSettings.jsx'
 // Component-local settings layout. The app shell keeps its existing theme tokens.
 export const SETTINGS_CSS = `
-.co-settings-workspace { box-sizing:border-box; width:min(820px,calc(100vw - 32px)); height:min(947px,calc(100dvh - 110px)); max-height:calc(100dvh - 110px); display:flex; flex-direction:column; padding:20px; overflow:hidden; }
+.co-settings-workspace { box-sizing:border-box; width:min(820px,calc(100vw - 32px)); height:min(947px,calc(100dvh - 110px)); max-height:calc(100dvh - 110px); display:flex; flex-direction:column; padding:20px; overflow:hidden; scrollbar-width:none; }
+.co-settings-workspace::-webkit-scrollbar,.co-settings-content::-webkit-scrollbar { display:none; }
 .co-settings-workspace > header { flex:0 0 auto; display:flex; align-items:center; justify-content:space-between; margin:0; padding-bottom:12px; border-bottom:1px solid var(--border); }
 .co-settings-layout { flex:1; min-height:0; display:flex; }
-.co-settings-content { flex:1; min-width:0; min-height:0; display:flex; flex-direction:column; padding-top:4px; }
+.co-settings-content { flex:1; min-width:0; min-height:0; display:flex; flex-direction:column; padding-top:4px; overflow-y:auto; scrollbar-width:none; }
 .co-settings-content h3 { margin:14px 0 8px; font-size:14px; line-height:1.4; font-weight:650; color:var(--muted); }
-.co-settings-content .co-prompt-settings { flex:1; min-height:0; display:flex; flex-direction:column; margin:0; padding:0; border:0; }
+.co-settings-content .co-prompt-settings { flex:1 0 auto; min-height:0; display:flex; flex-direction:column; margin:0; padding:0; border:0; }
 .co-settings-content .co-prompt-settings textarea { flex:1; min-height:150px; font-size:15px; line-height:1.55; resize:none; }
 .co-settings-skeleton { min-height:240px; padding:24px 0; color:var(--muted); }
 .co-prompt-editor-group { flex:1; min-height:0; display:flex; flex-direction:column; padding:0; }
-.co-settings-account { flex:0 0 auto; }
+.co-settings-account,.co-settings-agent { flex:0 0 auto; }
+.co-set-picker { padding:0 12px 12px; }
+.co-set-picker .co-agent-picker { max-width:none; margin:0; }
 .co-settings-account .co-conn { display:block; }
 .co-set-card { border:1px solid var(--border); border-radius:12px; background:var(--bg); }
 .co-set-row { display:flex; align-items:center; gap:12px; min-height:56px; padding:8px 12px; }
@@ -62,6 +66,7 @@ export function ConnectionSettings(props) {
       <div className="co-settings-layout">
         <div className="co-settings-content">
           <section className="co-settings-account" aria-label="GitHub account"><h3>GitHub</h3><ConnectionCard {...props} /></section>
+          <DefaultAgentSettings token={props.token} agent={props.reviewAgent} onChange={props.onChangeReviewAgent} />
           <ReviewPromptSettings token={props.token} appId={props.appId} />
         </div>
       </div>

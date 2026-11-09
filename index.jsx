@@ -321,6 +321,8 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
   const [autopilotDefault, setAutopilotDefault] = useState(true)
   // How a new PR opens when the owner does not pick for that send (see publication-stage.js).
   const [newPrStage, setNewPrStage] = useState(DEFAULT_STAGE)
+  // The agent a Review, Re-review or Fix window starts with; null follows the Möbius agent setting.
+  const [reviewAgent, setReviewAgent] = useState(null)
   // Findings the owner set aside, by review version (see ignoreKey). Kept in the app's settings.
   const [ignoredReviews, setIgnoredReviews] = useState({})
   const [deskView, setDeskView] = useState('needs')
@@ -656,6 +658,7 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
         setAutopilotDefault(appSettings.autopilot_default)
       }
       setNewPrStage(appSettings.new_pr_stage)
+      setReviewAgent(appSettings.review_agent || null)
       if (appSettings.ignored_reviews && typeof appSettings.ignored_reviews === 'object') setIgnoredReviews(appSettings.ignored_reviews)
       // The previous visit's time marks what changed "since you last looked";
       // this visit becomes the next one's mark. One write per app open.
@@ -1285,6 +1288,14 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
   const onIgnoreReview = useCallback((item, reason) => saveIgnoredReviews(notes => withIgnoreNote(notes, item, reason)), [saveIgnoredReviews])
   const onUndoIgnore = useCallback(item => saveIgnoredReviews(notes => withoutIgnoreNote(notes, item)), [saveIgnoredReviews])
 
+  // A chosen agent is saved; the Default row clears it, so windows follow the Möbius setting again.
+  const onChangeReviewAgent = useCallback(async (next) => {
+    const agent = next?.model ? { provider: next.provider, model: next.model, ...(next.effort ? { effort: next.effort } : {}) } : null
+    setReviewAgent(agent)
+    const { review_agent: _replaced, ...settings } = await loadAppSettings()
+    saveAppSettings(agent ? { ...settings, review_agent: agent } : settings)
+  }, [])
+
   const onToggleAutopilotDefault = useCallback(async (next) => {
     setAutopilotDefault(next)
     const settings = await loadAppSettings()
@@ -1658,7 +1669,7 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
       return <PullRequests key={`page:${page.repo}#${page.number}`} appId={appId} token={token}
         project={project} conn={conn} refreshKey={refreshKey} onChanged={refreshIncomingReviews} onReviewPosted={settleIncomingReview}
         runs={reviewRuns} respondChats={respondChats} runsError={runsError} onRunsChanged={refreshReviewRuns} onRunPatched={patchReviewRun}
-        presentation="page" focusPull={page} onFocusRelease={() => {}} onStartAgent={startAgentTask} onOpenForReview={onMarkReady} ignoredReviews={ignoredReviews} onIgnoreReview={onIgnoreReview} onUndoIgnore={onUndoIgnore}
+        presentation="page" focusPull={page} onFocusRelease={() => {}} defaultAgent={reviewAgent} onStartAgent={startAgentTask} onOpenForReview={onMarkReady} ignoredReviews={ignoredReviews} onIgnoreReview={onIgnoreReview} onUndoIgnore={onUndoIgnore}
         records={recordsForProject(records, project)} onRecord={record => {
           setPullPage(null)
           if (project?.key) setProjectFocus({ key: project.key, nonce: crypto.randomUUID() })
@@ -1667,7 +1678,7 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
     return <PullRequests key={`pulls:${project?.key || 'all'}`} appId={appId} token={token}
       project={project} conn={conn} refreshKey={refreshKey} onChanged={refreshIncomingReviews} onReviewPosted={settleIncomingReview}
       runs={reviewRuns} respondChats={respondChats} runsError={runsError} onRunsChanged={refreshReviewRuns} onRunPatched={patchReviewRun}
-      scope={view?.scope || 'all'} onScope={view?.onScope} onTotal={view?.onTotal} onStartAgent={startAgentTask} onOpenForReview={onMarkReady} ignoredReviews={ignoredReviews} onIgnoreReview={onIgnoreReview} onUndoIgnore={onUndoIgnore}
+      scope={view?.scope || 'all'} onScope={view?.onScope} onTotal={view?.onTotal} defaultAgent={reviewAgent} onStartAgent={startAgentTask} onOpenForReview={onMarkReady} ignoredReviews={ignoredReviews} onIgnoreReview={onIgnoreReview} onUndoIgnore={onUndoIgnore}
       onOpenPage={(pr, tab) => openPullPage(project, pr, tab)}
       focusPull={pullFocus?.number ? pullFocus : null} focusRun={pullFocus?.runId ? pullFocus : null} onFocusRelease={releasePullFocus}
       records={recordsForProject(records, project)} onRecord={record => {
@@ -1829,6 +1840,7 @@ function ContributeApp({ appId, token, addressedRecordIds = null, onPublicationR
             appId={appId} conn={conn} token={token} onChanged={refreshConnection}
             autopilotDefault={autopilotDefault} onToggleAutopilotDefault={onToggleAutopilotDefault}
             newPrStage={newPrStage} onChangeNewPrStage={onChangeNewPrStage}
+            reviewAgent={reviewAgent} onChangeReviewAgent={onChangeReviewAgent}
           />
         </Header>
       </div>
