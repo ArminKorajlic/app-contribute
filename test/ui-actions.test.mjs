@@ -440,3 +440,36 @@ test('adjacent local controls and PR inventory have distinct stable component id
   assert.match(appSource, /key=\{`controls:\$\{project\.key\}`\}/)
   assert.doesNotMatch(appSource, /<PullRequests key=\{project\?\.key/)
 })
+
+
+test('paused or failed project work sits above Start instead of replacing it', () => {
+  // Only work in progress (a running turn or a question) holds a new start back.
+  assert.match(controlsSource, /const startHeld = Boolean\(progress\) && \(active \|\| waiting\)/)
+  assert.equal((controlsSource.match(/\{progress\}\{startHeld \? null : <>/g) || []).length, 2)
+  assert.match(controlsSource, /function CycleNotice[\s\S]*cancelLabel\(cycle\.phase\)/)
+  assert.doesNotMatch(controlsSource, /\{progress \|\| <>/)
+})
+
+test('feedback on a published pull request is news for the owner, not a private draft', () => {
+  assert.match(feedSource, /const isPublicFeedback = item => item\.kind === 'private_review'/)
+  assert.match(feedSource, /privateItems = decisions\.filter\(item => item\.kind === 'private_review' && !isPublicFeedback\(item\)\)/)
+  assert.match(feedSource, /ownerDecisions = decisions\.filter\(item => isPublicFeedback\(item\) \|\|/)
+  assert.match(feedSource, /'See feedback'/)
+  assert.match(feedSource, /aria-label="Needs you" open>/)
+})
+
+
+test('opening a panel can never scroll the app frame itself, only its page', () => {
+  const theme = readFileSync(new URL('../theme.js', import.meta.url), 'utf8')
+  const root = theme.match(/\.co-root \{[\s\S]*?\n\}/)?.[0] || ''
+  assert.match(root, /overflow: clip;/)
+})
+
+test('an opened panel scrolls into view after the project restores its scroll, and only as far as needed', () => {
+  const pane = readFileSync(new URL('../ui/TaskPane.jsx', import.meta.url), 'utf8')
+  const helper = pane.match(/export function focusActionRegion[\s\S]*?\n\}/)?.[0] || ''
+  // A same-frame scroll is undone by ProjectDetail's scroll restore (a parent layout effect).
+  assert.match(helper, /requestAnimationFrame\(/)
+  assert.match(helper, /scrollIntoView\(\{ block: 'nearest'/)
+  assert.doesNotMatch(helper, /block: 'start'/)
+})

@@ -172,7 +172,7 @@ export function reviewItemProgress(run, item) {
   const settled = SETTLED_ITEMS.has(item.state)
   const halted = !settled && HALTED_RUNS.has(run.execution_state)
   const waiting = !settled && run.execution_state === 'awaiting_owner'
-  return { label: halted ? 'Not finished' : REVIEW_STATE_NAMES[item.state] || item.state, halted, waiting }
+  return { label: halted ? 'Not finished' : REVIEW_STATE_NAMES[item.state] || item.state, halted, waiting, settled }
 }
 export const reviewRunHalted = run => run.state !== 'complete' && HALTED_RUNS.has(run.execution_state)
 

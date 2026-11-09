@@ -22,7 +22,7 @@ test('project facts never equate published review work with accepted or only-loc
   const facts = projectBoardFacts({ ...project, contributions: [
     { status: 'prepared' }, { status: 'open' }, { status: 'draft' }, { status: 'merged' },
   ] })
-  assert.equal(facts.work, '2 files with local changes · 1 private proposal · 2 shared contributions')
+  assert.equal(facts.work, '2 changed files · 1 private proposal · 2 shared contributions')
   assert.equal(facts.shared, 'Last check found no shared updates')
   assert.doesNotMatch(facts.shared, /Up to date|latest|linear/)
 })
@@ -30,7 +30,7 @@ test('project facts never equate published review work with accepted or only-loc
 test('unknown comparison and installed baseline are not an online all-clear', () => {
   assert.equal(projectBoardFacts({ ...project, origin: null }).shared, 'Compared with installed version')
   assert.equal(projectBoardFacts({ ...project, origin: null, base_sha: null }).shared, 'Shared version not checked')
-  assert.equal(projectBoardFacts({ ...project, sourceComparisonRequired: true }).shared, 'Check for shared updates')
+  assert.equal(projectBoardFacts({ ...project, sourceComparisonRequired: true }).shared, 'Shared version not checked yet')
   assert.equal(projectBoardFacts({ ...project, incomingFiles: 2 }).shared, 'Shared updates are available')
   assert.equal(projectBoardFacts({ ...project, conflictFiles: 1 }).shared, 'Shared update needs attention')
 })
@@ -124,11 +124,20 @@ test('project controls keep preparation and updating direct without a competing 
 })
 
 test('incoming community reviews and historical replies remain within a discoverable project', () => {
-  const incoming = { number: 7, url: 'https://github.com/community/work/pull/7', repository: { nameWithOwner: 'Community/Work' } }
+  const incoming = { number: 7, url: 'https://github.com/community/work/pull/7', repository: { nameWithOwner: 'Community/Work' }, reviewRequested: true }
   const projects = attachSourceProjects(null, [{ id: 'reply', type: 'issue_comment', status: 'commented', repo: 'other/project' }], [incoming])
   assert.equal(projects.find(p => p.canonical_repo === 'community/work').incomingReviews[0], incoming)
+  assert.deepEqual(projects.find(p => p.canonical_repo === 'community/work').reviewRequests, [incoming])
   assert.ok(projects.find(p => p.canonical_repo === 'other/project'))
   assert.equal(projects.find(p => p.canonical_repo === 'community/work').attention, true)
+})
+
+test('a pull request that only involves the owner places its repository but asks nothing of them', () => {
+  const involved = { number: 8, url: 'https://github.com/community/work/pull/8', repository: { nameWithOwner: 'Community/Work' } }
+  const project = attachSourceProjects(null, [], [involved]).find(p => p.canonical_repo === 'community/work')
+  assert.ok(project)
+  assert.deepEqual(project.reviewRequests, [])
+  assert.notEqual(project.attention, true)
 })
 
 test('full cycle remains available for public-only work without inventing publication approval', () => {

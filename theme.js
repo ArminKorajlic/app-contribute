@@ -8,7 +8,10 @@ export const CSS = `
 /* mobius-ui:Root v1 — app-owned copy; library candidate. */
 .co-root {
   box-sizing: border-box; position: relative; min-height: 0; height: 100%;
-  display: flex; flex-direction: column; overflow: hidden;
+  /* clip, not hidden: a hidden box is still a scroll container, so opening a
+     panel with scrollIntoView could scroll the whole app up and leave a blank
+     band below. Only .co-page scrolls. */
+  display: flex; flex-direction: column; overflow: hidden; overflow: clip;
   background: var(--bg); color: var(--text); font-family: var(--font); font-size: 16px; line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   -webkit-tap-highlight-color: transparent;
@@ -232,9 +235,9 @@ export const CSS = `
 .co-source-group-label {
   min-height: 36px; display: flex; align-items: center; padding: 8px 14px;
   background: var(--surface-2, var(--surface)); color: var(--muted);
-  font-size: 14px; font-weight: 720; letter-spacing: .045em;
-  text-transform: uppercase;
+  font-size: 14px; font-weight: 600;
 }
+.co-source-row-wrap.is-quiet .co-source-row-facts { color: var(--muted); }
 .co-source-row-wrap + .co-source-row-wrap { border-top: 1px solid var(--border); }
 .co-source-row {
   display: grid; grid-template-columns: 36px minmax(0, 1fr) auto;

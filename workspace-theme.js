@@ -156,6 +156,9 @@ export const WORKSPACE_CSS = `
 .co-directory-filters button[aria-pressed=true],.co-directory-filters button:hover { color:var(--text); border-color:color-mix(in srgb,var(--accent) 34%,var(--border)); background:var(--accent-dim); }
 .co-directory-filters button span { min-width:20px; padding:1px 6px; border-radius:10px; background:var(--bg); color:var(--muted); font-variant-numeric:tabular-nums; }
 .co-task-dock:focus-visible,.co-task-dock [tabindex="-1"]:focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
+/* Inline panes take focus only so keyboard users land in them; their border
+   already marks them, so the browser ring would trace a second, tight frame. */
+.co-task-content:not(.co-task-dock):focus,.co-task-content:not(.co-task-dock) [tabindex="-1"]:focus { outline:none; }
 .co-workspace .co-task-dock { animation:co-dock-arrive .18s cubic-bezier(.16,1,.3,1); }
 .co-connect-banner { display:flex; align-items:center; justify-content:space-between; gap:20px; margin:0 0 20px; padding:16px 18px; border:1px solid color-mix(in srgb,var(--accent) 30%,var(--border)); border-radius:12px; background:color-mix(in srgb,var(--accent-dim) 42%,var(--surface)); }
 .co-connect-banner strong { display:block; font-size:16px; font-weight:650; }
@@ -293,12 +296,8 @@ export const WORKSPACE_CSS = `
 .co-work-progress-row small { font-size:14px; }
 @media(max-width:680px) {
  .co-projects-view { padding:14px 16px 40px; }
- .co-project-position { margin-bottom:14px; }
  .co-position-line { gap:8px; }
  .co-position-line > .co-icon { display:none; }
- .co-position-inspect { display:block; padding:6px 0; line-height:1.3; }
- .co-position-inspect > span { display:block; font-size:14px; margin-bottom:2px; }
- .co-position-inspect strong { font-size:14px; }
  .co-position-line > .co-btn { padding-inline:10px; }
  .co-workspace .co-run-primary { align-items:flex-start; gap:12px; }
  .co-workspace .co-run-primary .co-btn { max-width:42%; white-space:normal; }
@@ -310,6 +309,8 @@ export const WORKSPACE_CSS = `
 .co-pr-mode { min-height:90px; padding:14px; display:flex; flex-direction:column; align-items:flex-start; gap:5px; text-align:left; color:var(--text); background:var(--surface); border:1px solid var(--border); border-radius:9px; cursor:pointer; }
 .co-pr-mode[aria-pressed=true] { border-color:var(--accent); box-shadow:inset 0 0 0 1px var(--accent); background:var(--accent-dim); }
 .co-pr-mode small { color:var(--muted); font-size:14px; line-height:1.4; }
+.co-pr-mode:disabled { opacity:.5; cursor:not-allowed; }
+.co-pr-mode-group:has(.co-pr-mode:disabled) { border-style:dashed; }
 .co-pr-detail-actions { display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin:12px 0 14px; }
 .co-pr-detail .co-detail-tabs { display:flex; flex-wrap:nowrap; width:100%; gap:18px; margin:0; overflow-x:auto; }
 .co-pr-detail .co-detail-tabs button { flex:none; min-height:44px; }
@@ -320,10 +321,10 @@ export const WORKSPACE_CSS = `
  .co-projects-view { padding-top:8px; }
  .co-workspace-head { padding:0 0 6px; }
  .co-workspace-title p { margin-top:0; line-height:20px; }
- .co-project-position { padding:2px 0; margin-bottom:8px; }
- .co-position-line { min-height:44px; }
- .co-position-inspect { display:flex; align-items:baseline; gap:6px; padding:4px 0; }
- .co-position-inspect > span { display:inline; min-width:0; margin:0; }
+ .co-project-position { padding:8px 0; margin-bottom:8px; }
+ .co-position-inspect { display:flex; align-items:baseline; gap:8px; padding:4px 0; line-height:1.35; }
+ /* A fixed label column keeps a long status from running into its label. */
+ .co-position-inspect > span { flex:none; min-width:64px; margin:0; }
  .co-pr-modes { gap:8px; }
  .co-pr-mode { padding:10px; }
  .co-public-work > .co-task-content { padding:16px; }
@@ -386,8 +387,10 @@ export const WORKSPACE_CSS = `
 .co-pr-comments { display:inline-flex; align-items:center; gap:4px; padding:0 8px; color:var(--muted); font-size:14px; font-variant-numeric:tabular-nums; }
 .co-pr-assign,.co-pr-agent-action { display:grid; place-items:center; width:40px; height:40px; padding:0; border:0; border-radius:8px; background:none; color:var(--muted); cursor:pointer; }
 .co-pr-assign:hover { background:var(--surface-2,var(--surface)); color:var(--text); }
-.co-pr-agent-action > .co-icon { box-sizing:content-box; padding:7px; border-radius:8px; background:var(--accent); color:var(--accent-fg); }
-.co-pr-agent-action:hover > .co-icon { background:var(--accent-hover,var(--accent)); }
+.co-pr-agent-action > .co-icon { box-sizing:content-box; padding:7px; border-radius:8px; background:transparent; color:var(--muted); box-shadow:inset 0 0 0 1px var(--border); }
+.co-pr-agent-action:hover > .co-icon { color:var(--accent); background:var(--accent-dim); }
+.co-pr-agent-action.is-active > .co-icon { background:var(--accent); color:var(--accent-fg); box-shadow:none; }
+.co-pr-requested { display:inline-flex; align-items:center; min-height:24px; padding:0 8px; border:1px solid color-mix(in srgb,var(--accent) 35%,var(--border)); border-radius:999px; background:var(--accent-dim); color:var(--text); font:500 13px var(--font); }
 .co-pr-agent-action:disabled { opacity:.5; cursor:default; }
 .co-pr-assign:focus-visible,.co-pr-agent-action:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
 .co-pr-row > .co-task-content { grid-column:1/-1; margin:8px 0 6px 40px; padding:18px 20px 20px; border:1px solid var(--border); border-radius:8px; background:var(--bg); }

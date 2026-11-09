@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   projectHasSharedUpdates,
+  projectIsQuiet,
   projectNeedsSorting,
   projectReadyToPrepare,
   projectBoardFacts,
@@ -23,7 +24,7 @@ function projectMatchesJourney(project, filter) {
     projectReadyToPrepare(project)
     || projectNeedsSorting(project)
   )
-  if (filter === 'updates') return projectHasSharedUpdates(project) || project.sourceComparisonRequired || project.conflictFiles > 0
+  if (filter === 'updates') return projectHasSharedUpdates(project) || project.conflictFiles > 0
   return true
 }
 
@@ -170,11 +171,11 @@ function ProjectDetail({
   )
 }
 
-function ProjectRow({ project, selected, onSelect }) {
+function ProjectRow({ project, selected, onSelect, quiet = false }) {
   const facts = projectBoardFacts(project)
   const next = `${facts.work}; ${facts.shared}`
-  const incomingReviews = project.incomingReviews?.length || 0
-  const visibleWork = incomingReviews ? facts.work.replace(/(?: · )?\d+ in review$/, '') : facts.work
+  const reviewRequests = project.reviewRequests?.length || 0
+  const visibleWork = reviewRequests ? facts.work.replace(/(?: · )?\d+ in review$/, '') : facts.work
   const showShared = !!(
     project.conflictFiles
     || project.state === 'conflict'
@@ -184,7 +185,7 @@ function ProjectRow({ project, selected, onSelect }) {
     || (!project.builtHere && project.kind !== 'external' && project.canonical_repo && !project.origin?.sha && !project.base_sha)
   )
   return (
-    <div className={'co-source-row-wrap' + (selected ? ' is-selected' : '')}>
+    <div className={'co-source-row-wrap' + (selected ? ' is-selected' : '') + (quiet ? ' is-quiet' : '')}>
       <button
         type="button"
         className="co-source-row"
@@ -198,9 +199,11 @@ function ProjectRow({ project, selected, onSelect }) {
         <ProjectGlyph project={project} />
         <span className="co-source-row-id"><strong>{project.name}</strong></span>
         <span className="co-source-row-facts">
-          {visibleWork ? <span>{visibleWork}</span> : null}
-          {showShared ? <span className="co-source-shared">{facts.shared}</span> : null}
-          {incomingReviews ? <span className="co-source-attention">{incomingReviews} incoming {incomingReviews === 1 ? 'review' : 'reviews'}</span> : null}
+          {quiet ? <span>{showShared ? facts.shared : 'No local changes'}</span> : <>
+            {visibleWork ? <span>{visibleWork}</span> : null}
+            {showShared ? <span className="co-source-shared">{facts.shared}</span> : null}
+            {reviewRequests ? <span className="co-source-attention">{reviewRequests} review {reviewRequests === 1 ? 'request' : 'requests'}</span> : null}
+          </>}
         </span>
         <span className="co-source-row-cue" aria-hidden="true">
 
@@ -211,12 +214,12 @@ function ProjectRow({ project, selected, onSelect }) {
   )
 }
 
-function ProjectGroup({ label, projects, selectedKey, onSelect }) {
+function ProjectGroup({ label, projects, selectedKey, onSelect, quiet = false }) {
   if (!projects.length) return null
   return (
     <div className="co-source-group">
       {label ? <div className="co-source-group-label">{label}</div> : null}
-      {projects.map((project) => <ProjectRow key={project.key} project={project} selected={project.key === selectedKey} onSelect={onSelect} />)}
+      {projects.map((project) => <ProjectRow key={project.key} project={project} selected={project.key === selectedKey} onSelect={onSelect} quiet={quiet} />)}
     </div>
   )
 }
@@ -372,8 +375,11 @@ export function SourceMap({
   useEffect(() => { onProjectOpenChange?.(!!selectedProject) }, [selectedProject, onProjectOpenChange])
   const builtHere = filtered.filter((project) => project.builtHere)
   const tracked = filtered.filter((project) => !project.builtHere && project.kind !== 'external')
+  // Projects with something going on lead; quiet ones follow, as in Kanban.
+  const trackedActive = tracked.filter((project) => !projectIsQuiet(project))
+  const trackedQuiet = tracked.filter(projectIsQuiet)
   const external = filtered.filter((project) => project.kind === 'external')
-  const externalQuestions = external.reduce((count, project) => count + (project.incomingReviews?.length || 0), 0)
+  const externalQuestions = external.reduce((count, project) => count + (project.reviewRequests?.length || 0), 0)
   if (loading && !snapshot && !projects.length) return <LoadingState />
   return (
     <section className={'co-projects-view' + (selectedProject ? ' is-focus' : '')} aria-label="Project details">
@@ -446,9 +452,16 @@ export function SourceMap({
             <div className="co-project-index">
               <ProjectGroup
                 label=""
-                projects={tracked}
+                projects={trackedActive}
                 selectedKey=""
                 onSelect={openProject}
+              />
+              <ProjectGroup
+                label={trackedActive.length ? 'Everything else' : ''}
+                projects={trackedQuiet}
+                selectedKey=""
+                onSelect={openProject}
+                quiet
               />
               <ProjectGroup
                 label="Only on your Möbius"

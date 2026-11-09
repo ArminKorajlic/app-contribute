@@ -8,11 +8,16 @@ export const useProjectTask = () => useContext(TaskContext)
 
 export function focusActionRegion(region, target = region) {
   if (!region) return
-  if (!region.closest('.co-task-dock')) {
-    region.style.scrollMarginTop = '16px'
-    region.scrollIntoView({ block: 'start', behavior: 'instant' })
-  }
   target?.focus({ preventScroll: true })
+  if (region.closest('.co-task-dock')) return
+  // The project restores its scroll position in a parent layout effect, after
+  // this one runs. Scroll on the next frame, and only as far as needed: a pane
+  // opened right under its trigger stays put, one opened further down is shown.
+  requestAnimationFrame(() => {
+    if (!region.isConnected) return
+    region.style.scrollMarginBlock = '16px'
+    region.scrollIntoView({ block: 'nearest', behavior: 'instant' })
+  })
 }
 
 export function TaskPane({ id, children, dock = true }) {

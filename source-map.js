@@ -176,7 +176,9 @@ export function attachSourceProjects(snapshot, records, incomingReviews = [], re
       || null
     project.incomingReviews = incomingReviews.filter(item =>
       repoKey(item.repository?.nameWithOwner) === repoKey(project.canonical_repo))
-    if (project.incomingReviews.length) project.attention = true
+    // Involvement only places a repository here; a review request needs the owner.
+    project.reviewRequests = project.incomingReviews.filter(item => item.reviewRequested)
+    if (project.reviewRequests.length) project.attention = true
   }
   return projects.sort((a, b) => {
     const aBuiltHere = a.builtHere
@@ -236,19 +238,37 @@ export function projectNeedsSorting(project) {
   return projectPreparationState(project) === 'sorting'
 }
 
+// One local-change count for every screen. Committed differences from the
+// shared version and uncommitted edits can name the same file, so files are
+// counted once by path; counts are only summed when a path list is cut short.
+export function localChangeSummary(project) {
+  const committedPaths = [...(project?.localOnlyPaths || []), ...(project?.compatiblePaths || []), ...(project?.conflictPaths || [])]
+  const editingPaths = (project?.working?.paths || []).map(row => row?.path).filter(Boolean)
+  const committed = nonnegativeCount(project?.localFiles) + nonnegativeCount(project?.compatibleFiles) + nonnegativeCount(project?.conflictFiles)
+  const editing = nonnegativeCount(project?.workingFiles)
+  const pathsComplete = committedPaths.length === committed && editingPaths.length === editing
+  const changed = pathsComplete ? new Set([...committedPaths, ...editingPaths]).size : committed + editing
+  return { changed, editing }
+}
+
+export function localChangeLabel(project) {
+  const { changed, editing } = localChangeSummary(project)
+  if (!changed) return 'No changes'
+  const files = `${changed} changed ${changed === 1 ? 'file' : 'files'}`
+  return editing ? `${files} · ${editing} being edited` : files
+}
+
 // A source relationship and a publication state answer different questions.
 // Keep last-fetched evidence explicit: zero behind is not an online freshness
 // check, and neither commit counts nor file counts prove publication coverage.
 export function projectBoardFacts(project) {
-  const local = Number(project.localFiles || 0) + Number(project.compatibleFiles || 0) + Number(project.conflictFiles || 0)
   const reviews = project.contributions || []
   const publicReviews = reviews.filter(rec => ['draft', 'open', 'landing'].includes(rec.status)).length
   const prepared = reviews.filter(rec => rec.status === 'prepared').length
   const preparedUpdates = reviews.filter(rec => rec.status === 'prepared' && (rec.plan?.action === 'pr_update' || rec.url || rec.number > 0)).length
   const work = []
   if (project.builtHere) work.push('Only on your Möbius')
-  else if (local > 0) work.push(`${fileCount(local)} with local changes`)
-  if (project.workingFiles > 0) work.push(`${fileCount(project.workingFiles)} being edited`)
+  else if (localChangeSummary(project).changed > 0) work.push(localChangeLabel(project))
   if (prepared > preparedUpdates) work.push(`${prepared - preparedUpdates} private ${prepared - preparedUpdates === 1 ? 'proposal' : 'proposals'}`)
   if (preparedUpdates > 0) work.push(`${preparedUpdates} prepared ${preparedUpdates === 1 ? 'update' : 'updates'}`)
   if (publicReviews > 0) work.push(`${publicReviews} shared ${publicReviews === 1 ? 'contribution' : 'contributions'}`)
@@ -260,10 +280,21 @@ export function projectBoardFacts(project) {
   else if (!project.available) shared = 'Local source unavailable'
   else if (project.conflictFiles > 0 || project.state === 'conflict') shared = 'Shared update needs attention'
   else if (projectHasSharedUpdates(project)) shared = 'Shared updates are available'
-  else if (project.sourceComparisonRequired) shared = 'Check for shared updates'
+  else if (project.sourceComparisonRequired) shared = 'Shared version not checked yet'
   else if (project.origin?.sha) shared = 'Last check found no shared updates'
   else if (project.base_sha) shared = 'Compared with installed version'
   return { work: work.join(' · '), shared, publicReviews, prepared }
+}
+
+// A project with nothing for the owner: no local changes, proposals, shared
+// contributions, review requests, incoming updates or conflicts. Quiet rows
+// follow the projects that have something going on.
+export function projectIsQuiet(project) {
+  return projectBoardFacts(project).work === 'No local changes to prepare'
+    && !(project?.reviewRequests?.length)
+    && !projectHasSharedUpdates(project)
+    && !(project?.conflictFiles > 0)
+    && project?.state !== 'conflict'
 }
 
 // Reconciliation owns the file-level answer once it is available. A branch

@@ -24,10 +24,10 @@ test('halted unfinished items are not active; saved settled and queued evidence 
       assert.equal(value.label, execution_state === 'awaiting_owner' ? collaboration.REVIEW_STATE_NAMES[state] : 'Not finished')
     }
     for (const [state,label] of Object.entries(facts)) {
-      assert.deepEqual(progress({execution_state},{state}), {label,halted:false,waiting:false})
+      assert.deepEqual(progress({execution_state},{state}), {label,halted:false,waiting:false,settled:true})
     }
   }
-  assert.deepEqual(progress({state:'reviewing'},{state:'future_state'}),{label:'future_state',halted:false,waiting:false})
+  assert.deepEqual(progress({state:'reviewing'},{state:'future_state'}),{label:'future_state',halted:false,waiting:false,settled:false})
 })
 
 test('one shared run detail keeps recorded versions, posted reviews and the owning conversation', async t => {

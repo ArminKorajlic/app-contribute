@@ -533,6 +533,15 @@ const STATE_LABELS = {
   request: 'Review draft',
 }
 
+// Feedback on a published pull request still belongs to the private run (the
+// Prepare agent picks it up), but for the owner it is news, not a draft.
+const isPublicFeedback = item => item.kind === 'private_review'
+  && runUnitRecords(item).some(record => ['open', 'draft'].includes(record?.status))
+
+function decisionActionLabel(item) {
+  return isPublicFeedback(item) ? 'See feedback' : DECISION_ACTION_LABELS[item.kind] || 'Review'
+}
+
 const DECISION_ACTION_LABELS = {
   ready_attention: 'Review',
   route_attention: 'Choose',
@@ -564,7 +573,7 @@ function DecisionRow({
           className="co-run-row-action"
           onClick={() => onSelect?.(item)}
         >
-          {DECISION_ACTION_LABELS[item.kind] || 'Review'}
+          {decisionActionLabel(item)}
         </button>
       )}
     </article>
@@ -953,7 +962,7 @@ export function ContributionRun({
 
 
   const decisions = projectedDecisions
-  const privateItems = decisions.filter(item => item.kind === 'private_review')
+  const privateItems = decisions.filter(item => item.kind === 'private_review' && !isPublicFeedback(item))
   const working = run?.working || []
   const visibleWorking = renderPublicWork ? working.filter(item => {
     return !runUnitRecords(item).every(record => record?.type === 'pr' && ['open', 'draft'].includes(record.status)
@@ -968,7 +977,7 @@ export function ContributionRun({
   const history = [...(run?.recent || []), ...(run?.archive || [])]
   const publishItems = decisions.filter(item => item.kind === 'publish')
   const readyItems = decisions.filter(item => item.kind === 'mark_ready')
-  const ownerDecisions = decisions.filter(item => ![
+  const ownerDecisions = decisions.filter(item => isPublicFeedback(item) || ![
     'publish', 'mark_ready', 'private_review', 'request',
   ].includes(item.kind))
   const ownerActionCount = ownerDecisions.length
@@ -976,11 +985,9 @@ export function ContributionRun({
   const groupedDecisions = ownerDecisions.filter(item => runUnitRecords(item).length > 1).length
   const preparedItems = [...privateItems, ...decisions.filter(item => item.kind === 'request')]
 
-  // Task-first: when the owner has blocking decisions, this section leads the
-  // opened project — above local position/preparation. Otherwise order is
-  // unchanged and this is null. The count only appears once rows are folded.
+  // What needs the owner opens by itself; it can still be folded away.
   const needsYou = (presentation === 'project' && ownerActionCount > 0) ? (
-    <details className="co-run-fold" aria-label="Needs you">
+    <details className="co-run-fold" aria-label="Needs you" open>
       <summary><span>Needs you</span><b>{ownerActionCount}</b><Icon name="chevron" size={14} /></summary>
       {groupedDecisions ? <p className="co-inventory-note">{groupedDecisions} related {groupedDecisions === 1 ? 'group' : 'groups'} · {ownerContributionCount} contributions</p> : null}
       <div className="co-run-list">{(allDecisions ? ownerDecisions : ownerDecisions.slice(0, 3)).map(item => <DecisionRow key={item.id} item={item} onSelect={selectRunItem} onAssignIncomingReview={onAssignIncomingReview} />)}</div>
