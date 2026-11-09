@@ -29,3 +29,9 @@ test('the repo page\'s search toggle stays hidden while its field shows, whateve
 test('the PR page\'s icon tooltips open above their buttons, off the facts line', () => {
   assert.match(CSS, /\.co-pr-detail-actions \.co-tip::after \{ top:auto; bottom:calc\(100% \+ 6px\); \}/)
 })
+
+test('on a phone a tooltip hangs from its button\'s right edge, so the longest one cannot push the page sideways', () => {
+  // Centred under the last button of the PR page's action row, "Open chat · 3 where it started" ran
+  // past the screen's edge: invisible, but it still made the whole page scroll sideways.
+  assert.match(CSS, /@media \(max-width:680px\) \{ \.co-tip::after \{ left:auto; right:0; transform:none; \} \}/)
+})

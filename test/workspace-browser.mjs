@@ -1,6 +1,7 @@
 // Run: MOBIUS_FRONTEND_NODE_MODULES=/data/platform/frontend/node_modules \
 //      node test/workspace-browser.mjs
-// Seven scenarios, each on a fresh page: runWorkspaceChecks (the project fixture),
+// Eight scenarios, each on a fresh page: runWorkspaceChecks (the project fixture),
+// runPopupFitChecks (the project fixture: its Actions menus stay on a phone screen),
 // runDeskFrameChecks (the whole app: a review started on a PR page frames its Desk row),
 // runReviewRequestChecks (the whole app: a review you submit takes its row out of Review requests),
 // runReviewHelperWaitChecks (the whole app: a review waiting on its helper reads as at work, not stopped) and
@@ -1642,6 +1643,35 @@ async function mountDeskApp() {
     latestOpinionatedReviews: { nodes: [] }, reviewThreads: { nodes: [] } })
   root.render(<ContributeApp appId="fixture-app" token="fixture-only" />)
 }
+// A popup menu must stay on the screen whichever button opens it: on a phone a row's Actions button sits well
+// in from the left edge, and a menu lined up with its right edge ran off the screen.
+window.runPopupFitChecks = async () => {
+  const checks = []
+  async function staysOnScreen(name, scope) {
+    const trigger = scope.querySelector('.co-agent-menu-button')
+    await click(trigger)
+    await until(() => scope.querySelector('.co-agent-menu-list'), 'The ' + name + ' Actions menu did not open')
+    const list = scope.querySelector('.co-agent-menu-list'), box = list.getBoundingClientRect()
+    ensure(box.left >= 0 && box.right <= window.innerWidth, 'The ' + name + ' Actions menu ran off the screen: ' + Math.round(box.left) + ' to ' + Math.round(box.right) + ' of ' + window.innerWidth + 'px')
+    // On a desktop screen the menu already fits, so it stays where it hangs from its button: this is the desktop "after" that the phone screenshots cannot show.
+    ensure(window.innerWidth <= 680 || list.style.transform === '', 'The ' + name + ' Actions menu was moved on a desktop screen: ' + list.style.transform)
+    await click(trigger)
+    await until(() => !scope.querySelector('.co-agent-menu-list'), 'The ' + name + ' Actions menu did not close')
+    checks.push({ name: 'the ' + name + ' Actions menu stays on the screen', status: 'pass' })
+  }
+  try {
+    await until(() => query('.co-source-row'), 'Project list did not render')
+    await click(query('.co-source-row'))
+    await until(() => document.querySelectorAll('.co-pr-row').length === 2, 'Project did not settle')
+    await staysOnScreen('row', query('.co-pr-row'))
+    await click(query('input[aria-label="Select owner/project #7"]'))
+    await until(() => query('.co-pr-box-head .co-agent-menu-button'), 'Selecting a PR did not offer the bulk Actions menu')
+    await staysOnScreen('bulk', query('.co-pr-box-head'))
+    return { status: 'pass', checks }
+  } catch (error) {
+    return { status: 'fail', checks, error: error.stack, dom: text(query('main')).slice(0, 2000) }
+  }
+}
 window.runDeskFrameChecks = async () => {
   const checks = []
   const deskFrame = title => [...document.querySelectorAll('.co-frame')].find(node => text(node).includes(title))?.dataset.frame
@@ -2119,7 +2149,7 @@ async function main() {
     const protocol = cdp(browser), reports = []
     // Each scenario gets a fresh page, so the whole-app Desk scenario never inherits the project fixture's state.
     // WORKSPACE_BROWSER_ONLY=runDeskFrameChecks runs one scenario.
-    const scenarios = process.env.WORKSPACE_BROWSER_ONLY ? [process.env.WORKSPACE_BROWSER_ONLY] : ['runWorkspaceChecks', 'runDeskFrameChecks', 'runReviewRequestChecks', 'runReviewHelperWaitChecks', 'runRepositoryPickerChecks', 'runSyncChecks', 'runStaleAnswerChecks']
+    const scenarios = process.env.WORKSPACE_BROWSER_ONLY ? [process.env.WORKSPACE_BROWSER_ONLY] : ['runWorkspaceChecks', 'runPopupFitChecks', 'runDeskFrameChecks', 'runReviewRequestChecks', 'runReviewHelperWaitChecks', 'runRepositoryPickerChecks', 'runSyncChecks', 'runStaleAnswerChecks']
     const viewports = [{ name: 'desktop', width: 1280, height: 900 }, { name: 'phone', width: 390, height: 844 }].filter(size => !process.env.WORKSPACE_BROWSER_VIEWPORT || size.name === process.env.WORKSPACE_BROWSER_VIEWPORT)
     for (const [viewport, scenario] of viewports.flatMap(size => scenarios.map(name => [size, name]))) {
       const { targetId } = await protocol.send('Target.createTarget', { url: 'about:blank' })
