@@ -199,6 +199,12 @@ Exit codes: 0 done, 2 bad input, 3 refused, 4 failed part-way.
   result, and a line saying they are uploaded to the PR's repository), commits and changed files, the tests, what Post will do in order, and Post, Reply in chat and
   Discard. Post is off while the PR moved, while the chat is working, and while the chat waits on
   one of its own cards (a chat with an open card refuses new messages).
+* **Screenshots are required for any front-end change.** The brief says so (a screen, component, style or theme
+  file; before and after, desktop and 390 px; the same exception as for a new PR: a picture that cannot show the
+  change is explained in the description). The card flags an answer whose changed files include front-end files
+  (`.jsx .tsx .vue .svelte .css .scss .html` or a `*theme*.js`, never under `test/`) and that lists no screenshots,
+  in the same place the owner decides. It warns; it does not block, because whether a change is visible is the
+  owner's call.
 * **Post** re-reads the result, checks its digest is the one on screen and the PR head is still
   `pr.head_sha`, writes the decision (`approved`), then sends the chat (`chat_id`) this message
   with the stable id `respond-post-<result id>`; if the platform definitely refuses it, the

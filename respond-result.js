@@ -178,6 +178,11 @@ export function responseOutbox(entry, pr, review = null) {
 const plural = (count, one, many) => `${count} ${count === 1 ? one : many}`
 const names = logins => (logins.length < 2 ? logins.join('') : `${logins.slice(0, -1).join(', ')} and ${logins.at(-1)}`)
 
+// Whether the work changes something people see: a screen, component or style. Screenshots are required then, so the card says when
+// an answer has none. Paths in tests do not count, and a file that only moved or was removed still changed a screen.
+const FRONT_END = /(\.(jsx|tsx|vue|svelte|css|scss|html)|(^|\/)[^/]*theme[^/]*\.js)$/
+export const changesFrontEnd = result => result.files.some(file => FRONT_END.test(file.path) && !/(^|\/)(test|tests|__tests__)\//.test(file.path) && !/\.(test|spec)\./.test(file.path))
+
 // What Post will do, in the order the helper does it, and only what there is to do.
 export function planSteps(result) {
   return [

@@ -5,7 +5,7 @@ import { openAgentConversation } from './BatchAction.jsx'
 import { Icon } from './Icons.jsx'
 import { RunTag } from './RunTag.jsx'
 import { NAMES } from '../names.js'
-import { SCREENSHOT_FOLDER, chatStarting, planSteps, stepDone } from '../respond-result.js'
+import { SCREENSHOT_FOLDER, changesFrontEnd, chatStarting, planSteps, stepDone } from '../respond-result.js'
 import { screenshotCountText } from '../domain.js'
 import { useScreenshots } from './useScreenshots.js'
 
@@ -78,6 +78,7 @@ function Details({ result, open, images }) {
       <ul className="co-response-commits">{commits.map(commit => <li key={commit.sha}><code>{short(commit.sha)}</code> {commit.title}</li>)}</ul>
       <PullFiles data={filesData(result)} />
     </details> : null}
+    {open && changesFrontEnd(result) && !screenshots.length ? <p className="co-review-note" role="status" data-missing-screenshots>This answer changes front-end files but adds no screenshots. They are required for any front-end change: ask for another pass, or say in a reply why none can show it.</p> : null}
     {result.tests ? <p className="co-review-note">Checked: {result.tests}</p> : null}
   </>
 }

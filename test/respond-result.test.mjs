@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFileSync } from 'node:fs'
-import { RESEND_AFTER_MS, WATCH_MS, chatStarting, normalizeDecision, normalizeResult, planSteps, stepDone, POST_COMMAND, postMessage, postingSoon, resultSlug, responseFor, responseOutbox, responseStatus, responseView } from '../respond-result.js'
+import { RESEND_AFTER_MS, WATCH_MS, changesFrontEnd, chatStarting, normalizeDecision, normalizeResult, planSteps, stepDone, POST_COMMAND, postMessage, postingSoon, resultSlug, responseFor, responseOutbox, responseStatus, responseView } from '../respond-result.js'
 
 // The example the Python helper's own tests also pin the digest of: one file, both sides of the contract.
 const example = () => JSON.parse(readFileSync(new URL('./fixtures/respond-result.example.json', import.meta.url), 'utf8'))
@@ -220,4 +220,13 @@ test('the upload step is ticked once the helper records its receipt', () => {
   assert.equal(answer.receipts.screenshots.commit, 'c'.repeat(40))
   assert.equal(stepDone(answer, 'screenshots'), true)
   assert.equal(stepDone(result({ screenshots: [shot()] }), 'screenshots'), false)
+})
+
+test('an answer that changes front-end files is flagged for screenshots, and test files and plain scripts are not', () => {
+  const file = path => ({ path, status: 'modified', added: 1, removed: 0, patch: '@@ -1 +1 @@\n-a\n+b' })
+  const answer = paths => result({ files: paths.map(file) })
+  for (const path of ['ui/ResponseCard.jsx', 'styles/app.css', 'src/Page.tsx', 'workspace-theme.js', 'ui/theme.js']) assert.equal(changesFrontEnd(answer([path])), true, path)
+  for (const path of ['respond_result.py', 'api.js', 'README.md', 'test/card.test.jsx', 'test/fixtures/page.html', 'ui/useThing.test.js']) assert.equal(changesFrontEnd(answer([path])), false, path)
+  assert.equal(changesFrontEnd(answer([])), false)
+  assert.equal(changesFrontEnd(answer(['api.js', 'ui/ResponseCard.jsx'])), true, 'one front-end file among others is enough')
 })

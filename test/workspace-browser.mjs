@@ -1954,6 +1954,16 @@ window.runRespondResultChecks = async () => {
         await answer({}, null)
       }
     }
+    // Screenshots are required for any front-end change: an answer that changes a screen without any says so where the owner decides.
+    await answer({ files: [{ path: 'ui/Page.jsx', status: 'modified', added: 3, removed: 1, patch: null, patch_omitted: true }] }, null)
+    await until(() => query('.co-pr-detail-body [data-missing-screenshots]'), 'An answer changing a screen without screenshots was not flagged: ' + reviewBody())
+    ensure(text(query('[data-missing-screenshots]')).includes('required for any front-end change'), 'The flag said: ' + text(query('[data-missing-screenshots]')))
+    query('[data-missing-screenshots]').scrollIntoView({ block: 'center' })
+    await captureShot('respond-missing-screenshots')
+    await answer({ files: [{ path: 'api.js', status: 'modified', added: 3, removed: 1, patch: null, patch_omitted: true }] }, null)
+    await until(() => !query('.co-pr-detail-body [data-missing-screenshots]') && reviewBody().includes('Replies ready'), 'A change with no screen in it was flagged: ' + reviewBody())
+    await answer({}, null)
+    checks.push({ name: 'an answer that changes front-end files without screenshots is flagged; one that changes none is not', status: 'pass' })
     // Post: the owner's approval is written for exactly this answer, and the chat is told to run the helper. The reads that follow are
     // held for a moment: until the refreshed answer is on screen the card stays busy, so Post cannot be pressed twice in that gap.
     window.holdResponsesRead = true
